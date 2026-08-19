@@ -55,9 +55,11 @@ def test_extrair_dimensoes_sem_medida_no_nome():
     assert extrair_dimensoes("arte_final_cliente.pdf", {}) is None
 
 
-def test_extrair_dimensoes_usa_ultima_ocorrencia():
-    d = extrair_dimensoes("pedido_123x456_58x60cm.pdf", {})
-    assert round(d["largura_m"], 2) == 0.58
+def test_extrair_dimensoes_usa_primeira_ocorrencia():
+    # a primeira medida é sempre a medida real do cliente; uma segunda
+    # medida no nome (acrescentada depois pela produção) é ignorada
+    d = extrair_dimensoes("pedido_123x456cm_58x60cm.pdf", {})
+    assert round(d["largura_m"], 2) == 1.23
 
 
 def test_extrair_quantidade_reconhece_prefixo_un():

@@ -35,9 +35,14 @@ def extrair_dimensoes(nome_arquivo, typos_unidade=None):
     """
     Procura no nome do arquivo um padrão do tipo "NUMEROxNUMERO" seguido
     (ou não) de uma unidade (MM, CM, M, ou um dos erros de digitação
-    conhecidos em 'typos_unidade'), pega a ÚLTIMA ocorrência (a medida
-    costuma vir no final do nome), converte tudo pra metros e calcula a
-    área em m².
+    conhecidos em 'typos_unidade'), pega a PRIMEIRA ocorrência, converte
+    tudo pra metros e calcula a área em m².
+
+    Quando o nome tem duas medidas, a primeira é sempre a medida real
+    que o cliente mandou; a segunda (se houver) é um acréscimo que a
+    produção coloca depois (por exemplo, uma margem extra) — por isso
+    a primeira é a que vale pra etiqueta, OS e cálculo de desperdício,
+    nunca a segunda.
 
     'typos_unidade' é um dicionário configurável (vem do config.json)
     mapeando um erro de digitação comum para a unidade real, por exemplo
@@ -70,7 +75,7 @@ def extrair_dimensoes(nome_arquivo, typos_unidade=None):
     if not matches:
         return None
 
-    m = matches[-1]  # última ocorrência no nome
+    m = matches[0]  # primeira ocorrência no nome — é a medida real do cliente
     valor1 = float(m.group(1).replace(',', '.'))
     valor2 = float(m.group(2).replace(',', '.'))
     unidade_bruta = m.group(3)
