@@ -19,6 +19,7 @@ import pathlib
 import queue
 import threading
 import tkinter as tk
+from datetime import date
 from tkinter import filedialog, messagebox, ttk
 
 from branding import CAMINHO_LOGO_GUI
@@ -27,6 +28,7 @@ from dimensoes import formatar_variante
 from estoque import (
     carregar_estoque, saldo_produto, registrar_movimento, desfazer_movimento,
     prever_saida_os, confirmar_saida_os, novo_produto, adicionar_produto, atualizar_produto, remover_produto,
+    meses_disponiveis, resumo_mensal,
 )
 from processamento import processar_etiquetas
 
@@ -562,7 +564,7 @@ class JanelaEstoque(tk.Toplevel):
 
         frame_botoes = tk.Frame(self, bg=COR_FUNDO_JANELA)
         frame_botoes.grid(row=linha, column=0, sticky="ew", padx=20, pady=14)
-        for col in range(3):
+        for col in range(4):
             frame_botoes.columnconfigure(col, weight=1, uniform="botoes")
 
         tk.Button(
@@ -575,7 +577,10 @@ class JanelaEstoque(tk.Toplevel):
         ).grid(row=0, column=1, sticky="ew", padx=4, pady=(0, 4), ipady=3)
         tk.Button(
             frame_botoes, text="📄 Saída pela OS...", relief="flat", cursor="hand2", command=self._abrir_saida_os,
-        ).grid(row=0, column=2, sticky="ew", padx=(4, 0), pady=(0, 4), ipady=3)
+        ).grid(row=0, column=2, sticky="ew", padx=4, pady=(0, 4), ipady=3)
+        tk.Button(
+            frame_botoes, text="📊 Dashboard...", relief="flat", cursor="hand2", command=self._abrir_dashboard,
+        ).grid(row=0, column=3, sticky="ew", padx=(4, 0), pady=(0, 4), ipady=3)
         tk.Button(
             frame_botoes, text="🧾 Cadastrar produto...", relief="flat", cursor="hand2",
             command=self._abrir_novo_produto,
@@ -584,7 +589,7 @@ class JanelaEstoque(tk.Toplevel):
             frame_botoes, text="🕒 Histórico", relief="flat", cursor="hand2", command=self._abrir_historico,
         ).grid(row=1, column=1, sticky="ew", padx=4, ipady=3)
         tk.Button(frame_botoes, text="Fechar", relief="flat", cursor="hand2", command=self.destroy).grid(
-            row=1, column=2, sticky="ew", padx=(4, 0), ipady=3)
+            row=1, column=3, sticky="ew", padx=(4, 0), ipady=3)
 
         self._preencher_lista()
 
@@ -688,6 +693,9 @@ class JanelaEstoque(tk.Toplevel):
 
     def _abrir_edicao(self, codigo):
         JanelaNovoProduto(self, self.estoque, self.config_dados, self._atualizar, codigo_edicao=codigo)
+
+    def _abrir_dashboard(self):
+        JanelaDashboard(self, self.estoque)
 
 
 class JanelaMovimentoManual(tk.Toplevel):
@@ -1147,3 +1155,192 @@ class JanelaNovoProduto(tk.Toplevel):
             self.ao_salvar()
             messagebox.showinfo("Produto cadastrado", f"'{descricao}' foi adicionado ao estoque com saldo zero.")
         self.destroy()
+
+
+class JanelaDashboard(tk.Toplevel):
+    """
+    Dashboard do estoque: pra um mês escolhido (com navegação ◀ ▶),
+    mostra o volume COMPLETO de entrada e de saída de cada produto que
+    teve movimento nesse mês — não um "top N" resumido, a lista inteira
+    do maior pro menor, cada uma com uma barrinha proporcional — mais a
+    contagem de lançamentos e quais produtos estão abaixo do mínimo
+    agora. Cada linha do ranking é sempre de um produto só, com a
+    unidade dele: nunca soma quantidade entre produtos de unidades
+    diferentes (chapa com rolo, por exemplo), mesmo princípio já usado
+    no resto do sistema pros subtotais de m².
+    """
+
+    _NOMES_MES = [
+        "", "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+        "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
+    ]
+
+    def __init__(self, mestre, estoque):
+        super().__init__(mestre)
+        self.title("Dashboard de Estoque — UNY CV")
+        self.geometry("880x680")
+        self.minsize(720, 520)
+        self.configure(bg=COR_FUNDO_JANELA)
+        self.transient(mestre)
+        self.estoque = estoque
+
+        hoje = date.today()
+        meses = meses_disponiveis(estoque)
+        self.ano_mes_atual = meses[0] if meses else (hoje.year, hoje.month)
+
+        self.columnconfigure(0, weight=1)
+        self.rowconfigure(3, weight=1)
+
+        self._montar_layout()
+        self.grab_set()
+
+    def _montar_layout(self):
+        linha = 0
+        if CAMINHO_LOGO_GUI.exists():
+            try:
+                self.imagem_logo = tk.PhotoImage(file=str(CAMINHO_LOGO_GUI))
+                tk.Label(self, image=self.imagem_logo, bg=COR_FUNDO_JANELA).grid(
+                    row=linha, column=0, sticky="w", padx=20, pady=(16, 0))
+                linha += 1
+            except tk.TclError:
+                pass
+
+        tk.Label(
+            self, text="Dashboard de Estoque", font=("Segoe UI", 14, "bold"), bg=COR_FUNDO_JANELA, fg=COR_TEXTO,
+        ).grid(row=linha, column=0, sticky="w", padx=20, pady=(14, 6))
+        linha += 1
+
+        frame_mes = tk.Frame(self, bg=COR_FUNDO_JANELA)
+        frame_mes.grid(row=linha, column=0, sticky="w", padx=20, pady=(0, 10))
+        tk.Button(frame_mes, text="◀", relief="flat", cursor="hand2", command=self._mes_anterior).pack(side="left")
+        self.var_mes_label = tk.StringVar()
+        tk.Label(
+            frame_mes, textvariable=self.var_mes_label, font=("Segoe UI", 11, "bold"), bg=COR_FUNDO_JANELA,
+            fg=COR_TEXTO, width=16, anchor="center",
+        ).pack(side="left", padx=6)
+        tk.Button(frame_mes, text="▶", relief="flat", cursor="hand2", command=self._mes_seguinte).pack(side="left")
+        linha += 1
+
+        self.frame_cards = tk.Frame(self, bg=COR_FUNDO_JANELA)
+        self.frame_cards.grid(row=linha, column=0, sticky="ew", padx=20, pady=(0, 10))
+        linha += 1
+
+        linha_conteudo = linha
+        linha += 1
+
+        frame_canvas = tk.Frame(self, bg=COR_FUNDO_JANELA)
+        frame_canvas.grid(row=linha_conteudo, column=0, sticky="nsew", padx=20)
+        frame_canvas.columnconfigure(0, weight=1)
+        frame_canvas.rowconfigure(0, weight=1)
+        canvas = tk.Canvas(frame_canvas, highlightthickness=0, bg=COR_FUNDO_JANELA)
+        scrollbar = ttk.Scrollbar(frame_canvas, orient="vertical", command=canvas.yview)
+        self.frame_conteudo = tk.Frame(canvas, bg=COR_FUNDO_JANELA)
+        janela_interna = canvas.create_window((0, 0), window=self.frame_conteudo, anchor="nw")
+        self.frame_conteudo.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.bind("<Configure>", lambda e: canvas.itemconfig(janela_interna, width=e.width))
+        self.frame_conteudo.columnconfigure(0, weight=1)
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.grid(row=0, column=0, sticky="nsew")
+        scrollbar.grid(row=0, column=1, sticky="ns")
+
+        frame_botoes = tk.Frame(self, bg=COR_FUNDO_JANELA)
+        frame_botoes.grid(row=linha, column=0, sticky="e", padx=20, pady=14)
+        tk.Button(frame_botoes, text="Fechar", relief="flat", cursor="hand2", command=self.destroy).pack()
+
+        self._atualizar()
+
+    def _mes_anterior(self):
+        ano, mes = self.ano_mes_atual
+        self.ano_mes_atual = (ano - 1, 12) if mes == 1 else (ano, mes - 1)
+        self._atualizar()
+
+    def _mes_seguinte(self):
+        ano, mes = self.ano_mes_atual
+        self.ano_mes_atual = (ano + 1, 1) if mes == 12 else (ano, mes + 1)
+        self._atualizar()
+
+    def _atualizar(self):
+        ano, mes = self.ano_mes_atual
+        self.var_mes_label.set(f"{self._NOMES_MES[mes]}/{ano}")
+        resumo = resumo_mensal(self.estoque, ano, mes)
+        self._preencher_cards(resumo)
+        self._preencher_conteudo(resumo)
+
+    def _preencher_cards(self, resumo):
+        for widget in self.frame_cards.winfo_children():
+            widget.destroy()
+
+        cards = [
+            ("Lançamentos no mês", str(resumo["total_lancamentos"]), COR_TEXTO),
+            ("Entradas", str(resumo["total_entradas_lancamentos"]), COR_POSITIVO),
+            ("Saídas", str(resumo["total_saidas_lancamentos"]), COR_TEXTO),
+            ("Abaixo do mínimo (hoje)", str(len(resumo["produtos_abaixo_minimo"])), COR_ALERTA),
+        ]
+        for i, (rotulo, valor, cor) in enumerate(cards):
+            self.frame_cards.columnconfigure(i, weight=1)
+            cartao = tk.Frame(
+                self.frame_cards, bg=COR_CARTAO, highlightbackground=COR_BORDA_CARTAO, highlightthickness=1,
+            )
+            cartao.grid(row=0, column=i, sticky="ew", padx=(0 if i == 0 else 8, 0))
+            tk.Label(cartao, text=valor, font=("Segoe UI", 18, "bold"), bg=COR_CARTAO, fg=cor).pack(
+                anchor="w", padx=12, pady=(10, 0))
+            tk.Label(cartao, text=rotulo, font=("Segoe UI", 8), bg=COR_CARTAO, fg=COR_TEXTO_SECUNDARIO).pack(
+                anchor="w", padx=12, pady=(0, 10))
+
+    def _preencher_conteudo(self, resumo):
+        for widget in self.frame_conteudo.winfo_children():
+            widget.destroy()
+
+        self._secao_ranking(
+            "📦 Volume de entrada no mês — todos os produtos, do maior pro menor",
+            resumo["ranking_entradas"], COR_POSITIVO,
+        )
+        self._secao_ranking(
+            "📤 Volume de saída no mês — todos os produtos, do maior pro menor",
+            resumo["ranking_saidas"], COR_ACENTO,
+        )
+
+        if resumo["produtos_abaixo_minimo"]:
+            tk.Label(
+                self.frame_conteudo, text="ABAIXO DO MÍNIMO AGORA", font=("Segoe UI", 9, "bold"),
+                fg=COR_ALERTA, bg=COR_FUNDO_JANELA,
+            ).grid(row=len(self.frame_conteudo.grid_slaves()), column=0, sticky="w", pady=(16, 4))
+            nomes = ", ".join(self.estoque["produtos"][c]["descricao"] for c in resumo["produtos_abaixo_minimo"])
+            tk.Label(
+                self.frame_conteudo, text=nomes, fg=COR_TEXTO_SECUNDARIO, bg=COR_FUNDO_JANELA,
+                wraplength=800, justify="left",
+            ).grid(row=len(self.frame_conteudo.grid_slaves()), column=0, sticky="w")
+
+    def _secao_ranking(self, titulo, ranking, cor_barra):
+        tk.Label(
+            self.frame_conteudo, text=titulo, font=("Segoe UI", 10, "bold"), fg=COR_TEXTO, bg=COR_FUNDO_JANELA,
+        ).grid(row=len(self.frame_conteudo.grid_slaves()), column=0, sticky="w", pady=(6, 6))
+
+        if not ranking:
+            tk.Label(
+                self.frame_conteudo, text="Nenhum movimento nesse mês.", fg=COR_TEXTO_SECUNDARIO, bg=COR_FUNDO_JANELA,
+            ).grid(row=len(self.frame_conteudo.grid_slaves()), column=0, sticky="w", pady=(0, 8))
+            return
+
+        valor_maximo = ranking[0][1]
+        largura_max = 240
+        for codigo, valor in ranking:
+            produto = self.estoque["produtos"].get(codigo)
+            if not produto:
+                continue
+
+            linha = tk.Frame(self.frame_conteudo, bg=COR_FUNDO_JANELA)
+            linha.grid(row=len(self.frame_conteudo.grid_slaves()), column=0, sticky="ew", pady=(2, 0))
+            linha.columnconfigure(0, weight=1)
+            tk.Label(linha, text=produto["descricao"], anchor="w", bg=COR_FUNDO_JANELA, fg=COR_TEXTO).grid(
+                row=0, column=0, sticky="ew")
+            tk.Label(
+                linha, text=f"{valor:g} {produto['unidade']}", anchor="e", bg=COR_FUNDO_JANELA, fg=COR_TEXTO,
+                font=("Segoe UI", 9, "bold"), width=14,
+            ).grid(row=0, column=1, sticky="e", padx=(8, 0))
+
+            largura = max(4, int((valor / valor_maximo) * largura_max)) if valor_maximo > 0 else 4
+            barra_fundo = tk.Frame(self.frame_conteudo, bg="#e9eaee", height=6, width=largura_max)
+            barra_fundo.grid_propagate(False)
+            barra_fundo.grid(row=len(self.frame_conteudo.grid_slaves()), column=0, sticky="w", pady=(0, 7))
+            tk.Frame(barra_fundo, bg=cor_barra, height=6, width=largura).place(x=0, y=0)

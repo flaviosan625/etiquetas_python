@@ -449,6 +449,71 @@ def _processar_saida_os(estoque, itens, materiais_config, nome_pedido, persistir
     return resumo
 
 
+def _ano_mes_do_movimento(movimento):
+    """Extrai (ano, mes) do campo 'data' (formato 'DD/MM/AAAA HH:MM:SS'). Devolve None se o formato não bater."""
+    partes = movimento["data"].split(" ")[0].split("/")
+    if len(partes) != 3:
+        return None
+    try:
+        return int(partes[2]), int(partes[1])
+    except ValueError:
+        return None
+
+
+def meses_disponiveis(estoque):
+    """Lista (ano, mês) distintos presentes no histórico de movimentos, mais recente primeiro."""
+    vistos = {_ano_mes_do_movimento(m) for m in estoque["movimentos"]}
+    vistos.discard(None)
+    return sorted(vistos, reverse=True)
+
+
+def resumo_mensal(estoque, ano, mes):
+    """
+    Resumo do mês pro dashboard — sempre agrupado por produto, nunca
+    somando quantidade entre produtos de unidade diferente (mesmo
+    princípio já usado no resto do sistema: nunca misturar chapa com
+    rolo com caixa num único número). Devolve os rankings de produto
+    mais comprado (entrada) e mais consumido (saída) no mês, contagem
+    de lançamentos, e os produtos com saldo abaixo do mínimo (esse
+    último é o status atual, não é limitado ao mês).
+    """
+    movimentos_mes = [m for m in estoque["movimentos"] if _ano_mes_do_movimento(m) == (ano, mes)]
+
+    por_produto = {}
+    for m in movimentos_mes:
+        codigo = m["produto"]
+        if codigo not in estoque["produtos"]:
+            continue
+        dados = por_produto.setdefault(codigo, {"entradas": 0.0, "saidas": 0.0, "lancamentos": 0})
+        dados["lancamentos"] += 1
+        if m["quantidade"] > 0:
+            dados["entradas"] += m["quantidade"]
+        else:
+            dados["saidas"] += -m["quantidade"]
+
+    ranking_entradas = sorted(
+        ((codigo, dados["entradas"]) for codigo, dados in por_produto.items() if dados["entradas"] > 0),
+        key=lambda item: item[1], reverse=True,
+    )
+    ranking_saidas = sorted(
+        ((codigo, dados["saidas"]) for codigo, dados in por_produto.items() if dados["saidas"] > 0),
+        key=lambda item: item[1], reverse=True,
+    )
+    produtos_abaixo_minimo = [
+        codigo for codigo, produto in estoque["produtos"].items()
+        if produto.get("minimo", 0) > 0 and saldo_produto(estoque, codigo) < produto["minimo"]
+    ]
+
+    return {
+        "total_lancamentos": len(movimentos_mes),
+        "total_entradas_lancamentos": sum(1 for m in movimentos_mes if m["quantidade"] > 0),
+        "total_saidas_lancamentos": sum(1 for m in movimentos_mes if m["quantidade"] < 0),
+        "ranking_entradas": ranking_entradas,
+        "ranking_saidas": ranking_saidas,
+        "produtos_abaixo_minimo": produtos_abaixo_minimo,
+    }
+
+
 def prever_saida_os(estoque, itens, materiais_config):
     """Só calcula o que SERIA descontado, sem gravar nada no estoque real."""
     copia = copy.deepcopy(estoque)
