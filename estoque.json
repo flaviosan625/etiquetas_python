@@ -1,0 +1,622 @@
+{
+  "produtos": {
+    "LONA_FOSCA_440_320": {
+      "descricao": "Lona Fosca Front 440g 3,20x50m",
+      "tipo": "rolo",
+      "unidade": "rolo",
+      "comprimento_rolo_m": 50,
+      "categoria_vinculada": "LONA",
+      "variante_vinculada": null,
+      "minimo": 6,
+      "maximo": 60,
+      "codigo_planilha": null,
+      "acumulado_m": 0.0
+    },
+    "ADESIVO_BRANCO_FOSCO_127": {
+      "descricao": "Adesivo Branco Fosco 1,27x50m",
+      "tipo": "rolo",
+      "unidade": "rolo",
+      "comprimento_rolo_m": 50,
+      "categoria_vinculada": "ADESIVO",
+      "variante_vinculada": null,
+      "minimo": 3,
+      "maximo": 60,
+      "codigo_planilha": null,
+      "acumulado_m": 0.0
+    },
+    "ADESIVO_PRETO_FOSCO_127": {
+      "descricao": "Adesivo Preto Fosco 1,27x50m",
+      "tipo": "rolo",
+      "unidade": "rolo",
+      "comprimento_rolo_m": 50,
+      "categoria_vinculada": "ADESIVO",
+      "variante_vinculada": null,
+      "minimo": 3,
+      "maximo": 60,
+      "codigo_planilha": "5C_025",
+      "acumulado_m": 0.0
+    },
+    "ADESIVO_CRISTAL_127": {
+      "descricao": "Adesivo Cristal (transparente) 1,27x50m",
+      "tipo": "rolo",
+      "unidade": "rolo",
+      "comprimento_rolo_m": 50,
+      "categoria_vinculada": "ADESIVO",
+      "variante_vinculada": null,
+      "minimo": 3,
+      "maximo": 60,
+      "codigo_planilha": null,
+      "acumulado_m": 0.0
+    },
+    "VINIL_JATEADO_127": {
+      "descricao": "Vinil Jateado 1,27x50m",
+      "tipo": "rolo",
+      "unidade": "rolo",
+      "comprimento_rolo_m": 50,
+      "categoria_vinculada": "ADESIVO",
+      "variante_vinculada": null,
+      "minimo": 6,
+      "maximo": 60,
+      "codigo_planilha": "5C_040",
+      "acumulado_m": 0.0
+    },
+    "MDF_6MM": {
+      "descricao": "MDF 6mm",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "MDF",
+      "variante_vinculada": {
+        "espessura": "6MM"
+      },
+      "minimo": 10,
+      "maximo": 60,
+      "codigo_planilha": "5C_055"
+    },
+    "MDF_9MM": {
+      "descricao": "MDF 9mm",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "MDF",
+      "variante_vinculada": {
+        "espessura": "9MM"
+      },
+      "minimo": 10,
+      "maximo": 60,
+      "codigo_planilha": "5C_056"
+    },
+    "MDF_15MM": {
+      "descricao": "MDF 15mm",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "MDF",
+      "variante_vinculada": {
+        "espessura": "15MM"
+      },
+      "minimo": 10,
+      "maximo": 60,
+      "codigo_planilha": "5C_057"
+    },
+    "PVC_3MM_BRANCO": {
+      "descricao": "PVC 3mm Branco",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "PVC",
+      "variante_vinculada": {
+        "espessura": "3MM",
+        "cor": "BRANCO"
+      },
+      "minimo": 10,
+      "maximo": 10,
+      "codigo_planilha": "5C_005"
+    },
+    "PVC_3MM_PRETO": {
+      "descricao": "PVC 3mm Preto",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "PVC",
+      "variante_vinculada": {
+        "espessura": "3MM",
+        "cor": "PRETO"
+      },
+      "minimo": 3,
+      "maximo": 10,
+      "codigo_planilha": null
+    },
+    "PVC_10MM_BRANCO": {
+      "descricao": "PVC 10mm Branco",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "PVC",
+      "variante_vinculada": {
+        "espessura": "10MM",
+        "cor": "BRANCO"
+      },
+      "minimo": 10,
+      "maximo": 15,
+      "codigo_planilha": "5C_006"
+    },
+    "PVC_10MM_PRETO": {
+      "descricao": "PVC 10mm Preto",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "PVC",
+      "variante_vinculada": {
+        "espessura": "10MM",
+        "cor": "PRETO"
+      },
+      "minimo": 3,
+      "maximo": 8,
+      "codigo_planilha": "5C_008"
+    },
+    "PVC_20MM_BRANCO": {
+      "descricao": "PVC 20mm Branco",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "PVC",
+      "variante_vinculada": {
+        "espessura": "20MM",
+        "cor": "BRANCO"
+      },
+      "minimo": 5,
+      "maximo": 10,
+      "codigo_planilha": "5C_007"
+    },
+    "PVC_20MM_PRETO": {
+      "descricao": "PVC 20mm Preto",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "PVC",
+      "variante_vinculada": {
+        "espessura": "20MM",
+        "cor": "PRETO"
+      },
+      "minimo": 3,
+      "maximo": 10,
+      "codigo_planilha": "5C_009"
+    },
+    "PS_1MM_BRANCO": {
+      "descricao": "PS 1mm Branco",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "PS",
+      "variante_vinculada": {
+        "espessura": "1MM",
+        "cor": "BRANCO"
+      },
+      "minimo": 6,
+      "maximo": 60,
+      "codigo_planilha": "5C_001"
+    },
+    "PS_1MM_PRETO": {
+      "descricao": "PS 1mm Preto",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "PS",
+      "variante_vinculada": {
+        "espessura": "1MM",
+        "cor": "PRETO"
+      },
+      "minimo": 6,
+      "maximo": 60,
+      "codigo_planilha": null
+    },
+    "PS_2MM_BRANCO": {
+      "descricao": "PS 2mm Branco",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "PS",
+      "variante_vinculada": {
+        "espessura": "2MM",
+        "cor": "BRANCO"
+      },
+      "minimo": 6,
+      "maximo": 60,
+      "codigo_planilha": "5C_002"
+    },
+    "PS_2MM_PRETO": {
+      "descricao": "PS 2mm Preto",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "PS",
+      "variante_vinculada": {
+        "espessura": "2MM",
+        "cor": "PRETO"
+      },
+      "minimo": 3,
+      "maximo": 60,
+      "codigo_planilha": "5C_003"
+    },
+    "PS_3MM_BRANCO": {
+      "descricao": "PS 3mm Branco",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "PS",
+      "variante_vinculada": {
+        "espessura": "3MM",
+        "cor": "BRANCO"
+      },
+      "minimo": 6,
+      "maximo": 60,
+      "codigo_planilha": null
+    },
+    "PS_3MM_PRETO": {
+      "descricao": "PS 3mm Preto",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "PS",
+      "variante_vinculada": {
+        "espessura": "3MM",
+        "cor": "PRETO"
+      },
+      "minimo": 6,
+      "maximo": 60,
+      "codigo_planilha": null
+    },
+    "MASCARA_VINIL_PAPEL": {
+      "descricao": "Máscara Vinil Papel 1,27x50m",
+      "tipo": "insumo",
+      "unidade": "rolo",
+      "categoria_vinculada": null,
+      "variante_vinculada": null,
+      "minimo": 6,
+      "maximo": 60,
+      "codigo_planilha": "5C_041"
+    },
+    "MASCARA_VINIL_TRANSPARENTE": {
+      "descricao": "Máscara Vinil Transparente 1,27x50m",
+      "tipo": "insumo",
+      "unidade": "rolo",
+      "categoria_vinculada": null,
+      "variante_vinculada": null,
+      "minimo": 6,
+      "maximo": 60,
+      "codigo_planilha": "5C_042"
+    },
+    "ILHOS_ZERO_AT": {
+      "descricao": "Ilhós Zero AT C/ARR FN - 0.5 MI (caixa 500un)",
+      "tipo": "insumo",
+      "unidade": "caixa",
+      "categoria_vinculada": null,
+      "variante_vinculada": null,
+      "minimo": 6,
+      "maximo": 60,
+      "codigo_planilha": "5C_052"
+    },
+    "TINTA_UV_160_CIANO": {
+      "descricao": "Tinta Uv UJV-100-160Plus Ciano",
+      "tipo": "insumo",
+      "unidade": "un",
+      "categoria_vinculada": null,
+      "variante_vinculada": null,
+      "minimo": 10,
+      "maximo": 60,
+      "codigo_planilha": "5C_043"
+    },
+    "TINTA_UV_160_MAGENTA": {
+      "descricao": "Tinta Uv UJV-100-160Plus Magenta",
+      "tipo": "insumo",
+      "unidade": "un",
+      "categoria_vinculada": null,
+      "variante_vinculada": null,
+      "minimo": 10,
+      "maximo": 60,
+      "codigo_planilha": "5C_044"
+    },
+    "TINTA_UV_160_YELLOW": {
+      "descricao": "Tinta Uv UJV-100-160Plus Yellow",
+      "tipo": "insumo",
+      "unidade": "un",
+      "categoria_vinculada": null,
+      "variante_vinculada": null,
+      "minimo": 10,
+      "maximo": 60,
+      "codigo_planilha": "5C_045"
+    },
+    "TINTA_UV_160_BLACK": {
+      "descricao": "Tinta Uv UJV-100-160Plus Black",
+      "tipo": "insumo",
+      "unidade": "un",
+      "categoria_vinculada": null,
+      "variante_vinculada": null,
+      "minimo": 10,
+      "maximo": 60,
+      "codigo_planilha": "5C_046"
+    },
+    "TINTA_SWJ_320_CIANO": {
+      "descricao": "Tinta SWJ-320EA Ciano",
+      "tipo": "insumo",
+      "unidade": "un",
+      "categoria_vinculada": null,
+      "variante_vinculada": null,
+      "minimo": 10,
+      "maximo": 60,
+      "codigo_planilha": "5C_047"
+    },
+    "TINTA_SWJ_320_MAGENTA": {
+      "descricao": "Tinta SWJ-320EA Magenta",
+      "tipo": "insumo",
+      "unidade": "un",
+      "categoria_vinculada": null,
+      "variante_vinculada": null,
+      "minimo": 10,
+      "maximo": 60,
+      "codigo_planilha": "5C_048"
+    },
+    "TINTA_SWJ_320_YELLOW": {
+      "descricao": "Tinta SWJ-320EA Yellow",
+      "tipo": "insumo",
+      "unidade": "un",
+      "categoria_vinculada": null,
+      "variante_vinculada": null,
+      "minimo": 10,
+      "maximo": 60,
+      "codigo_planilha": "5C_049"
+    },
+    "TINTA_SWJ_320_BLACK": {
+      "descricao": "Tinta SWJ-320EA Black",
+      "tipo": "insumo",
+      "unidade": "un",
+      "categoria_vinculada": null,
+      "variante_vinculada": null,
+      "minimo": 10,
+      "maximo": 60,
+      "codigo_planilha": "5C_050"
+    },
+    "POLICARBONATO_5MM": {
+      "descricao": "Policarbonato 5mm",
+      "tipo": "insumo",
+      "unidade": "chapa",
+      "categoria_vinculada": null,
+      "variante_vinculada": null,
+      "minimo": 20,
+      "maximo": 60,
+      "codigo_planilha": "5C_058"
+    },
+    "POLICARBONATO_ALVEOLAR_5MM": {
+      "descricao": "Policarbonato Alveolar 5mm",
+      "tipo": "insumo",
+      "unidade": "chapa",
+      "categoria_vinculada": null,
+      "variante_vinculada": null,
+      "minimo": 20,
+      "maximo": 60,
+      "codigo_planilha": "5C_059"
+    },
+    "ACRILICO_1MM_CRISTAL": {
+      "descricao": "Acrílico 1mm Cristal",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "1MM",
+        "cor": "CRISTAL"
+      },
+      "minimo": 6,
+      "maximo": 60,
+      "codigo_planilha": null
+    },
+    "ACRILICO_1MM_LEITOSO": {
+      "descricao": "Acrílico 1mm Leitoso",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "1MM",
+        "cor": "LEITOSO"
+      },
+      "minimo": 6,
+      "maximo": 60,
+      "codigo_planilha": null
+    },
+    "ACRILICO_2MM_CRISTAL": {
+      "descricao": "Acrílico 2mm Cristal",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "2MM",
+        "cor": "CRISTAL"
+      },
+      "minimo": 6,
+      "maximo": 60,
+      "codigo_planilha": null
+    },
+    "ACRILICO_2MM_LEITOSO": {
+      "descricao": "Acrílico 2mm Leitoso",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "2MM",
+        "cor": "LEITOSO"
+      },
+      "minimo": 6,
+      "maximo": 60,
+      "codigo_planilha": null
+    },
+    "ACRILICO_3MM_CRISTAL": {
+      "descricao": "Acrílico 3mm Cristal",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "3MM",
+        "cor": "CRISTAL"
+      },
+      "minimo": 6,
+      "maximo": 60,
+      "codigo_planilha": "5C_010"
+    },
+    "ACRILICO_3MM_LEITOSO": {
+      "descricao": "Acrílico 3mm Leitoso",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "3MM",
+        "cor": "LEITOSO"
+      },
+      "minimo": 6,
+      "maximo": 60,
+      "codigo_planilha": null
+    },
+    "ACRILICO_4MM_CRISTAL": {
+      "descricao": "Acrílico 4mm Cristal",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "4MM",
+        "cor": "CRISTAL"
+      },
+      "minimo": 6,
+      "maximo": 60,
+      "codigo_planilha": "5C_011"
+    },
+    "ACRILICO_4MM_LEITOSO": {
+      "descricao": "Acrílico 4mm Leitoso",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "4MM",
+        "cor": "LEITOSO"
+      },
+      "minimo": 6,
+      "maximo": 60,
+      "codigo_planilha": null
+    },
+    "ACRILICO_5MM_CRISTAL": {
+      "descricao": "Acrílico 5mm Cristal",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "5MM",
+        "cor": "CRISTAL"
+      },
+      "minimo": 6,
+      "maximo": 60,
+      "codigo_planilha": "5C_012"
+    },
+    "ACRILICO_5MM_LEITOSO": {
+      "descricao": "Acrílico 5mm Leitoso",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "5MM",
+        "cor": "LEITOSO"
+      },
+      "minimo": 6,
+      "maximo": 60,
+      "codigo_planilha": null
+    },
+    "ACRILICO_6MM_CRISTAL": {
+      "descricao": "Acrílico 6mm Cristal",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "6MM",
+        "cor": "CRISTAL"
+      },
+      "minimo": 6,
+      "maximo": 60,
+      "codigo_planilha": "5C_013"
+    },
+    "ACRILICO_6MM_LEITOSO": {
+      "descricao": "Acrílico 6mm Leitoso",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "6MM",
+        "cor": "LEITOSO"
+      },
+      "minimo": 6,
+      "maximo": 60,
+      "codigo_planilha": null
+    },
+    "ACRILICO_7MM_CRISTAL": {
+      "descricao": "Acrílico 7mm Cristal",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "7MM",
+        "cor": "CRISTAL"
+      },
+      "minimo": 6,
+      "maximo": 60,
+      "codigo_planilha": "5C_014"
+    },
+    "ACRILICO_7MM_LEITOSO": {
+      "descricao": "Acrílico 7mm Leitoso",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "7MM",
+        "cor": "LEITOSO"
+      },
+      "minimo": 6,
+      "maximo": 60,
+      "codigo_planilha": null
+    },
+    "ACRILICO_8MM_CRISTAL": {
+      "descricao": "Acrílico 8mm Cristal",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "8MM",
+        "cor": "CRISTAL"
+      },
+      "minimo": 6,
+      "maximo": 60,
+      "codigo_planilha": "5C_015"
+    },
+    "ACRILICO_8MM_LEITOSO": {
+      "descricao": "Acrílico 8mm Leitoso",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "8MM",
+        "cor": "LEITOSO"
+      },
+      "minimo": 6,
+      "maximo": 60,
+      "codigo_planilha": null
+    },
+    "ACRILICO_10MM_CRISTAL": {
+      "descricao": "Acrílico 10mm Cristal",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "10MM",
+        "cor": "CRISTAL"
+      },
+      "minimo": 6,
+      "maximo": 60,
+      "codigo_planilha": "5C_016"
+    },
+    "ACRILICO_10MM_LEITOSO": {
+      "descricao": "Acrílico 10mm Leitoso",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "10MM",
+        "cor": "LEITOSO"
+      },
+      "minimo": 6,
+      "maximo": 60,
+      "codigo_planilha": null
+    }
+  },
+  "movimentos": [],
+  "proximo_id": 1
+}

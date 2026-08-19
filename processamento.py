@@ -42,7 +42,7 @@ from dimensoes import (
     identificar_variante, formatar_variante, calcular_desperdicio_chapa_grande,
 )
 from pdf_layout import iniciar_pagina_com_banner, numerar_paginas, estampar_conferencia_local
-from relatorios import salvar_log, gerar_os
+from relatorios import salvar_log, gerar_os, salvar_dados_os
 from utils import sanitizar_nome_arquivo
 
 LARGURA_A4 = 595.27
@@ -514,12 +514,17 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
         logger.emitir("err", f"Não foi possível salvar o log CSV: {e}")
 
     caminho_os = None
+    caminho_os_json = None
     try:
         caminho_os = gerar_os(
             str(pasta_saida), nome_cliente_seguro, nome_gerente, nome_produtor,
             itens_os, dados_categorias, ordem_unificado, data_hora_atual,
         )
         logger.emitir("ok", f"OS gerada: {pathlib.Path(caminho_os).name}")
+        # arquivo complementar, lido pelo controle de estoque pra baixa
+        # automática (ver estoque.py) — nunca acontece sozinho, é sempre
+        # o usuário quem escolhe enviar esse arquivo lá na tela de estoque
+        caminho_os_json = salvar_dados_os(str(pasta_saida), nome_cliente_seguro, itens_os, data_hora_atual)
     except Exception as e:
         logger.emitir("err", f"Não foi possível gerar a Ordem de Serviço: {e}")
 
@@ -576,4 +581,5 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
         "unificado": str(caminho_unificado) if caminho_unificado else None,
         "log_csv": caminho_log,
         "os": caminho_os,
+        "os_json": caminho_os_json,
     }

@@ -3,6 +3,7 @@ Geração dos relatórios de saída: o log CSV do processamento e a Ordem
 de Serviço (OS) resumida em PDF.
 """
 import csv
+import json
 import os
 import re
 from datetime import datetime
@@ -268,3 +269,33 @@ def gerar_os(pasta_saida, nome_cliente, nome_gerente, nome_produtor,
     pdf_os.close()
 
     return nome_os
+
+
+def salvar_dados_os(pasta_saida, nome_cliente, itens, data_hora_atual):
+    """
+    Salva, ao lado da OS em PDF, um arquivo JSON com os mesmos itens em
+    formato lido por máquina (categoria, variante, quantidade, medida) —
+    sem a miniatura da arte, que não interessa pra esse fim. É esse
+    arquivo (não o PDF) que o controle de estoque lê pra dar baixa
+    automática, exatamente pra não depender de extrair texto de dentro
+    de um PDF (frágil se o layout da OS mudar) e pra deixar claro que a
+    baixa por OS é um passo manual e deliberado: o usuário escolhe qual
+    arquivo enviar pro estoque, nunca acontece sozinho ao gerar a OS.
+    """
+    dados = {
+        "cliente": nome_cliente,
+        "data_hora": data_hora_atual,
+        "itens": [
+            {
+                "categoria": item["categoria"],
+                "variante": item.get("variante"),
+                "quantidade": item.get("quantidade", 1),
+                "dimensao": item.get("dimensao"),
+            }
+            for item in itens
+        ],
+    }
+    nome_json = os.path.join(pasta_saida, f"OS - {nome_cliente.upper()}.json")
+    with open(nome_json, "w", encoding="utf-8") as f:
+        json.dump(dados, f, ensure_ascii=False, indent=2)
+    return nome_json

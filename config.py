@@ -19,7 +19,7 @@ CONFIG_PATH = BASE_DIR / "config.json"
 CONFIG_PADRAO = {
     "materiais": {
         "LONA": {"tipo": "rolo", "largura_cm": 320, "comprimento_cm": 5000},
-        "ADESIVO": {"tipo": "rolo", "largura_cm": 152, "comprimento_cm": 5000},
+        "ADESIVO": {"tipo": "rolo", "largura_cm": 127, "comprimento_cm": 5000},
         "PS": {
             "tipo": "chapa", "largura_cm": 200, "comprimento_cm": 100,
             "variantes": [

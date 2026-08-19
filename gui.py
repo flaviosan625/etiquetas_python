@@ -14,6 +14,7 @@ não mexe direto nos widgets (tkinter não é thread-safe); em vez disso,
 ela só coloca eventos numa fila, e a janela principal lê essa fila
 periodicamente com root.after(...).
 """
+import json
 import pathlib
 import queue
 import threading
@@ -22,9 +23,22 @@ from tkinter import filedialog, messagebox, ttk
 
 from branding import CAMINHO_LOGO_GUI
 from config import atualizar_ultimo_uso, carregar_config, salvar_config
+from dimensoes import formatar_variante
+from estoque import (
+    carregar_estoque, saldo_produto, registrar_movimento, desfazer_movimento,
+    prever_saida_os, confirmar_saida_os, novo_produto, adicionar_produto, atualizar_produto, remover_produto,
+)
 from processamento import processar_etiquetas
 
 COR_ACENTO = "#0067c0"
+COR_FUNDO_JANELA = "#f5f6f8"
+COR_CARTAO = "#ffffff"
+COR_BORDA_CARTAO = "#e3e4e8"
+COR_TEXTO = "#1c1c1f"
+COR_TEXTO_SECUNDARIO = "#6b7280"
+COR_ALERTA = "#b45309"
+COR_ALERTA_FUNDO = "#fdf1e0"
+COR_POSITIVO = "#0f7a3d"
 
 
 def _rotulo_variantes(variantes):
@@ -81,7 +95,12 @@ class JanelaPrincipal(tk.Tk):
         tk.Button(
             self, text="⚙ Configurar medidas de rolos e chapas...", relief="flat",
             fg=COR_ACENTO, cursor="hand2", command=self._abrir_configuracoes,
-        ).pack(anchor="w", padx=16, pady=(4, 10))
+        ).pack(anchor="w", padx=16, pady=(4, 2))
+
+        tk.Button(
+            self, text="📦 Controle de Estoque...", relief="flat",
+            fg=COR_ACENTO, cursor="hand2", command=self._abrir_estoque,
+        ).pack(anchor="w", padx=16, pady=(0, 10))
 
         ttk.Separator(self).pack(fill="x", padx=16)
 
@@ -136,6 +155,9 @@ class JanelaPrincipal(tk.Tk):
 
     def _abrir_configuracoes(self):
         JanelaConfiguracoes(self, self.config_dados, self._config_atualizada)
+
+    def _abrir_estoque(self):
+        JanelaEstoque(self, self.config_dados)
 
     def _config_atualizada(self, nova_config):
         self.config_dados = nova_config
@@ -457,4 +479,671 @@ class JanelaVariantes(tk.Toplevel):
             novas_variantes.append(variante)
 
         self.ao_salvar(novas_variantes)
+        self.destroy()
+
+
+class JanelaEstoque(tk.Toplevel):
+    """
+    Painel de controle de estoque: saldo atual de cada produto
+    cadastrado (rolo/chapa/insumo), com atalhos pra registrar entrada,
+    saída manual, saída automática a partir do arquivo gerado junto com
+    a OS, cadastrar produto novo na mão, e consultar/desfazer o
+    histórico de movimentos.
+
+    Layout inteiro em grid (não pack) pra ser responsivo de verdade: a
+    lista de produtos ocupa a linha que sobra e cresce/encolhe junto
+    com a janela, e a barra de botões fica numa grade de 3 colunas fixas
+    — nunca estoura a largura da janela e "come" botão, porque cada
+    botão tem sua própria célula reservada em vez de ficar todo numa
+    fila só que pode passar da borda.
+    """
+
+    _NOMES_TIPO = {"rolo": "Rolo", "chapa": "Chapa", "insumo": "Insumo"}
+
+    def __init__(self, mestre, config_dados):
+        super().__init__(mestre)
+        self.title("Controle de Estoque — UNY CV")
+        self.geometry("860x660")
+        self.minsize(740, 520)
+        self.configure(bg=COR_FUNDO_JANELA)
+        self.transient(mestre)
+        self.config_dados = config_dados
+        self.estoque = carregar_estoque()
+
+        self.columnconfigure(0, weight=1)
+        self.rowconfigure(3, weight=1)
+
+        self._montar_layout()
+        self.grab_set()
+
+    def _montar_layout(self):
+        linha = 0
+        if CAMINHO_LOGO_GUI.exists():
+            try:
+                self.imagem_logo = tk.PhotoImage(file=str(CAMINHO_LOGO_GUI))
+                tk.Label(self, image=self.imagem_logo, bg=COR_FUNDO_JANELA).grid(
+                    row=linha, column=0, sticky="w", padx=20, pady=(16, 0))
+                linha += 1
+            except tk.TclError:
+                pass
+
+        tk.Label(self, text="Saldo atual", font=("Segoe UI", 14, "bold"), bg=COR_FUNDO_JANELA, fg=COR_TEXTO).grid(
+            row=linha, column=0, sticky="w", padx=20, pady=(14, 2))
+        linha += 1
+        tk.Label(
+            self, fg=COR_TEXTO_SECUNDARIO, bg=COR_FUNDO_JANELA, justify="left", wraplength=780,
+            text="Clique duas vezes num produto pra editar seus dados. Toda entrada/saída fica registrada "
+                 "no histórico e pode ser desfeita.",
+        ).grid(row=linha, column=0, sticky="w", padx=20, pady=(0, 10))
+        linha += 1
+
+        linha_conteudo = linha
+        linha += 1
+
+        frame_canvas = tk.Frame(self, bg=COR_FUNDO_JANELA)
+        frame_canvas.grid(row=linha_conteudo, column=0, sticky="nsew", padx=20)
+        frame_canvas.columnconfigure(0, weight=1)
+        frame_canvas.rowconfigure(0, weight=1)
+
+        canvas = tk.Canvas(frame_canvas, highlightthickness=0, bg=COR_FUNDO_JANELA)
+        scrollbar = ttk.Scrollbar(frame_canvas, orient="vertical", command=canvas.yview)
+        self.frame_lista = tk.Frame(canvas, bg=COR_FUNDO_JANELA)
+        janela_interna = canvas.create_window((0, 0), window=self.frame_lista, anchor="nw")
+        self.frame_lista.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        # a lista precisa acompanhar a largura real do canvas (não só a
+        # largura "natural" do conteúdo) pra aproveitar o espaço quando a
+        # janela é alargada — sem isso o conteúdo fica sempre esquerdo,
+        # colado, mesmo numa janela bem larga
+        canvas.bind("<Configure>", lambda e: canvas.itemconfig(janela_interna, width=e.width))
+        self.frame_lista.columnconfigure(0, weight=1)
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.grid(row=0, column=0, sticky="nsew")
+        scrollbar.grid(row=0, column=1, sticky="ns")
+
+        frame_botoes = tk.Frame(self, bg=COR_FUNDO_JANELA)
+        frame_botoes.grid(row=linha, column=0, sticky="ew", padx=20, pady=14)
+        for col in range(3):
+            frame_botoes.columnconfigure(col, weight=1, uniform="botoes")
+
+        tk.Button(
+            frame_botoes, text="➕ Entrada", relief="flat", bg=COR_ACENTO, fg="white",
+            activebackground=COR_ACENTO, cursor="hand2", command=lambda: self._abrir_movimento("entrada"),
+        ).grid(row=0, column=0, sticky="ew", padx=(0, 4), pady=(0, 4), ipady=3)
+        tk.Button(
+            frame_botoes, text="➖ Saída manual", relief="flat", cursor="hand2",
+            command=lambda: self._abrir_movimento("saida"),
+        ).grid(row=0, column=1, sticky="ew", padx=4, pady=(0, 4), ipady=3)
+        tk.Button(
+            frame_botoes, text="📄 Saída pela OS...", relief="flat", cursor="hand2", command=self._abrir_saida_os,
+        ).grid(row=0, column=2, sticky="ew", padx=(4, 0), pady=(0, 4), ipady=3)
+        tk.Button(
+            frame_botoes, text="🧾 Cadastrar produto...", relief="flat", cursor="hand2",
+            command=self._abrir_novo_produto,
+        ).grid(row=1, column=0, sticky="ew", padx=(0, 4), ipady=3)
+        tk.Button(
+            frame_botoes, text="🕒 Histórico", relief="flat", cursor="hand2", command=self._abrir_historico,
+        ).grid(row=1, column=1, sticky="ew", padx=4, ipady=3)
+        tk.Button(frame_botoes, text="Fechar", relief="flat", cursor="hand2", command=self.destroy).grid(
+            row=1, column=2, sticky="ew", padx=(4, 0), ipady=3)
+
+        self._preencher_lista()
+
+    def _preencher_lista(self):
+        for widget in self.frame_lista.winfo_children():
+            widget.destroy()
+
+        produtos = self.estoque["produtos"]
+        for tipo in ["rolo", "chapa", "insumo"]:
+            itens_tipo = sorted(
+                [(c, p) for c, p in produtos.items() if p["tipo"] == tipo],
+                key=lambda cp: cp[1]["descricao"],
+            )
+            if not itens_tipo:
+                continue
+            tk.Label(
+                self.frame_lista, text=self._NOMES_TIPO[tipo].upper(), font=("Segoe UI", 9, "bold"),
+                fg=COR_ACENTO, bg=COR_FUNDO_JANELA,
+            ).grid(row=len(self.frame_lista.grid_slaves()), column=0, sticky="w", pady=(12, 4))
+            for codigo, produto in itens_tipo:
+                self._linha_produto(codigo, produto)
+
+    def _linha_produto(self, codigo, produto):
+        saldo = saldo_produto(self.estoque, codigo)
+        abaixo_minimo = produto.get("minimo", 0) > 0 and saldo < produto["minimo"]
+
+        linha_idx = len(self.frame_lista.grid_slaves())
+        cartao = tk.Frame(
+            self.frame_lista, bg=COR_CARTAO, highlightbackground=COR_BORDA_CARTAO,
+            highlightthickness=1, cursor="hand2",
+        )
+        cartao.grid(row=linha_idx, column=0, sticky="ew", pady=3)
+        cartao.columnconfigure(0, weight=1)
+
+        clicaveis = [cartao]
+
+        frame_esq = tk.Frame(cartao, bg=COR_CARTAO)
+        frame_esq.grid(row=0, column=0, sticky="ew", padx=(12, 4), pady=9)
+        clicaveis.append(frame_esq)
+
+        texto_desc = produto["descricao"]
+        if produto.get("variante_vinculada"):
+            texto_desc += f"  ·  {formatar_variante(produto['variante_vinculada'])}"
+        rotulo_desc = tk.Label(
+            frame_esq, text=texto_desc, anchor="w", bg=COR_CARTAO, fg=COR_TEXTO, wraplength=420, justify="left",
+        )
+        rotulo_desc.pack(anchor="w")
+        clicaveis.append(rotulo_desc)
+
+        if abaixo_minimo:
+            rotulo_badge = tk.Label(
+                frame_esq, text="ABAIXO DO MÍNIMO", bg=COR_ALERTA_FUNDO, fg=COR_ALERTA,
+                font=("Segoe UI", 7, "bold"), padx=6, pady=1,
+            )
+            rotulo_badge.pack(anchor="w", pady=(4, 0))
+            clicaveis.append(rotulo_badge)
+
+        frame_dir = tk.Frame(cartao, bg=COR_CARTAO)
+        frame_dir.grid(row=0, column=1, sticky="e", padx=(4, 10), pady=9)
+        clicaveis.append(frame_dir)
+
+        texto_saldo = f"{saldo:g} {produto['unidade']}"
+        acumulado = produto.get("acumulado_m", 0.0)
+        if produto["tipo"] == "rolo" and acumulado > 0:
+            texto_saldo += f"  (+{acumulado:.2f}m ac.)"
+        rotulo_saldo = tk.Label(frame_dir, text=texto_saldo, bg=COR_CARTAO, fg=COR_TEXTO, font=("Segoe UI", 10, "bold"))
+        rotulo_saldo.pack(side="left")
+        clicaveis.append(rotulo_saldo)
+
+        tem_movimento = any(m["produto"] == codigo for m in self.estoque["movimentos"])
+        if not tem_movimento:
+            tk.Button(
+                frame_dir, text="🗑", relief="flat", bg=COR_CARTAO, fg="#b0b0b8", cursor="hand2",
+                activebackground=COR_CARTAO, command=lambda: self._remover_produto(codigo, produto),
+            ).pack(side="left", padx=(10, 0))
+
+        for widget in clicaveis:
+            widget.bind("<Double-Button-1>", lambda e, c=codigo: self._abrir_edicao(c))
+
+    def _remover_produto(self, codigo, produto):
+        if not messagebox.askyesno("Remover produto", f"Remover '{produto['descricao']}' do estoque?"):
+            return
+        remover_produto(self.estoque, codigo)
+        self._atualizar()
+
+    def _atualizar(self):
+        self.estoque = carregar_estoque()
+        self._preencher_lista()
+
+    def _abrir_movimento(self, tipo):
+        JanelaMovimentoManual(self, self.estoque, tipo, self._atualizar)
+
+    def _abrir_saida_os(self):
+        JanelaSaidaOS(self, self.estoque, self.config_dados, self._atualizar)
+
+    def _abrir_historico(self):
+        JanelaHistorico(self, self.estoque, self._atualizar)
+
+    def _abrir_novo_produto(self):
+        JanelaNovoProduto(self, self.estoque, self.config_dados, self._atualizar)
+
+    def _abrir_edicao(self, codigo):
+        JanelaNovoProduto(self, self.estoque, self.config_dados, self._atualizar, codigo_edicao=codigo)
+
+
+class JanelaMovimentoManual(tk.Toplevel):
+    """Formulário simples de entrada ou saída manual de um produto."""
+
+    def __init__(self, mestre, estoque, tipo, ao_salvar):
+        super().__init__(mestre)
+        self.title("Entrada de material" if tipo == "entrada" else "Saída manual de material")
+        self.geometry("420x280")
+        self.transient(mestre)
+        self.estoque = estoque
+        self.tipo = tipo
+        self.ao_salvar = ao_salvar
+
+        self.produtos_ordenados = sorted(estoque["produtos"].items(), key=lambda cp: cp[1]["descricao"])
+        rotulos = [p["descricao"] for _, p in self.produtos_ordenados]
+
+        pad = {"padx": 16, "pady": 6}
+        tk.Label(self, text="Produto").pack(anchor="w", **pad)
+        self.var_produto = tk.StringVar(value=rotulos[0] if rotulos else "")
+        ttk.Combobox(self, textvariable=self.var_produto, values=rotulos, state="readonly").pack(fill="x", padx=16)
+
+        tk.Label(self, text="Quantidade").pack(anchor="w", **pad)
+        self.var_quantidade = tk.StringVar()
+        tk.Entry(self, textvariable=self.var_quantidade).pack(fill="x", padx=16)
+
+        tk.Label(self, text="Observação (opcional)").pack(anchor="w", **pad)
+        self.var_obs = tk.StringVar()
+        tk.Entry(self, textvariable=self.var_obs).pack(fill="x", padx=16)
+
+        frame_botoes = tk.Frame(self)
+        frame_botoes.pack(fill="x", padx=16, pady=16)
+        tk.Button(frame_botoes, text="Cancelar", command=self.destroy).pack(side="right", padx=(6, 0))
+        tk.Button(
+            frame_botoes, text="Salvar", bg=COR_ACENTO, fg="white", relief="flat", command=self._salvar,
+        ).pack(side="right")
+
+        self.grab_set()
+
+    def _salvar(self):
+        if not self.produtos_ordenados:
+            messagebox.showwarning("Sem produtos", "Nenhum produto cadastrado no estoque.")
+            return
+        rotulos = [p["descricao"] for _, p in self.produtos_ordenados]
+        try:
+            indice = rotulos.index(self.var_produto.get())
+        except ValueError:
+            messagebox.showwarning("Produto inválido", "Escolha um produto da lista.")
+            return
+        codigo, produto = self.produtos_ordenados[indice]
+
+        texto_qtd = self.var_quantidade.get().strip().replace(",", ".")
+        try:
+            quantidade = float(texto_qtd)
+            if quantidade <= 0:
+                raise ValueError
+        except ValueError:
+            messagebox.showwarning("Quantidade inválida", "Informe uma quantidade maior que zero.")
+            return
+
+        sinal = 1 if self.tipo == "entrada" else -1
+        registrar_movimento(
+            self.estoque, codigo, self.tipo, sinal * quantidade, observacao=self.var_obs.get().strip(),
+        )
+        saldo_novo = saldo_produto(self.estoque, codigo)
+        self.ao_salvar()
+        if saldo_novo < 0:
+            messagebox.showwarning(
+                "Estoque negativo",
+                f"'{produto['descricao']}' ficou com saldo negativo ({saldo_novo:g} {produto['unidade']}). "
+                f"O lançamento foi salvo mesmo assim — confira se está correto.",
+            )
+        self.destroy()
+
+
+class JanelaSaidaOS(tk.Toplevel):
+    """
+    Dá baixa no estoque a partir do arquivo JSON gerado junto com a OS
+    (nunca a partir do PDF direto — ver relatorios.salvar_dados_os).
+    Sempre mostra uma prévia do que seria descontado antes de confirmar,
+    e nunca escolhe sozinho qual produto debitar quando há mais de um
+    possível pra mesma categoria (caso do ADESIVO).
+    """
+
+    def __init__(self, mestre, estoque, config_dados, ao_salvar):
+        super().__init__(mestre)
+        self.title("Saída pela OS")
+        self.geometry("560x500")
+        self.transient(mestre)
+        self.estoque = estoque
+        self.config_dados = config_dados
+        self.ao_salvar = ao_salvar
+        self.dados_os = None
+        self.previsao = None
+
+        pad = {"padx": 16, "pady": 6}
+        tk.Label(self, text="Escolha o arquivo da OS", font=("Segoe UI", 11, "bold")).pack(anchor="w", **pad)
+        tk.Label(
+            self, fg="#666666", justify="left", wraplength=520,
+            text='Esse arquivo fica na mesma pasta do PDF da OS ("OS - CLIENTE.json"). A escolha é sempre '
+                 "manual, pra evitar dar baixa com o pedido errado.",
+        ).pack(anchor="w", padx=16)
+
+        tk.Button(
+            self, text="📂 Escolher arquivo...", relief="flat", fg=COR_ACENTO, cursor="hand2",
+            command=self._escolher_arquivo,
+        ).pack(anchor="w", padx=16, pady=8)
+
+        self.var_arquivo = tk.StringVar(value="Nenhum arquivo escolhido.")
+        tk.Label(self, textvariable=self.var_arquivo, fg="#333333", wraplength=520, justify="left").pack(anchor="w", padx=16)
+
+        canvas = tk.Canvas(self, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(self, orient="vertical", command=canvas.yview)
+        self.frame_previa = tk.Frame(canvas)
+        self.frame_previa.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.create_window((0, 0), window=self.frame_previa, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.pack(side="left", fill="both", expand=True, padx=(16, 0), pady=8)
+        scrollbar.pack(side="left", fill="y", padx=(0, 16), pady=8)
+
+        frame_botoes = tk.Frame(self)
+        frame_botoes.pack(fill="x", padx=16, pady=12)
+        tk.Button(frame_botoes, text="Cancelar", command=self.destroy).pack(side="right", padx=(6, 0))
+        self.btn_confirmar = tk.Button(
+            frame_botoes, text="Confirmar baixa", bg=COR_ACENTO, fg="white", relief="flat",
+            state="disabled", command=self._confirmar,
+        )
+        self.btn_confirmar.pack(side="right")
+
+        self.grab_set()
+
+    def _escolher_arquivo(self):
+        pasta_entrada = pathlib.Path("etiquetas_geradas")
+        caminho = filedialog.askopenfilename(
+            title="Escolha o arquivo da OS (.json)", filetypes=[("Arquivo da OS", "*.json")],
+            initialdir=str(pasta_entrada.resolve()) if pasta_entrada.exists() else None,
+        )
+        if not caminho:
+            return
+        try:
+            with open(caminho, "r", encoding="utf-8") as f:
+                self.dados_os = json.load(f)
+        except (OSError, json.JSONDecodeError) as e:
+            messagebox.showerror("Arquivo inválido", f"Não foi possível ler esse arquivo:\n{e}")
+            return
+
+        self.var_arquivo.set(
+            f"{pathlib.Path(caminho).name} — Cliente: {self.dados_os.get('cliente', '?')} "
+            f"({self.dados_os.get('data_hora', '?')})"
+        )
+        self.previsao = prever_saida_os(self.estoque, self.dados_os["itens"], self.config_dados["materiais"])
+        self._mostrar_previa()
+        self.btn_confirmar.configure(state="normal")
+
+    def _mostrar_previa(self):
+        for widget in self.frame_previa.winfo_children():
+            widget.destroy()
+        for linha in self.previsao:
+            variante_txt = f" · {formatar_variante(linha['variante'])}" if linha.get("variante") else ""
+            if linha["produto"] is None:
+                motivo = "mais de um produto possível, dê baixa manual" if linha.get("ambiguo") else "sem produto vinculado no estoque"
+                texto = f"{linha['categoria']}{variante_txt} — {motivo}"
+                cor = COR_ALERTA
+            else:
+                texto = (
+                    f"{linha['produto']} — baixa de {linha['descontado']:g} {linha['unidade']} "
+                    f"(saldo ficaria: {linha['saldo_resultante']:g})"
+                )
+                cor = COR_TEXTO
+            tk.Label(
+                self.frame_previa, text=texto, anchor="w", fg=cor, justify="left", wraplength=500,
+            ).pack(anchor="w", pady=2)
+
+    def _confirmar(self):
+        if not self.dados_os:
+            return
+        nome_pedido = f"{self.dados_os.get('cliente', '?')} ({self.dados_os.get('data_hora', '?')})"
+        resumo = confirmar_saida_os(self.estoque, self.dados_os["itens"], self.config_dados["materiais"], nome_pedido)
+        negativos = [r for r in resumo if r["saldo_resultante"] is not None and r["saldo_resultante"] < 0]
+        self.ao_salvar()
+        if negativos:
+            nomes = ", ".join(r["produto"] for r in negativos)
+            messagebox.showwarning(
+                "Baixa concluída — atenção",
+                f"Baixa registrada no estoque. Ficou negativo em: {nomes}. Confira se está correto.",
+            )
+        else:
+            messagebox.showinfo("Baixa concluída", "Estoque atualizado com sucesso.")
+        self.destroy()
+
+
+class JanelaHistorico(tk.Toplevel):
+    """Lista os movimentos de estoque (mais recente primeiro), com opção de desfazer cada um."""
+
+    def __init__(self, mestre, estoque, ao_salvar):
+        super().__init__(mestre)
+        self.title("Histórico de movimentos")
+        self.geometry("640x480")
+        self.transient(mestre)
+        self.estoque = estoque
+        self.ao_salvar = ao_salvar
+
+        tk.Label(
+            self, text="Movimentos mais recentes primeiro", font=("Segoe UI", 11, "bold"),
+        ).pack(anchor="w", padx=16, pady=(14, 6))
+
+        canvas = tk.Canvas(self, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(self, orient="vertical", command=canvas.yview)
+        self.frame_lista = tk.Frame(canvas)
+        self.frame_lista.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.create_window((0, 0), window=self.frame_lista, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.pack(side="left", fill="both", expand=True, padx=(16, 0))
+        scrollbar.pack(side="left", fill="y", padx=(0, 16))
+
+        tk.Button(self, text="Fechar", command=self.destroy).pack(anchor="e", padx=16, pady=12)
+
+        self._preencher()
+        self.grab_set()
+
+    def _preencher(self):
+        for widget in self.frame_lista.winfo_children():
+            widget.destroy()
+
+        movimentos = list(reversed(self.estoque["movimentos"]))
+        ids_estornados = {m["estorno_de"] for m in self.estoque["movimentos"] if m.get("estorno_de")}
+
+        if not movimentos:
+            tk.Label(self.frame_lista, text="Nenhum movimento registrado ainda.", fg="#666666").pack(anchor="w", pady=10)
+            return
+
+        for mov in movimentos:
+            produto = self.estoque["produtos"].get(mov["produto"])
+            nome_produto = produto["descricao"] if produto else mov["produto"]
+            unidade = produto["unidade"] if produto else ""
+
+            linha = tk.Frame(self.frame_lista)
+            linha.pack(fill="x", pady=3)
+
+            sinal = "+" if mov["quantidade"] > 0 else ""
+            cor = COR_POSITIVO if mov["quantidade"] > 0 else COR_TEXTO
+            texto = f"{mov['data']} · {nome_produto} · {sinal}{mov['quantidade']:g} {unidade}"
+            if mov.get("observacao"):
+                texto += f" · {mov['observacao']}"
+            if mov.get("origem_pedido"):
+                texto += f" · Pedido: {mov['origem_pedido']}"
+
+            tk.Label(linha, text=texto, fg=cor, anchor="w", justify="left", wraplength=460).pack(side="left", fill="x", expand=True)
+
+            e_estorno = mov.get("estorno_de") is not None
+            ja_estornado = mov["id"] in ids_estornados
+            if not e_estorno and not ja_estornado:
+                tk.Button(
+                    linha, text="Desfazer", relief="flat", fg="#c92a2a", cursor="hand2",
+                    command=lambda mid=mov["id"]: self._desfazer(mid),
+                ).pack(side="right")
+
+    def _desfazer(self, movimento_id):
+        if not messagebox.askyesno(
+            "Desfazer movimento",
+            "Confirma desfazer esse lançamento? Um lançamento de estorno será criado "
+            "(o histórico original não é apagado).",
+        ):
+            return
+        desfazer_movimento(self.estoque, movimento_id)
+        self.ao_salvar()
+        self._preencher()
+
+
+class JanelaNovoProduto(tk.Toplevel):
+    """
+    Cadastro manual de um produto no estoque — tanto pra criar um novo
+    (pra quando aparece um material que não veio na leva inicial da
+    planilha) quanto pra editar um já existente (aberta com duplo
+    clique num produto na lista, via `codigo_edicao`). Os campos mudam
+    de acordo com o tipo escolhido: espessura/cor (a "variação")
+    aparecem só pra chapa, e a metragem do rolo aparece só pra rolo —
+    mesmo espírito da tela de variantes de material (JanelaVariantes),
+    só que aqui cadastra o produto de estoque inteiro, não só a
+    variante.
+    """
+
+    def __init__(self, mestre, estoque, config_dados, ao_salvar, codigo_edicao=None):
+        super().__init__(mestre)
+        self.codigo_edicao = codigo_edicao
+        self.produto_original = estoque["produtos"][codigo_edicao] if codigo_edicao else None
+        self.title("Editar produto" if codigo_edicao else "Cadastrar produto novo")
+        self.geometry("460x580")
+        self.minsize(420, 500)
+        self.configure(bg=COR_FUNDO_JANELA)
+        self.transient(mestre)
+        self.estoque = estoque
+        self.config_dados = config_dados
+        self.ao_salvar = ao_salvar
+
+        self._montar_layout()
+        self.grab_set()
+
+    def _montar_layout(self):
+        pad = {"padx": 16, "pady": 6}
+        p = self.produto_original
+
+        tk.Label(self, text="Descrição do produto", bg=COR_FUNDO_JANELA).pack(anchor="w", **pad)
+        self.var_descricao = tk.StringVar(value=p["descricao"] if p else "")
+        tk.Entry(self, textvariable=self.var_descricao).pack(fill="x", padx=16)
+
+        tk.Label(self, text="Tipo", bg=COR_FUNDO_JANELA).pack(anchor="w", **pad)
+        self.var_tipo = tk.StringVar(value=p["tipo"] if p else "chapa")
+        combo_tipo = ttk.Combobox(
+            self, textvariable=self.var_tipo, values=["rolo", "chapa", "insumo"], state="readonly",
+        )
+        combo_tipo.pack(fill="x", padx=16)
+        combo_tipo.bind("<<ComboboxSelected>>", lambda e: self._atualizar_campos_por_tipo())
+
+        tk.Label(self, text="Categoria vinculada (pra baixa automática pela OS)", bg=COR_FUNDO_JANELA).pack(
+            anchor="w", **pad)
+        categorias = ["(sem vínculo — insumo avulso)"] + list(self.config_dados["materiais"].keys())
+        valor_categoria = (p["categoria_vinculada"] if p and p.get("categoria_vinculada") else categorias[0])
+        self.var_categoria = tk.StringVar(value=valor_categoria)
+        ttk.Combobox(self, textvariable=self.var_categoria, values=categorias, state="readonly").pack(fill="x", padx=16)
+
+        # área que muda de acordo com o tipo escolhido — os "espaços pra
+        # variação" (espessura/cor) pra chapa, ou a metragem do rolo
+        self.frame_dinamico = tk.Frame(self, bg=COR_FUNDO_JANELA)
+        self.frame_dinamico.pack(fill="x", padx=16, pady=(8, 0))
+
+        variante_atual = (p.get("variante_vinculada") or {}) if p else {}
+        self.var_espessura = tk.StringVar(value=variante_atual.get("espessura", ""))
+        self.var_cor = tk.StringVar(value=variante_atual.get("cor", ""))
+        self.var_comprimento_rolo = tk.StringVar(value=str(p["comprimento_rolo_m"]) if p and p.get("tipo") == "rolo" else "50")
+        self.var_unidade = tk.StringVar(value=p["unidade"] if p else "un")
+
+        frame_min_max = tk.Frame(self, bg=COR_FUNDO_JANELA)
+        frame_min_max.pack(fill="x", padx=16, pady=(10, 6))
+        col1 = tk.Frame(frame_min_max, bg=COR_FUNDO_JANELA)
+        col1.pack(side="left", fill="x", expand=True)
+        col2 = tk.Frame(frame_min_max, bg=COR_FUNDO_JANELA)
+        col2.pack(side="left", fill="x", expand=True, padx=(10, 0))
+        tk.Label(col1, text="Estoque mínimo", bg=COR_FUNDO_JANELA).pack(anchor="w")
+        self.var_minimo = tk.StringVar(value=str(p["minimo"]) if p else "0")
+        tk.Entry(col1, textvariable=self.var_minimo).pack(fill="x")
+        tk.Label(col2, text="Estoque máximo", bg=COR_FUNDO_JANELA).pack(anchor="w")
+        self.var_maximo = tk.StringVar(value=str(p["maximo"]) if p else "0")
+        tk.Entry(col2, textvariable=self.var_maximo).pack(fill="x")
+
+        tk.Label(self, text="Código da planilha (opcional)", bg=COR_FUNDO_JANELA).pack(anchor="w", padx=16, pady=(4, 2))
+        self.var_codigo_planilha = tk.StringVar(value=(p.get("codigo_planilha") or "") if p else "")
+        tk.Entry(self, textvariable=self.var_codigo_planilha).pack(fill="x", padx=16)
+
+        if p:
+            saldo_atual = saldo_produto(self.estoque, self.codigo_edicao)
+            tk.Label(
+                self, bg=COR_FUNDO_JANELA, fg=COR_TEXTO_SECUNDARIO,
+                text=f"Saldo atual: {saldo_atual:g} {p['unidade']} (editar aqui não muda o saldo — "
+                     f"use entrada/saída/histórico pra isso).",
+                justify="left", wraplength=420,
+            ).pack(anchor="w", padx=16, pady=(6, 0))
+
+        frame_botoes = tk.Frame(self, bg=COR_FUNDO_JANELA)
+        frame_botoes.pack(fill="x", padx=16, pady=16)
+        tk.Button(frame_botoes, text="Cancelar", relief="flat", cursor="hand2", command=self.destroy).pack(
+            side="right", padx=(6, 0))
+        tk.Button(
+            frame_botoes, text="Salvar alterações" if self.codigo_edicao else "Cadastrar",
+            bg=COR_ACENTO, fg="white", relief="flat", cursor="hand2", command=self._salvar,
+        ).pack(side="right")
+
+        self._atualizar_campos_por_tipo()
+
+    def _atualizar_campos_por_tipo(self):
+        for widget in self.frame_dinamico.winfo_children():
+            widget.destroy()
+
+        tipo = self.var_tipo.get()
+        if tipo == "chapa":
+            tk.Label(
+                self.frame_dinamico, text="Variação (opcional)", font=("Segoe UI", 9, "bold"), fg="#666666",
+            ).pack(anchor="w")
+            linha = tk.Frame(self.frame_dinamico)
+            linha.pack(fill="x", pady=2)
+            tk.Label(linha, text="Espessura").pack(side="left")
+            tk.Entry(linha, textvariable=self.var_espessura, width=10).pack(side="left", padx=(4, 10))
+            tk.Label(linha, text="Cor").pack(side="left")
+            tk.Entry(linha, textvariable=self.var_cor, width=12).pack(side="left", padx=4)
+            tk.Label(
+                self.frame_dinamico, fg="#888888", wraplength=400, justify="left",
+                text="Preenchendo espessura/cor, esse produto casa automaticamente com a variante equivalente "
+                     "das etiquetas (ex: 10MM + BRANCO) na hora da baixa pela OS.",
+            ).pack(anchor="w", pady=(2, 0))
+            tk.Label(self.frame_dinamico, text="Unidade").pack(anchor="w", pady=(8, 0))
+            self.var_unidade.set("chapa")
+            tk.Entry(self.frame_dinamico, textvariable=self.var_unidade).pack(fill="x")
+        elif tipo == "rolo":
+            tk.Label(self.frame_dinamico, text="Comprimento do rolo (metros)").pack(anchor="w")
+            tk.Entry(self.frame_dinamico, textvariable=self.var_comprimento_rolo).pack(fill="x")
+            self.var_unidade.set("rolo")
+        else:
+            tk.Label(self.frame_dinamico, text="Unidade (ex: un, caixa, litro)").pack(anchor="w")
+            self.var_unidade.set(self.var_unidade.get() or "un")
+            tk.Entry(self.frame_dinamico, textvariable=self.var_unidade).pack(fill="x")
+
+    def _salvar(self):
+        descricao = self.var_descricao.get().strip()
+        if not descricao:
+            messagebox.showwarning("Campo obrigatório", "Informe a descrição do produto.")
+            return
+
+        tipo = self.var_tipo.get()
+        categoria_escolhida = self.var_categoria.get()
+        categoria_vinculada = None if categoria_escolhida.startswith("(sem vínculo") else categoria_escolhida
+
+        espessura = self.var_espessura.get().strip().upper()
+        cor = self.var_cor.get().strip().upper()
+        variante = None
+        if tipo == "chapa" and espessura:
+            variante = {"espessura": espessura}
+            if cor:
+                variante["cor"] = cor
+
+        comprimento_rolo_m = None
+        if tipo == "rolo":
+            texto = self.var_comprimento_rolo.get().strip().replace(",", ".")
+            try:
+                comprimento_rolo_m = float(texto)
+                if comprimento_rolo_m <= 0:
+                    raise ValueError
+            except ValueError:
+                messagebox.showwarning("Valor inválido", "Informe o comprimento do rolo em metros (maior que zero).")
+                return
+
+        try:
+            minimo = float(self.var_minimo.get().strip().replace(",", ".") or 0)
+            maximo = float(self.var_maximo.get().strip().replace(",", ".") or 0)
+        except ValueError:
+            messagebox.showwarning("Valor inválido", "Mínimo e máximo precisam ser números.")
+            return
+
+        unidade = self.var_unidade.get().strip() or None
+        codigo_planilha = self.var_codigo_planilha.get().strip() or None
+
+        if self.codigo_edicao:
+            atualizar_produto(
+                self.estoque, self.codigo_edicao, tipo, descricao, unidade=unidade,
+                categoria_vinculada=categoria_vinculada, variante=variante,
+                comprimento_rolo_m=comprimento_rolo_m, minimo=minimo, maximo=maximo,
+                codigo_planilha=codigo_planilha,
+            )
+            self.ao_salvar()
+            messagebox.showinfo("Alterações salvas", f"'{descricao}' foi atualizado.")
+        else:
+            produto = novo_produto(
+                tipo, descricao, unidade=unidade, categoria_vinculada=categoria_vinculada, variante=variante,
+                comprimento_rolo_m=comprimento_rolo_m, minimo=minimo, maximo=maximo,
+                codigo_planilha=codigo_planilha,
+            )
+            adicionar_produto(self.estoque, produto)
+            self.ao_salvar()
+            messagebox.showinfo("Produto cadastrado", f"'{descricao}' foi adicionado ao estoque com saldo zero.")
         self.destroy()
