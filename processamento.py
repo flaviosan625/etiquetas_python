@@ -41,7 +41,7 @@ from dimensoes import (
     contem_palavra, extrair_dimensoes, calcular_desperdicio_item, extrair_quantidade,
     identificar_variante, formatar_variante, calcular_desperdicio_chapa_grande,
 )
-from pdf_layout import inserir_pagina_titulo, numerar_paginas, estampar_conferencia_local
+from pdf_layout import iniciar_pagina_com_banner, numerar_paginas, estampar_conferencia_local
 from relatorios import salvar_log, gerar_os
 from utils import sanitizar_nome_arquivo
 
@@ -100,6 +100,8 @@ def _novo_estado_categoria():
         "itens_fora_do_rolo": [],
         "chapas_extras": 0,  # chapas estimadas pras peças maiores que uma chapa (calcular_desperdicio_chapa_grande)
         "sobra_rodape": [],  # espaço vertical que sobrou no rodapé de cada etiqueta, na ordem em que foram montadas
+        "posicoes_etiquetas": [],  # (índice_da_página, y_inicial, y_final) de cada etiqueta, na ordem em que foram montadas
+        "caixa_contagem_banner": None,  # retângulo reservado no banner pra escrever "N etiquetas" depois
     }
 
 
@@ -221,13 +223,26 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
         try:
             num_pag = 0
             for num_pag in range(len(pdf_original)):
-                if cat_info["posicao_na_pagina"] == 0:
-                    cat_info["pagina_atual"] = cat_info["pdf_saida"].new_page(
-                        width=LARGURA_A4, height=ALTURA_A4
-                    )
+                # a primeiríssima etiqueta da categoria ganha uma página
+                # com o banner (logo + nome da categoria) no topo, só ela
+                # sozinha na página — as próximas etiquetas voltam ao
+                # layout normal de 2 por folha
+                eh_pagina_banner = cat_info["total_etiquetas"] == 0 and num_pag == 0
 
-                y_inicial = 0 if cat_info["posicao_na_pagina"] == 0 else ALTURA_ETIQUETA
-                y_final = ALTURA_ETIQUETA if cat_info["posicao_na_pagina"] == 0 else ALTURA_A4
+                if eh_pagina_banner:
+                    cat_info["pagina_atual"], y_inicial, cat_info["caixa_contagem_banner"] = (
+                        iniciar_pagina_com_banner(cat_info["pdf_saida"], LARGURA_A4, ALTURA_A4, categoria_encontrada)
+                    )
+                    y_final = y_inicial + ALTURA_ETIQUETA
+                else:
+                    if cat_info["posicao_na_pagina"] == 0:
+                        cat_info["pagina_atual"] = cat_info["pdf_saida"].new_page(
+                            width=LARGURA_A4, height=ALTURA_A4
+                        )
+                    y_inicial = 0 if cat_info["posicao_na_pagina"] == 0 else ALTURA_ETIQUETA
+                    y_final = ALTURA_ETIQUETA if cat_info["posicao_na_pagina"] == 0 else ALTURA_A4
+
+                cat_info["posicoes_etiquetas"].append((len(cat_info["pdf_saida"]) - 1, y_inicial, y_final))
 
                 margem_rodape = 65
                 caixa_destino = pymupdf.Rect(10, y_inicial + 10, LARGURA_A4 - 10, y_final - margem_rodape)
@@ -310,7 +325,7 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
                         except Exception:
                             thumbnail_bytes = None
 
-                if cat_info["posicao_na_pagina"] == 0:
+                if not eh_pagina_banner and cat_info["posicao_na_pagina"] == 0:
                     cat_info["pagina_atual"].draw_line(
                         pymupdf.Point(0, ALTURA_ETIQUETA),
                         pymupdf.Point(LARGURA_A4, ALTURA_ETIQUETA),
@@ -330,7 +345,10 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
                 """
                 sobra, _ = cat_info["pagina_atual"].insert_htmlbox(caixa_rodape, html_conteudo)
                 cat_info["sobra_rodape"].append(sobra)
-                cat_info["posicao_na_pagina"] = 1 - cat_info["posicao_na_pagina"]
+                # a página do banner só tem essa etiqueta sozinha — a
+                # próxima sempre começa uma folha nova, nunca preenche o
+                # espaço em branco que sobrou embaixo do banner
+                cat_info["posicao_na_pagina"] = 0 if eh_pagina_banner else 1 - cat_info["posicao_na_pagina"]
                 cat_info["total_etiquetas"] += 1
         except Exception as e:
             logger.emitir("err", f"Erro ao montar etiqueta de '{arquivo}': {e}",
@@ -409,6 +427,21 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
             arquivo=arquivo, status_csv="OK",
         )
 
+    # Preenche a contagem de etiquetas no banner de cada categoria — só
+    # dá pra saber o total depois que todos os arquivos já foram lidos.
+    # Busca a página pelo índice (0, é sempre a primeira), não guarda o
+    # objeto Page: ele fica inválido depois que mais páginas são criadas
+    # no mesmo documento.
+    for cat in categorias:
+        cat_info = dados_categorias[cat]
+        if cat_info["contem_arquivos"] and cat_info["caixa_contagem_banner"] is not None:
+            total = cat_info["total_etiquetas"]
+            html_contagem = (
+                f'<p style="font-family: sans-serif; font-size: 11pt; color: #444444; margin: 21px 0 0 0; '
+                f'text-align: right;">{total} etiqueta{"s" if total != 1 else ""}</p>'
+            )
+            cat_info["pdf_saida"][0].insert_htmlbox(cat_info["caixa_contagem_banner"], html_contagem)
+
     # Salva os arquivos individuais por categoria. Cada save é isolado
     # num try/except: se um falhar (arquivo aberto em outro programa,
     # por exemplo), os demais ainda são tentados.
@@ -426,15 +459,17 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
                     f"Verifique se o arquivo não está aberto em outro programa.",
                 )
 
-    # Monta o PDF unificado respeitando a ordem configurada, com título
-    # e sumário (TOC) clicável, numerando as páginas ao final.
+    # Monta o PDF unificado respeitando a ordem configurada, com sumário
+    # (TOC) clicável, numerando as páginas ao final. O banner de cada
+    # categoria já está embutido na primeira página copiada de
+    # cat_info["pdf_saida"] — não precisa mais de uma página de título
+    # separada (isso desperdiçava uma folha inteira na impressão).
     toc = []
     for cat in ordem_unificado:
         cat_info = dados_categorias[cat]
         if cat_info["contem_arquivos"]:
             pagina_inicio = len(pdf_unificado) + 1
             toc.append([1, f"{cat} ({cat_info['total_etiquetas']} etiquetas)", pagina_inicio])
-            inserir_pagina_titulo(pdf_unificado, cat, cat_info["total_etiquetas"], LARGURA_A4, ALTURA_A4)
 
             indice_inicio_paginas = len(pdf_unificado)
             pdf_unificado.insert_pdf(cat_info["pdf_saida"])
@@ -442,15 +477,13 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
             # só na cópia que vai para o unificado: checkbox de conferência
             # no local + aviso de responsabilidade do produtor, em cada
             # etiqueta (os checklists individuais por categoria, salvos
-            # acima, continuam sem isso)
-            total_etq = cat_info["total_etiquetas"]
+            # acima, continuam sem isso). Usa a posição real de cada
+            # etiqueta (guardada durante a montagem) em vez de assumir
+            # sempre 2 por página — a página do banner tem só 1.
             sobras = cat_info["sobra_rodape"]
-            for p in range(len(cat_info["pdf_saida"])):
-                pagina_unificada = pdf_unificado[indice_inicio_paginas + p]
-                if 2 * p < total_etq:
-                    estampar_conferencia_local(pagina_unificada, LARGURA_A4, 0, ALTURA_ETIQUETA, sobras[2 * p])
-                if 2 * p + 1 < total_etq:
-                    estampar_conferencia_local(pagina_unificada, LARGURA_A4, ALTURA_ETIQUETA, ALTURA_A4, sobras[2 * p + 1])
+            for indice_etiqueta, (indice_pagina, y_ini, y_fim) in enumerate(cat_info["posicoes_etiquetas"]):
+                pagina_unificada = pdf_unificado[indice_inicio_paginas + indice_pagina]
+                estampar_conferencia_local(pagina_unificada, LARGURA_A4, y_ini, y_fim, sobras[indice_etiqueta])
 
             logger.emitir("info", f"Seção adicionada ao unificado: {cat} ({cat_info['total_etiquetas']} etiquetas)")
 

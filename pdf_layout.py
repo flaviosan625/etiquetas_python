@@ -12,53 +12,50 @@ _LARGURA_LOGO = 110
 _MARGEM_LOGO = 12
 
 
-def inserir_pagina_titulo(pdf_destino, nome_categoria, total_etiquetas, largura, altura):
+_ALTURA_BANNER_CATEGORIA = 60
+_MARGEM_BANNER = 15
+_LARGURA_LOGO_BANNER = 75
+
+
+def iniciar_pagina_com_banner(pdf_destino, largura, altura, nome_categoria):
     """
-    Insere uma página de título compacta para separar cada categoria
-    dentro do PDF unificado. A página fica bem menor que uma A4 inteira,
-    com apenas 2cm de espaço abaixo da caixa de título antes do
-    conteúdo seguinte começar.
+    Cria uma página nova de etiquetas com uma faixa compacta no topo
+    (logo + nome da categoria) em vez de uma página de título separada
+    só pra isso — na impressão, uma página só pro título gastava uma
+    folha A4 inteira quase em branco antes das etiquetas de verdade.
+    Essa faixa fica na mesma folha da primeira etiqueta da categoria.
+
+    A contagem de etiquetas só é conhecida no final do processamento
+    (os arquivos ainda estão sendo lidos quando essa função é chamada),
+    então o texto "N etiquetas" é preenchido depois, numa caixa
+    reservada — por isso a função devolve essa caixa junto.
+
+    Devolve (y_conteudo, caixa_contagem): y_conteudo é a partir de onde
+    o conteúdo abaixo do banner pode começar; caixa_contagem é o
+    retângulo reservado pro texto da contagem.
     """
-    CM = 28.35  # 1 cm em pontos (pt)
+    pagina = pdf_destino.new_page(width=largura, height=altura)
 
-    altura_caixa_titulo = 100        # altura da caixa com o texto do título
-    margem_topo = 15
-    margem_inferior = 2 * CM         # 2 cm de distância até o conteúdo seguinte
-
-    altura_titulo = margem_topo + altura_caixa_titulo + margem_inferior
-
-    pagina = pdf_destino.new_page(width=largura, height=altura_titulo)
-
-    # Faixa colorida de fundo, só para dar destaque visual
-    faixa = pymupdf.Rect(10, margem_topo, largura - 10, margem_topo + altura_caixa_titulo)
+    faixa = pymupdf.Rect(10, _MARGEM_BANNER, largura - 10, _MARGEM_BANNER + _ALTURA_BANNER_CATEGORIA)
     pagina.draw_rect(faixa, color=(0.2, 0.2, 0.2), fill=(0.93, 0.93, 0.93), width=1)
 
-    # Logo no canto esquerdo da faixa, com uma margem própria
     caixa_logo = pymupdf.Rect(
-        faixa.x0 + _MARGEM_LOGO, faixa.y0 + _MARGEM_LOGO,
-        faixa.x0 + _MARGEM_LOGO + _LARGURA_LOGO, faixa.y1 - _MARGEM_LOGO,
+        faixa.x0 + 10, faixa.y0 + 8, faixa.x0 + 10 + _LARGURA_LOGO_BANNER, faixa.y1 - 8,
     )
     inserir_logo(pagina, caixa_logo, alinhamento="left")
 
-    # O texto do título continua centralizado no espaço que sobra à
-    # direita do logo, para o logo não invadir nem descentralizar o
-    # título em relação ao restante da faixa.
-    caixa_titulo = pymupdf.Rect(caixa_logo.x1 + _MARGEM_LOGO, faixa.y0, faixa.x1, faixa.y1)
-    html_titulo = f"""
-    <div style="
-        font-family: sans-serif;
-        text-align: center;
-        color: #1a1a1a;
-    ">
-        <p style="font-size: 28pt; font-weight: bold; margin: 0;">
-            {nome_categoria}
-        </p>
-        <p style="font-size: 12pt; font-weight: normal; margin: 4px 0 0 0; color: #444444;">
-            {total_etiquetas} etiqueta{"s" if total_etiquetas != 1 else ""}
-        </p>
+    caixa_contagem = pymupdf.Rect(faixa.x1 - 140, faixa.y0, faixa.x1 - 12, faixa.y1)
+
+    caixa_nome = pymupdf.Rect(caixa_logo.x1 + 14, faixa.y0, caixa_contagem.x0 - 8, faixa.y1)
+    html_nome = f"""
+    <div style="font-family: sans-serif; color: #1a1a1a;">
+        <p style="font-size: 20pt; font-weight: bold; margin: 17px 0 0 0;">{nome_categoria}</p>
     </div>
     """
-    pagina.insert_htmlbox(caixa_titulo, html_titulo)
+    pagina.insert_htmlbox(caixa_nome, html_nome)
+
+    y_conteudo = faixa.y1 + 12
+    return pagina, y_conteudo, caixa_contagem
 
 
 def estampar_conferencia_local(pagina, largura, y_inicial, y_final, sobra_rodape):
