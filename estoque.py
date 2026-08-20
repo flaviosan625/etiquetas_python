@@ -51,12 +51,35 @@ def _produto_chapa(descricao, categoria, variante, minimo=0, maximo=0, codigo_pl
     }
 
 
-def _produto_insumo(descricao, unidade="un", minimo=0, maximo=0, codigo_planilha=None):
-    return {
+def _produto_insumo(descricao, unidade="un", minimo=0, maximo=0, codigo_planilha=None, capacidade_ml=None):
+    produto = {
         "descricao": descricao, "tipo": "insumo", "unidade": unidade,
         "categoria_vinculada": None, "variante_vinculada": None,
         "minimo": minimo, "maximo": maximo, "codigo_planilha": codigo_planilha,
     }
+    # só as tintas usam isso — quantos mL tem 1 unidade (frasco) do
+    # produto, pra converter "quantos frascos saíram" em "quantos mL
+    # foram consumidos" na hora de calcular o rendimento por máquina
+    if capacidade_ml:
+        produto["capacidade_ml"] = capacidade_ml
+    return produto
+
+
+# Regra do usuário (2026-08-19): tudo que é ADESIVO sai pela Plotter UV
+# UJV100-160, tudo que é LONA sai pela SWJ-320EA. Essa ligação categoria
+# → máquina é o que permite calcular o rendimento real de tinta (mL/m²)
+# de cada máquina — não existe um número fixo publicado pelo fabricante
+# (a Mimaki não divulga isso, depende da cobertura de cada arte), então
+# calculamos empiricamente cruzando tinta consumida com m² produzido no
+# mesmo período. Ver `rendimento_tinta_mensal`.
+MAQUINA_POR_CATEGORIA = {
+    "LONA": "SWJ-320EA",
+    "ADESIVO": "UJV100-160",
+}
+TINTAS_POR_MAQUINA = {
+    "UJV100-160": ["TINTA_UV_160_CIANO", "TINTA_UV_160_MAGENTA", "TINTA_UV_160_YELLOW", "TINTA_UV_160_BLACK"],
+    "SWJ-320EA": ["TINTA_SWJ_320_CIANO", "TINTA_SWJ_320_MAGENTA", "TINTA_SWJ_320_YELLOW", "TINTA_SWJ_320_BLACK"],
+}
 
 
 def _catalogo_padrao():
@@ -103,14 +126,16 @@ def _catalogo_padrao():
         "MASCARA_VINIL_PAPEL": _produto_insumo("Máscara Vinil Papel 1,27x50m", unidade="rolo", minimo=6, maximo=60, codigo_planilha="5C_041"),
         "MASCARA_VINIL_TRANSPARENTE": _produto_insumo("Máscara Vinil Transparente 1,27x50m", unidade="rolo", minimo=6, maximo=60, codigo_planilha="5C_042"),
         "ILHOS_ZERO_AT": _produto_insumo("Ilhós Zero AT C/ARR FN - 0.5 MI (caixa 500un)", unidade="caixa", minimo=6, maximo=60, codigo_planilha="5C_052"),
-        "TINTA_UV_160_CIANO": _produto_insumo("Tinta Uv UJV-100-160Plus Ciano", minimo=10, maximo=60, codigo_planilha="5C_043"),
-        "TINTA_UV_160_MAGENTA": _produto_insumo("Tinta Uv UJV-100-160Plus Magenta", minimo=10, maximo=60, codigo_planilha="5C_044"),
-        "TINTA_UV_160_YELLOW": _produto_insumo("Tinta Uv UJV-100-160Plus Yellow", minimo=10, maximo=60, codigo_planilha="5C_045"),
-        "TINTA_UV_160_BLACK": _produto_insumo("Tinta Uv UJV-100-160Plus Black", minimo=10, maximo=60, codigo_planilha="5C_046"),
-        "TINTA_SWJ_320_CIANO": _produto_insumo("Tinta SWJ-320EA Ciano", minimo=10, maximo=60, codigo_planilha="5C_047"),
-        "TINTA_SWJ_320_MAGENTA": _produto_insumo("Tinta SWJ-320EA Magenta", minimo=10, maximo=60, codigo_planilha="5C_048"),
-        "TINTA_SWJ_320_YELLOW": _produto_insumo("Tinta SWJ-320EA Yellow", minimo=10, maximo=60, codigo_planilha="5C_049"),
-        "TINTA_SWJ_320_BLACK": _produto_insumo("Tinta SWJ-320EA Black", minimo=10, maximo=60, codigo_planilha="5C_050"),
+        # tinta LUS-170/190/210 real da UJV100-160, vendida em frasco de 1L
+        "TINTA_UV_160_CIANO": _produto_insumo("Tinta Uv UJV-100-160Plus Ciano", minimo=10, maximo=60, codigo_planilha="5C_043", capacidade_ml=1000),
+        "TINTA_UV_160_MAGENTA": _produto_insumo("Tinta Uv UJV-100-160Plus Magenta", minimo=10, maximo=60, codigo_planilha="5C_044", capacidade_ml=1000),
+        "TINTA_UV_160_YELLOW": _produto_insumo("Tinta Uv UJV-100-160Plus Yellow", minimo=10, maximo=60, codigo_planilha="5C_045", capacidade_ml=1000),
+        "TINTA_UV_160_BLACK": _produto_insumo("Tinta Uv UJV-100-160Plus Black", minimo=10, maximo=60, codigo_planilha="5C_046", capacidade_ml=1000),
+        # tinta CS100/CS200 real da SWJ-320EA, vendida em frasco de 2L
+        "TINTA_SWJ_320_CIANO": _produto_insumo("Tinta SWJ-320EA Ciano", minimo=10, maximo=60, codigo_planilha="5C_047", capacidade_ml=2000),
+        "TINTA_SWJ_320_MAGENTA": _produto_insumo("Tinta SWJ-320EA Magenta", minimo=10, maximo=60, codigo_planilha="5C_048", capacidade_ml=2000),
+        "TINTA_SWJ_320_YELLOW": _produto_insumo("Tinta SWJ-320EA Yellow", minimo=10, maximo=60, codigo_planilha="5C_049", capacidade_ml=2000),
+        "TINTA_SWJ_320_BLACK": _produto_insumo("Tinta SWJ-320EA Black", minimo=10, maximo=60, codigo_planilha="5C_050", capacidade_ml=2000),
         "POLICARBONATO_5MM": _produto_insumo("Policarbonato 5mm", unidade="chapa", minimo=20, maximo=60, codigo_planilha="5C_058"),
         "POLICARBONATO_ALVEOLAR_5MM": _produto_insumo("Policarbonato Alveolar 5mm", unidade="chapa", minimo=20, maximo=60, codigo_planilha="5C_059"),
     }
@@ -148,7 +173,7 @@ def carregar_estoque():
     uma cópia de segurança e recria do zero — mesmo padrão do config.py.
     """
     if not ESTOQUE_PATH.exists():
-        estoque_novo = {"produtos": copy.deepcopy(CATALOGO_PADRAO), "movimentos": [], "proximo_id": 1}
+        estoque_novo = {"produtos": copy.deepcopy(CATALOGO_PADRAO), "movimentos": [], "proximo_id": 1, "producao_mensal": []}
         salvar_estoque(estoque_novo)
         return estoque_novo
 
@@ -161,12 +186,13 @@ def carregar_estoque():
             ESTOQUE_PATH.replace(backup)
         except OSError:
             pass
-        estoque_novo = {"produtos": copy.deepcopy(CATALOGO_PADRAO), "movimentos": [], "proximo_id": 1}
+        estoque_novo = {"produtos": copy.deepcopy(CATALOGO_PADRAO), "movimentos": [], "proximo_id": 1, "producao_mensal": []}
         salvar_estoque(estoque_novo)
         return estoque_novo
 
     estoque.setdefault("produtos", {})
     estoque.setdefault("movimentos", [])
+    estoque.setdefault("producao_mensal", [])
     ids_existentes = [m["id"] for m in estoque["movimentos"]]
     estoque.setdefault("proximo_id", max(ids_existentes, default=0) + 1)
 
@@ -175,6 +201,15 @@ def carregar_estoque():
         if codigo not in estoque["produtos"]:
             estoque["produtos"][codigo] = copy.deepcopy(produto_padrao)
             alterado = True
+        else:
+            # preenche campo novo que uma atualização do catálogo padrão
+            # tenha adicionado (ex: capacidade_ml) sem sobrescrever nada
+            # que já existia (saldo é sempre derivado dos movimentos, não
+            # fica aqui — só metadado de cadastro é completado)
+            for chave, valor in produto_padrao.items():
+                if chave not in estoque["produtos"][codigo]:
+                    estoque["produtos"][codigo][chave] = copy.deepcopy(valor)
+                    alterado = True
     if alterado:
         salvar_estoque(estoque)
 
@@ -375,10 +410,12 @@ def calcular_consumo(itens, materiais_config):
         comprimento_acumulado = 0.0
         chapas_extras = 0
         desperdicio_total = 0.0
+        area_total_m2 = 0.0
         for item in grupo["itens"]:
             dimensao = item.get("dimensao")
             if not dimensao:
                 continue
+            area_total_m2 += dimensao.get("area_m2", 0.0)
             calculo = calcular_desperdicio_item(dimensao, largura_m)
             if calculo:
                 comprimento_acumulado += calculo["peca_comprimento_m"]
@@ -391,14 +428,14 @@ def calcular_consumo(itens, materiais_config):
         if info_material["tipo"] == "rolo":
             resultados.append({
                 "categoria": categoria, "variante": grupo["variante"], "tipo": "rolo",
-                "metros": comprimento_acumulado, "desperdicio_m2": desperdicio_total,
+                "metros": comprimento_acumulado, "desperdicio_m2": desperdicio_total, "area_m2": area_total_m2,
             })
         else:
             unidades = math.ceil(comprimento_acumulado / comprimento_m) if comprimento_m > 0 else 0
             unidades += chapas_extras
             resultados.append({
                 "categoria": categoria, "variante": grupo["variante"], "tipo": "chapa",
-                "chapas": unidades, "desperdicio_m2": desperdicio_total,
+                "chapas": unidades, "desperdicio_m2": desperdicio_total, "area_m2": area_total_m2,
             })
     return resultados
 
@@ -444,14 +481,39 @@ def _processar_saida_os(estoque, itens, materiais_config, nome_pedido, persistir
             "saldo_resultante": saldo_atual - descontado, "ambiguo": False,
         })
 
+        # só LONA e ADESIVO têm máquina vinculada (ver MAQUINA_POR_CATEGORIA)
+        # — registra quanto m² foi impresso nesse pedido, pra depois cruzar
+        # com a tinta consumida e calcular o rendimento real por máquina
+        if persistir and grupo["categoria"] in MAQUINA_POR_CATEGORIA and grupo["area_m2"] > 0:
+            registrar_producao(estoque, grupo["categoria"], grupo["area_m2"], nome_pedido)
+
     if persistir:
         salvar_estoque(estoque)
     return resumo
 
 
-def _ano_mes_do_movimento(movimento):
-    """Extrai (ano, mes) do campo 'data' (formato 'DD/MM/AAAA HH:MM:SS'). Devolve None se o formato não bater."""
-    partes = movimento["data"].split(" ")[0].split("/")
+def registrar_producao(estoque, categoria, area_m2, origem_pedido, data=None):
+    """
+    Registra quantos m² foram impressos numa categoria vinculada a uma
+    máquina (LONA/ADESIVO — ver MAQUINA_POR_CATEGORIA), pra depois
+    calcular o rendimento de tinta real (mL/m²). Não é um movimento de
+    estoque (não desconta nada) — é só um registro de produção, salvo
+    à parte em estoque["producao_mensal"].
+    """
+    registro = {
+        "data": data or datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+        "categoria": categoria,
+        "area_m2": area_m2,
+        "origem_pedido": origem_pedido,
+    }
+    estoque.setdefault("producao_mensal", []).append(registro)
+    salvar_estoque(estoque)
+    return registro
+
+
+def _ano_mes(registro):
+    """Extrai (ano, mes) do campo 'data' (formato 'DD/MM/AAAA HH:MM:SS') de um movimento ou registro de produção. Devolve None se o formato não bater."""
+    partes = registro["data"].split(" ")[0].split("/")
     if len(partes) != 3:
         return None
     try:
@@ -462,7 +524,7 @@ def _ano_mes_do_movimento(movimento):
 
 def meses_disponiveis(estoque):
     """Lista (ano, mês) distintos presentes no histórico de movimentos, mais recente primeiro."""
-    vistos = {_ano_mes_do_movimento(m) for m in estoque["movimentos"]}
+    vistos = {_ano_mes(m) for m in estoque["movimentos"]}
     vistos.discard(None)
     return sorted(vistos, reverse=True)
 
@@ -477,7 +539,7 @@ def resumo_mensal(estoque, ano, mes):
     de lançamentos, e os produtos com saldo abaixo do mínimo (esse
     último é o status atual, não é limitado ao mês).
     """
-    movimentos_mes = [m for m in estoque["movimentos"] if _ano_mes_do_movimento(m) == (ano, mes)]
+    movimentos_mes = [m for m in estoque["movimentos"] if _ano_mes(m) == (ano, mes)]
 
     por_produto = {}
     for m in movimentos_mes:
@@ -512,6 +574,46 @@ def resumo_mensal(estoque, ano, mes):
         "ranking_saidas": ranking_saidas,
         "produtos_abaixo_minimo": produtos_abaixo_minimo,
     }
+
+
+def rendimento_tinta_mensal(estoque, ano, mes):
+    """
+    Rendimento real de tinta por máquina no mês: mL de tinta consumida
+    (saída das 4 cores, convertendo frasco → mL pela capacidade de cada
+    produto) dividido pelos m² produzidos na categoria vinculada àquela
+    máquina (ver MAQUINA_POR_CATEGORIA) no mesmo mês.
+
+    Calculado empiricamente porque a Mimaki não publica um mL/m² fixo
+    (depende da cobertura de tinta de cada arte) — cruzando consumo
+    real de tinta com produção real, o número fica específico do mix de
+    trabalho da empresa, mais preciso que qualquer tabela genérica.
+
+    Devolve None em 'rendimento_ml_m2' quando ainda não há os dois lados
+    (tinta consumida E produção) nesse mês — não inventa um número.
+    """
+    movimentos_mes = [m for m in estoque["movimentos"] if _ano_mes(m) == (ano, mes)]
+    producao_mes = [p for p in estoque.get("producao_mensal", []) if _ano_mes(p) == (ano, mes)]
+
+    resultados = {}
+    for categoria, maquina in MAQUINA_POR_CATEGORIA.items():
+        tinta_ml = 0.0
+        for codigo in TINTAS_POR_MAQUINA.get(maquina, []):
+            produto = estoque["produtos"].get(codigo)
+            if not produto:
+                continue
+            capacidade = produto.get("capacidade_ml", 0)
+            consumida = sum(-m["quantidade"] for m in movimentos_mes if m["produto"] == codigo and m["quantidade"] < 0)
+            tinta_ml += consumida * capacidade
+
+        area_m2 = sum(p["area_m2"] for p in producao_mes if p["categoria"] == categoria)
+
+        resultados[maquina] = {
+            "categoria": categoria,
+            "tinta_ml": tinta_ml,
+            "area_m2": area_m2,
+            "rendimento_ml_m2": (tinta_ml / area_m2) if area_m2 > 0 and tinta_ml > 0 else None,
+        }
+    return resultados
 
 
 def prever_saida_os(estoque, itens, materiais_config):

@@ -28,7 +28,7 @@ from dimensoes import formatar_variante
 from estoque import (
     carregar_estoque, saldo_produto, registrar_movimento, desfazer_movimento,
     prever_saida_os, confirmar_saida_os, novo_produto, adicionar_produto, atualizar_produto, remover_produto,
-    meses_disponiveis, resumo_mensal,
+    meses_disponiveis, resumo_mensal, rendimento_tinta_mensal,
 )
 from processamento import processar_etiquetas
 
@@ -1263,8 +1263,9 @@ class JanelaDashboard(tk.Toplevel):
         ano, mes = self.ano_mes_atual
         self.var_mes_label.set(f"{self._NOMES_MES[mes]}/{ano}")
         resumo = resumo_mensal(self.estoque, ano, mes)
+        rendimento = rendimento_tinta_mensal(self.estoque, ano, mes)
         self._preencher_cards(resumo)
-        self._preencher_conteudo(resumo)
+        self._preencher_conteudo(resumo, rendimento)
 
     def _preencher_cards(self, resumo):
         for widget in self.frame_cards.winfo_children():
@@ -1287,7 +1288,7 @@ class JanelaDashboard(tk.Toplevel):
             tk.Label(cartao, text=rotulo, font=("Segoe UI", 8), bg=COR_CARTAO, fg=COR_TEXTO_SECUNDARIO).pack(
                 anchor="w", padx=12, pady=(0, 10))
 
-    def _preencher_conteudo(self, resumo):
+    def _preencher_conteudo(self, resumo, rendimento):
         for widget in self.frame_conteudo.winfo_children():
             widget.destroy()
 
@@ -1299,6 +1300,7 @@ class JanelaDashboard(tk.Toplevel):
             "📤 Volume de saída no mês — todos os produtos, do maior pro menor",
             resumo["ranking_saidas"], COR_ACENTO,
         )
+        self._secao_rendimento_tinta(rendimento)
 
         if resumo["produtos_abaixo_minimo"]:
             tk.Label(
@@ -1310,6 +1312,47 @@ class JanelaDashboard(tk.Toplevel):
                 self.frame_conteudo, text=nomes, fg=COR_TEXTO_SECUNDARIO, bg=COR_FUNDO_JANELA,
                 wraplength=800, justify="left",
             ).grid(row=len(self.frame_conteudo.grid_slaves()), column=0, sticky="w")
+
+    def _secao_rendimento_tinta(self, rendimento):
+        """
+        Rendimento real de tinta por máquina (ADESIVO sai pela UJV100-160,
+        LONA sai pela SWJ-320EA — regra do usuário). A Mimaki não publica
+        um mL/m² fixo pra nenhuma das duas (depende da cobertura de cada
+        arte), então esse número é calculado a partir do uso real: tinta
+        consumida no mês ÷ m² produzidos no mês, os dois vindos do próprio
+        histórico do estoque — fica mais preciso que qualquer tabela
+        genérica porque reflete o mix de trabalho real da empresa.
+        """
+        tk.Label(
+            self.frame_conteudo, text="🖨️ Rendimento de tinta por máquina",
+            font=("Segoe UI", 10, "bold"), fg=COR_TEXTO, bg=COR_FUNDO_JANELA,
+        ).grid(row=len(self.frame_conteudo.grid_slaves()), column=0, sticky="w", pady=(14, 6))
+
+        for maquina, dados in rendimento.items():
+            linha = tk.Frame(
+                self.frame_conteudo, bg=COR_CARTAO, highlightbackground=COR_BORDA_CARTAO, highlightthickness=1,
+            )
+            linha.grid(row=len(self.frame_conteudo.grid_slaves()), column=0, sticky="ew", pady=3)
+            linha.columnconfigure(0, weight=1)
+
+            tk.Label(
+                linha, text=f"{maquina}  ·  {dados['categoria']}", anchor="w", bg=COR_CARTAO, fg=COR_TEXTO,
+            ).grid(row=0, column=0, sticky="w", padx=12, pady=(8, 0))
+
+            if dados["rendimento_ml_m2"] is not None:
+                texto_valor = f"{dados['rendimento_ml_m2']:.1f} mL/m²"
+                cor_valor = COR_TEXTO
+            else:
+                texto_valor = "dados insuficientes ainda"
+                cor_valor = COR_TEXTO_SECUNDARIO
+            tk.Label(
+                linha, text=texto_valor, anchor="e", bg=COR_CARTAO, fg=cor_valor, font=("Segoe UI", 10, "bold"),
+            ).grid(row=0, column=1, sticky="e", padx=12, pady=(8, 0))
+
+            tk.Label(
+                linha, text=f"{dados['tinta_ml']:.0f} mL de tinta consumida  ·  {dados['area_m2']:.2f} m² produzidos no mês",
+                anchor="w", bg=COR_CARTAO, fg=COR_TEXTO_SECUNDARIO, font=("Segoe UI", 8),
+            ).grid(row=1, column=0, columnspan=2, sticky="w", padx=12, pady=(0, 8))
 
     def _secao_ranking(self, titulo, ranking, cor_barra):
         tk.Label(

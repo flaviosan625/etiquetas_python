@@ -290,7 +290,8 @@
       "variante_vinculada": null,
       "minimo": 10,
       "maximo": 60,
-      "codigo_planilha": "5C_043"
+      "codigo_planilha": "5C_043",
+      "capacidade_ml": 1000
     },
     "TINTA_UV_160_MAGENTA": {
       "descricao": "Tinta Uv UJV-100-160Plus Magenta",
@@ -300,7 +301,8 @@
       "variante_vinculada": null,
       "minimo": 10,
       "maximo": 60,
-      "codigo_planilha": "5C_044"
+      "codigo_planilha": "5C_044",
+      "capacidade_ml": 1000
     },
     "TINTA_UV_160_YELLOW": {
       "descricao": "Tinta Uv UJV-100-160Plus Yellow",
@@ -310,7 +312,8 @@
       "variante_vinculada": null,
       "minimo": 10,
       "maximo": 60,
-      "codigo_planilha": "5C_045"
+      "codigo_planilha": "5C_045",
+      "capacidade_ml": 1000
     },
     "TINTA_UV_160_BLACK": {
       "descricao": "Tinta Uv UJV-100-160Plus Black",
@@ -320,7 +323,8 @@
       "variante_vinculada": null,
       "minimo": 10,
       "maximo": 60,
-      "codigo_planilha": "5C_046"
+      "codigo_planilha": "5C_046",
+      "capacidade_ml": 1000
     },
     "TINTA_SWJ_320_CIANO": {
       "descricao": "Tinta SWJ-320EA Ciano",
@@ -330,7 +334,8 @@
       "variante_vinculada": null,
       "minimo": 10,
       "maximo": 60,
-      "codigo_planilha": "5C_047"
+      "codigo_planilha": "5C_047",
+      "capacidade_ml": 2000
     },
     "TINTA_SWJ_320_MAGENTA": {
       "descricao": "Tinta SWJ-320EA Magenta",
@@ -340,7 +345,8 @@
       "variante_vinculada": null,
       "minimo": 10,
       "maximo": 60,
-      "codigo_planilha": "5C_048"
+      "codigo_planilha": "5C_048",
+      "capacidade_ml": 2000
     },
     "TINTA_SWJ_320_YELLOW": {
       "descricao": "Tinta SWJ-320EA Yellow",
@@ -350,7 +356,8 @@
       "variante_vinculada": null,
       "minimo": 10,
       "maximo": 60,
-      "codigo_planilha": "5C_049"
+      "codigo_planilha": "5C_049",
+      "capacidade_ml": 2000
     },
     "TINTA_SWJ_320_BLACK": {
       "descricao": "Tinta SWJ-320EA Black",
@@ -360,7 +367,8 @@
       "variante_vinculada": null,
       "minimo": 10,
       "maximo": 60,
-      "codigo_planilha": "5C_050"
+      "codigo_planilha": "5C_050",
+      "capacidade_ml": 2000
     },
     "POLICARBONATO_5MM": {
       "descricao": "Policarbonato 5mm",
@@ -618,5 +626,6 @@
     }
   },
   "movimentos": [],
-  "proximo_id": 1
+  "proximo_id": 1,
+  "producao_mensal": []
 }
