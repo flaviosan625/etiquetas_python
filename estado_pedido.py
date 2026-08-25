@@ -12,6 +12,7 @@ o usuário (não dá pra confiar em ler de volta se o layout mudar), esse
 aqui é lido pelo próprio programa na rodada seguinte.
 """
 import base64
+import csv
 import json
 import pathlib
 import re
@@ -57,25 +58,65 @@ def localizar_pastas_cliente(nome_cliente_seguro, pasta_saida_base="etiquetas_ge
     return sorted(pastas, key=lambda p: p.name, reverse=True)
 
 
+def _nomes_do_log(pasta_saida):
+    """
+    Fallback pra pasta de antes do estado_pedido.json existir: lê o(s)
+    log_processamento_*.csv que TODA pasta já salva (mesmo as antigas)
+    e recupera o nome de cada arquivo com status OK. Não recupera
+    categoria/medida/miniatura (o log não guarda isso de um jeito
+    confiável de re-extrair) — só o nome, que já é o suficiente pra não
+    reprocessar um arquivo repetido, o problema mais urgente. Devolve
+    conjunto vazio se não achar log nenhum (pasta realmente sem
+    histórico recuperável).
+    """
+    nomes = set()
+    for caminho_log in pathlib.Path(pasta_saida).glob("log_processamento_*.csv"):
+        try:
+            with open(caminho_log, "r", encoding="utf-8-sig", newline="") as f:
+                for linha in csv.DictReader(f):
+                    if linha.get("status") == "OK" and linha.get("arquivo"):
+                        nomes.add(linha["arquivo"])
+        except (OSError, csv.Error):
+            continue
+    return nomes
+
+
 def estado_existe(pasta_saida):
     """
-    Se a pasta não tem estado_pedido.json, é porque foi criada antes
-    desse recurso existir — não tem como saber com segurança quais
-    arquivos já estão nela, então não é seguro tratar como "atualizar".
+    Pasta pode ser atualizada se tiver o estado_pedido.json completo OU
+    (pasta de antes desse recurso existir) pelo menos um log CSV, que
+    dá pra reconstruir os nomes já processados a partir dele (ver
+    _nomes_do_log/carregar_estado). Só recusa se não tiver nem um nem
+    outro — aí não existe nenhum jeito confiável de saber o que já foi
+    processado nessa pasta.
     """
-    return (pathlib.Path(pasta_saida) / NOME_ARQUIVO_ESTADO).exists()
+    pasta = pathlib.Path(pasta_saida)
+    if (pasta / NOME_ARQUIVO_ESTADO).exists():
+        return True
+    return any(pasta.glob("log_processamento_*.csv"))
 
 
 def carregar_estado(pasta_saida):
     """
     Lê os itens já processados nessa pasta, com a miniatura decodificada
-    de volta pra bytes. Devolve lista vazia se o arquivo não existir ou
-    estiver corrompido — quem chama decide o que fazer nesse caso (ver
-    estado_existe, checado antes de tratar como atualização).
+    de volta pra bytes. Se não existir estado_pedido.json ainda (pasta
+    de antes desse recurso existir, mas com log recuperável — ver
+    estado_existe), reconstrói uma versão mínima só com o nome de cada
+    arquivo: o suficiente pro filtro de "já processado" funcionar, mas
+    sem categoria/medida/miniatura (por isso esses itens não aparecem
+    no resumo visual da OS — não tem dado confiável pra mostrar). A
+    partir da próxima rodada, o estado_pedido.json completo é salvo por
+    cima e essa reconstrução não é mais necessária pra essa pasta.
     """
     caminho = pathlib.Path(pasta_saida) / NOME_ARQUIVO_ESTADO
     if not caminho.exists():
-        return []
+        return [
+            {
+                "arquivo": nome, "categoria": None, "quantidade": 1,
+                "dimensao": None, "variante": None, "thumbnail_bytes": None,
+            }
+            for nome in sorted(_nomes_do_log(pasta_saida))
+        ]
     try:
         with open(caminho, "r", encoding="utf-8") as f:
             dados = json.load(f)
