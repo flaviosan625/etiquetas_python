@@ -106,6 +106,20 @@ def _novo_estado_categoria():
     }
 
 
+def _eh_reposicao(nome_arquivo_upper):
+    """
+    Marca um arquivo como reposição de material estragado quando o
+    próprio nome (renomeado manualmente pelo usuário antes de jogar de
+    novo na pasta de entrada) contém essa palavra. Não precisa de tela
+    de confirmação nem de estado à parte: o nome mudado já é o
+    suficiente pra passar pelo filtro de "já processado" como se fosse
+    novo (ver 'arquivos_novos' em processar_etiquetas), e o próprio
+    nome fica registrado no checklist/OS/estado como prova de que essa
+    etiqueta foi refeita, e por quê.
+    """
+    return contem_palavra(nome_arquivo_upper, "REPOSICAO") or contem_palavra(nome_arquivo_upper, "REPOSIÇÃO")
+
+
 def _colar_paginas_no_final(caminho_pdf, doc_paginas_novas):
     """
     Cola as páginas de 'doc_paginas_novas' no final de um PDF que já
@@ -228,6 +242,7 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
             on_progress(indice, total_arquivos)
 
         nome_arquivo_upper = arquivo.upper()
+        eh_reposicao = _eh_reposicao(nome_arquivo_upper)
 
         # Verifica em quantas categorias o nome do arquivo se encaixa,
         # já convertendo sinônimos (ex: "VINIL" -> "ADESIVO") pra
@@ -397,14 +412,23 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
                 # em rodada de atualização, TODO arquivo que passa por esse
                 # laço é novo por construção (o que já era conhecido foi
                 # filtrado antes do laço começar — ver 'arquivos_novos'
-                # acima), então o selo entra em toda etiqueta sem precisar
-                # checar item a item
-                selo_novo_html = (
-                    f'<span style="font-size: 7pt; font-weight: bold; color: #b5490b; '
-                    f'background-color: #fbe6d6; display: inline-block; padding: 1px 6px; '
-                    f'margin-right: 6px;">NOVO &middot; {data_chegada_curta}</span>'
-                    if modo_atualizacao else ""
-                )
+                # acima) — a única distinção que falta checar por arquivo
+                # é se é reposição (nome renomeado de propósito, ver
+                # _eh_reposicao) ou material novo do cliente
+                if eh_reposicao:
+                    selo_novo_html = (
+                        f'<span style="font-size: 7pt; font-weight: bold; color: #40506b; '
+                        f'background-color: #e7eaf2; display: inline-block; padding: 1px 6px; '
+                        f'margin-right: 6px;">REPOSIÇÃO &middot; {data_chegada_curta}</span>'
+                    )
+                elif modo_atualizacao:
+                    selo_novo_html = (
+                        f'<span style="font-size: 7pt; font-weight: bold; color: #b5490b; '
+                        f'background-color: #fbe6d6; display: inline-block; padding: 1px 6px; '
+                        f'margin-right: 6px;">NOVO &middot; {data_chegada_curta}</span>'
+                    )
+                else:
+                    selo_novo_html = ""
                 html_conteudo = f"""
                 <div style="font-family: sans-serif; color: black; line-height: 1.3;">
                     <p style="font-size: 9pt; margin: 0; font-weight: bold;">
@@ -491,11 +515,13 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
             "dimensao": dimensao,
             "thumbnail_bytes": thumbnail_bytes,
             "variante": variante,
+            "reposicao": eh_reposicao,
         })
 
+        detalhe_reposicao = " | REPOSIÇÃO (material refeito, nome renomeado de propósito)" if eh_reposicao else ""
         logger.emitir(
             "ok",
-            f"{arquivo} — Categoria: {categoria_encontrada} | Páginas: {num_pag + 1}{detalhe_area}{detalhe_qtd}{detalhe_variante}",
+            f"{arquivo} — Categoria: {categoria_encontrada} | Páginas: {num_pag + 1}{detalhe_area}{detalhe_qtd}{detalhe_variante}{detalhe_reposicao}",
             arquivo=arquivo, status_csv="OK",
         )
 
@@ -624,9 +650,14 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
     # problema). 'dados_categorias_os' é recalculado a partir da lista
     # combinada porque 'dados_categorias' (usado pro checklist acima) só
     # reflete os itens processados NESTA rodada.
-    itens_os_com_selo = (
-        [dict(item, novo_em=data_chegada_curta) for item in itens_os] if modo_atualizacao else itens_os
-    )
+    itens_os_com_selo = []
+    for item in itens_os:
+        if item.get("reposicao"):
+            itens_os_com_selo.append(dict(item, reposicao_em=data_chegada_curta))
+        elif modo_atualizacao:
+            itens_os_com_selo.append(dict(item, novo_em=data_chegada_curta))
+        else:
+            itens_os_com_selo.append(item)
     itens_para_os = itens_anteriores + itens_os_com_selo
     dados_categorias_os = {
         cat: {

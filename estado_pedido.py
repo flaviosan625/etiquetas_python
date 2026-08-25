@@ -135,12 +135,14 @@ def salvar_estado(pasta_saida, itens):
     Grava a lista completa de itens já processados nessa pasta (os de
     antes + os novos dessa rodada), pra próxima rodada continuar de
     onde essa parou. JSON não guarda bytes crus, então a miniatura vai
-    em base64; nenhum campo transitório de exibição (como 'novo_em',
-    usado só pra desenhar o selo na OS dessa rodada) é persistido.
+    em base64; nenhum campo transitório de exibição (como 'novo_em'/
+    'reposicao_em', usados só pra desenhar o selo na OS dessa rodada) é
+    persistido — 'reposicao' (se esse item era uma reposição) continua
+    salvo, é fato permanente do item, não muda depois.
     """
     itens_serializaveis = []
     for item in itens:
-        copia = {k: v for k, v in item.items() if k not in ("thumbnail_bytes", "novo_em")}
+        copia = {k: v for k, v in item.items() if k not in ("thumbnail_bytes", "novo_em", "reposicao_em")}
         if item.get("thumbnail_bytes"):
             copia["thumbnail_b64"] = base64.b64encode(item["thumbnail_bytes"]).decode("ascii")
         itens_serializaveis.append(copia)

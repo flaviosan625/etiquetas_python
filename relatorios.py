@@ -134,15 +134,26 @@ def _desenhar_item_os(pagina, y, x_thumb, x_texto, largura_texto, item, cor_fund
         if variante else ""
     )
 
-    # 'novo_em' só existe nos itens processados na rodada atual (ver
-    # processamento.py) — nunca fica salvo no estado_pedido.json, então
-    # um item só carrega esse selo na OS gerada logo depois dele chegar
+    # 'novo_em'/'reposicao_em' só existem nos itens processados na rodada
+    # atual (ver processamento.py) — nunca ficam salvos no estado_pedido.
+    # json, então um item só carrega esse selo na OS gerada logo depois
+    # dele chegar/ser refeito. Reposição (arquivo renomeado de propósito
+    # pra passar pelo filtro como se fosse novo) tem prioridade sobre o
+    # selo de novo — os dois nunca coexistem no mesmo item.
     novo_em = item.get("novo_em")
-    html_selo_novo = (
-        f'<span style="font-size: 7pt; font-weight: bold; color: #b5490b; background-color: #fbe6d6; '
-        f'display: inline-block; padding: 2px 7px; margin-left: 5px;">NOVO &middot; {novo_em}</span>'
-        if novo_em else ""
-    )
+    reposicao_em = item.get("reposicao_em")
+    if reposicao_em:
+        html_selo_novo = (
+            f'<span style="font-size: 7pt; font-weight: bold; color: #40506b; background-color: #e7eaf2; '
+            f'display: inline-block; padding: 2px 7px; margin-left: 5px;">REPOSIÇÃO &middot; {reposicao_em}</span>'
+        )
+    elif novo_em:
+        html_selo_novo = (
+            f'<span style="font-size: 7pt; font-weight: bold; color: #b5490b; background-color: #fbe6d6; '
+            f'display: inline-block; padding: 2px 7px; margin-left: 5px;">NOVO &middot; {novo_em}</span>'
+        )
+    else:
+        html_selo_novo = ""
 
     caixa_texto = pymupdf.Rect(x_texto, y, x_texto + largura_texto, y + ALTURA_ITEM_OS)
     html_item = f"""
