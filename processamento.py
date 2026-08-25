@@ -44,7 +44,7 @@ from dimensoes import (
 from estado_pedido import carregar_estado, nomes_ja_processados, salvar_estado
 from pdf_layout import iniciar_pagina_com_banner, numerar_paginas_a_partir_de, estampar_conferencia_local
 from relatorios import salvar_log, gerar_os, salvar_dados_os
-from utils import sanitizar_nome_arquivo
+from utils import remover_acentos, sanitizar_nome_arquivo
 
 LARGURA_A4 = 595.27
 ALTURA_A4 = 841.89
@@ -106,18 +106,29 @@ def _novo_estado_categoria():
     }
 
 
+# Comparado sem acento (ver utils.remover_acentos), então cobre
+# "reposição"/"reposicao"/"reposiçao" e "refação"/"refacao"/"refaçao"
+# com uma palavra só cada — não precisa listar cada combinação de
+# acento. "REF" sozinho também conta (abreviação comum de "refação"),
+# mas cuidado: é curto o bastante pra colidir com um nome de arquivo
+# real que use "REF" com outro sentido (ex: imagem de referência do
+# cliente) — se isso acontecer na prática, é só tirar da lista.
+_PALAVRAS_REPOSICAO = ("REPOSICAO", "REFACAO", "REF")
+
+
 def _eh_reposicao(nome_arquivo_upper):
     """
     Marca um arquivo como reposição de material estragado quando o
     próprio nome (renomeado manualmente pelo usuário antes de jogar de
-    novo na pasta de entrada) contém essa palavra. Não precisa de tela
-    de confirmação nem de estado à parte: o nome mudado já é o
-    suficiente pra passar pelo filtro de "já processado" como se fosse
-    novo (ver 'arquivos_novos' em processar_etiquetas), e o próprio
-    nome fica registrado no checklist/OS/estado como prova de que essa
-    etiqueta foi refeita, e por quê.
+    novo na pasta de entrada) contém uma das palavras de
+    _PALAVRAS_REPOSICAO. Não precisa de tela de confirmação nem de
+    estado à parte: o nome mudado já é o suficiente pra passar pelo
+    filtro de "já processado" como se fosse novo (ver 'arquivos_novos'
+    em processar_etiquetas), e o próprio nome fica registrado no
+    checklist/OS/estado como prova de que essa etiqueta foi refeita.
     """
-    return contem_palavra(nome_arquivo_upper, "REPOSICAO") or contem_palavra(nome_arquivo_upper, "REPOSIÇÃO")
+    nome_sem_acento = remover_acentos(nome_arquivo_upper)
+    return any(contem_palavra(nome_sem_acento, palavra) for palavra in _PALAVRAS_REPOSICAO)
 
 
 def _colar_paginas_no_final(caminho_pdf, doc_paginas_novas):

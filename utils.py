@@ -7,6 +7,22 @@ import re
 # caracteres de controle (invisíveis, mas que causam problema igual).
 _CARACTERES_INVALIDOS = r'[<>:"/\\|?*\x00-\x1f]'
 
+_ACENTOS = str.maketrans(
+    "ÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇáàâãäéèêëíìîïóòôõöúùûüç",
+    "AAAAAEEEEIIIIOOOOOUUUUCaaaaaeeeeiiiiooooouuuuc",
+)
+
+
+def remover_acentos(texto):
+    """
+    Troca cada vogal acentuada e cedilha pelo equivalente sem acento.
+    Usada pra comparar texto tolerando as várias formas de alguém
+    digitar a mesma palavra com acento certo, errado ou faltando (ex:
+    "reposição" == "reposicao" == "reposiçao" depois de normalizado) —
+    sem precisar cadastrar cada combinação de acento na mão.
+    """
+    return texto.translate(_ACENTOS)
+
 
 def sanitizar_nome_arquivo(nome, substituto="_"):
     """
