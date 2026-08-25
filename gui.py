@@ -25,12 +25,14 @@ from tkinter import filedialog, messagebox, ttk
 from branding import CAMINHO_LOGO_GUI
 from config import atualizar_ultimo_uso, carregar_config, salvar_config
 from dimensoes import formatar_variante
+from estado_pedido import estado_existe, localizar_pastas_cliente
 from estoque import (
     carregar_estoque, saldo_produto, registrar_movimento, desfazer_movimento,
     prever_saida_os, confirmar_saida_os, novo_produto, adicionar_produto, atualizar_produto, remover_produto,
     meses_disponiveis, resumo_mensal, rendimento_tinta_mensal,
 )
 from processamento import processar_etiquetas
+from utils import sanitizar_nome_arquivo
 
 COR_ACENTO = "#0067c0"
 COR_FUNDO_JANELA = "#f5f6f8"
@@ -187,6 +189,8 @@ class JanelaPrincipal(tk.Tk):
             messagebox.showwarning("Campo obrigatório", "Preencha o gerente operacional e o produtor responsável.")
             return
 
+        pasta_saida_existente = self._resolver_pasta_saida(cliente)
+
         self.texto_log.configure(state="normal")
         self.texto_log.delete("1.0", "end")
         self.texto_log.configure(state="disabled")
@@ -199,12 +203,54 @@ class JanelaPrincipal(tk.Tk):
 
         thread = threading.Thread(
             target=self._executar_em_thread,
-            args=(pasta, cliente, gerente, produtor),
+            args=(pasta, cliente, gerente, produtor, pasta_saida_existente),
             daemon=True,
         )
         thread.start()
 
-    def _executar_em_thread(self, pasta, cliente, gerente, produtor):
+    def _resolver_pasta_saida(self, cliente):
+        """
+        Checa se já existe pedido desse cliente antes de processar, e
+        pergunta se é pra atualizar (só os arquivos novos da pasta de
+        entrada entram, mesmo que ela venha inteira de novo misturada
+        com o que já foi mandado) ou criar um pedido novo. Pastas de
+        antes desse recurso existir (sem estado_pedido.json) não entram
+        na lista de opções — não dá pra saber com segurança o que já
+        foi processado nelas, então a única opção seria criar de novo.
+
+        Devolve o Path da pasta a atualizar, ou None pra criar uma
+        pasta nova (comportamento de sempre).
+        """
+        nome_seguro = sanitizar_nome_arquivo(cliente).upper()
+        todas = localizar_pastas_cliente(nome_seguro)
+        atualizaveis = [p for p in todas if estado_existe(p)]
+        legado = [p for p in todas if not estado_existe(p)]
+
+        if not atualizaveis:
+            if legado:
+                messagebox.showinfo(
+                    "Pedidos antigos encontrados",
+                    f"Já existem pasta(s) de '{cliente}', mas de antes desse recurso existir — não é "
+                    "possível saber com segurança quais arquivos já foram processados nelas. Um "
+                    "pedido novo será criado.",
+                )
+            return None
+
+        if len(atualizaveis) == 1:
+            pasta = atualizaveis[0]
+            resposta = messagebox.askyesno(
+                "Pedido existente encontrado",
+                f"Já existe um pedido de '{cliente}' em:\n{pasta.name}\n\n"
+                "Atualizar esse pedido (só os arquivos novos da pasta de entrada entram, com o selo "
+                "de data) em vez de criar um pedido novo?",
+            )
+            return pasta if resposta else None
+
+        janela = JanelaEscolherPedido(self, atualizaveis)
+        self.wait_window(janela)
+        return janela.resultado
+
+    def _executar_em_thread(self, pasta, cliente, gerente, produtor, pasta_saida_existente):
         def on_log(nivel, msg):
             self.fila_eventos.put(("log", nivel, msg))
 
@@ -214,7 +260,7 @@ class JanelaPrincipal(tk.Tk):
         try:
             resultado = processar_etiquetas(
                 pasta, cliente, gerente, produtor, self.config_dados,
-                on_log=on_log, on_progress=on_progress,
+                on_log=on_log, on_progress=on_progress, pasta_saida_existente=pasta_saida_existente,
             )
         except Exception as e:
             self.fila_eventos.put(("log", "err", f"Erro inesperado: {e}"))
@@ -240,12 +286,79 @@ class JanelaPrincipal(tk.Tk):
                     resultado = evento[1]
                     if resultado:
                         self.var_progresso_texto.set("Concluído.")
-                        messagebox.showinfo("Concluído", f"Etiquetas geradas em:\n{resultado['pasta_saida']}")
+                        novos = resultado.get("arquivos_novos", 0)
+                        ignorados = resultado.get("arquivos_ignorados", 0)
+                        if resultado.get("atualizacao") and novos == 0:
+                            messagebox.showinfo(
+                                "Nada novo pra processar",
+                                f"Todos os {ignorados} arquivo(s) da pasta de entrada já tinham sido "
+                                f"processados nesse pedido antes. Nada foi gerado.",
+                            )
+                        elif resultado.get("atualizacao"):
+                            texto = f"{novos} arquivo(s) novo(s) processado(s) em:\n{resultado['pasta_saida']}"
+                            if ignorados:
+                                texto += f"\n\n({ignorados} arquivo(s) já processado(s) antes foram ignorados.)"
+                            messagebox.showinfo("Pedido atualizado", texto)
+                        else:
+                            messagebox.showinfo("Concluído", f"Etiquetas geradas em:\n{resultado['pasta_saida']}")
                     else:
                         self.var_progresso_texto.set("Processamento interrompido — veja o log acima.")
         except queue.Empty:
             pass
         self.after(150, self._checar_fila)
+
+
+class JanelaEscolherPedido(tk.Toplevel):
+    """
+    Quando há mais de um pedido atualizável pra esse cliente, deixa
+    escolher qual (ou seguir com um pedido novo mesmo assim). Modal —
+    quem abre usa self.wait_window(janela) e lê janela.resultado depois
+    que ela fechar: o Path escolhido, ou None pra pedido novo.
+    """
+
+    def __init__(self, mestre, pastas):
+        super().__init__(mestre)
+        self.title("Pedido existente encontrado")
+        self.geometry("460x320")
+        self.transient(mestre)
+        self.pastas = pastas
+        self.resultado = None
+
+        tk.Label(
+            self, text="Já existem pedidos desse cliente", font=("Segoe UI", 12, "bold"),
+        ).pack(anchor="w", padx=16, pady=(14, 2))
+        tk.Label(
+            self, fg="#666666", justify="left", wraplength=420,
+            text="Escolha qual pedido atualizar (só os arquivos novos da pasta de entrada entram) "
+                 "ou crie um pedido novo.",
+        ).pack(anchor="w", padx=16, pady=(0, 10))
+
+        self.lista = tk.Listbox(self, activestyle="dotbox")
+        for pasta in pastas:
+            self.lista.insert("end", pasta.name)
+        self.lista.selection_set(0)
+        self.lista.pack(fill="both", expand=True, padx=16)
+
+        frame_botoes = tk.Frame(self)
+        frame_botoes.pack(fill="x", padx=16, pady=14)
+        tk.Button(frame_botoes, text="Criar pedido novo", command=self._criar_novo).pack(side="left")
+        tk.Button(
+            frame_botoes, text="Atualizar selecionado", bg=COR_ACENTO, fg="white", relief="flat",
+            command=self._atualizar_selecionado,
+        ).pack(side="right")
+
+        self.protocol("WM_DELETE_WINDOW", self._criar_novo)
+        self.grab_set()
+
+    def _atualizar_selecionado(self):
+        selecao = self.lista.curselection()
+        if selecao:
+            self.resultado = self.pastas[selecao[0]]
+        self.destroy()
+
+    def _criar_novo(self):
+        self.resultado = None
+        self.destroy()
 
 
 class JanelaConfiguracoes(tk.Toplevel):

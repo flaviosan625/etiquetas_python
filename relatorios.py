@@ -134,10 +134,20 @@ def _desenhar_item_os(pagina, y, x_thumb, x_texto, largura_texto, item, cor_fund
         if variante else ""
     )
 
+    # 'novo_em' só existe nos itens processados na rodada atual (ver
+    # processamento.py) — nunca fica salvo no estado_pedido.json, então
+    # um item só carrega esse selo na OS gerada logo depois dele chegar
+    novo_em = item.get("novo_em")
+    html_selo_novo = (
+        f'<span style="font-size: 7pt; font-weight: bold; color: #b5490b; background-color: #fbe6d6; '
+        f'display: inline-block; padding: 2px 7px; margin-left: 5px;">NOVO &middot; {novo_em}</span>'
+        if novo_em else ""
+    )
+
     caixa_texto = pymupdf.Rect(x_texto, y, x_texto + largura_texto, y + ALTURA_ITEM_OS)
     html_item = f"""
     <div style="font-family: sans-serif;">
-        <div style="font-size: 7.5pt; font-weight: bold; color: {cor_texto}; background-color: {cor_fundo}; display: inline-block; padding: 2px 7px;">{item['categoria']}</div>{html_variante}
+        <div style="font-size: 7.5pt; font-weight: bold; color: {cor_texto}; background-color: {cor_fundo}; display: inline-block; padding: 2px 7px;">{item['categoria']}</div>{html_variante}{html_selo_novo}
         <span style="float: right; font-size: 8pt; color: #666666;">{item['quantidade']} UN</span>
         <p style="font-size: 8.5pt; margin: 4px 0 2px 0; color: #444444; line-height: 1.25;">{_descricao_arquivo(item['arquivo'])}</p>
         <p style="font-size: 9pt; font-weight: bold; margin: 0; color: #1a1a1a;">{area_texto}</p>
@@ -271,7 +281,7 @@ def gerar_os(pasta_saida, nome_cliente, nome_gerente, nome_produtor,
     return nome_os
 
 
-def salvar_dados_os(pasta_saida, nome_cliente, itens, data_hora_atual):
+def salvar_dados_os(pasta_saida, nome_cliente, itens, data_hora_atual, rotulo_arquivo):
     """
     Salva, ao lado da OS em PDF, um arquivo JSON com os mesmos itens em
     formato lido por máquina (categoria, variante, quantidade, medida) —
@@ -281,6 +291,13 @@ def salvar_dados_os(pasta_saida, nome_cliente, itens, data_hora_atual):
     de um PDF (frágil se o layout da OS mudar) e pra deixar claro que a
     baixa por OS é um passo manual e deliberado: o usuário escolhe qual
     arquivo enviar pro estoque, nunca acontece sozinho ao gerar a OS.
+
+    'itens' aqui é SEMPRE só o que foi processado nessa rodada (nunca a
+    pasta inteira acumulada) — e 'rotulo_arquivo' (ex: "novos 21-08")
+    entra no nome do arquivo. Isso é o que garante que dar baixa desse
+    JSON no estoque nunca desconta de novo um material de uma rodada
+    anterior: cada rodada tem o próprio arquivo, com o próprio nome,
+    contendo só os itens dela.
     """
     dados = {
         "cliente": nome_cliente,
@@ -295,7 +312,7 @@ def salvar_dados_os(pasta_saida, nome_cliente, itens, data_hora_atual):
             for item in itens
         ],
     }
-    nome_json = os.path.join(pasta_saida, f"OS - {nome_cliente.upper()}.json")
+    nome_json = os.path.join(pasta_saida, f"OS - {nome_cliente.upper()} - {rotulo_arquivo}.json")
     with open(nome_json, "w", encoding="utf-8") as f:
         json.dump(dados, f, ensure_ascii=False, indent=2)
     return nome_json

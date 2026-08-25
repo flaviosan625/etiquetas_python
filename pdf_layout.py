@@ -126,3 +126,29 @@ def numerar_paginas(pdf_documento, largura_referencia, altura_referencia):
             fontsize=7, fontname="helv", color=(0.4, 0.4, 0.4),
             align=pymupdf.TEXT_ALIGN_RIGHT
         )
+
+
+def numerar_paginas_a_partir_de(pdf_documento, indice_inicio):
+    """
+    Como numerar_paginas, mas só escreve nas páginas a partir de
+    'indice_inicio' (0-based) — usada ao colar páginas novas num
+    checklist unificado que já existe em disco, pra nunca desenhar em
+    cima de uma página antiga (pode já estar impressa fisicamente). As
+    páginas antigas mantêm o "de Y" de quando foram numeradas a
+    primeira vez, mesmo que o total do documento tenha crescido desde
+    então — é o preço de nunca reabrir uma página já gerada.
+    """
+    total_paginas = len(pdf_documento)
+
+    for i in range(indice_inicio, total_paginas):
+        pagina = pdf_documento[i]
+        largura_pag = pagina.rect.width
+        altura_pag = pagina.rect.height
+
+        caixa_numero = pymupdf.Rect(largura_pag - 110, altura_pag - 18, largura_pag - 10, altura_pag - 4)
+        texto = f"Página {i + 1} de {total_paginas}"
+        pagina.insert_textbox(
+            caixa_numero, texto,
+            fontsize=7, fontname="helv", color=(0.4, 0.4, 0.4),
+            align=pymupdf.TEXT_ALIGN_RIGHT
+        )

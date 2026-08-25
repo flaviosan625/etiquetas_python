@@ -41,7 +41,8 @@ from dimensoes import (
     contem_palavra, extrair_dimensoes, calcular_desperdicio_item, extrair_quantidade,
     identificar_variante, formatar_variante, calcular_desperdicio_chapa_grande,
 )
-from pdf_layout import iniciar_pagina_com_banner, numerar_paginas, estampar_conferencia_local
+from estado_pedido import carregar_estado, nomes_ja_processados, salvar_estado
+from pdf_layout import iniciar_pagina_com_banner, numerar_paginas_a_partir_de, estampar_conferencia_local
 from relatorios import salvar_log, gerar_os, salvar_dados_os
 from utils import sanitizar_nome_arquivo
 
@@ -105,14 +106,41 @@ def _novo_estado_categoria():
     }
 
 
+def _colar_paginas_no_final(caminho_pdf, doc_paginas_novas):
+    """
+    Cola as páginas de 'doc_paginas_novas' no final de um PDF que já
+    existe em disco, sem tocar nas páginas que já estão nele (podem já
+    estar impressas fisicamente numa atualização de pedido — ver
+    'pasta_saida_existente'). O PyMuPDF não permite salvar por cima do
+    mesmo arquivo que está aberto, então salva num arquivo temporário e
+    só troca no final.
+    """
+    doc_existente = pymupdf.open(str(caminho_pdf))
+    doc_existente.insert_pdf(doc_paginas_novas)
+    caminho_tmp = caminho_pdf.with_suffix(".tmp.pdf")
+    doc_existente.save(str(caminho_tmp), garbage=4, deflate=True)
+    doc_existente.close()
+    caminho_tmp.replace(caminho_pdf)
+
+
 def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor,
                          config, pasta_saida_base="etiquetas_geradas",
-                         on_log=None, on_progress=None):
+                         on_log=None, on_progress=None, pasta_saida_existente=None):
     """
     Processa todos os PDFs de 'pasta_entrada' e gera os arquivos de
     saída. Retorna um dicionário com os caminhos gerados em caso de
     sucesso (mesmo que parcial), ou None se nem foi possível começar
     (pasta não encontrada, nenhum PDF, cliente inválido, etc.).
+
+    'pasta_saida_existente' liga o modo atualização: em vez de criar
+    uma pasta nova, reaproveita uma pasta de cliente já existente,
+    reconhece pelo nome do arquivo o que já foi processado nela antes
+    (estado_pedido.json) e ignora — não importa se a pasta de entrada
+    for jogada inteira de novo, misturada com o que já foi mandado.
+    Só o que é realmente novo vira etiqueta, ganha o selo "NOVO" e
+    entra nos totais que alimentam a baixa de estoque; o checklist só
+    cresce por baixo (páginas novas coladas no final, nunca mexe numa
+    página já gerada antes).
     """
     logger = _Logger(on_log)
 
@@ -145,21 +173,54 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
         logger.emitir("err", f"Nenhum arquivo PDF encontrado na pasta '{pasta_entrada}'.")
         return None
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    pasta_saida = pathlib.Path(pasta_saida_base) / f"{nome_cliente_seguro.upper()}_{timestamp}"
-    try:
-        pasta_saida.mkdir(parents=True, exist_ok=True)
-    except OSError as e:
-        logger.emitir("err", f"Não foi possível criar a pasta de saída: {e}")
-        return None
+    modo_atualizacao = pasta_saida_existente is not None
+    itens_anteriores = []
+    arquivos_ignorados = 0
+    if modo_atualizacao:
+        pasta_saida = pathlib.Path(pasta_saida_existente)
+        itens_anteriores = carregar_estado(pasta_saida)
+        nomes_conhecidos = nomes_ja_processados(itens_anteriores)
+
+        arquivos_novos = []
+        for arquivo in arquivos_pdf:
+            if arquivo in nomes_conhecidos:
+                arquivos_ignorados += 1
+                logger.emitir(
+                    "info", f"Ignorado (já processado antes nesse pedido): {arquivo}",
+                    arquivo=arquivo, status_csv="JA_PROCESSADO",
+                )
+            else:
+                arquivos_novos.append(arquivo)
+        arquivos_pdf = arquivos_novos
+
+        if not arquivos_pdf:
+            logger.emitir(
+                "info",
+                "Nenhum arquivo novo — todos os arquivos da pasta de entrada já tinham sido "
+                "processados nesse pedido.",
+            )
+            return {
+                "pasta_saida": str(pasta_saida), "unificado": None, "log_csv": None,
+                "os": None, "os_json": None, "arquivos_novos": 0,
+                "arquivos_ignorados": arquivos_ignorados, "atualizacao": True,
+            }
+    else:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        pasta_saida = pathlib.Path(pasta_saida_base) / f"{nome_cliente_seguro.upper()}_{timestamp}"
+        try:
+            pasta_saida.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            logger.emitir("err", f"Não foi possível criar a pasta de saída: {e}")
+            return None
 
     ALTURA_ETIQUETA = ALTURA_A4 / 2
 
-    pdf_unificado = pymupdf.open()
     dados_categorias = {cat: _novo_estado_categoria() for cat in categorias}
     itens_os = []
 
-    data_hora_atual = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+    agora = datetime.now()
+    data_hora_atual = agora.strftime("%d/%m/%Y %H:%M:%S")
+    data_chegada_curta = agora.strftime("%d/%m")
     total_arquivos = len(arquivos_pdf)
 
     for indice, arquivo in enumerate(arquivos_pdf, start=1):
@@ -333,10 +394,21 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
                     )
 
                 caixa_rodape = pymupdf.Rect(15, y_final - margem_rodape + 5, LARGURA_A4 - 15, y_final - 5)
+                # em rodada de atualização, TODO arquivo que passa por esse
+                # laço é novo por construção (o que já era conhecido foi
+                # filtrado antes do laço começar — ver 'arquivos_novos'
+                # acima), então o selo entra em toda etiqueta sem precisar
+                # checar item a item
+                selo_novo_html = (
+                    f'<span style="font-size: 7pt; font-weight: bold; color: #b5490b; '
+                    f'background-color: #fbe6d6; display: inline-block; padding: 1px 6px; '
+                    f'margin-right: 6px;">NOVO &middot; {data_chegada_curta}</span>'
+                    if modo_atualizacao else ""
+                )
                 html_conteudo = f"""
                 <div style="font-family: sans-serif; color: black; line-height: 1.3;">
                     <p style="font-size: 9pt; margin: 0; font-weight: bold;">
-                        MATERIAL: {arquivo} &nbsp;|&nbsp; CLIENTE: {nome_cliente_seguro.upper()}
+                        {selo_novo_html}MATERIAL: {arquivo} &nbsp;|&nbsp; CLIENTE: {nome_cliente_seguro.upper()}
                     </p>
                     <p style="font-size: 8pt; margin: 2px 0 0 0; color: #333333;">
                         DATA/HORA: {data_hora_atual} &nbsp;|&nbsp; GERENTE OP: {nome_gerente} &nbsp;|&nbsp; PRODUTOR RESP: {nome_produtor}
@@ -450,8 +522,12 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
         if cat_info["contem_arquivos"]:
             nome_individual = pasta_saida / f"Checklist {nome_cliente_seguro.upper()} - {sanitizar_nome_arquivo(cat)}.pdf"
             try:
-                cat_info["pdf_saida"].save(str(nome_individual), garbage=4, deflate=True)
-                logger.emitir("ok", f"Gerado: {nome_individual.name}")
+                if modo_atualizacao and nome_individual.exists():
+                    _colar_paginas_no_final(nome_individual, cat_info["pdf_saida"])
+                    logger.emitir("ok", f"Atualizado (páginas novas coladas no final): {nome_individual.name}")
+                else:
+                    cat_info["pdf_saida"].save(str(nome_individual), garbage=4, deflate=True)
+                    logger.emitir("ok", f"Gerado: {nome_individual.name}")
             except Exception as e:
                 logger.emitir(
                     "err",
@@ -464,7 +540,22 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
     # categoria já está embutido na primeira página copiada de
     # cat_info["pdf_saida"] — não precisa mais de uma página de título
     # separada (isso desperdiçava uma folha inteira na impressão).
-    toc = []
+    #
+    # Em rodada de atualização, reabre o unificado que já existe em vez
+    # de começar um documento novo — as páginas que já existem nunca são
+    # tocadas (só o TOC, que é metadado de navegação, não conteúdo
+    # desenhado na página, pode ser reescrito sem problema); as páginas
+    # novas desta rodada só entram coladas no final.
+    caminho_unificado = pasta_saida / f"Checklist {nome_cliente_seguro.upper()} - UNIFICADO.pdf"
+    unificado_reaberto = modo_atualizacao and caminho_unificado.exists()
+    if unificado_reaberto:
+        pdf_unificado = pymupdf.open(str(caminho_unificado))
+        toc = pdf_unificado.get_toc(simple=True)
+    else:
+        pdf_unificado = pymupdf.open()
+        toc = []
+    indice_paginas_desta_rodada = len(pdf_unificado)
+
     for cat in ordem_unificado:
         cat_info = dados_categorias[cat]
         if cat_info["contem_arquivos"]:
@@ -490,21 +581,33 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
     for cat in categorias:
         dados_categorias[cat]["pdf_saida"].close()
 
-    caminho_unificado = None
-    if len(pdf_unificado) > 0:
+    if len(pdf_unificado) > indice_paginas_desta_rodada:
         try:
             pdf_unificado.set_toc(toc)
-            numerar_paginas(pdf_unificado, LARGURA_A4, ALTURA_A4)
-            caminho_unificado = pasta_saida / f"Checklist {nome_cliente_seguro.upper()} - UNIFICADO.pdf"
+            numerar_paginas_a_partir_de(pdf_unificado, indice_paginas_desta_rodada)
             # garbage=4/deflate: sem isso, cada insert_htmlbox deixa uma cópia
             # de fonte solta no arquivo e o PDF fica ordens de grandeza maior
             # do que precisa (mesmo problema resolvido antes na OS)
-            pdf_unificado.save(str(caminho_unificado), garbage=4, deflate=True)
-            logger.emitir("ok", f"UNIFICADO criado: {caminho_unificado.name}")
+            if unificado_reaberto:
+                caminho_tmp = caminho_unificado.with_suffix(".tmp.pdf")
+                pdf_unificado.save(str(caminho_tmp), garbage=4, deflate=True)
+                pdf_unificado.close()
+                caminho_tmp.replace(caminho_unificado)
+                logger.emitir("ok", f"UNIFICADO atualizado (páginas novas coladas no final): {caminho_unificado.name}")
+            else:
+                pdf_unificado.save(str(caminho_unificado), garbage=4, deflate=True)
+                pdf_unificado.close()
+                logger.emitir("ok", f"UNIFICADO criado: {caminho_unificado.name}")
         except Exception as e:
             logger.emitir("err", f"Não foi possível salvar o PDF unificado: {e}")
             caminho_unificado = None
-    pdf_unificado.close()
+            try:
+                pdf_unificado.close()
+            except Exception:
+                pass
+    else:
+        caminho_unificado = None
+        pdf_unificado.close()
 
     caminho_log = None
     try:
@@ -513,20 +616,61 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
     except Exception as e:
         logger.emitir("err", f"Não foi possível salvar o log CSV: {e}")
 
+    # A OS em PDF mostra o pedido inteiro — itens de rodadas anteriores
+    # (vindos do estado salvo) + os novos desta rodada, com o selo NOVO
+    # só nos novos — sempre a versão mais recente por cima da anterior,
+    # só pra referência visual (nunca fica "impressa e marcada à caneta"
+    # do jeito que o checklist fica, então reconstruir ela inteira não é
+    # problema). 'dados_categorias_os' é recalculado a partir da lista
+    # combinada porque 'dados_categorias' (usado pro checklist acima) só
+    # reflete os itens processados NESTA rodada.
+    itens_os_com_selo = (
+        [dict(item, novo_em=data_chegada_curta) for item in itens_os] if modo_atualizacao else itens_os
+    )
+    itens_para_os = itens_anteriores + itens_os_com_selo
+    dados_categorias_os = {
+        cat: {
+            "contem_arquivos": any(i["categoria"] == cat for i in itens_para_os),
+            "area_total_m2": sum(
+                i["dimensao"]["area_m2"] for i in itens_para_os if i["categoria"] == cat and i.get("dimensao")
+            ),
+            "total_etiquetas": sum(1 for i in itens_para_os if i["categoria"] == cat),
+        }
+        for cat in categorias
+    }
+
     caminho_os = None
     caminho_os_json = None
     try:
         caminho_os = gerar_os(
             str(pasta_saida), nome_cliente_seguro, nome_gerente, nome_produtor,
-            itens_os, dados_categorias, ordem_unificado, data_hora_atual,
+            itens_para_os, dados_categorias_os, ordem_unificado, data_hora_atual,
         )
         logger.emitir("ok", f"OS gerada: {pathlib.Path(caminho_os).name}")
         # arquivo complementar, lido pelo controle de estoque pra baixa
         # automática (ver estoque.py) — nunca acontece sozinho, é sempre
-        # o usuário quem escolhe enviar esse arquivo lá na tela de estoque
-        caminho_os_json = salvar_dados_os(str(pasta_saida), nome_cliente_seguro, itens_os, data_hora_atual)
+        # o usuário quem escolhe enviar esse arquivo lá na tela de estoque.
+        # Leva só 'itens_os' (nunca 'itens_para_os'/itens de rodadas
+        # anteriores) e o nome do arquivo carrega data E hora dessa
+        # rodada (não só a data, que sozinha colide se o mesmo pedido
+        # for atualizado mais de uma vez no mesmo dia — sobrescreveria o
+        # JSON de uma rodada anterior ainda não usada no estoque). O
+        # selo visual na etiqueta/OS continua só dia/mês; é só o nome do
+        # arquivo que precisa da hora, pra nunca colidir.
+        rotulo_arquivo_os = f"novos {agora.strftime('%d-%m_%H%M%S')}"
+        caminho_os_json = salvar_dados_os(
+            str(pasta_saida), nome_cliente_seguro, itens_os, data_hora_atual, rotulo_arquivo_os,
+        )
     except Exception as e:
         logger.emitir("err", f"Não foi possível gerar a Ordem de Serviço: {e}")
+
+    # Estado desta pasta pra próxima rodada: itens de antes + os que
+    # acabaram de ser processados agora, sem o selo (que é só pra exibir
+    # a OS desta rodada — ver estado_pedido.salvar_estado). Salvo mesmo
+    # se a geração da OS acima tiver falhado, porque as etiquetas e o
+    # checklist já foram gravados em disco nesse ponto — o que importa
+    # pro filtro de "já processado" é isso, não a OS.
+    salvar_estado(str(pasta_saida), itens_anteriores + itens_os)
 
     # Resumo de área por categoria
     total_geral_area = 0.0
@@ -582,4 +726,7 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
         "log_csv": caminho_log,
         "os": caminho_os,
         "os_json": caminho_os_json,
+        "arquivos_novos": len(arquivos_pdf),
+        "arquivos_ignorados": arquivos_ignorados,
+        "atualizacao": modo_atualizacao,
     }
