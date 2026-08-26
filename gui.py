@@ -109,14 +109,14 @@ class JanelaPrincipal(tk.Tk):
 
         ttk.Separator(self).pack(fill="x", padx=16, pady=(0, 10))
 
-        self.var_enviar_onedrive = tk.BooleanVar(value=False)
-        frame_onedrive = tk.Frame(self)
-        frame_onedrive.pack(anchor="w", padx=16, pady=(0, 6))
+        self.var_enviar_rede = tk.BooleanVar(value=False)
+        frame_rede = tk.Frame(self)
+        frame_rede.pack(anchor="w", padx=16, pady=(0, 6))
         tk.Checkbutton(
-            frame_onedrive, text="☁ Enviar a OS pro OneDrive depois de gerar", variable=self.var_enviar_onedrive,
+            frame_rede, text="🌐 Enviar a OS pra pasta compartilhada da rede depois de gerar", variable=self.var_enviar_rede,
         ).pack(anchor="w")
         tk.Label(
-            frame_onedrive, text=f"    Destino: {PASTA_DESTINO_PADRAO}", fg="#888888", font=("Segoe UI", 8),
+            frame_rede, text=f"    Destino: {PASTA_DESTINO_PADRAO}", fg="#888888", font=("Segoe UI", 8),
         ).pack(anchor="w")
 
         self.btn_processar = tk.Button(
@@ -214,7 +214,7 @@ class JanelaPrincipal(tk.Tk):
 
         thread = threading.Thread(
             target=self._executar_em_thread,
-            args=(pasta, cliente, gerente, produtor, pasta_saida_existente, self.var_enviar_onedrive.get()),
+            args=(pasta, cliente, gerente, produtor, pasta_saida_existente, self.var_enviar_rede.get()),
             daemon=True,
         )
         thread.start()
@@ -261,7 +261,7 @@ class JanelaPrincipal(tk.Tk):
         self.wait_window(janela)
         return janela.resultado
 
-    def _executar_em_thread(self, pasta, cliente, gerente, produtor, pasta_saida_existente, enviar_onedrive):
+    def _executar_em_thread(self, pasta, cliente, gerente, produtor, pasta_saida_existente, enviar_rede):
         def on_log(nivel, msg):
             self.fila_eventos.put(("log", nivel, msg))
 
@@ -277,39 +277,40 @@ class JanelaPrincipal(tk.Tk):
             self.fila_eventos.put(("log", "err", f"Erro inesperado: {e}"))
             resultado = None
 
-        if resultado and enviar_onedrive:
+        if resultado and enviar_rede:
             try:
-                self._enviar_os_onedrive(resultado["pasta_saida"], on_log)
+                self._enviar_os_rede(resultado["pasta_saida"], on_log)
             except Exception as e:
                 # nunca deixa um erro inesperado aqui travar o "fim" de
                 # ser enfileirado — sem isso, o botão "Processar Etiquetas"
                 # ficaria desabilitado pra sempre (self.processando nunca
                 # voltaria a False), mesmo com as etiquetas/OS já geradas
                 # com sucesso antes disso.
-                self.fila_eventos.put(("log", "err", f"Erro inesperado ao enviar a OS pro OneDrive: {e}"))
+                self.fila_eventos.put(("log", "err", f"Erro inesperado ao enviar a OS pra pasta da rede: {e}"))
 
         self.fila_eventos.put(("fim", resultado, None))
 
-    def _enviar_os_onedrive(self, pasta_saida, on_log):
+    def _enviar_os_rede(self, pasta_saida, on_log):
         """
         Roda logo depois do processamento, na mesma thread, só quando o
-        checkbox "Enviar a OS pro OneDrive" estava marcado — copia (nunca
-        move) a OS desse pedido específico que acabou de ser gerado/
-        atualizado. Nunca apaga nada localmente (ver arquivamento.py).
+        checkbox "Enviar a OS pra pasta compartilhada da rede" estava
+        marcado — copia (nunca move) a OS desse pedido específico que
+        acabou de ser gerado/atualizado. Nunca apaga nada localmente (ver
+        arquivamento.py).
         """
-        on_log("info", "Enviando a OS pro OneDrive...")
+        on_log("info", "Enviando a OS pra pasta compartilhada da rede...")
         pasta_gerada = pathlib.Path(pasta_saida)
         pedido = next((p for p in listar_pedidos() if p["pasta"] == pasta_gerada), None)
         if not pedido:
-            on_log("warn", "Não encontrei arquivo de OS pra enviar pro OneDrive (a OS pode não ter sido gerada nessa rodada).")
+            on_log("warn", "Não encontrei arquivo de OS pra enviar (a OS pode não ter sido gerada nessa rodada).")
             return
 
         resumo = enviar_os([pedido])[0]
         if resumo["erros"]:
-            on_log("warn", f"OS não pôde ser totalmente enviada pro OneDrive: {'; '.join(resumo['erros'])}")
+            on_log("warn", f"OS não pôde ser totalmente enviada pra rede: {'; '.join(resumo['erros'])}")
         else:
             destino = PASTA_DESTINO_PADRAO / pedido["cliente"] / pedido["subpasta"]
-            on_log("ok", f"OS enviada pro OneDrive: {destino}")
+            on_log("ok", f"OS enviada pra pasta da rede: {destino}")
 
     def _checar_fila(self):
         try:
