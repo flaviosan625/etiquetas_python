@@ -12,6 +12,7 @@ import pymupdf
 
 from branding import inserir_logo, CAMINHO_LOGO_GUI
 from dimensoes import formatar_variante
+from utils import formatar_duracao_minutos
 
 LARGURA_OS = 595.27  # A4
 ALTURA_OS = 841.89
@@ -179,7 +180,7 @@ def _desenhar_item_os(pagina, y, x_thumb, x_texto, largura_texto, item, cor_fund
 
 
 def gerar_os(pasta_saida, nome_cliente, nome_gerente, nome_produtor,
-             itens, dados_categorias, ordem_categorias, data_hora_atual):
+             itens, dados_categorias, ordem_categorias, data_hora_atual, materiais_config=None):
     """
     Gera a Ordem de Serviço (OS) paginada em folhas A4, pronta pra
     impressão: logo da empresa repetido em cada página, itens agrupados
@@ -190,7 +191,16 @@ def gerar_os(pasta_saida, nome_cliente, nome_gerente, nome_produtor,
     itens por página é calculada pra aproveitar bem a folha, não é um
     número fixo. No final, o mesmo resumo de sempre com o subtotal de
     m² separado por material (nunca somando materiais diferentes).
+
+    'materiais_config' (opcional) é o dict de materiais do config.json —
+    quando uma categoria tem "minutos_por_m2" cadastrado (tela
+    Configurar Materiais), o subtotal dela ganha também a estimativa de
+    tempo de máquina (m² × minutos_por_m2). Sempre por categoria, igual
+    ao m² — nunca somado entre categorias diferentes, porque cada uma
+    roda numa máquina diferente, em paralelo, e um total combinado não
+    representaria um tempo real de espera.
     """
+    materiais_config = materiais_config or {}
     categorias_com_item = [c for c in ordem_categorias if dados_categorias[c]["contem_arquivos"]]
 
     x_thumb = MARGEM_OS
@@ -250,11 +260,17 @@ def gerar_os(pasta_saida, nome_cliente, nome_gerente, nome_produtor,
         if y + 20 > limite_y:
             pagina, y = _nova_pagina_os(pdf_os, nome_cliente, nome_gerente, nome_produtor, data_hora_atual, caixas_pagina)
 
+        texto_area = f"{cat_info['area_total_m2']:.2f} m²"
+        minutos_m2 = materiais_config.get(cat, {}).get("minutos_por_m2")
+        if minutos_m2:
+            tempo_estimado = formatar_duracao_minutos(cat_info["area_total_m2"] * minutos_m2)
+            texto_area += f" · ≈ {tempo_estimado}"
+
         html_linha = f"""
         <div style="font-family: sans-serif; font-size: 9pt; color: #333333;">
             <span style="color: {cor_texto};">●</span>&nbsp;
             {cat} · {qtd_itens_categoria} item{'s' if qtd_itens_categoria != 1 else ''}
-            <span style="float: right; font-weight: bold; color: #1a1a1a;">{cat_info['area_total_m2']:.2f} m²</span>
+            <span style="float: right; font-weight: bold; color: #1a1a1a;">{texto_area}</span>
         </div>
         """
         pagina.insert_htmlbox(pymupdf.Rect(MARGEM_OS, y, LARGURA_OS - MARGEM_OS, y + 16), html_linha)

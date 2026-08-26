@@ -419,13 +419,19 @@ class JanelaConfiguracoes(tk.Toplevel):
         tk.Label(self, text="Rolos e chapas cadastrados", font=("Segoe UI", 12, "bold")).pack(anchor="w", padx=16, pady=(14, 2))
         tk.Label(
             self, fg="#666666",
-            text="Edite as medidas existentes ou adicione um material novo. As mudanças valem para o cálculo\nde desperdício e para o reconhecimento de categoria pelo nome do arquivo.",
+            text="Edite as medidas existentes ou adicione um material novo. As mudanças valem para o cálculo\n"
+                 "de desperdício e para o reconhecimento de categoria pelo nome do arquivo. \"Min/m²\" é\n"
+                 "opcional — quantos minutos a máquina leva pra imprimir/cortar 1m² dessa categoria; se\n"
+                 "preenchido, a OS mostra a estimativa de tempo de máquina ao lado do m² de cada material.",
             justify="left",
         ).pack(anchor="w", padx=16, pady=(0, 10))
 
         cabecalho = tk.Frame(self)
         cabecalho.pack(fill="x", padx=16)
-        for texto, largura in [("Categoria", 16), ("Tipo", 10), ("Largura (cm)", 12), ("Compr. (cm)", 12), ("", 3)]:
+        for texto, largura in [
+            ("Categoria", 16), ("Tipo", 10), ("Largura (cm)", 12), ("Compr. (cm)", 12),
+            ("Min/m² (opcional)", 15), ("", 3),
+        ]:
             tk.Label(cabecalho, text=texto, fg="#666666", width=largura, anchor="w").pack(side="left")
 
         canvas = tk.Canvas(self, highlightthickness=0)
@@ -438,11 +444,14 @@ class JanelaConfiguracoes(tk.Toplevel):
         scrollbar.pack(side="left", fill="y", padx=(0, 16))
 
         for categoria, dados in self.config_dados["materiais"].items():
-            self._adicionar_linha(categoria, dados["tipo"], dados["largura_cm"], dados["comprimento_cm"], dados.get("variantes", []))
+            self._adicionar_linha(
+                categoria, dados["tipo"], dados["largura_cm"], dados["comprimento_cm"],
+                dados.get("variantes", []), dados.get("minutos_por_m2", ""),
+            )
 
         tk.Button(
             self, text="➕ Adicionar novo material", relief="flat", fg=COR_ACENTO, cursor="hand2",
-            command=lambda: self._adicionar_linha("", "rolo", "", "", []),
+            command=lambda: self._adicionar_linha("", "rolo", "", "", [], ""),
         ).pack(anchor="w", padx=16, pady=8)
 
         frame_botoes = tk.Frame(self)
@@ -450,7 +459,7 @@ class JanelaConfiguracoes(tk.Toplevel):
         tk.Button(frame_botoes, text="Cancelar", command=self.destroy).pack(side="right", padx=(6, 0))
         tk.Button(frame_botoes, text="Salvar", bg=COR_ACENTO, fg="white", relief="flat", command=self._salvar).pack(side="right")
 
-    def _adicionar_linha(self, categoria, tipo, largura, comprimento, variantes):
+    def _adicionar_linha(self, categoria, tipo, largura, comprimento, variantes, minutos_por_m2=""):
         linha = tk.Frame(self.frame_linhas)
         linha.pack(fill="x", pady=2)
 
@@ -458,15 +467,18 @@ class JanelaConfiguracoes(tk.Toplevel):
         var_tipo = tk.StringVar(value=tipo or "rolo")
         var_largura = tk.StringVar(value=str(largura))
         var_comprimento = tk.StringVar(value=str(comprimento))
+        var_minutos_m2 = tk.StringVar(value=str(minutos_por_m2) if minutos_por_m2 else "")
 
         tk.Entry(linha, textvariable=var_categoria, width=16).pack(side="left")
         ttk.Combobox(linha, textvariable=var_tipo, values=["rolo", "chapa"], width=8, state="readonly").pack(side="left", padx=4)
         tk.Entry(linha, textvariable=var_largura, width=12).pack(side="left", padx=4)
         tk.Entry(linha, textvariable=var_comprimento, width=12).pack(side="left", padx=4)
+        tk.Entry(linha, textvariable=var_minutos_m2, width=15).pack(side="left", padx=4)
 
         registro = {
             "frame": linha, "categoria": var_categoria, "tipo": var_tipo,
             "largura": var_largura, "comprimento": var_comprimento, "variantes": list(variantes or []),
+            "minutos_por_m2": var_minutos_m2,
         }
 
         def abrir_variantes():
@@ -515,6 +527,21 @@ class JanelaConfiguracoes(tk.Toplevel):
             }
             if registro["variantes"]:
                 material["variantes"] = registro["variantes"]
+
+            texto_minutos_m2 = registro["minutos_por_m2"].get().strip().replace(",", ".")
+            if texto_minutos_m2:
+                try:
+                    minutos_m2 = float(texto_minutos_m2)
+                    if minutos_m2 <= 0:
+                        raise ValueError
+                except ValueError:
+                    messagebox.showwarning(
+                        "Valor inválido",
+                        f"'Min/m²' de '{categoria}' precisa ser um número maior que zero (ou fique em branco pra não estimar tempo).",
+                    )
+                    return
+                material["minutos_por_m2"] = minutos_m2
+
             novos_materiais[categoria] = material
 
         if not novos_materiais:

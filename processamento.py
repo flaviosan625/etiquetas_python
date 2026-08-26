@@ -686,7 +686,7 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
     try:
         caminho_os = gerar_os(
             str(pasta_saida), nome_cliente_seguro, nome_gerente, nome_produtor,
-            itens_para_os, dados_categorias_os, ordem_unificado, data_hora_atual,
+            itens_para_os, dados_categorias_os, ordem_unificado, data_hora_atual, materiais,
         )
         logger.emitir("ok", f"OS gerada: {pathlib.Path(caminho_os).name}")
         # arquivo complementar, lido pelo controle de estoque pra baixa

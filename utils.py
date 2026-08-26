@@ -62,6 +62,23 @@ def remover_acentos(texto):
     return texto.translate(_ACENTOS)
 
 
+def formatar_duracao_minutos(minutos):
+    """
+    Formata uma duração em minutos como "Xh Ymin" (ou só "Ymin" se der
+    menos de 1h, só "Xh" se der um número redondo de horas). Usada pra
+    mostrar a estimativa de tempo de máquina na OS (área × minutos por
+    m² de cada categoria — ver relatorios.gerar_os) de um jeito legível,
+    em vez de um número solto de minutos.
+    """
+    minutos_inteiros = round(minutos)
+    horas, resto = divmod(minutos_inteiros, 60)
+    if horas and resto:
+        return f"{horas}h {resto}min"
+    if horas:
+        return f"{horas}h"
+    return f"{resto}min"
+
+
 def sanitizar_nome_arquivo(nome, substituto="_"):
     """
     Remove caracteres que o Windows não aceita em nomes de arquivo ou
