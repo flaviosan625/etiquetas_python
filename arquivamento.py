@@ -13,7 +13,7 @@ também é sempre manual e sempre com prévia antes de confirmar).
 import pathlib
 import shutil
 
-PASTA_DESTINO_PADRAO = pathlib.Path.home() / "OneDrive" / "UNYCOMUNICACAO" / "Etiquetas Arquivadas"
+PASTA_DESTINO_PADRAO = pathlib.Path.home() / "OneDrive" / "UNYCOMUNICACAO" / "Ordem de Serviço"
 
 
 def _arquivos_os(pasta_pedido):
