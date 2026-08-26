@@ -616,6 +616,18 @@ def rendimento_tinta_mensal(estoque, ano, mes):
     return resultados
 
 
+def pedido_ja_teve_saida(estoque, nome_pedido):
+    """
+    Diz se esse pedido (mesma string usada em 'origem_pedido' — cliente
+    + data/hora da OS) já teve baixa registrada antes. Escolher o mesmo
+    arquivo de OS duas vezes (ou clicar em confirmar duas vezes sem
+    querer) dobraria o consumo silenciosamente sem esse aviso — só
+    verifica, não impede: quem chama decide se deixa prosseguir mesmo
+    assim (pode ser uma correção deliberada).
+    """
+    return any(m.get("origem_pedido") == nome_pedido for m in estoque["movimentos"])
+
+
 def prever_saida_os(estoque, itens, materiais_config):
     """Só calcula o que SERIA descontado, sem gravar nada no estoque real."""
     copia = copy.deepcopy(estoque)

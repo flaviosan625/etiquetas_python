@@ -29,7 +29,8 @@ from dimensoes import formatar_variante
 from estado_pedido import estado_existe, localizar_pastas_cliente
 from estoque import (
     carregar_estoque, saldo_produto, registrar_movimento, desfazer_movimento,
-    prever_saida_os, confirmar_saida_os, novo_produto, adicionar_produto, atualizar_produto, remover_produto,
+    prever_saida_os, confirmar_saida_os, pedido_ja_teve_saida,
+    novo_produto, adicionar_produto, atualizar_produto, remover_produto,
     meses_disponiveis, resumo_mensal, rendimento_tinta_mensal,
 )
 from processamento import processar_etiquetas
@@ -1032,9 +1033,24 @@ class JanelaSaidaOS(tk.Toplevel):
         self._mostrar_previa()
         self.btn_confirmar.configure(state="normal")
 
+    def _nome_pedido(self):
+        return f"{self.dados_os.get('cliente', '?')} ({self.dados_os.get('data_hora', '?')})"
+
     def _mostrar_previa(self):
         for widget in self.frame_previa.winfo_children():
             widget.destroy()
+
+        # aviso ANTES da lista de itens, bem visível — evita que a
+        # mesma OS seja escolhida duas vezes (ou confirmada duas vezes
+        # sem querer) e dobre o consumo no estoque silenciosamente
+        if pedido_ja_teve_saida(self.estoque, self._nome_pedido()):
+            tk.Label(
+                self.frame_previa,
+                text="⚠ Esse pedido já teve baixa registrada antes. Confirmar de novo vai DOBRAR o consumo.",
+                fg=COR_ALERTA, bg=COR_ALERTA_FUNDO, anchor="w", justify="left", wraplength=500,
+                font=("Segoe UI", 9, "bold"), padx=8, pady=4,
+            ).pack(anchor="w", pady=(0, 8), fill="x")
+
         for linha in self.previsao:
             variante_txt = f" · {formatar_variante(linha['variante'])}" if linha.get("variante") else ""
             if linha["produto"] is None:
@@ -1054,7 +1070,15 @@ class JanelaSaidaOS(tk.Toplevel):
     def _confirmar(self):
         if not self.dados_os:
             return
-        nome_pedido = f"{self.dados_os.get('cliente', '?')} ({self.dados_os.get('data_hora', '?')})"
+        nome_pedido = self._nome_pedido()
+        if pedido_ja_teve_saida(self.estoque, nome_pedido):
+            if not messagebox.askyesno(
+                "Baixa já registrada",
+                f"Esse pedido ({nome_pedido}) já teve baixa registrada antes. Confirmar de novo vai "
+                "DOBRAR o consumo no estoque. Tem certeza que quer lançar mesmo assim?",
+                icon="warning",
+            ):
+                return
         resumo = confirmar_saida_os(self.estoque, self.dados_os["itens"], self.config_dados["materiais"], nome_pedido)
         negativos = [r for r in resumo if r["saldo_resultante"] is not None and r["saldo_resultante"] < 0]
         self.ao_salvar()
