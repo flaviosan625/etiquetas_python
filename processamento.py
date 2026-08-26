@@ -39,7 +39,7 @@ import pymupdf
 
 from dimensoes import (
     contem_palavra, extrair_dimensoes, calcular_desperdicio_item, extrair_quantidade,
-    identificar_variante, formatar_variante, calcular_desperdicio_chapa_grande,
+    identificar_categoria, identificar_variante, formatar_variante, calcular_desperdicio_chapa_grande,
 )
 from estado_pedido import carregar_estado, nomes_ja_processados, salvar_estado
 from pdf_layout import iniciar_pagina_com_banner, numerar_paginas_a_partir_de, estampar_conferencia_local
@@ -203,7 +203,7 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
     arquivos_ignorados = 0
     if modo_atualizacao:
         pasta_saida = pathlib.Path(pasta_saida_existente)
-        itens_anteriores = carregar_estado(pasta_saida)
+        itens_anteriores = carregar_estado(pasta_saida, config)
         nomes_conhecidos = nomes_ja_processados(itens_anteriores)
 
         arquivos_novos = []
@@ -255,32 +255,19 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
         nome_arquivo_upper = arquivo.upper()
         eh_reposicao = _eh_reposicao(nome_arquivo_upper)
 
-        # Verifica em quantas categorias o nome do arquivo se encaixa,
-        # já convertendo sinônimos (ex: "VINIL" -> "ADESIVO") pra
-        # categoria real. Usa "palavra inteira" pra evitar falso
-        # positivo, como "PS" sendo encontrado dentro de "XPS".
-        categorias_encontradas = []
-        for cat in categorias:
-            if contem_palavra(nome_arquivo_upper, cat) and cat not in categorias_encontradas:
-                categorias_encontradas.append(cat)
-        for sinonimo, cat_real in sinonimos_categoria.items():
-            if cat_real not in materiais:
-                continue
-            if contem_palavra(nome_arquivo_upper, sinonimo) and cat_real not in categorias_encontradas:
-                categorias_encontradas.append(cat_real)
+        # Já convertendo sinônimos (ex: "VINIL" -> "ADESIVO") pra
+        # categoria real — ver dimensoes.identificar_categoria (mesma
+        # função reaproveitada por estado_pedido.py pra reconstruir
+        # itens legado a partir só do nome do arquivo).
+        categoria_encontrada, categorias_encontradas = identificar_categoria(
+            nome_arquivo_upper, materiais, sinonimos_categoria
+        )
 
-        if not categorias_encontradas:
+        if categoria_encontrada is None:
             logger.emitir("err", f"Ignorado (sem categoria no nome): {arquivo}",
                            arquivo=arquivo, status_csv="IGNORADO")
             continue
 
-        # Quando mais de uma categoria bate no nome, a mais específica
-        # (nome mais longo) vence — categorias com nome curto como "PS"
-        # têm mais chance de coincidir com uma sigla de projeto sem
-        # relação nenhuma com o material (ex: um código como "..._PS_01_..."
-        # num arquivo que na verdade é PVC), então não faz sentido a
-        # primeira da lista ganhar só por causa da ordem no config.json.
-        categoria_encontrada = max(categorias_encontradas, key=len)
         if len(categorias_encontradas) > 1:
             logger.emitir(
                 "warn",

@@ -16,6 +16,7 @@ import csv
 import json
 import pathlib
 
+from dimensoes import extrair_dimensoes, extrair_quantidade, identificar_categoria, identificar_variante
 from utils import chave_comparacao_cliente, nome_cliente_da_pasta
 
 NOME_ARQUIVO_ESTADO = "estado_pedido.json"
@@ -81,25 +82,61 @@ def estado_existe(pasta_saida):
     return any(pasta.glob("log_processamento_*.csv"))
 
 
-def carregar_estado(pasta_saida):
+def _reconstruir_item_legado(nome_arquivo, config):
+    """
+    Reconstrói categoria/dimensão/quantidade/variante de um item legado
+    (pasta de antes do estado_pedido.json existir, recuperado só pelo
+    nome via _nomes_do_log) usando a MESMA detecção por nome de arquivo
+    já usada no processamento normal (dimensoes.identificar_categoria e
+    afins) — o nome do arquivo já carrega esse dado, não precisa
+    inventar nada. Sem isso, o item ficava com categoria=None pra
+    sempre: nenhuma categoria bate com None, então ele nunca aparece no
+    resumo visual da OS nem entra em nenhum subtotal — se a rodada
+    tiver poucos ou nenhum item genuinamente novo, a OS inteira pode
+    sair sem nenhum item visível (bug real visto em produção,
+    2026-08-26).
+
+    'config' é o config.json carregado (materiais/sinonimos_categoria/
+    typos_unidade); sem ele (compatibilidade com chamadas antigas/
+    testes que não têm config à mão), devolve o item mínimo de sempre,
+    com categoria=None.
+    """
+    item = {
+        "arquivo": nome_arquivo, "categoria": None, "quantidade": 1,
+        "dimensao": None, "variante": None, "thumbnail_bytes": None,
+    }
+    if not config:
+        return item
+
+    materiais = config.get("materiais", {})
+    nome_upper = nome_arquivo.upper()
+    categoria, _ = identificar_categoria(nome_upper, materiais, config.get("sinonimos_categoria", {}))
+    if categoria is None:
+        return item
+
+    quantidade, _ = extrair_quantidade(nome_arquivo)
+    item["categoria"] = categoria
+    item["dimensao"] = extrair_dimensoes(nome_arquivo, config.get("typos_unidade", {}))
+    item["quantidade"] = quantidade
+    item["variante"] = identificar_variante(nome_upper, materiais.get(categoria, {}).get("variantes", []))
+    return item
+
+
+def carregar_estado(pasta_saida, config=None):
     """
     Lê os itens já processados nessa pasta, com a miniatura decodificada
     de volta pra bytes. Se não existir estado_pedido.json ainda (pasta
     de antes desse recurso existir, mas com log recuperável — ver
-    estado_existe), reconstrói uma versão mínima só com o nome de cada
-    arquivo: o suficiente pro filtro de "já processado" funcionar, mas
-    sem categoria/medida/miniatura (por isso esses itens não aparecem
-    no resumo visual da OS — não tem dado confiável pra mostrar). A
-    partir da próxima rodada, o estado_pedido.json completo é salvo por
-    cima e essa reconstrução não é mais necessária pra essa pasta.
+    estado_existe), reconstrói cada item a partir do nome do arquivo
+    recuperado do log (ver _reconstruir_item_legado) — só falta a
+    miniatura, que não tem como recuperar sem o PDF original. A partir
+    da próxima rodada, o estado_pedido.json completo é salvo por cima e
+    essa reconstrução não é mais necessária pra essa pasta.
     """
     caminho = pathlib.Path(pasta_saida) / NOME_ARQUIVO_ESTADO
     if not caminho.exists():
         return [
-            {
-                "arquivo": nome, "categoria": None, "quantidade": 1,
-                "dimensao": None, "variante": None, "thumbnail_bytes": None,
-            }
+            _reconstruir_item_legado(nome, config)
             for nome in sorted(_nomes_do_log(pasta_saida))
         ]
     try:

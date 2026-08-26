@@ -31,6 +31,39 @@ def contem_palavra(texto, termo):
     return re.search(padrao, texto) is not None
 
 
+def identificar_categoria(nome_arquivo_upper, materiais, sinonimos_categoria=None):
+    """
+    Descobre qual categoria de material o nome do arquivo indica,
+    verificando tanto o nome da categoria direto (ex: "LONA") quanto os
+    sinônimos configurados (ex: "VINIL" -> "ADESIVO"). Quando mais de
+    uma categoria bate no nome, a mais específica (nome mais longo)
+    vence — categorias com nome curto como "PS" têm mais chance de
+    coincidir com uma sigla de projeto sem relação nenhuma com o
+    material (ex: um código como "..._PS_01_..." num arquivo que na
+    verdade é PVC), então não faz sentido a primeira da lista ganhar só
+    por causa da ordem no config.json.
+
+    Retorna (categoria_mais_especifica_ou_None, lista_de_categorias_
+    candidatas) — a lista com mais de um item sinaliza nome ambíguo,
+    pra quem chamar decidir se quer avisar sobre isso.
+    """
+    sinonimos_categoria = sinonimos_categoria or {}
+    categorias_encontradas = []
+    for cat in materiais:
+        if contem_palavra(nome_arquivo_upper, cat) and cat not in categorias_encontradas:
+            categorias_encontradas.append(cat)
+    for sinonimo, cat_real in sinonimos_categoria.items():
+        if cat_real not in materiais:
+            continue
+        if contem_palavra(nome_arquivo_upper, sinonimo) and cat_real not in categorias_encontradas:
+            categorias_encontradas.append(cat_real)
+
+    if not categorias_encontradas:
+        return None, categorias_encontradas
+
+    return max(categorias_encontradas, key=len), categorias_encontradas
+
+
 def extrair_dimensoes(nome_arquivo, typos_unidade=None):
     """
     Procura no nome do arquivo um padrão do tipo "NUMEROxNUMERO" seguido

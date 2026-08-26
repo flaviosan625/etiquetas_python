@@ -5,8 +5,45 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 from dimensoes import (
     contem_palavra, extrair_dimensoes, calcular_desperdicio_item, extrair_quantidade,
-    identificar_variante, formatar_variante, calcular_desperdicio_chapa_grande,
+    identificar_categoria, identificar_variante, formatar_variante, calcular_desperdicio_chapa_grande,
 )
+
+
+def test_identificar_categoria_por_nome_direto():
+    materiais = {"LONA": {}, "ADESIVO": {}, "PVC": {}}
+    categoria, candidatas = identificar_categoria("1UN LONA 1,00X1,00.PDF", materiais)
+    assert categoria == "LONA"
+    assert candidatas == ["LONA"]
+
+
+def test_identificar_categoria_por_sinonimo():
+    materiais = {"LONA": {}, "ADESIVO": {}}
+    categoria, _ = identificar_categoria("1UN VINIL 1,00X1,00.PDF", materiais, {"VINIL": "ADESIVO"})
+    assert categoria == "ADESIVO"
+
+
+def test_identificar_categoria_ignora_sinonimo_sem_categoria_valida():
+    # sinônimo aponta pra uma categoria que não existe no cadastro atual
+    materiais = {"LONA": {}}
+    categoria, candidatas = identificar_categoria("1UN VINIL 1,00X1,00.PDF", materiais, {"VINIL": "ADESIVO"})
+    assert categoria is None
+    assert candidatas == []
+
+
+def test_identificar_categoria_mais_especifica_vence_ambiguidade():
+    # "PS_01" bate tanto com "PS" quanto com um hipotético "PS_01" mais
+    # específico — o nome mais longo deve vencer
+    materiais = {"PS": {}, "PS ESPECIAL": {}}
+    categoria, candidatas = identificar_categoria("BANNER PS ESPECIAL 1X1.PDF", materiais)
+    assert categoria == "PS ESPECIAL"
+    assert set(candidatas) == {"PS", "PS ESPECIAL"}
+
+
+def test_identificar_categoria_nenhuma_bate():
+    materiais = {"LONA": {}, "ADESIVO": {}}
+    categoria, candidatas = identificar_categoria("1UN TECIDO IMPRESSO 1,00X1,00.PDF", materiais)
+    assert categoria is None
+    assert candidatas == []
 
 
 def test_contem_palavra_evita_falso_positivo_em_substring():
