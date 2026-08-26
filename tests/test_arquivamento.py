@@ -17,7 +17,13 @@ def _criar_pedido_fake(pasta_base, nome_pedido, nome_cliente="CLIENTE"):
     return pasta
 
 
-def test_listar_pedidos_encontra_so_arquivos_de_os(tmp_path):
+def test_listar_pedidos_encontra_so_o_pdf_da_os(tmp_path):
+    """
+    Só o PDF da OS vai pra pasta de fora — os JSON que acompanham (usados
+    só internamente pelo controle de estoque) não são enviados (decisão
+    do usuário, 2026-08-26): quem abre a pasta de fora quer ver a OS, não
+    um arquivo de máquina/log.
+    """
     origem = tmp_path / "etiquetas_geradas"
     _criar_pedido_fake(origem, "CLIENTE_20260826_100000")
 
@@ -25,7 +31,7 @@ def test_listar_pedidos_encontra_so_arquivos_de_os(tmp_path):
 
     assert len(pedidos) == 1
     nomes = {a.name for a in pedidos[0]["arquivos"]}
-    assert nomes == {"OS - CLIENTE.pdf", "OS - CLIENTE.json", "OS - CLIENTE - novos 26-08_100000.json"}
+    assert nomes == {"OS - CLIENTE.pdf"}
     assert pedidos[0]["ja_enviado"] is False
     assert pedidos[0]["cliente"] == "CLIENTE"
     assert pedidos[0]["subpasta"] == "26-08-2026 10-00-00"
@@ -49,11 +55,12 @@ def test_enviar_os_copia_sem_apagar_original(tmp_path):
     resumo = enviar_os(pedidos, destino)
 
     assert resumo[0]["erros"] == []
-    assert len(resumo[0]["copiados"]) == 3
+    assert len(resumo[0]["copiados"]) == 1
     assert len(list(pasta.iterdir())) == 5, "nada deveria ser apagado do original"
 
     pasta_no_destino = destino / "CLIENTE" / "26-08-2026 10-00-00"
     assert not (pasta_no_destino / "Checklist CLIENTE - LONA.pdf").exists(), "checklist não deveria ser copiado"
+    assert not (pasta_no_destino / "OS - CLIENTE.json").exists(), "JSON não deveria ser copiado, só o PDF"
     assert (pasta_no_destino / "OS - CLIENTE.pdf").exists()
 
 

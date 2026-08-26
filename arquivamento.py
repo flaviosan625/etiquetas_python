@@ -1,9 +1,12 @@
 """
 Envio das OS (Ordem de Serviço) geradas pra uma pasta fora do PC —
 por padrão, a pasta do OneDrive já usada pelo negócio — sem apagar
-nada localmente. Só as OS (PDF + JSON, tudo que começa com "OS - "),
-nunca o checklist inteiro (miniaturas, muito mais pesado, e o
-checklist marcado à caneta na produção não tem por que sair do PC).
+nada localmente. Só o PDF da OS (nunca o checklist inteiro — miniaturas,
+muito mais pesado, e o checklist marcado à caneta na produção não tem
+por que sair do PC). Os arquivos JSON que acompanham a OS (usados só
+internamente pelo controle de estoque — ver relatorios.salvar_dados_os)
+NÃO são enviados (decisão do usuário, 2026-08-26): quem abre essa pasta
+de fora quer ver a OS, não um arquivo de log/máquina.
 
 Decisão do usuário (2026-08-25): mandar é sempre uma ação manual, com
 confirmação antes de copiar — nunca acontece sozinho ao gerar uma OS
@@ -38,8 +41,8 @@ PASTA_DESTINO_PADRAO = pathlib.Path.home() / "OneDrive" / "UNYCOMUNICACAO" / "Or
 
 
 def _arquivos_os(pasta_pedido):
-    """Todo arquivo da pasta que começa com 'OS - ' (PDF da OS + os JSON, legado e por rodada)."""
-    return sorted(pathlib.Path(pasta_pedido).glob("OS - *"))
+    """Só o PDF da OS ('OS - CLIENTE.pdf') — nunca os JSON que acompanham (esses ficam só localmente, ver módulo)."""
+    return sorted(pathlib.Path(pasta_pedido).glob("OS - *.pdf"))
 
 
 def _pasta_cliente_no_destino(pasta_destino, nome_cliente):
