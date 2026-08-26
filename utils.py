@@ -7,6 +7,15 @@ import re
 # caracteres de controle (invisíveis, mas que causam problema igual).
 _CARACTERES_INVALIDOS = r'[<>:"/\\|?*\x00-\x1f]'
 
+# pasta de saída é sempre "CLIENTE_AAAAMMDD_HHMMSS" (ver processamento.py)
+_PADRAO_SUFIXO_TIMESTAMP = re.compile(r"_\d{8}_\d{6}$")
+
+
+def nome_cliente_da_pasta(nome_pasta):
+    """Tira o sufixo "_AAAAMMDD_HHMMSS" de um nome de pasta de pedido, sobrando só o nome do cliente."""
+    return _PADRAO_SUFIXO_TIMESTAMP.sub("", nome_pasta)
+
+
 _ACENTOS = str.maketrans(
     "ÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇáàâãäéèêëíìîïóòôõöúùûüç",
     "AAAAAEEEEIIIIOOOOOUUUUCaaaaaeeeeiiiiooooouuuuc",

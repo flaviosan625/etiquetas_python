@@ -9,9 +9,20 @@ Decisão do usuário (2026-08-25): mandar é sempre uma ação manual, com
 confirmação antes de copiar — nunca acontece sozinho ao gerar uma OS
 nova, mesmo espírito já usado no resto do sistema (baixa de estoque
 também é sempre manual e sempre com prévia antes de confirmar).
+
+Organização dentro da pasta de destino (2026-08-26): material chega
+aos poucos, o mesmo cliente pode gerar várias pastas de pedido ao
+longo do tempo (uma por rodada de processamento — ver
+estado_pedido.py) — cada uma vira uma SUBPASTA dentro da pasta do
+CLIENTE, nunca pastas soltas misturadas. Precisa da subpasta por
+pedido porque o nome do arquivo da OS se repete a cada rodada
+("OS - CLIENTE.pdf"); sem isso, o pedido mais novo sobrescreveria o
+mais antigo no mesmo destino.
 """
 import pathlib
 import shutil
+
+from utils import nome_cliente_da_pasta
 
 PASTA_DESTINO_PADRAO = pathlib.Path.home() / "OneDrive" / "UNYCOMUNICACAO" / "Ordem de Serviço"
 
@@ -40,12 +51,14 @@ def listar_pedidos(pasta_saida_base="etiquetas_geradas", pasta_destino=PASTA_DES
         if not arquivos:
             continue
 
-        pasta_destino_pedido = pathlib.Path(pasta_destino) / pasta_pedido.name
+        nome_cliente = nome_cliente_da_pasta(pasta_pedido.name)
+        pasta_destino_pedido = pathlib.Path(pasta_destino) / nome_cliente / pasta_pedido.name
         ja_enviados = all((pasta_destino_pedido / a.name).exists() for a in arquivos)
 
         pedidos.append({
             "pasta": pasta_pedido,
             "nome": pasta_pedido.name,
+            "cliente": nome_cliente,
             "arquivos": arquivos,
             "tamanho_bytes": sum(a.stat().st_size for a in arquivos),
             "ja_enviado": ja_enviados,
@@ -57,10 +70,13 @@ def enviar_os(pedidos_selecionados, pasta_destino=PASTA_DESTINO_PADRAO):
     """
     Copia (nunca move — o arquivo local continua existindo, inclusive
     porque a tela de baixa de estoque lê o JSON da OS direto da pasta
-    local) os arquivos de OS de cada pedido selecionado pra uma
-    subpasta com o mesmo nome do pedido dentro de 'pasta_destino'.
-    Quem chama já deve ter confirmado com o usuário antes de invocar
-    isso — essa função não pede confirmação nenhuma, só executa.
+    local) os arquivos de OS de cada pedido selecionado pra
+    'pasta_destino/CLIENTE/pasta_do_pedido/' — agrupado por cliente,
+    com uma subpasta por pedido (pra pedidos diferentes do mesmo
+    cliente nunca sobrescreverem um ao outro, já que o nome do arquivo
+    da OS se repete a cada rodada). Quem chama já deve ter confirmado
+    com o usuário antes de invocar isso — essa função não pede
+    confirmação nenhuma, só executa.
 
     Devolve um resumo por pedido: quantos arquivos copiados e o erro
     de qualquer arquivo que falhar (não interrompe os demais).
@@ -68,7 +84,8 @@ def enviar_os(pedidos_selecionados, pasta_destino=PASTA_DESTINO_PADRAO):
     pasta_destino = pathlib.Path(pasta_destino)
     resumo = []
     for pedido in pedidos_selecionados:
-        pasta_destino_pedido = pasta_destino / pedido["nome"]
+        nome_cliente = pedido.get("cliente") or nome_cliente_da_pasta(pedido["nome"])
+        pasta_destino_pedido = pasta_destino / nome_cliente / pedido["nome"]
         copiados = []
         erros = []
         try:

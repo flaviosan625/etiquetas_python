@@ -667,20 +667,34 @@ class JanelaArquivarOS(tk.Toplevel):
             tk.Label(self.frame_lista, text="Nenhum pedido com OS gerada encontrado.", fg="#666666").pack(anchor="w", pady=8)
             return
 
+        # Agrupado por cliente (não por pasta solta) — mesma organização
+        # usada no destino: pasta_destino/CLIENTE/pasta_do_pedido/. A
+        # ordem de self.pedidos já é do pedido mais recente pro mais
+        # antigo, então o primeiro cliente visto aqui é o que teve
+        # atividade mais recente.
+        clientes = {}
         for pedido in self.pedidos:
-            linha = tk.Frame(self.frame_lista)
-            linha.pack(fill="x", pady=3)
+            clientes.setdefault(pedido["cliente"], []).append(pedido)
 
-            var = tk.BooleanVar(value=False)
-            tk.Checkbutton(linha, variable=var).pack(side="left")
-            self.variaveis.append((var, pedido))
+        for nome_cliente, pedidos_cliente in clientes.items():
+            tk.Label(
+                self.frame_lista, text=nome_cliente, font=("Segoe UI", 9, "bold"), fg=COR_ACENTO,
+            ).pack(anchor="w", pady=(10, 2))
 
-            texto = f"{pedido['nome']}  ·  {_formatar_tamanho(pedido['tamanho_bytes'])}"
-            if pedido["ja_enviado"]:
-                texto += "  ·  ✓ já enviado"
-            tk.Label(linha, text=texto, anchor="w", fg=COR_POSITIVO if pedido["ja_enviado"] else COR_TEXTO).pack(
-                side="left", fill="x", expand=True,
-            )
+            for pedido in pedidos_cliente:
+                linha = tk.Frame(self.frame_lista)
+                linha.pack(fill="x", pady=2, padx=(12, 0))
+
+                var = tk.BooleanVar(value=False)
+                tk.Checkbutton(linha, variable=var).pack(side="left")
+                self.variaveis.append((var, pedido))
+
+                texto = f"{pedido['nome']}  ·  {_formatar_tamanho(pedido['tamanho_bytes'])}"
+                if pedido["ja_enviado"]:
+                    texto += "  ·  ✓ já enviado"
+                tk.Label(linha, text=texto, anchor="w", fg=COR_POSITIVO if pedido["ja_enviado"] else COR_TEXTO).pack(
+                    side="left", fill="x", expand=True,
+                )
 
     def _confirmar_envio(self):
         selecionados = [pedido for var, pedido in self.variaveis if var.get()]
