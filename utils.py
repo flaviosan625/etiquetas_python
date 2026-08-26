@@ -8,12 +8,41 @@ import re
 _CARACTERES_INVALIDOS = r'[<>:"/\\|?*\x00-\x1f]'
 
 # pasta de saída é sempre "CLIENTE_AAAAMMDD_HHMMSS" (ver processamento.py)
-_PADRAO_SUFIXO_TIMESTAMP = re.compile(r"_\d{8}_\d{6}$")
+_PADRAO_SUFIXO_TIMESTAMP = re.compile(r"_(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})$")
 
 
 def nome_cliente_da_pasta(nome_pasta):
     """Tira o sufixo "_AAAAMMDD_HHMMSS" de um nome de pasta de pedido, sobrando só o nome do cliente."""
     return _PADRAO_SUFIXO_TIMESTAMP.sub("", nome_pasta)
+
+
+def data_hora_da_pasta(nome_pasta):
+    """
+    Extrai a data/hora do sufixo "_AAAAMMDD_HHMMSS" de um nome de pasta
+    de pedido, formatada como "DD-MM-AAAA HH-MM-SS". Usada como nome de
+    subpasta mais enxuto (sem repetir o nome do cliente, que já é a
+    pasta de fora) — inclui hora e minuto E segundo de propósito: mais
+    de um pedido do mesmo cliente pode acontecer no mesmo dia (material
+    chegando aos poucos), só a data sozinha colidiria entre eles.
+    Sem o padrão esperado no nome, devolve o nome original sem mudar
+    nada (mais seguro que inventar uma data).
+    """
+    m = _PADRAO_SUFIXO_TIMESTAMP.search(nome_pasta)
+    if not m:
+        return nome_pasta
+    ano, mes, dia, hora, minuto, segundo = m.groups()
+    return f"{dia}-{mes}-{ano} {hora}-{minuto}-{segundo}"
+
+
+def chave_comparacao_cliente(nome):
+    """
+    Chave só pra COMPARAR se dois nomes são do mesmo cliente — ignora
+    diferença de espaço (ex: "SUPERBET" vs "SUPER BET", digitado
+    diferente entre uma vez e outra). Não serve pra exibir/nomear pasta
+    nenhuma, só pra achar uma pasta de cliente já existente que
+    provavelmente é a mesma, apesar da grafia diferente.
+    """
+    return re.sub(r"\s+", "", nome.upper())
 
 
 _ACENTOS = str.maketrans(

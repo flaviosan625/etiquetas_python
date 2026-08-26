@@ -17,12 +17,22 @@ estado_pedido.py) — cada uma vira uma SUBPASTA dentro da pasta do
 CLIENTE, nunca pastas soltas misturadas. Precisa da subpasta por
 pedido porque o nome do arquivo da OS se repete a cada rodada
 ("OS - CLIENTE.pdf"); sem isso, o pedido mais novo sobrescreveria o
-mais antigo no mesmo destino.
+mais antigo no mesmo destino. O nome da subpasta é só a data/hora (ver
+utils.data_hora_da_pasta) — o nome do cliente já não precisa repetir,
+é a pasta de fora — com hora e segundo incluídos de propósito: mais de
+um pedido do mesmo cliente pode acontecer no mesmo dia, só a data
+sozinha colidiria.
+
+A pasta de cliente reaproveita uma já existente no destino, comparando
+sem diferença de espaço (ver utils.chave_comparacao_cliente) — mesmo
+problema real já visto no processamento local (cliente digitado
+"SUPERBET" numa vez e "Super Bet" noutra não pode virar duas pastas
+de cliente diferentes aqui também).
 """
 import pathlib
 import shutil
 
-from utils import nome_cliente_da_pasta
+from utils import chave_comparacao_cliente, data_hora_da_pasta, nome_cliente_da_pasta
 
 PASTA_DESTINO_PADRAO = pathlib.Path.home() / "OneDrive" / "UNYCOMUNICACAO" / "Ordem de Serviço"
 
@@ -30,6 +40,23 @@ PASTA_DESTINO_PADRAO = pathlib.Path.home() / "OneDrive" / "UNYCOMUNICACAO" / "Or
 def _arquivos_os(pasta_pedido):
     """Todo arquivo da pasta que começa com 'OS - ' (PDF da OS + os JSON, legado e por rodada)."""
     return sorted(pathlib.Path(pasta_pedido).glob("OS - *"))
+
+
+def _pasta_cliente_no_destino(pasta_destino, nome_cliente):
+    """
+    Acha, dentro de 'pasta_destino', uma pasta de cliente já existente
+    cujo nome bate com 'nome_cliente' ignorando diferença de espaço. Se
+    achar, devolve o nome dela como já está lá (preserva a grafia que
+    já foi usada da primeira vez); senão, devolve 'nome_cliente' como
+    veio — vira a grafia canônica pra esse cliente dali em diante.
+    """
+    pasta_destino = pathlib.Path(pasta_destino)
+    chave_alvo = chave_comparacao_cliente(nome_cliente)
+    if pasta_destino.exists():
+        for pasta_existente in pasta_destino.iterdir():
+            if pasta_existente.is_dir() and chave_comparacao_cliente(pasta_existente.name) == chave_alvo:
+                return pasta_existente.name
+    return nome_cliente
 
 
 def listar_pedidos(pasta_saida_base="etiquetas_geradas", pasta_destino=PASTA_DESTINO_PADRAO):
@@ -51,14 +78,16 @@ def listar_pedidos(pasta_saida_base="etiquetas_geradas", pasta_destino=PASTA_DES
         if not arquivos:
             continue
 
-        nome_cliente = nome_cliente_da_pasta(pasta_pedido.name)
-        pasta_destino_pedido = pathlib.Path(pasta_destino) / nome_cliente / pasta_pedido.name
+        nome_cliente = _pasta_cliente_no_destino(pasta_destino, nome_cliente_da_pasta(pasta_pedido.name))
+        nome_subpasta = data_hora_da_pasta(pasta_pedido.name)
+        pasta_destino_pedido = pathlib.Path(pasta_destino) / nome_cliente / nome_subpasta
         ja_enviados = all((pasta_destino_pedido / a.name).exists() for a in arquivos)
 
         pedidos.append({
             "pasta": pasta_pedido,
             "nome": pasta_pedido.name,
             "cliente": nome_cliente,
+            "subpasta": nome_subpasta,
             "arquivos": arquivos,
             "tamanho_bytes": sum(a.stat().st_size for a in arquivos),
             "ja_enviado": ja_enviados,
@@ -71,12 +100,13 @@ def enviar_os(pedidos_selecionados, pasta_destino=PASTA_DESTINO_PADRAO):
     Copia (nunca move — o arquivo local continua existindo, inclusive
     porque a tela de baixa de estoque lê o JSON da OS direto da pasta
     local) os arquivos de OS de cada pedido selecionado pra
-    'pasta_destino/CLIENTE/pasta_do_pedido/' — agrupado por cliente,
-    com uma subpasta por pedido (pra pedidos diferentes do mesmo
-    cliente nunca sobrescreverem um ao outro, já que o nome do arquivo
-    da OS se repete a cada rodada). Quem chama já deve ter confirmado
-    com o usuário antes de invocar isso — essa função não pede
-    confirmação nenhuma, só executa.
+    'pasta_destino/CLIENTE/DD-MM-AAAA HH-MM-SS/' — agrupado por
+    cliente (reaproveitando a pasta já existente, mesmo que o nome
+    tenha sido digitado com espaço diferente dessa vez — ver
+    _pasta_cliente_no_destino), com uma subpasta por pedido pra nunca
+    um sobrescrever o outro. Quem chama já deve ter confirmado com o
+    usuário antes de invocar isso — essa função não pede confirmação
+    nenhuma, só executa.
 
     Devolve um resumo por pedido: quantos arquivos copiados e o erro
     de qualquer arquivo que falhar (não interrompe os demais).
@@ -84,8 +114,9 @@ def enviar_os(pedidos_selecionados, pasta_destino=PASTA_DESTINO_PADRAO):
     pasta_destino = pathlib.Path(pasta_destino)
     resumo = []
     for pedido in pedidos_selecionados:
-        nome_cliente = pedido.get("cliente") or nome_cliente_da_pasta(pedido["nome"])
-        pasta_destino_pedido = pasta_destino / nome_cliente / pedido["nome"]
+        nome_cliente = pedido.get("cliente") or _pasta_cliente_no_destino(pasta_destino, nome_cliente_da_pasta(pedido["nome"]))
+        nome_subpasta = pedido.get("subpasta") or data_hora_da_pasta(pedido["nome"])
+        pasta_destino_pedido = pasta_destino / nome_cliente / nome_subpasta
         copiados = []
         erros = []
         try:

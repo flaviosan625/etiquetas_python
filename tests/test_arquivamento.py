@@ -28,6 +28,7 @@ def test_listar_pedidos_encontra_so_arquivos_de_os(tmp_path):
     assert nomes == {"OS - CLIENTE.pdf", "OS - CLIENTE.json", "OS - CLIENTE - novos 26-08_100000.json"}
     assert pedidos[0]["ja_enviado"] is False
     assert pedidos[0]["cliente"] == "CLIENTE"
+    assert pedidos[0]["subpasta"] == "26-08-2026 10-00-00"
 
 
 def test_pasta_sem_os_nao_aparece_na_lista(tmp_path):
@@ -51,7 +52,7 @@ def test_enviar_os_copia_sem_apagar_original(tmp_path):
     assert len(resumo[0]["copiados"]) == 3
     assert len(list(pasta.iterdir())) == 5, "nada deveria ser apagado do original"
 
-    pasta_no_destino = destino / "CLIENTE" / "CLIENTE_20260826_100000"
+    pasta_no_destino = destino / "CLIENTE" / "26-08-2026 10-00-00"
     assert not (pasta_no_destino / "Checklist CLIENTE - LONA.pdf").exists(), "checklist não deveria ser copiado"
     assert (pasta_no_destino / "OS - CLIENTE.pdf").exists()
 
@@ -68,13 +69,31 @@ def test_ja_enviado_fica_true_depois_do_envio(tmp_path):
     assert pedidos_depois[0]["ja_enviado"] is True
 
 
+def test_dois_pedidos_do_mesmo_dia_nao_colidem_na_subpasta(tmp_path):
+    """Dois pedidos do mesmo cliente no mesmo dia, minutos/segundos diferentes — precisa gerar subpastas diferentes."""
+    origem = tmp_path / "etiquetas_geradas"
+    destino = tmp_path / "destino"
+    _criar_pedido_fake(origem, "CLIENTE_20260826_100000", nome_cliente="CLIENTE")
+    _criar_pedido_fake(origem, "CLIENTE_20260826_153045", nome_cliente="CLIENTE")
+
+    pedidos = listar_pedidos(origem, destino)
+    subpastas = {p["subpasta"] for p in pedidos}
+    assert subpastas == {"26-08-2026 10-00-00", "26-08-2026 15-30-45"}
+
+    resumo = enviar_os(pedidos, destino)
+    assert all(r["erros"] == [] for r in resumo)
+
+    pasta_cliente = destino / "CLIENTE"
+    assert (pasta_cliente / "26-08-2026 10-00-00" / "OS - CLIENTE.pdf").exists()
+    assert (pasta_cliente / "26-08-2026 15-30-45" / "OS - CLIENTE.pdf").exists()
+
+
 def test_dois_pedidos_do_mesmo_cliente_ficam_agrupados_sem_se_sobrescrever(tmp_path):
     """
     Cenário real: material chega aos poucos, o mesmo cliente gera mais
     de uma pasta de pedido ao longo do tempo. As duas devem terminar
     dentro da MESMA pasta de cliente no destino, cada uma na própria
-    subpasta — nunca uma sobrescrevendo a outra (o nome do arquivo da
-    OS, "OS - CLIENTE.pdf", se repete a cada rodada).
+    subpasta — nunca uma sobrescrevendo a outra.
     """
     origem = tmp_path / "etiquetas_geradas"
     destino = tmp_path / "destino"
@@ -88,5 +107,28 @@ def test_dois_pedidos_do_mesmo_cliente_ficam_agrupados_sem_se_sobrescrever(tmp_p
     assert all(r["erros"] == [] for r in resumo)
 
     pasta_cliente = destino / "SUPERBET"
-    assert (pasta_cliente / "SUPERBET_20260824_093132" / "OS - SUPERBET.pdf").exists()
-    assert (pasta_cliente / "SUPERBET_20260825_151149" / "OS - SUPERBET.pdf").exists()
+    assert (pasta_cliente / "24-08-2026 09-31-32" / "OS - SUPERBET.pdf").exists()
+    assert (pasta_cliente / "25-08-2026 15-11-49" / "OS - SUPERBET.pdf").exists()
+
+
+def test_nome_de_cliente_com_espaco_diferente_reaproveita_a_mesma_pasta(tmp_path):
+    """
+    Cenário real que já aconteceu: cliente digitado 'SUPERBET' (sem
+    espaço) num pedido e 'SUPER BET' (com espaço) noutro. Os dois
+    precisam terminar dentro da MESMA pasta de cliente no destino, não
+    em duas pastas fragmentadas.
+    """
+    origem = tmp_path / "etiquetas_geradas"
+    destino = tmp_path / "destino"
+    _criar_pedido_fake(origem, "SUPERBET_20260824_093132", nome_cliente="SUPERBET")
+
+    pedidos_1 = listar_pedidos(origem, destino)
+    enviar_os(pedidos_1, destino)
+
+    # segundo pedido, mesmo cliente, espaço digitado diferente
+    _criar_pedido_fake(origem, "SUPER BET_20260825_151149", nome_cliente="SUPER BET")
+    pedidos_2 = listar_pedidos(origem, destino)
+    pedido_novo = next(p for p in pedidos_2 if p["nome"] == "SUPER BET_20260825_151149")
+
+    assert pedido_novo["cliente"] == "SUPERBET", "deveria reaproveitar a grafia já usada na primeira pasta"
+    assert len(list(destino.iterdir())) == 1, "não deveria ter criado uma segunda pasta de cliente"

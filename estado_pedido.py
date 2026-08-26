@@ -15,45 +15,30 @@ import base64
 import csv
 import json
 import pathlib
-import re
+
+from utils import chave_comparacao_cliente, nome_cliente_da_pasta
 
 NOME_ARQUIVO_ESTADO = "estado_pedido.json"
-
-# pasta de saída é sempre "CLIENTE_AAAAMMDD_HHMMSS" (ver processamento.py)
-_PADRAO_SUFIXO_TIMESTAMP = re.compile(r"_\d{8}_\d{6}$")
-
-
-def _chave_comparacao(nome):
-    """
-    Chave só pra COMPARAR se duas pastas são do mesmo cliente — ignora
-    diferença de espaço (ex: "SUPERBET" vs "SUPER BET", digitado
-    diferente entre uma rodada e outra e que por isso não seria
-    reconhecido como o mesmo pedido). Não muda o nome real da pasta,
-    que continua exatamente como foi sanitizado a partir do que o
-    usuário digitou.
-    """
-    return re.sub(r"\s+", "", nome.upper())
 
 
 def localizar_pastas_cliente(nome_cliente_seguro, pasta_saida_base="etiquetas_geradas"):
     """
     Lista as pastas já existentes desse cliente, mais recente primeiro
     pelo nome (o timestamp no nome já ordena assim). Compara o nome do
-    cliente ignorando diferença de espaço (ver _chave_comparacao) — sem
-    isso, um espaço a mais ou a menos na hora de digitar faz o sistema
-    não achar o pedido anterior e começar um do zero, sem avisar.
-    Cliente nunca processado antes: lista vazia.
+    cliente ignorando diferença de espaço (ver utils.chave_comparacao_
+    cliente) — sem isso, um espaço a mais ou a menos na hora de digitar
+    faz o sistema não achar o pedido anterior e começar um do zero, sem
+    avisar. Cliente nunca processado antes: lista vazia.
     """
     base = pathlib.Path(pasta_saida_base)
     if not base.exists():
         return []
-    chave_alvo = _chave_comparacao(nome_cliente_seguro)
+    chave_alvo = chave_comparacao_cliente(nome_cliente_seguro)
     pastas = []
     for p in base.iterdir():
         if not p.is_dir():
             continue
-        nome_sem_timestamp = _PADRAO_SUFIXO_TIMESTAMP.sub("", p.name)
-        if _chave_comparacao(nome_sem_timestamp) == chave_alvo:
+        if chave_comparacao_cliente(nome_cliente_da_pasta(p.name)) == chave_alvo:
             pastas.append(p)
     return sorted(pastas, key=lambda p: p.name, reverse=True)
 
