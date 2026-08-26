@@ -3,6 +3,5 @@ __pycache__/
 .pytest_cache/
 etiquetas_geradas/
 entrada/
-Ordem de Serviço/
 config.json.bak
 estoque.json.bak

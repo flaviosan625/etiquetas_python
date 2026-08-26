@@ -1,19 +1,9 @@
 """
-Envio das OS (Ordem de Serviço) geradas pra uma pasta compartilhada
-na rede local — por padrão, uma pasta dentro do próprio projeto,
-irmã de "entrada" (mesmo compartilhamento Windows que já expõe
-"entrada" pras outras máquinas da rede hoje — ver
-[[project_network_setup]] — então nenhum compartilhamento novo
-precisa ser criado; qualquer PC que já enxerga "entrada" também
-enxerga essa). Não apaga nada localmente. Só as OS (PDF + JSON, tudo
-que começa com "OS - "), nunca o checklist inteiro (miniaturas, muito
-mais pesado, e o checklist marcado à caneta na produção não tem por
-que sair do PC).
-
-(Até 2026-08-26 o destino padrão era uma pasta do OneDrive pessoal —
-trocado porque OneDrive pessoal só sincroniza pra outros dispositivos
-logados na MESMA conta; como cada PC da produção loga com uma conta
-diferente, a pasta nunca aparecia nas outras máquinas.)
+Envio das OS (Ordem de Serviço) geradas pra uma pasta fora do PC —
+por padrão, a pasta do OneDrive já usada pelo negócio — sem apagar
+nada localmente. Só as OS (PDF + JSON, tudo que começa com "OS - "),
+nunca o checklist inteiro (miniaturas, muito mais pesado, e o
+checklist marcado à caneta na produção não tem por que sair do PC).
 
 Decisão do usuário (2026-08-25): mandar é sempre uma ação manual, com
 confirmação antes de copiar — nunca acontece sozinho ao gerar uma OS
@@ -44,7 +34,7 @@ import shutil
 
 from utils import chave_comparacao_cliente, data_hora_da_pasta, nome_cliente_da_pasta
 
-PASTA_DESTINO_PADRAO = pathlib.Path("Ordem de Serviço").resolve()
+PASTA_DESTINO_PADRAO = pathlib.Path.home() / "OneDrive" / "UNYCOMUNICACAO" / "Ordem de Serviço"
 
 
 def _arquivos_os(pasta_pedido):
