@@ -3,7 +3,8 @@
     "LONA": {
       "tipo": "rolo",
       "largura_cm": 320.0,
-      "comprimento_cm": 5000.0
+      "comprimento_cm": 5000.0,
+      "minutos_por_m2": 5.0
     },
     "ADESIVO": {
       "tipo": "rolo",

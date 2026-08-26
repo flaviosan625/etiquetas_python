@@ -625,7 +625,38 @@
       "codigo_planilha": null
     }
   },
-  "movimentos": [],
-  "proximo_id": 1,
+  "movimentos": [
+    {
+      "id": 1,
+      "data": "26/08/2026 07:56:57",
+      "produto": "ADESIVO_BRANCO_FOSCO_127",
+      "tipo": "entrada",
+      "quantidade": 5.0,
+      "observacao": "",
+      "origem_pedido": null,
+      "estorno_de": null
+    },
+    {
+      "id": 2,
+      "data": "26/08/2026 07:57:51",
+      "produto": "ADESIVO_CRISTAL_127",
+      "tipo": "entrada",
+      "quantidade": 5.0,
+      "observacao": "",
+      "origem_pedido": null,
+      "estorno_de": null
+    },
+    {
+      "id": 3,
+      "data": "26/08/2026 07:58:40",
+      "produto": "LONA_FOSCA_440_320",
+      "tipo": "entrada",
+      "quantidade": 4.0,
+      "observacao": "",
+      "origem_pedido": null,
+      "estorno_de": null
+    }
+  ],
+  "proximo_id": 4,
   "producao_mensal": []
 }
