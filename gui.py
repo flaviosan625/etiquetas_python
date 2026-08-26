@@ -22,6 +22,7 @@ import tkinter as tk
 from datetime import date
 from tkinter import filedialog, messagebox, ttk
 
+from arquivamento import PASTA_DESTINO_PADRAO, enviar_os, listar_pedidos
 from branding import CAMINHO_LOGO_GUI
 from config import atualizar_ultimo_uso, carregar_config, salvar_config
 from dimensoes import formatar_variante
@@ -104,6 +105,11 @@ class JanelaPrincipal(tk.Tk):
         tk.Button(
             self, text="📦 Controle de Estoque...", relief="flat",
             fg=COR_ACENTO, cursor="hand2", command=self._abrir_estoque,
+        ).pack(anchor="w", padx=16, pady=(0, 2))
+
+        tk.Button(
+            self, text="☁ Enviar OS para o OneDrive...", relief="flat",
+            fg=COR_ACENTO, cursor="hand2", command=self._abrir_arquivamento,
         ).pack(anchor="w", padx=16, pady=(0, 10))
 
         ttk.Separator(self).pack(fill="x", padx=16)
@@ -162,6 +168,9 @@ class JanelaPrincipal(tk.Tk):
 
     def _abrir_estoque(self):
         JanelaEstoque(self, self.config_dados)
+
+    def _abrir_arquivamento(self):
+        JanelaArquivarOS(self)
 
     def _config_atualizada(self, nova_config):
         self.config_dados = nova_config
@@ -595,6 +604,112 @@ class JanelaVariantes(tk.Toplevel):
 
         self.ao_salvar(novas_variantes)
         self.destroy()
+
+
+def _formatar_tamanho(tamanho_bytes):
+    if tamanho_bytes >= 1024 * 1024:
+        return f"{tamanho_bytes / (1024 * 1024):.1f} MB"
+    return f"{tamanho_bytes / 1024:.0f} KB"
+
+
+class JanelaArquivarOS(tk.Toplevel):
+    """
+    Envia as OS (PDF + JSON, nunca o checklist) dos pedidos escolhidos
+    pra uma pasta fora do PC (OneDrive por padrão — ver
+    arquivamento.PASTA_DESTINO_PADRAO). Sempre uma ação manual: lista
+    os pedidos, o usuário marca quais quer mandar, e só copia depois de
+    confirmar numa caixa de diálogo — nada é apagado localmente.
+    """
+
+    def __init__(self, mestre):
+        super().__init__(mestre)
+        self.title("Enviar OS para o OneDrive")
+        self.geometry("560x540")
+        self.minsize(480, 400)
+        self.transient(mestre)
+
+        pad = {"padx": 16, "pady": 6}
+        tk.Label(self, text="Enviar OS para o OneDrive", font=("Segoe UI", 13, "bold")).pack(anchor="w", padx=16, pady=(14, 2))
+        tk.Label(
+            self, fg="#666666", justify="left", wraplength=520,
+            text="Só a OS de cada pedido (PDF + JSON) é copiada — o checklist fica só no PC. "
+                 f"Nada é apagado localmente. Destino: {PASTA_DESTINO_PADRAO}",
+        ).pack(anchor="w", padx=16, pady=(0, 10))
+
+        canvas = tk.Canvas(self, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(self, orient="vertical", command=canvas.yview)
+        self.frame_lista = tk.Frame(canvas)
+        self.frame_lista.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.create_window((0, 0), window=self.frame_lista, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.pack(side="left", fill="both", expand=True, padx=(16, 0), pady=4)
+        scrollbar.pack(side="left", fill="y", padx=(0, 16), pady=4)
+
+        frame_botoes = tk.Frame(self)
+        frame_botoes.pack(fill="x", padx=16, pady=14)
+        tk.Button(frame_botoes, text="Fechar", command=self.destroy).pack(side="right", padx=(6, 0))
+        tk.Button(
+            frame_botoes, text="Enviar selecionados", bg=COR_ACENTO, fg="white", relief="flat",
+            command=self._confirmar_envio,
+        ).pack(side="right")
+
+        self.pedidos = listar_pedidos()
+        self.variaveis = []
+        self._preencher_lista()
+        self.grab_set()
+
+    def _preencher_lista(self):
+        for widget in self.frame_lista.winfo_children():
+            widget.destroy()
+        self.variaveis = []
+
+        if not self.pedidos:
+            tk.Label(self.frame_lista, text="Nenhum pedido com OS gerada encontrado.", fg="#666666").pack(anchor="w", pady=8)
+            return
+
+        for pedido in self.pedidos:
+            linha = tk.Frame(self.frame_lista)
+            linha.pack(fill="x", pady=3)
+
+            var = tk.BooleanVar(value=False)
+            tk.Checkbutton(linha, variable=var).pack(side="left")
+            self.variaveis.append((var, pedido))
+
+            texto = f"{pedido['nome']}  ·  {_formatar_tamanho(pedido['tamanho_bytes'])}"
+            if pedido["ja_enviado"]:
+                texto += "  ·  ✓ já enviado"
+            tk.Label(linha, text=texto, anchor="w", fg=COR_POSITIVO if pedido["ja_enviado"] else COR_TEXTO).pack(
+                side="left", fill="x", expand=True,
+            )
+
+    def _confirmar_envio(self):
+        selecionados = [pedido for var, pedido in self.variaveis if var.get()]
+        if not selecionados:
+            messagebox.showwarning("Nada selecionado", "Marque ao menos um pedido pra enviar.")
+            return
+
+        total_arquivos = sum(len(p["arquivos"]) for p in selecionados)
+        if not messagebox.askyesno(
+            "Confirmar envio",
+            f"Enviar {total_arquivos} arquivo(s) de OS de {len(selecionados)} pedido(s) para:\n\n"
+            f"{PASTA_DESTINO_PADRAO}\n\nNada é apagado localmente. Confirma?",
+        ):
+            return
+
+        resumo = enviar_os(selecionados)
+        total_copiados = sum(len(r["copiados"]) for r in resumo)
+        erros = [f"{r['nome']}: {e}" for r in resumo for e in r["erros"]]
+
+        if erros:
+            messagebox.showwarning(
+                "Envio concluído com avisos",
+                f"{total_copiados} arquivo(s) enviados.\n\nFalhas:\n" + "\n".join(erros),
+            )
+        else:
+            messagebox.showinfo("Envio concluído", f"{total_copiados} arquivo(s) enviados com sucesso.")
+
+        self.pedidos = listar_pedidos()
+        self._preencher_lista()
 
 
 class JanelaEstoque(tk.Toplevel):
