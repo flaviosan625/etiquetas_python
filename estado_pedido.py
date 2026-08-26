@@ -106,6 +106,16 @@ def carregar_estado(pasta_saida):
         with open(caminho, "r", encoding="utf-8") as f:
             dados = json.load(f)
     except (json.JSONDecodeError, OSError):
+        # arquivo corrompido (ex: queda de energia/sync do OneDrive no
+        # meio de uma escrita antiga, de antes de salvar_estado virar
+        # atômico) — guarda uma cópia pra dar pra investigar depois, em
+        # vez de só descartar em silêncio (mesmo espírito de config.py/
+        # estoque.py). Sem isso, o filtro de "já processado" voltaria a
+        # zero sem nenhum aviso, reprocessando tudo de novo.
+        try:
+            caminho.replace(caminho.with_suffix(".json.bak"))
+        except OSError:
+            pass
         return []
 
     itens = dados.get("itens", [])
@@ -124,6 +134,13 @@ def salvar_estado(pasta_saida, itens):
     'reposicao_em', usados só pra desenhar o selo na OS dessa rodada) é
     persistido — 'reposicao' (se esse item era uma reposição) continua
     salvo, é fato permanente do item, não muda depois.
+
+    Escreve num arquivo temporário e só troca no final (mesmo padrão já
+    usado em processamento._colar_paginas_no_final) — esse arquivo é a
+    memória inteira do filtro de "já processado"; uma queda de energia
+    ou conflito de sincronização do OneDrive no meio de uma escrita
+    direta deixaria ele corrompido, e o próximo carregar_estado
+    reprocessaria tudo de novo sem avisar.
     """
     itens_serializaveis = []
     for item in itens:
@@ -133,8 +150,10 @@ def salvar_estado(pasta_saida, itens):
         itens_serializaveis.append(copia)
 
     caminho = pathlib.Path(pasta_saida) / NOME_ARQUIVO_ESTADO
-    with open(caminho, "w", encoding="utf-8") as f:
+    caminho_tmp = caminho.with_suffix(".tmp.json")
+    with open(caminho_tmp, "w", encoding="utf-8") as f:
         json.dump({"itens": itens_serializaveis}, f, ensure_ascii=False, indent=2)
+    caminho_tmp.replace(caminho)
 
 
 def nomes_ja_processados(itens_estado):

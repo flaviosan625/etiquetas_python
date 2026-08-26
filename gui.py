@@ -278,7 +278,15 @@ class JanelaPrincipal(tk.Tk):
             resultado = None
 
         if resultado and enviar_onedrive:
-            self._enviar_os_onedrive(resultado["pasta_saida"], on_log)
+            try:
+                self._enviar_os_onedrive(resultado["pasta_saida"], on_log)
+            except Exception as e:
+                # nunca deixa um erro inesperado aqui travar o "fim" de
+                # ser enfileirado — sem isso, o botão "Processar Etiquetas"
+                # ficaria desabilitado pra sempre (self.processando nunca
+                # voltaria a False), mesmo com as etiquetas/OS já geradas
+                # com sucesso antes disso.
+                self.fila_eventos.put(("log", "err", f"Erro inesperado ao enviar a OS pro OneDrive: {e}"))
 
         self.fila_eventos.put(("fim", resultado, None))
 

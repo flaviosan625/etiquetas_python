@@ -252,9 +252,11 @@ def gerar_os(pasta_saida, nome_cliente, nome_gerente, nome_produtor,
     )
     y += 20
 
+    total_itens_visiveis = 0
     for cat in categorias_com_item:
         cat_info = dados_categorias[cat]
         qtd_itens_categoria = sum(1 for i in itens if i["categoria"] == cat)
+        total_itens_visiveis += qtd_itens_categoria
         _, cor_texto = _cor_categoria(cat, ordem_categorias)
 
         if y + 20 > limite_y:
@@ -283,9 +285,15 @@ def gerar_os(pasta_saida, nome_cliente, nome_gerente, nome_produtor,
     pagina.draw_line(pymupdf.Point(MARGEM_OS, y), pymupdf.Point(LARGURA_OS - MARGEM_OS, y),
                       color=(0.85, 0.87, 0.89), width=0.7)
     y += 6
+    # 'total_itens_visiveis' (soma dos mesmos subtotais por categoria
+    # logo acima), não len(itens): itens vindos de uma pasta legado
+    # (categoria não reconhecida — ver estado_pedido.carregar_estado)
+    # nunca aparecem na lista acima (nenhuma categoria bate com eles),
+    # então contá-los aqui deixaria esse número maior que a soma visível
+    # na página, uma inconsistência visível pra quem for conferir.
     pagina.insert_htmlbox(
         pymupdf.Rect(MARGEM_OS, y, LARGURA_OS - MARGEM_OS, y + 16),
-        f'<p style="font-family: sans-serif; font-size: 8pt; color: #999999; margin: 0;">{len(itens)} itens no total</p>'
+        f'<p style="font-family: sans-serif; font-size: 8pt; color: #999999; margin: 0;">{total_itens_visiveis} itens no total</p>'
     )
 
     # numera as páginas só agora, que o total já é conhecido — busca a
