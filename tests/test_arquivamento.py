@@ -111,6 +111,27 @@ def test_dois_pedidos_do_mesmo_cliente_ficam_agrupados_sem_se_sobrescrever(tmp_p
     assert (pasta_cliente / "25-08-2026 15-11-49" / "OS - SUPERBET.pdf").exists()
 
 
+def test_dois_pedidos_novos_no_mesmo_lote_com_espaco_diferente_nao_fragmentam(tmp_path):
+    """
+    Caso mais sutil que o de cima: os DOIS pedidos são novos (nenhum
+    dos dois já foi enviado antes), digitados com espaço diferente, e
+    aparecem JUNTOS na mesma chamada de listar_pedidos/enviar_os — não
+    dá pra um achar o outro no disco, porque nenhum foi criado ainda.
+    Ainda assim precisam cair na mesma pasta de cliente.
+    """
+    origem = tmp_path / "etiquetas_geradas"
+    destino = tmp_path / "destino"
+    _criar_pedido_fake(origem, "NOVO CLIENTE_20260826_090000", nome_cliente="NOVO CLIENTE")
+    _criar_pedido_fake(origem, "NOVOCLIENTE_20260826_100000", nome_cliente="NOVOCLIENTE")
+
+    pedidos = listar_pedidos(origem, destino)
+    nomes_cliente = {p["cliente"] for p in pedidos}
+    assert len(nomes_cliente) == 1, f"deveria resolver pro mesmo cliente, ficou {nomes_cliente}"
+
+    enviar_os(pedidos, destino)
+    assert len(list(destino.iterdir())) == 1, "não deveria ter criado duas pastas de cliente"
+
+
 def test_nome_de_cliente_com_espaco_diferente_reaproveita_a_mesma_pasta(tmp_path):
     """
     Cenário real que já aconteceu: cliente digitado 'SUPERBET' (sem

@@ -59,6 +59,29 @@ def _pasta_cliente_no_destino(pasta_destino, nome_cliente):
     return nome_cliente
 
 
+def _resolver_nomes_clientes(nomes_pasta_pedido, pasta_destino):
+    """
+    Decide o nome de pasta de cliente pra cada pasta de pedido, o lote
+    inteiro de uma vez — não um de cada vez isolado. Isso importa
+    quando dois pedidos do MESMO cliente, digitados com espaço
+    diferente (ex: "SUPERBET" e "Super Bet"), aparecem juntos e NENHUM
+    dos dois foi enviado antes: olhando um de cada vez, cada um cairia
+    numa grafia diferente (nenhum acha o outro no disco, porque nenhum
+    foi criado ainda). Resolvendo o lote junto, o primeiro que aparece
+    decide a grafia, e o resto do lote (mesmo sem nada no destino
+    ainda) reaproveita essa decisão.
+    """
+    chave_ja_resolvida = {}
+    resolvido = {}
+    for nome_pasta in nomes_pasta_pedido:
+        nome_bruto = nome_cliente_da_pasta(nome_pasta)
+        chave = chave_comparacao_cliente(nome_bruto)
+        if chave not in chave_ja_resolvida:
+            chave_ja_resolvida[chave] = _pasta_cliente_no_destino(pasta_destino, nome_bruto)
+        resolvido[nome_pasta] = chave_ja_resolvida[chave]
+    return resolvido
+
+
 def listar_pedidos(pasta_saida_base="etiquetas_geradas", pasta_destino=PASTA_DESTINO_PADRAO):
     """
     Lista cada pasta de pedido em 'pasta_saida_base' que tem pelo menos
@@ -70,15 +93,15 @@ def listar_pedidos(pasta_saida_base="etiquetas_geradas", pasta_destino=PASTA_DES
     if not base.exists():
         return []
 
-    pedidos = []
-    for pasta_pedido in sorted(base.iterdir(), reverse=True):
-        if not pasta_pedido.is_dir():
-            continue
-        arquivos = _arquivos_os(pasta_pedido)
-        if not arquivos:
-            continue
+    pastas_com_os = [
+        (p, _arquivos_os(p)) for p in sorted(base.iterdir(), reverse=True) if p.is_dir()
+    ]
+    pastas_com_os = [(p, arquivos) for p, arquivos in pastas_com_os if arquivos]
+    nomes_clientes = _resolver_nomes_clientes([p.name for p, _ in pastas_com_os], pasta_destino)
 
-        nome_cliente = _pasta_cliente_no_destino(pasta_destino, nome_cliente_da_pasta(pasta_pedido.name))
+    pedidos = []
+    for pasta_pedido, arquivos in pastas_com_os:
+        nome_cliente = nomes_clientes[pasta_pedido.name]
         nome_subpasta = data_hora_da_pasta(pasta_pedido.name)
         pasta_destino_pedido = pathlib.Path(pasta_destino) / nome_cliente / nome_subpasta
         ja_enviados = all((pasta_destino_pedido / a.name).exists() for a in arquivos)
