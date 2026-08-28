@@ -148,6 +148,53 @@ def test_rodadas_seguintes_geram_checklist_separado_e_versionado(tmp_path):
     ]
 
 
+def test_cliente_digitado_com_espaco_diferente_nao_fragmenta_os_nem_checklist(tmp_path):
+    """
+    Regressão de bug real de produção (2026-08-28, SUPERBET): cliente
+    digitado "SUPERBET" numa rodada e "SUPER BET" (com espaço) na
+    seguinte, atualizando o MESMO pedido — antes desse fix, OS e
+    checklist usavam o nome como foi digitado NAQUELA rodada, então a
+    segunda rodada gerava "OS - SUPER BET.pdf" e "Checklist SUPER BET -
+    ..." SEPARADOS dos arquivos "OS - SUPERBET.pdf"/"Checklist SUPERBET
+    - ..." da primeira — a OS deixava de ser um documento só, cada
+    arquivo só com metade do pedido. Precisa sempre usar o nome já
+    fixado no nome da pasta, não o que foi digitado de novo.
+    """
+    config = copy.deepcopy(CONFIG_PADRAO)
+    pasta_saida_base = tmp_path / "saida"
+
+    entrada1 = tmp_path / "entrada1"
+    entrada1.mkdir()
+    _pdf_de_uma_pagina(entrada1 / "1UN LONA 2,00X1,00M_a.pdf")
+    resultado1 = processar_etiquetas(
+        str(entrada1), "SUPERBET", "Gerente", "Produtor",
+        config, pasta_saida_base=str(pasta_saida_base),
+    )
+    pasta_saida = pathlib.Path(resultado1["pasta_saida"])
+    assert (pasta_saida / "OS - SUPERBET.pdf").exists()
+
+    entrada2 = tmp_path / "entrada2"
+    entrada2.mkdir()
+    _pdf_de_uma_pagina(entrada2 / "1UN LONA 3,00X1,00M_b.pdf")
+    resultado2 = processar_etiquetas(
+        str(entrada2), "SUPER BET", "Gerente", "Produtor",
+        config, pasta_saida_base=str(pasta_saida_base), pasta_saida_existente=pasta_saida,
+    )
+
+    # continua sendo o MESMO arquivo de OS de sempre, atualizado — nunca
+    # um "OS - SUPER BET.pdf" separado
+    assert resultado2["os"] == str(pasta_saida / "OS - SUPERBET.pdf")
+    assert not (pasta_saida / "OS - SUPER BET.pdf").exists()
+
+    doc = pymupdf.open(resultado2["os"])
+    texto = "".join(p.get_text() for p in doc)
+    doc.close()
+    assert "2 itens no total" in texto, "OS devia ter os itens das DUAS rodadas, não só a última"
+
+    nomes_checklist = sorted(p.name for p in pasta_saida.glob("Checklist * - LONA*.pdf"))
+    assert nomes_checklist == ["Checklist SUPERBET - LONA V2.pdf", "Checklist SUPERBET - LONA.pdf"]
+
+
 def test_log_processamento_fica_dentro_da_subpasta_log(tmp_path):
     """Decisão do usuário (2026-08-26): log_processamento_*.csv não fica solto na pasta do pedido, deixa cheio."""
     config = copy.deepcopy(CONFIG_PADRAO)

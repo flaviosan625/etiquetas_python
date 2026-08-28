@@ -45,7 +45,7 @@ from dimensoes import (
 from estado_pedido import carregar_estado, nomes_ja_processados, salvar_estado
 from pdf_layout import iniciar_pagina_com_banner, numerar_paginas_a_partir_de, estampar_conferencia_local
 from relatorios import salvar_log, gerar_os, salvar_dados_os
-from utils import remover_acentos, sanitizar_nome_arquivo
+from utils import nome_cliente_da_pasta, remover_acentos, sanitizar_nome_arquivo
 
 LARGURA_A4 = 595.27
 ALTURA_A4 = 841.89
@@ -223,6 +223,16 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
     arquivos_ignorados = 0
     if modo_atualizacao:
         pasta_saida = pathlib.Path(pasta_saida_existente)
+        # Sempre o nome JÁ USADO nessa pasta (o mesmo que já está no nome
+        # dela), nunca o que foi digitado nessa rodada — sem isso, digitar
+        # "SUPERBET" numa rodada e "SUPER BET" (com espaço) na seguinte
+        # faz OS e checklist se PARTIREM em dois arquivos com nomes
+        # diferentes, cada um só com metade do pedido (bug real visto em
+        # produção, 2026-08-28 — a OS parou de ser um documento só). A
+        # pasta em si já foi resolvida ignorando diferença de espaço (ver
+        # estado_pedido.localizar_pastas_cliente); o nome usado pra
+        # arquivo/conteúdo precisa seguir a MESMA decisão.
+        nome_cliente_seguro = nome_cliente_da_pasta(pasta_saida.name)
         itens_anteriores = carregar_estado(pasta_saida, config)
         nomes_conhecidos = nomes_ja_processados(itens_anteriores)
 
