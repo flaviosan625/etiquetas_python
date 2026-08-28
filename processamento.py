@@ -33,6 +33,7 @@ Principais diferenças em relação à versão original de main.py:
 import os
 import math
 import pathlib
+import re
 from datetime import datetime
 
 import pymupdf
@@ -131,21 +132,38 @@ def _eh_reposicao(nome_arquivo_upper):
     return any(contem_palavra(nome_sem_acento, palavra) for palavra in _PALAVRAS_REPOSICAO)
 
 
-def _colar_paginas_no_final(caminho_pdf, doc_paginas_novas):
+_PADRAO_VERSAO_CHECKLIST = re.compile(r" V(\d+)\.pdf$", re.IGNORECASE)
+
+
+def _proxima_versao_checklist(pasta_saida, nome_cliente_seguro):
     """
-    Cola as páginas de 'doc_paginas_novas' no final de um PDF que já
-    existe em disco, sem tocar nas páginas que já estão nele (podem já
-    estar impressas fisicamente numa atualização de pedido — ver
-    'pasta_saida_existente'). O PyMuPDF não permite salvar por cima do
-    mesmo arquivo que está aberto, então salva num arquivo temporário e
-    só troca no final.
+    Cada rodada de processamento (arquivo novo OU reposição) vira um
+    checklist SEPARADO — "Checklist CLIENTE - CATEGORIA V2.pdf",
+    "V3.pdf" etc — em vez de colar páginas no mesmo PDF de sempre.
+    Decisão do usuário (2026-08-26): o checklist já impresso e marcado
+    à caneta na produção não muda mais depois; cada leva nova de
+    material vira uma folha própria, só com o que precisa ser feito
+    naquela rodada — sem reimprimir o que já foi produzido antes. A OS
+    continua sendo UM documento só, sempre com o pedido inteiro (ver
+    'itens_para_os' mais abaixo) — só o checklist (o documento de
+    produção, físico) é que passa a ser por rodada.
+
+    A primeira rodada de um pedido não leva sufixo (mantém o nome já
+    usado antes); a segunda vira V2, a terceira V3 — sempre o maior
+    número já usado em qualquer checklist dessa pasta, mais um. Não
+    guarda esse número em nenhum estado à parte: conta pelos arquivos
+    que já existem em disco, então funciona mesmo se uma rodada não
+    tiver gerado checklist pra alguma categoria específica.
     """
-    doc_existente = pymupdf.open(str(caminho_pdf))
-    doc_existente.insert_pdf(doc_paginas_novas)
-    caminho_tmp = caminho_pdf.with_suffix(".tmp.pdf")
-    doc_existente.save(str(caminho_tmp), garbage=4, deflate=True)
-    doc_existente.close()
-    caminho_tmp.replace(caminho_pdf)
+    arquivos = list(pathlib.Path(pasta_saida).glob(f"Checklist {nome_cliente_seguro.upper()} - *.pdf"))
+    if not arquivos:
+        return 1
+    maior = 1
+    for caminho in arquivos:
+        m = _PADRAO_VERSAO_CHECKLIST.search(caminho.name)
+        if m:
+            maior = max(maior, int(m.group(1)))
+    return maior + 1
 
 
 def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor,
@@ -163,9 +181,11 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
     (estado_pedido.json) e ignora — não importa se a pasta de entrada
     for jogada inteira de novo, misturada com o que já foi mandado.
     Só o que é realmente novo vira etiqueta, ganha o selo "NOVO" e
-    entra nos totais que alimentam a baixa de estoque; o checklist só
-    cresce por baixo (páginas novas coladas no final, nunca mexe numa
-    página já gerada antes).
+    entra nos totais que alimentam a baixa de estoque; o checklist dessa
+    rodada vira um arquivo À PARTE, versionado (V2, V3... — ver
+    _proxima_versao_checklist), nunca mexe num checklist já gerado
+    antes. A OS continua sendo um documento só, sempre com o pedido
+    inteiro atualizado.
     """
     logger = _Logger(on_log)
 
@@ -237,6 +257,9 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
         except OSError as e:
             logger.emitir("err", f"Não foi possível criar a pasta de saída: {e}")
             return None
+
+    versao_checklist = _proxima_versao_checklist(pasta_saida, nome_cliente_seguro)
+    sufixo_versao_checklist = "" if versao_checklist == 1 else f" V{versao_checklist}"
 
     ALTURA_ETIQUETA = ALTURA_A4 / 2
 
@@ -538,20 +561,20 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
             )
             cat_info["pdf_saida"][0].insert_htmlbox(cat_info["caixa_contagem_banner"], html_contagem)
 
-    # Salva os arquivos individuais por categoria. Cada save é isolado
-    # num try/except: se um falhar (arquivo aberto em outro programa,
-    # por exemplo), os demais ainda são tentados.
+    # Salva os arquivos individuais por categoria — sempre um arquivo
+    # NOVO (nunca mexe num checklist já gerado antes, ver
+    # _proxima_versao_checklist). Cada save é isolado num try/except: se
+    # um falhar (arquivo aberto em outro programa, por exemplo), os
+    # demais ainda são tentados.
     for cat in categorias:
         cat_info = dados_categorias[cat]
         if cat_info["contem_arquivos"]:
-            nome_individual = pasta_saida / f"Checklist {nome_cliente_seguro.upper()} - {sanitizar_nome_arquivo(cat)}.pdf"
+            nome_individual = pasta_saida / (
+                f"Checklist {nome_cliente_seguro.upper()} - {sanitizar_nome_arquivo(cat)}{sufixo_versao_checklist}.pdf"
+            )
             try:
-                if modo_atualizacao and nome_individual.exists():
-                    _colar_paginas_no_final(nome_individual, cat_info["pdf_saida"])
-                    logger.emitir("ok", f"Atualizado (páginas novas coladas no final): {nome_individual.name}")
-                else:
-                    cat_info["pdf_saida"].save(str(nome_individual), garbage=4, deflate=True)
-                    logger.emitir("ok", f"Gerado: {nome_individual.name}")
+                cat_info["pdf_saida"].save(str(nome_individual), garbage=4, deflate=True)
+                logger.emitir("ok", f"Gerado: {nome_individual.name}")
             except Exception as e:
                 logger.emitir(
                     "err",
@@ -565,20 +588,12 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
     # cat_info["pdf_saida"] — não precisa mais de uma página de título
     # separada (isso desperdiçava uma folha inteira na impressão).
     #
-    # Em rodada de atualização, reabre o unificado que já existe em vez
-    # de começar um documento novo — as páginas que já existem nunca são
-    # tocadas (só o TOC, que é metadado de navegação, não conteúdo
-    # desenhado na página, pode ser reescrito sem problema); as páginas
-    # novas desta rodada só entram coladas no final.
-    caminho_unificado = pasta_saida / f"Checklist {nome_cliente_seguro.upper()} - UNIFICADO.pdf"
-    unificado_reaberto = modo_atualizacao and caminho_unificado.exists()
-    if unificado_reaberto:
-        pdf_unificado = pymupdf.open(str(caminho_unificado))
-        toc = pdf_unificado.get_toc(simple=True)
-    else:
-        pdf_unificado = pymupdf.open()
-        toc = []
-    indice_paginas_desta_rodada = len(pdf_unificado)
+    # Sempre um documento NOVO (mesmo espírito do checklist por
+    # categoria acima) — só com o que foi processado NESSA rodada, com
+    # o sufixo de versão no nome (V2, V3...) quando não for a primeira.
+    caminho_unificado = pasta_saida / f"Checklist {nome_cliente_seguro.upper()} - UNIFICADO{sufixo_versao_checklist}.pdf"
+    pdf_unificado = pymupdf.open()
+    toc = []
 
     for cat in ordem_unificado:
         cat_info = dados_categorias[cat]
@@ -605,23 +620,16 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
     for cat in categorias:
         dados_categorias[cat]["pdf_saida"].close()
 
-    if len(pdf_unificado) > indice_paginas_desta_rodada:
+    if len(pdf_unificado) > 0:
         try:
             pdf_unificado.set_toc(toc)
-            numerar_paginas_a_partir_de(pdf_unificado, indice_paginas_desta_rodada)
+            numerar_paginas_a_partir_de(pdf_unificado, 0)
             # garbage=4/deflate: sem isso, cada insert_htmlbox deixa uma cópia
             # de fonte solta no arquivo e o PDF fica ordens de grandeza maior
             # do que precisa (mesmo problema resolvido antes na OS)
-            if unificado_reaberto:
-                caminho_tmp = caminho_unificado.with_suffix(".tmp.pdf")
-                pdf_unificado.save(str(caminho_tmp), garbage=4, deflate=True)
-                pdf_unificado.close()
-                caminho_tmp.replace(caminho_unificado)
-                logger.emitir("ok", f"UNIFICADO atualizado (páginas novas coladas no final): {caminho_unificado.name}")
-            else:
-                pdf_unificado.save(str(caminho_unificado), garbage=4, deflate=True)
-                pdf_unificado.close()
-                logger.emitir("ok", f"UNIFICADO criado: {caminho_unificado.name}")
+            pdf_unificado.save(str(caminho_unificado), garbage=4, deflate=True)
+            pdf_unificado.close()
+            logger.emitir("ok", f"UNIFICADO criado: {caminho_unificado.name}")
         except Exception as e:
             logger.emitir("err", f"Não foi possível salvar o PDF unificado: {e}")
             caminho_unificado = None

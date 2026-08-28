@@ -17,6 +17,7 @@ import json
 import pathlib
 
 from dimensoes import extrair_dimensoes, extrair_quantidade, identificar_categoria, identificar_variante
+from relatorios import NOME_SUBPASTA_LOG
 from utils import chave_comparacao_cliente, nome_cliente_da_pasta
 
 NOME_ARQUIVO_ESTADO = "estado_pedido.json"
@@ -44,19 +45,32 @@ def localizar_pastas_cliente(nome_cliente_seguro, pasta_saida_base="etiquetas_ge
     return sorted(pastas, key=lambda p: p.name, reverse=True)
 
 
+def _arquivos_log(pasta_saida):
+    """
+    Acha os log_processamento_*.csv dessa pasta — hoje ficam dentro de
+    NOME_SUBPASTA_LOG (fora da vista no dia a dia, ver relatorios.
+    salvar_log), mas também procura no nível de cima por segurança, pra
+    cobrir pasta antiga que por algum motivo não tenha sido migrada pra
+    essa organização.
+    """
+    pasta = pathlib.Path(pasta_saida)
+    return (
+        list(pasta.glob(f"{NOME_SUBPASTA_LOG}/log_processamento_*.csv"))
+        + list(pasta.glob("log_processamento_*.csv"))
+    )
+
+
 def _nomes_do_log(pasta_saida):
     """
     Fallback pra pasta de antes do estado_pedido.json existir: lê o(s)
     log_processamento_*.csv que TODA pasta já salva (mesmo as antigas)
-    e recupera o nome de cada arquivo com status OK. Não recupera
-    categoria/medida/miniatura (o log não guarda isso de um jeito
-    confiável de re-extrair) — só o nome, que já é o suficiente pra não
-    reprocessar um arquivo repetido, o problema mais urgente. Devolve
-    conjunto vazio se não achar log nenhum (pasta realmente sem
-    histórico recuperável).
+    e recupera o nome de cada arquivo com status OK. Só o nome — quem
+    chama (carregar_estado) reconstrói categoria/medida/variante a
+    partir dele, se tiver o config à mão. Devolve conjunto vazio se não
+    achar log nenhum (pasta realmente sem histórico recuperável).
     """
     nomes = set()
-    for caminho_log in pathlib.Path(pasta_saida).glob("log_processamento_*.csv"):
+    for caminho_log in _arquivos_log(pasta_saida):
         try:
             with open(caminho_log, "r", encoding="utf-8-sig", newline="") as f:
                 for linha in csv.DictReader(f):
@@ -79,7 +93,7 @@ def estado_existe(pasta_saida):
     pasta = pathlib.Path(pasta_saida)
     if (pasta / NOME_ARQUIVO_ESTADO).exists():
         return True
-    return any(pasta.glob("log_processamento_*.csv"))
+    return bool(_arquivos_log(pasta_saida))
 
 
 def _reconstruir_item_legado(nome_arquivo, config):

@@ -83,3 +83,84 @@ def test_segunda_rodada_mantem_itens_da_primeira_na_os(tmp_path):
     assert "2.00 m" in texto  # área da LONA (2,00 x 1,00m)
     assert "1.00 m" in texto  # área do PVC (1,00 x 1,00m)
     assert "2 itens no total" in texto
+
+
+def test_rodadas_seguintes_geram_checklist_separado_e_versionado(tmp_path):
+    """
+    Decisão do usuário (2026-08-26): cada rodada (arquivo novo ou
+    reposição) vira um checklist SEPARADO — nunca mais cola página num
+    checklist que já foi impresso/marcado à caneta antes. Primeira
+    rodada sem sufixo, segunda "V2", terceira "V3" — cada uma só com o
+    que foi processado NAQUELA rodada. Roda 3 rodadas reais e confere
+    o nome de cada arquivo em disco e quantas etiquetas cada um tem.
+    """
+    config = copy.deepcopy(CONFIG_PADRAO)
+    pasta_saida_base = tmp_path / "saida"
+
+    entrada1 = tmp_path / "entrada1"
+    entrada1.mkdir()
+    _pdf_de_uma_pagina(entrada1 / "1UN LONA 2,00X1,00M_a.pdf")
+    resultado1 = processar_etiquetas(
+        str(entrada1), "CLIENTE TESTE", "Gerente", "Produtor",
+        config, pasta_saida_base=str(pasta_saida_base),
+    )
+    pasta_saida = pathlib.Path(resultado1["pasta_saida"])
+
+    entrada2 = tmp_path / "entrada2"
+    entrada2.mkdir()
+    _pdf_de_uma_pagina(entrada2 / "1UN LONA 3,00X1,00M_b.pdf")
+    processar_etiquetas(
+        str(entrada2), "CLIENTE TESTE", "Gerente", "Produtor",
+        config, pasta_saida_base=str(pasta_saida_base), pasta_saida_existente=pasta_saida,
+    )
+
+    entrada3 = tmp_path / "entrada3"
+    entrada3.mkdir()
+    _pdf_de_uma_pagina(entrada3 / "1UN LONA 4,00X1,00M_c - REPOSICAO.pdf")
+    processar_etiquetas(
+        str(entrada3), "CLIENTE TESTE", "Gerente", "Produtor",
+        config, pasta_saida_base=str(pasta_saida_base), pasta_saida_existente=pasta_saida,
+    )
+
+    nomes_checklist = sorted(p.name for p in pasta_saida.glob("Checklist * - LONA*.pdf"))
+    assert nomes_checklist == [
+        "Checklist CLIENTE TESTE - LONA V2.pdf",
+        "Checklist CLIENTE TESTE - LONA V3.pdf",
+        "Checklist CLIENTE TESTE - LONA.pdf",
+    ]
+
+    def _paginas(nome):
+        doc = pymupdf.open(str(pasta_saida / nome))
+        n = len(doc)
+        doc.close()
+        return n
+
+    # cada rodada tem 1 arquivo só (banner + 1 etiqueta = 1 página cada)
+    assert _paginas("Checklist CLIENTE TESTE - LONA.pdf") == 1
+    assert _paginas("Checklist CLIENTE TESTE - LONA V2.pdf") == 1
+    assert _paginas("Checklist CLIENTE TESTE - LONA V3.pdf") == 1
+
+    nomes_unificado = sorted(p.name for p in pasta_saida.glob("Checklist * - UNIFICADO*.pdf"))
+    assert nomes_unificado == [
+        "Checklist CLIENTE TESTE - UNIFICADO V2.pdf",
+        "Checklist CLIENTE TESTE - UNIFICADO V3.pdf",
+        "Checklist CLIENTE TESTE - UNIFICADO.pdf",
+    ]
+
+
+def test_log_processamento_fica_dentro_da_subpasta_log(tmp_path):
+    """Decisão do usuário (2026-08-26): log_processamento_*.csv não fica solto na pasta do pedido, deixa cheio."""
+    config = copy.deepcopy(CONFIG_PADRAO)
+    pasta_saida_base = tmp_path / "saida"
+    entrada = tmp_path / "entrada"
+    entrada.mkdir()
+    _pdf_de_uma_pagina(entrada / "1UN LONA 2,00X1,00M_a.pdf")
+
+    resultado = processar_etiquetas(
+        str(entrada), "CLIENTE TESTE", "Gerente", "Produtor",
+        config, pasta_saida_base=str(pasta_saida_base),
+    )
+
+    pasta_saida = pathlib.Path(resultado["pasta_saida"])
+    assert not list(pasta_saida.glob("log_processamento_*.csv")), "log não deveria ficar solto na pasta"
+    assert list(pasta_saida.glob("_log/log_processamento_*.csv")), "log deveria estar dentro de _log"

@@ -5,6 +5,7 @@ de Serviço (OS) resumida em PDF.
 import csv
 import json
 import os
+import pathlib
 import re
 from datetime import datetime
 
@@ -13,6 +14,14 @@ import pymupdf
 from branding import inserir_logo, CAMINHO_LOGO_GUI
 from dimensoes import formatar_variante
 from utils import formatar_duracao_minutos
+
+# Subpasta onde o log de processamento fica guardado, dentro da pasta
+# do pedido — fora da vista no dia a dia (decisão do usuário,
+# 2026-08-26: "deixa a pasta muito cheia"). Continua existindo porque é
+# o histórico detalhado por arquivo (ignorado/aviso/erro) que várias
+# vezes já ajudou a investigar problema real depois — só não precisa
+# aparecer junto dos PDFs.
+NOME_SUBPASTA_LOG = "_log"
 
 LARGURA_OS = 595.27  # A4
 ALTURA_OS = 841.89
@@ -40,10 +49,14 @@ _PALETA_CATEGORIAS = [
 def salvar_log(pasta_saida, nome_cliente, registro_log):
     """
     Salva um CSV com o resultado do processamento de cada arquivo:
-    OK, IGNORADO, ERRO ou AVISO, com detalhes de cada caso.
+    OK, IGNORADO, ERRO ou AVISO, com detalhes de cada caso. Fica dentro
+    de NOME_SUBPASTA_LOG (não solto na pasta do pedido, junto dos PDFs).
     """
+    pasta_log = pathlib.Path(pasta_saida) / NOME_SUBPASTA_LOG
+    pasta_log.mkdir(parents=True, exist_ok=True)
+
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    caminho_log = os.path.join(pasta_saida, f"log_processamento_{nome_cliente.upper()}_{timestamp}.csv")
+    caminho_log = pasta_log / f"log_processamento_{nome_cliente.upper()}_{timestamp}.csv"
 
     with open(caminho_log, mode="w", newline="", encoding="utf-8-sig") as f:
         escritor = csv.DictWriter(f, fieldnames=["arquivo", "status", "detalhe"])
@@ -51,7 +64,7 @@ def salvar_log(pasta_saida, nome_cliente, registro_log):
         for linha in registro_log:
             escritor.writerow(linha)
 
-    return caminho_log
+    return str(caminho_log)
 
 
 def _cor_categoria(categoria, ordem_categorias):
