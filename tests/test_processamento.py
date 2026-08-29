@@ -366,16 +366,19 @@ def test_le_png_e_jpg_alem_de_pdf(tmp_path):
 
 def test_formato_reconhecido_sem_suporte_avisa_e_nao_trava(tmp_path):
     """
-    EPS/PSD/CDR aparecem na prática mas o PyMuPDF não consegue abrir
-    nesse ambiente (confirmado testando EPS direto: "Failed to open...
-    as type eps") — precisa avisar que o arquivo foi visto, não ficar
-    invisível como antes, mas sem travar o resto da rodada.
+    CDR aparece na prática mas não tem conversão nenhuma disponível
+    (decisão do usuário, 2026-08-29: "não precisa mexer") — precisa
+    avisar que o arquivo foi visto, não ficar invisível como antes, mas
+    sem travar o resto da rodada. EPS/PSD têm conversão automática via
+    Illustrator/Photoshop — ver test_conversao_adobe.py e o teste de
+    integração logo abaixo (com conversor simulado, não abre os
+    programas de verdade no teste).
     """
     config = copy.deepcopy(CONFIG_PADRAO)
     pasta_saida_base = tmp_path / "saida"
     entrada = tmp_path / "entrada"
     entrada.mkdir()
-    (entrada / "1UN LONA 2,00X1,00M_arte.eps").write_bytes(b"%!PS-Adobe-3.0 EPSF-3.0\n%%BoundingBox: 0 0 10 10\n")
+    (entrada / "1UN LONA 2,00X1,00M_arte.cdr").write_bytes(b"lixo binario qualquer, nao interessa o conteudo")
     _pdf_de_uma_pagina(entrada / "1UN PVC 1,00X1,00M_valido.pdf")
 
     avisos = []
@@ -391,4 +394,50 @@ def test_formato_reconhecido_sem_suporte_avisa_e_nao_trava(tmp_path):
 
     assert resultado is not None
     assert resultado["arquivos_novos"] == 1, "só o PDF válido deveria ter sido processado"
-    assert any("EPS" in a and "não" in a for a in avisos), "deveria avisar sobre o EPS não suportado"
+    assert any("CDR" in a and "não" in a for a in avisos), "deveria avisar sobre o CDR não suportado"
+
+
+def test_eps_e_convertido_e_entra_na_rodada(tmp_path, monkeypatch):
+    """
+    Integração da conversão automática (ver conversao_adobe.py) —
+    conversor SIMULADO (só copia um PDF pronto), não abre o Illustrator
+    de verdade nesse teste (lento, depende do programa instalado; a
+    conversão real em si já foi verificada manualmente antes de
+    aplicar). Confere que o PDF convertido entra no processamento dessa
+    mesma rodada e o .eps original vai pra subpasta, sem ser apagado.
+    """
+    import processamento as mod_processamento
+
+    def conversor_fake(caminho_origem, caminho_pdf_destino):
+        _pdf_de_uma_pagina(caminho_pdf_destino)
+
+    def converter_fake(pasta_entrada, nome_arquivo, pasta_originais, logger_emitir, conversores=None):
+        from conversao_adobe import converter_se_necessario
+        return converter_se_necessario(
+            pasta_entrada, nome_arquivo, pasta_originais, logger_emitir,
+            conversores={".eps": conversor_fake},
+        )
+
+    monkeypatch.setattr(mod_processamento, "converter_se_necessario", converter_fake)
+    monkeypatch.setattr(mod_processamento, "CONVERSORES_POR_EXTENSAO", {".eps": conversor_fake})
+
+    config = copy.deepcopy(CONFIG_PADRAO)
+    pasta_saida_base = tmp_path / "saida"
+    entrada = tmp_path / "entrada"
+    entrada.mkdir()
+    (entrada / "1UN LONA 2,00X1,00M_arte.eps").write_bytes(b"conteudo fake, o conversor nem olha isso")
+
+    resultado = processar_etiquetas(
+        str(entrada), "CLIENTE TESTE", "Gerente", "Produtor",
+        config, pasta_saida_base=str(pasta_saida_base),
+    )
+
+    assert resultado is not None
+    assert resultado["arquivos_novos"] == 1
+    # o PDF convertido passa pelo resto do fluxo normal igual qualquer
+    # outro arquivo — inclusive a padronização do nome (ver
+    # processamento._nome_padronizado)
+    assert list(entrada.glob("* LONA *.pdf")), "PDF convertido deveria ter sido processado e renomeado"
+    assert (entrada / "_originais_convertidos" / "1UN LONA 2,00X1,00M_arte.eps").exists(), \
+        "original deveria ter sido movido pra subpasta, nunca apagado"
+    assert not (entrada / "1UN LONA 2,00X1,00M_arte.eps").exists()

@@ -38,6 +38,7 @@ from datetime import datetime
 
 import pymupdf
 
+from conversao_adobe import CONVERSORES_POR_EXTENSAO, converter_se_necessario
 from dimensoes import (
     contem_palavra, extrair_dimensoes, calcular_desperdicio_item, extrair_quantidade,
     identificar_categoria, identificar_categoria_extra, identificar_variante, formatar_variante,
@@ -70,13 +71,16 @@ QUALIDADE_JPG_ETIQUETA = 78
 # PNG/JPG são imagem crua, o PyMuPDF trata como documento de 1 página.
 EXTENSOES_SUPORTADAS = (".pdf", ".ai", ".png", ".jpg", ".jpeg")
 
-# Formatos que aparecem na prática mas o PyMuPDF NÃO consegue abrir
-# nesse ambiente (confirmado testando: EPS falha com "Failed to open...
-# as type eps" — precisaria de Ghostscript, não instalado nesse PC;
-# PSD/CDR são formato proprietário sem leitor livre nenhum disponível).
-# Listado aqui só pra AVISAR que o arquivo foi visto mas não pôde ser
-# lido, em vez de ficar invisível/ignorado em silêncio como antes.
-EXTENSOES_RECONHECIDAS_SEM_SUPORTE = (".eps", ".psd", ".cdr")
+# EPS/PSD não abrem direto no PyMuPDF nesse ambiente, mas têm conversão
+# automática via Illustrator/Photoshop (ver conversao_adobe.py) — não
+# entram aqui. CDR não tem conversão nenhuma (decisão do usuário,
+# 2026-08-29: "não precisa mexer") — só avisa que foi visto, não lido.
+EXTENSOES_RECONHECIDAS_SEM_SUPORTE = (".cdr",)
+
+# Onde vai o arquivo original depois de convertido com sucesso (ver
+# conversao_adobe.converter_se_necessario) — nunca apagado, só sai da
+# vista pra não tentar converter de novo na rodada seguinte.
+NOME_SUBPASTA_ORIGINAIS_CONVERTIDOS = "_originais_convertidos"
 
 _PREFIXOS_CONSOLE = {"ok": "✅", "warn": "⚠️", "err": "❌", "info": "ℹ️"}
 
@@ -383,6 +387,20 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
         return None
 
     arquivos_arte = [f for f in nomes_pasta if f.lower().endswith(EXTENSOES_SUPORTADAS)]
+
+    # EPS/PSD não abrem direto no PyMuPDF nesse ambiente, mas o
+    # Illustrator/Photoshop já instalados na máquina convertem — cada um
+    # vira um PDF novo na própria pasta de entrada (entra na lista dessa
+    # mesma rodada) e o original vai pra NOME_SUBPASTA_ORIGINAIS_
+    # CONVERTIDOS (nunca apagado, só sai da vista pra não tentar
+    # converter nele de novo na rodada seguinte).
+    for nome in nomes_pasta:
+        if pathlib.Path(nome).suffix.lower() in CONVERSORES_POR_EXTENSAO:
+            pasta_originais = pathlib.Path(pasta_entrada) / NOME_SUBPASTA_ORIGINAIS_CONVERTIDOS
+            pdf_gerado = converter_se_necessario(pasta_entrada, nome, pasta_originais, logger.emitir)
+            if pdf_gerado:
+                arquivos_arte.append(pdf_gerado)
+
     for nome in nomes_pasta:
         if nome.lower().endswith(EXTENSOES_RECONHECIDAS_SEM_SUPORTE):
             extensao = pathlib.Path(nome).suffix.upper()
