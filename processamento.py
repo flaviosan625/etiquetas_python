@@ -623,7 +623,13 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
         pdf_original.close()
 
         if dimensao:
-            cat_info["area_total_m2"] += dimensao["area_m2"]
+            # 'dimensao' é sempre a medida de UMA peça — todo acúmulo de
+            # área/desperdício/comprimento de rolo precisa multiplicar por
+            # 'quantidade' (ex: "4UN PVC..." consome material de 4 peças,
+            # não de 1), senão o total fica sempre como se fosse 1 peça
+            # só, mesmo quando o nome diz outra coisa (confirmado pelo
+            # usuário, 2026-08-29).
+            cat_info["area_total_m2"] += dimensao["area_m2"] * quantidade
             if dimensao["origem"] == "arte":
                 detalhe_area = (
                     f" | Medida (nome sem medida, extraída da arte): "
@@ -643,9 +649,14 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
             largura_rolo_m = info_material["largura_cm"] / 100
             resultado_corte = calcular_desperdicio_item(dimensao, largura_rolo_m)
             if resultado_corte:
-                cat_info["area_desperdicio_m2"] += resultado_corte["desperdicio_m2"]
-                cat_info["comprimento_rolo_usado_m"] += resultado_corte["peca_comprimento_m"]
+                # valores de 'resultado_corte' são de UMA peça — multiplica
+                # pela quantidade antes de acumular (ver nota acima sobre
+                # 'area_total_m2').
+                cat_info["area_desperdicio_m2"] += resultado_corte["desperdicio_m2"] * quantidade
+                cat_info["comprimento_rolo_usado_m"] += resultado_corte["peca_comprimento_m"] * quantidade
                 detalhe_area += f" | Desperdício estimado: {resultado_corte['desperdicio_m2']:.2f}m²"
+                if quantidade > 1:
+                    detalhe_area += f" por peça ({resultado_corte['desperdicio_m2'] * quantidade:.2f}m² no total das {quantidade})"
             else:
                 cat_info["itens_fora_do_rolo"].append(arquivo)
                 tipo_material = info_material["tipo"]
@@ -655,13 +666,17 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
                     # sentido pra chapa, que tem largura E comprimento fixos
                     comprimento_chapa_m = info_material["comprimento_cm"] / 100
                     estimativa = calcular_desperdicio_chapa_grande(dimensao, largura_rolo_m, comprimento_chapa_m)
-                    cat_info["area_desperdicio_m2"] += estimativa["desperdicio_m2"]
-                    cat_info["chapas_extras"] += estimativa["total_chapas"]
+                    cat_info["area_desperdicio_m2"] += estimativa["desperdicio_m2"] * quantidade
+                    cat_info["chapas_extras"] += estimativa["total_chapas"] * quantidade
                     texto_girada = " (peça girada 90°)" if estimativa["girada"] else ""
+                    texto_total_chapas = (
+                        f" ({estimativa['total_chapas'] * quantidade} chapas no total das {quantidade})"
+                        if quantidade > 1 else ""
+                    )
                     detalhe_area += (
                         f" | Peça maior que a chapa — estimativa: {estimativa['colunas']}x{estimativa['linhas']}"
-                        f" = {estimativa['total_chapas']} chapas{texto_girada}, "
-                        f"~{estimativa['desperdicio_m2']:.2f}m² de desperdício "
+                        f" = {estimativa['total_chapas']} chapas{texto_girada} por peça{texto_total_chapas}, "
+                        f"~{estimativa['desperdicio_m2']:.2f}m² de desperdício por peça "
                         f"(confira o posicionamento das emendas manualmente)"
                     )
                 else:
@@ -799,8 +814,11 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
     dados_categorias_os = {
         cat: {
             "contem_arquivos": any(i["categoria"] == cat for i in itens_para_os),
+            # área de cada item é de UMA peça — multiplica pela quantidade
+            # antes de somar (mesmo motivo do acúmulo lá em cima).
             "area_total_m2": sum(
-                i["dimensao"]["area_m2"] for i in itens_para_os if i["categoria"] == cat and i.get("dimensao")
+                i["dimensao"]["area_m2"] * i.get("quantidade", 1)
+                for i in itens_para_os if i["categoria"] == cat and i.get("dimensao")
             ),
             "total_etiquetas": sum(1 for i in itens_para_os if i["categoria"] == cat),
         }

@@ -415,15 +415,22 @@ def calcular_consumo(itens, materiais_config):
             dimensao = item.get("dimensao")
             if not dimensao:
                 continue
-            area_total_m2 += dimensao.get("area_m2", 0.0)
+            # 'dimensao' é sempre de UMA peça — "4UN PVC..." consome
+            # material de 4 peças, não de 1 (mesmo ponto corrigido em
+            # processamento.py, 2026-08-29). Sem multiplicar pela
+            # quantidade aqui, a baixa de estoque ficava sempre como se
+            # todo item tivesse vindo 1 UN, mesmo quando o nome dizia
+            # outra coisa.
+            quantidade_item = item.get("quantidade", 1)
+            area_total_m2 += dimensao.get("area_m2", 0.0) * quantidade_item
             calculo = calcular_desperdicio_item(dimensao, largura_m)
             if calculo:
-                comprimento_acumulado += calculo["peca_comprimento_m"]
-                desperdicio_total += calculo["desperdicio_m2"]
+                comprimento_acumulado += calculo["peca_comprimento_m"] * quantidade_item
+                desperdicio_total += calculo["desperdicio_m2"] * quantidade_item
             elif info_material["tipo"] == "chapa":
                 estimativa = calcular_desperdicio_chapa_grande(dimensao, largura_m, comprimento_m)
-                chapas_extras += estimativa["total_chapas"]
-                desperdicio_total += estimativa["desperdicio_m2"]
+                chapas_extras += estimativa["total_chapas"] * quantidade_item
+                desperdicio_total += estimativa["desperdicio_m2"] * quantidade_item
 
         if info_material["tipo"] == "rolo":
             resultados.append({

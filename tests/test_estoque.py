@@ -4,7 +4,7 @@ import pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 import estoque
-from estoque import confirmar_saida_os, pedido_ja_teve_saida
+from estoque import confirmar_saida_os, pedido_ja_teve_saida, calcular_consumo
 
 
 def _isolar_arquivo_estoque(monkeypatch, tmp_path):
@@ -63,3 +63,25 @@ def test_pedido_ja_teve_saida_verdadeiro_depois_de_confirmar(monkeypatch, tmp_pa
 
     assert pedido_ja_teve_saida(estoque_dados, nome_pedido) is True
     assert pedido_ja_teve_saida(estoque_dados, "OUTRO CLIENTE (02/01/2026 10:00:00)") is False
+
+
+def test_calcular_consumo_multiplica_pela_quantidade_do_item():
+    """
+    Regressão de bug real (achado pelo usuário, 2026-08-29): 'dimensao'
+    guarda a medida de UMA peça, mas um item "4UN PVC..." representa 4
+    peças físicas — sem multiplicar pela quantidade, a baixa de estoque
+    sempre debitava como se fosse 1 peça só, não importa o que o nome
+    do arquivo dizia. Peça de 1,00 x 2,00m (cabe exata na largura do
+    rolo de 1,00m, sem sobra) com quantidade 4 tem que consumir 8m de
+    rolo (4 peças x 2m cada), não 2m.
+    """
+    materiais_config = {"LONA": {"tipo": "rolo", "largura_cm": 100.0, "comprimento_cm": 5000.0}}
+    itens = [{
+        "categoria": "LONA", "variante": None, "quantidade": 4,
+        "dimensao": {"area_m2": 2.0, "largura_m": 1.0, "altura_m": 2.0},
+    }]
+
+    resultado = calcular_consumo(itens, materiais_config)
+    assert len(resultado) == 1
+    assert resultado[0]["metros"] == 8.0
+    assert resultado[0]["area_m2"] == 8.0

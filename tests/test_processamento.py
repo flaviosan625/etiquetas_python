@@ -207,3 +207,29 @@ def test_log_processamento_fica_dentro_da_subpasta_log(tmp_path):
     pasta_saida = pathlib.Path(resultado["pasta_saida"])
     assert not list(pasta_saida.glob("log_processamento_*.csv")), "log não deveria ficar solto na pasta"
     assert list(pasta_saida.glob("_log/log_processamento_*.csv")), "log deveria estar dentro de _log"
+
+
+def test_subtotal_da_os_multiplica_area_pela_quantidade(tmp_path):
+    """
+    Regressão de bug real (achado pelo usuário, 2026-08-29): 'dimensao'
+    é a medida de UMA peça — um arquivo "4UN LONA 1,00X2,00M..." (4
+    peças de 2m² cada) tinha que somar 8,00 m² no subtotal da OS, mas
+    o total antes ficava sempre em 2,00 m² (como se fosse 1 peça só),
+    porque a quantidade nunca entrava na conta de área/desperdício.
+    """
+    config = copy.deepcopy(CONFIG_PADRAO)
+    pasta_saida_base = tmp_path / "saida"
+    entrada = tmp_path / "entrada"
+    entrada.mkdir()
+    _pdf_de_uma_pagina(entrada / "4UN LONA 1,00X2,00M_a.pdf")
+
+    resultado = processar_etiquetas(
+        str(entrada), "CLIENTE TESTE", "Gerente", "Produtor",
+        config, pasta_saida_base=str(pasta_saida_base),
+    )
+
+    doc = pymupdf.open(resultado["os"])
+    texto = "".join(p.get_text() for p in doc)
+    doc.close()
+
+    assert "8.00 m²" in texto, "subtotal da OS devia refletir as 4 peças (4 x 2,00m² = 8,00m²)"
