@@ -133,16 +133,18 @@ def _eh_reposicao(nome_arquivo_upper):
     return any(contem_palavra(nome_sem_acento, palavra) for palavra in _PALAVRAS_REPOSICAO)
 
 
-def _nome_padronizado(nome_original, quantidade, categoria, dimensao, typos_unidade):
+def _nome_padronizado(nome_original, quantidade, categoria, dimensao, typos_unidade, nome_cliente_seguro):
     """
     Nome de arquivo padrão da oficina (pedido do usuário, 2026-08-29):
-    sempre "{QTD} UN {MATERIAL} {LARGURAxALTURA}{UNIDADE} {resto do
-    nome original}" — quantidade e material sempre visíveis de cara,
-    sem precisar abrir o arquivo pra saber o que é. O resto do nome
-    original (descrição do projeto, marca de reposição etc.) é mantido
-    depois — nada é excluído, só a quantidade/medida que já existiam
-    soltas no nome saem de onde estavam (senão duplicaria a
-    informação, já que elas voltam formatadas no início).
+    sempre "{QTD} UN {MATERIAL} {LARGURAxALTURA}{UNIDADE} {CLIENTE}
+    {resto do nome original}" — quantidade, material e cliente sempre
+    visíveis de cara, sem precisar abrir o arquivo pra saber o que é.
+    O cliente já é conhecido nesse ponto (quem processa digita antes de
+    gerar as etiquetas, não precisa adivinhar do nome do arquivo). O
+    resto do nome original (descrição do projeto, marca de reposição
+    etc.) é mantido depois — nada é excluído, só a quantidade/medida
+    que já existiam soltas no nome saem de onde estavam (senão
+    duplicaria a informação, já que elas voltam formatadas no início).
 
     'dimensao' pode ser None (nem o nome nem a arte tinham medida
     reconhecível) — nesse caso o bloco de medida simplesmente não
@@ -165,6 +167,7 @@ def _nome_padronizado(nome_original, quantidade, categoria, dimensao, typos_unid
         prefixo += f" {largura_na_unidade:.2f}x{altura_na_unidade:.2f}{dimensao['unidade_usada']}"
         if dimensao.get("origem") == "arte":
             prefixo += " (medida pela arte)"
+    prefixo += f" {nome_cliente_seguro.upper()}"
 
     if resto:
         return f"{prefixo} {resto}{extensao}"
@@ -440,7 +443,9 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
         # organizados, não só a etiqueta/OS gerada. Falha de rename
         # (permissão, arquivo aberto em outro programa) nunca trava a
         # rodada — só segue com o nome original.
-        nome_padronizado = _nome_padronizado(arquivo, quantidade, categoria_encontrada, dimensao, typos_unidade)
+        nome_padronizado = _nome_padronizado(
+            arquivo, quantidade, categoria_encontrada, dimensao, typos_unidade, nome_cliente_seguro,
+        )
         arquivo = _renomear_para_padrao(pasta_entrada, arquivo, nome_padronizado, logger)
         nome_arquivo_upper = arquivo.upper()
 
