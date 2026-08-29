@@ -7,7 +7,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 import pymupdf
 
 from config import CONFIG_PADRAO
-from processamento import _eh_reposicao, processar_etiquetas
+from processamento import _eh_reposicao, _nome_padronizado, processar_etiquetas
 
 
 def _pdf_de_uma_pagina(caminho):
@@ -233,3 +233,26 @@ def test_subtotal_da_os_multiplica_area_pela_quantidade(tmp_path):
     doc.close()
 
     assert "8.00 m²" in texto, "subtotal da OS devia refletir as 4 peças (4 x 2,00m² = 8,00m²)"
+
+
+def test_nome_padronizado_nao_repete_material_nem_empilha_marca_da_arte():
+    """
+    Regressão de bug real (achado pelo usuário, 2026-08-29): reprocessar
+    um arquivo que já tinha passado pela padronização (ex: pasta de
+    entrada rodada de novo) empilhava um prefixo novo em cima do
+    anterior — "1 UN LONA 8.70x1.30M UCB_CWB LONA (medida pela arte)
+    LONA IMPRESSA (3).pdf", com o material repetido e a marca de uma
+    rodada anterior sobrando. O material não pode repetir no nome, e
+    reprocessar um arquivo já padronizado tem que dar um resultado
+    limpo, sem empilhar.
+    """
+    nome_ja_padronizado = "1 UN LONA 8.70x1.30M (medida pela arte) LONA IMPRESSA (3).pdf"
+    dimensao = {
+        "largura_m": 8.7, "altura_m": 1.3, "area_m2": 11.31, "unidade_usada": "M",
+        "medida_bruta": "8.70X1.30M", "unidade_corrigida": False, "unidade_bruta": "M", "origem": "nome",
+    }
+    resultado = _nome_padronizado(nome_ja_padronizado, 1, "LONA", dimensao, {}, "UCB_CWB")
+
+    assert resultado == "1 UN LONA 8.70x1.30M UCB_CWB IMPRESSA (3).pdf"
+    assert resultado.upper().count("LONA") == 1
+    assert "(medida pela arte)" not in resultado

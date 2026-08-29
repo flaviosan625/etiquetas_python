@@ -152,12 +152,25 @@ def _nome_padronizado(nome_original, quantidade, categoria, dimensao, typos_unid
     ganha "(medida pela arte)" — sinaliza uma medida menos certa que
     uma escrita à mão pelo cliente/produção, fácil de achar depois se
     precisar conferir.
+
+    O nome do material e do cliente não repetem no "resto" (ex: nome
+    original "LONA IMPRESSA..." já tem a palavra, que volta formatada
+    no prefixo) — tirados por palavra inteira, igual
+    dimensoes.contem_palavra. Isso também cobre o caso de rodar duas
+    vezes em cima do mesmo arquivo (ex: pasta de entrada reprocessada
+    depois de já ter sido padronizada): a marca "(medida pela arte)"
+    de uma rodada anterior e o material/cliente repetidos saem, o nome
+    final não fica empilhando prefixo em cima de prefixo.
     """
     resto = nome_sem_prefixo_reconhecido(nome_original, typos_unidade)
     extensao = pathlib.Path(resto).suffix or ".pdf"
     if extensao and resto.lower().endswith(extensao.lower()):
         resto = resto[: -len(extensao)]
-    resto = resto.strip(" ._-")
+
+    for termo in (categoria, nome_cliente_seguro):
+        resto = re.sub(r'(?<![A-Z0-9])' + re.escape(termo) + r'(?![A-Z])', '', resto, flags=re.IGNORECASE)
+    resto = re.sub(re.escape("(medida pela arte)"), '', resto, flags=re.IGNORECASE)
+    resto = re.sub(r'[\s._,\-]{2,}', ' ', resto).strip(" ._-")
 
     prefixo = f"{quantidade} UN {categoria}"
     if dimensao is not None:
