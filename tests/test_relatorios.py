@@ -42,7 +42,7 @@ def test_itens_no_total_ignora_item_sem_categoria_reconhecida(tmp_path):
     doc.close()
 
     assert "1 item" in texto  # subtotal da categoria LONA
-    assert "1 itens no total" in texto, "deveria contar só o item visível, não os 2 itens legado sem categoria"
+    assert "1 item no total" in texto, "deveria contar só o item visível, não os 2 itens legado sem categoria"
     assert "3 itens no total" not in texto
 
 

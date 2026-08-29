@@ -331,7 +331,8 @@ def gerar_os(pasta_saida, nome_cliente, nome_gerente, nome_produtor,
     # na página, uma inconsistência visível pra quem for conferir.
     pagina.insert_htmlbox(
         pymupdf.Rect(MARGEM_OS, y, LARGURA_OS - MARGEM_OS, y + 16),
-        f'<p style="font-family: sans-serif; font-size: 8pt; color: #999999; margin: 0;">{total_itens_visiveis} itens no total</p>'
+        f'<p style="font-family: sans-serif; font-size: 8pt; color: #999999; margin: 0;">'
+        f'{total_itens_visiveis} {"item" if total_itens_visiveis == 1 else "itens"} no total</p>'
     )
 
     # numera as páginas só agora, que o total já é conhecido — busca a
