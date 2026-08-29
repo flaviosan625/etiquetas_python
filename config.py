@@ -67,6 +67,14 @@ CONFIG_PADRAO = {
     "typos_unidade": {
         "XM": "CM",
     },
+    # Materiais compostos: a MESMA peça consome DOIS materiais ao mesmo
+    # tempo (chapa base + adesivo colado em cima). Chave = palavra que,
+    # se aparecer no nome do arquivo, soma também a categoria extra
+    # (valor) — não é a mesma coisa que "IMPRESSO" (impressão direto na
+    # chapa, sem adesivo, conta só a categoria principal).
+    "materiais_compostos": {
+        "ADESIVADO": "ADESIVO",
+    },
     # Ordem fixa em que as categorias devem aparecer no PDF unificado.
     # Categorias que existirem em "materiais" mas não estiverem nessa
     # lista ainda aparecem no unificado (no final, automaticamente) —

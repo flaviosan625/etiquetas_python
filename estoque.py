@@ -392,12 +392,23 @@ def calcular_consumo(itens, materiais_config):
     processamento normal já usa (dimensoes.calcular_desperdicio_item /
     calcular_desperdicio_chapa_grande), só que agrupadas por variante
     em vez de por categoria inteira.
+
+    Material composto (ex: "PS ADESIVADO" — ver processamento.py/
+    dimensoes.identificar_categoria_extra): o mesmo item entra no grupo
+    da categoria principal E no da 'categoria_extra', mesma medida —
+    consome os dois materiais de verdade, não é escolha entre um ou
+    outro.
     """
     grupos = {}
     for item in itens:
-        chave = (item["categoria"], json.dumps(item.get("variante"), sort_keys=True))
-        grupos.setdefault(chave, {"itens": [], "variante": item.get("variante")})
-        grupos[chave]["itens"].append(item)
+        categorias_do_item = [item["categoria"]]
+        if item.get("categoria_extra"):
+            categorias_do_item.append(item["categoria_extra"])
+
+        for categoria in categorias_do_item:
+            chave = (categoria, json.dumps(item.get("variante"), sort_keys=True))
+            grupos.setdefault(chave, {"itens": [], "variante": item.get("variante")})
+            grupos[chave]["itens"].append(item)
 
     resultados = []
     for (categoria, _), grupo in grupos.items():

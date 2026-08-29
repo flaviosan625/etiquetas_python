@@ -269,6 +269,11 @@ def gerar_os(pasta_saida, nome_cliente, nome_gerente, nome_produtor,
     for cat in categorias_com_item:
         cat_info = dados_categorias[cat]
         qtd_itens_categoria = sum(1 for i in itens if i["categoria"] == cat)
+        # material composto (ex: "PS ADESIVADO" também consome ADESIVO)
+        # soma na contagem exibida ao lado do material, mas NUNCA no
+        # total geral do fim da OS — senão a mesma peça física contaria
+        # duas vezes em "X itens no total".
+        qtd_itens_categoria_extra = sum(1 for i in itens if i.get("categoria_extra") == cat)
         total_itens_visiveis += qtd_itens_categoria
         _, cor_texto = _cor_categoria(cat, ordem_categorias)
 
@@ -281,10 +286,11 @@ def gerar_os(pasta_saida, nome_cliente, nome_gerente, nome_produtor,
             tempo_estimado = formatar_duracao_minutos(cat_info["area_total_m2"] * minutos_m2)
             texto_area += f" · ≈ {tempo_estimado}"
 
+        total_nessa_categoria = qtd_itens_categoria + qtd_itens_categoria_extra
         html_linha = f"""
         <div style="font-family: sans-serif; font-size: 9pt; color: #333333;">
             <span style="color: {cor_texto};">●</span>&nbsp;
-            {cat} · {qtd_itens_categoria} item{'s' if qtd_itens_categoria != 1 else ''}
+            {cat} · {total_nessa_categoria} item{'s' if total_nessa_categoria != 1 else ''}
             <span style="float: right; font-weight: bold; color: #1a1a1a;">{texto_area}</span>
         </div>
         """
@@ -353,6 +359,7 @@ def salvar_dados_os(pasta_saida, nome_cliente, itens, data_hora_atual, rotulo_ar
         "itens": [
             {
                 "categoria": item["categoria"],
+                "categoria_extra": item.get("categoria_extra"),
                 "variante": item.get("variante"),
                 "quantidade": item.get("quantidade", 1),
                 "dimensao": item.get("dimensao"),

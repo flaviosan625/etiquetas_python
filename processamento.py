@@ -40,8 +40,8 @@ import pymupdf
 
 from dimensoes import (
     contem_palavra, extrair_dimensoes, calcular_desperdicio_item, extrair_quantidade,
-    identificar_categoria, identificar_variante, formatar_variante, calcular_desperdicio_chapa_grande,
-    dimensao_da_arte, nome_sem_prefixo_reconhecido, FATORES_UNIDADE,
+    identificar_categoria, identificar_categoria_extra, identificar_variante, formatar_variante,
+    calcular_desperdicio_chapa_grande, dimensao_da_arte, nome_sem_prefixo_reconhecido, FATORES_UNIDADE,
 )
 from estado_pedido import carregar_estado, nomes_ja_processados, salvar_estado
 from pdf_layout import iniciar_pagina_com_banner, numerar_paginas_a_partir_de, estampar_conferencia_local
@@ -95,7 +95,15 @@ def _novo_estado_categoria():
         "pdf_saida": pymupdf.open(),
         "pagina_atual": None,
         "posicao_na_pagina": 0,
+        # 'contem_arquivos': tem CONSUMO de material a reportar (área/
+        # desperdício), inclusive quando é só categoria extra de material
+        # composto (ver 'categoria_extra' mais abaixo) — pode ser True
+        # sem nenhuma etiqueta própria. 'tem_etiqueta': tem PÁGINA de
+        # verdade em 'pdf_saida' — só essa controla inserir no checklist/
+        # banner; inserir um pdf_saida vazio (sem nenhuma página) trava o
+        # PyMuPDF com "malformed page tree".
         "contem_arquivos": False,
+        "tem_etiqueta": False,
         "total_etiquetas": 0,
         "area_total_m2": 0.0,
         "area_desperdicio_m2": 0.0,
@@ -231,6 +239,43 @@ def _renomear_para_padrao(pasta_entrada, nome_antigo, nome_novo, logger):
     return caminho_novo.name
 
 
+def _acumular_consumo_categoria(cat_info, info_material, dimensao, quantidade):
+    """
+    Soma o consumo de UMA peça (medida x quantidade) nos totais de uma
+    categoria — área, desperdício, comprimento de rolo usado ou chapas
+    extras. Reaproveitado tanto pra categoria principal do item quanto
+    pra categoria extra de material composto (ex: "PS ADESIVADO" conta
+    pra PS e pra ADESIVO, mesma medida — ver dimensoes.identificar_
+    categoria_extra) — cada categoria usa sua própria largura de
+    rolo/chapa, então a mesma peça pode caber numa e não na outra.
+
+    Retorna um dict com 'resultado_corte' (quando a peça coube no
+    rolo/chapa normal) ou 'estimativa_chapa_grande' (quando não coube
+    e é chapa — estimativa por grade) — os dois None quando não coube
+    e é rolo (peça mais larga que o rolo, sem estimativa possível).
+    Quem chama decide o texto de log a partir disso.
+    """
+    cat_info["area_total_m2"] += dimensao["area_m2"] * quantidade
+    largura_m = info_material["largura_cm"] / 100
+    resultado_corte = calcular_desperdicio_item(dimensao, largura_m)
+    if resultado_corte:
+        cat_info["area_desperdicio_m2"] += resultado_corte["desperdicio_m2"] * quantidade
+        cat_info["comprimento_rolo_usado_m"] += resultado_corte["peca_comprimento_m"] * quantidade
+        return {"resultado_corte": resultado_corte, "estimativa_chapa_grande": None}
+
+    if info_material["tipo"] == "chapa":
+        # rolo tem comprimento livre (sempre cabe na área de impressão),
+        # então essa estimativa por grade só faz sentido pra chapa, que
+        # tem largura E comprimento fixos
+        comprimento_chapa_m = info_material["comprimento_cm"] / 100
+        estimativa = calcular_desperdicio_chapa_grande(dimensao, largura_m, comprimento_chapa_m)
+        cat_info["area_desperdicio_m2"] += estimativa["desperdicio_m2"] * quantidade
+        cat_info["chapas_extras"] += estimativa["total_chapas"] * quantidade
+        return {"resultado_corte": None, "estimativa_chapa_grande": estimativa}
+
+    return {"resultado_corte": None, "estimativa_chapa_grande": None}
+
+
 _PADRAO_VERSAO_CHECKLIST = re.compile(r" V(\d+)\.pdf$", re.IGNORECASE)
 
 
@@ -299,6 +344,7 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
     categorias = list(materiais.keys())
     sinonimos_categoria = config.get("sinonimos_categoria", {})
     typos_unidade = config.get("typos_unidade", {})
+    materiais_compostos = config.get("materiais_compostos", {})
 
     ordem_configurada = [c for c in config.get("ordem_unificado", []) if c in materiais]
     ordem_unificado = ordem_configurada + [c for c in categorias if c not in ordem_configurada]
@@ -417,6 +463,14 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
 
         cat_info = dados_categorias[categoria_encontrada]
         cat_info["contem_arquivos"] = True
+        cat_info["tem_etiqueta"] = True
+
+        # Material composto: mesma peça consome uma categoria extra além
+        # da principal (ex: "PS ADESIVADO" também consome ADESIVO) — ver
+        # _acumular_consumo_categoria mais abaixo, onde isso é usado.
+        categoria_extra = identificar_categoria_extra(nome_arquivo_upper, materiais, materiais_compostos)
+        if categoria_extra == categoria_encontrada:
+            categoria_extra = None
 
         # Medida vem do nome sempre que possível; só recorre à arte
         # (ver dimensoes.dimensao_da_arte) quando o nome não tem
@@ -642,7 +696,6 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
             # não de 1), senão o total fica sempre como se fosse 1 peça
             # só, mesmo quando o nome diz outra coisa (confirmado pelo
             # usuário, 2026-08-29).
-            cat_info["area_total_m2"] += dimensao["area_m2"] * quantidade
             if dimensao["origem"] == "arte":
                 detalhe_area = (
                     f" | Medida (nome sem medida, extraída da arte): "
@@ -658,42 +711,46 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
                 if dimensao["unidade_corrigida"]:
                     detalhe_area += f" (unidade corrigida de {dimensao['unidade_bruta']} para {dimensao['unidade_usada']})"
 
-            info_material = materiais[categoria_encontrada]
-            largura_rolo_m = info_material["largura_cm"] / 100
-            resultado_corte = calcular_desperdicio_item(dimensao, largura_rolo_m)
-            if resultado_corte:
-                # valores de 'resultado_corte' são de UMA peça — multiplica
-                # pela quantidade antes de acumular (ver nota acima sobre
-                # 'area_total_m2').
-                cat_info["area_desperdicio_m2"] += resultado_corte["desperdicio_m2"] * quantidade
-                cat_info["comprimento_rolo_usado_m"] += resultado_corte["peca_comprimento_m"] * quantidade
+            resultado = _acumular_consumo_categoria(cat_info, materiais[categoria_encontrada], dimensao, quantidade)
+            if resultado["resultado_corte"]:
+                resultado_corte = resultado["resultado_corte"]
                 detalhe_area += f" | Desperdício estimado: {resultado_corte['desperdicio_m2']:.2f}m²"
                 if quantidade > 1:
                     detalhe_area += f" por peça ({resultado_corte['desperdicio_m2'] * quantidade:.2f}m² no total das {quantidade})"
+            elif resultado["estimativa_chapa_grande"]:
+                estimativa = resultado["estimativa_chapa_grande"]
+                cat_info["itens_fora_do_rolo"].append(arquivo)
+                texto_girada = " (peça girada 90°)" if estimativa["girada"] else ""
+                texto_total_chapas = (
+                    f" ({estimativa['total_chapas'] * quantidade} chapas no total das {quantidade})"
+                    if quantidade > 1 else ""
+                )
+                detalhe_area += (
+                    f" | Peça maior que a chapa — estimativa: {estimativa['colunas']}x{estimativa['linhas']}"
+                    f" = {estimativa['total_chapas']} chapas{texto_girada} por peça{texto_total_chapas}, "
+                    f"~{estimativa['desperdicio_m2']:.2f}m² de desperdício por peça "
+                    f"(confira o posicionamento das emendas manualmente)"
+                )
             else:
                 cat_info["itens_fora_do_rolo"].append(arquivo)
-                tipo_material = info_material["tipo"]
-                if tipo_material == "chapa":
-                    # rolo tem comprimento livre (sempre cabe na área de
-                    # impressão), então essa estimativa por grade só faz
-                    # sentido pra chapa, que tem largura E comprimento fixos
-                    comprimento_chapa_m = info_material["comprimento_cm"] / 100
-                    estimativa = calcular_desperdicio_chapa_grande(dimensao, largura_rolo_m, comprimento_chapa_m)
-                    cat_info["area_desperdicio_m2"] += estimativa["desperdicio_m2"] * quantidade
-                    cat_info["chapas_extras"] += estimativa["total_chapas"] * quantidade
-                    texto_girada = " (peça girada 90°)" if estimativa["girada"] else ""
-                    texto_total_chapas = (
-                        f" ({estimativa['total_chapas'] * quantidade} chapas no total das {quantidade})"
-                        if quantidade > 1 else ""
-                    )
-                    detalhe_area += (
-                        f" | Peça maior que a chapa — estimativa: {estimativa['colunas']}x{estimativa['linhas']}"
-                        f" = {estimativa['total_chapas']} chapas{texto_girada} por peça{texto_total_chapas}, "
-                        f"~{estimativa['desperdicio_m2']:.2f}m² de desperdício por peça "
-                        f"(confira o posicionamento das emendas manualmente)"
-                    )
-                else:
-                    detalhe_area += " | ⚠️ Peça mais larga que o rolo — desperdício não calculado"
+                detalhe_area += " | ⚠️ Peça mais larga que o rolo — desperdício não calculado"
+
+            # Material composto (ex: "PS ADESIVADO", "ACRÍLICO ADESIVADO"):
+            # a MESMA peça consome dois materiais diferentes ao mesmo tempo
+            # (a chapa base + o adesivo colado em cima) — nunca confundir
+            # com "IMPRESSO" (impressão direto na chapa, sem adesivo, conta
+            # só a categoria principal; ver dimensoes.identificar_categoria_
+            # extra). Só a categoria principal ganha etiqueta/checklist —
+            # a extra só entra no subtotal de material da OS.
+            if categoria_extra:
+                cat_info_extra = dados_categorias[categoria_extra]
+                cat_info_extra["contem_arquivos"] = True
+                _acumular_consumo_categoria(cat_info_extra, materiais[categoria_extra], dimensao, quantidade)
+                logger.emitir(
+                    "info",
+                    f"'{arquivo}': material composto — consumo de {categoria_extra} também contabilizado "
+                    f"({dimensao['largura_m']:.2f}m x {dimensao['altura_m']:.2f}m, mesma medida da peça)",
+                )
         elif arte_sem_conteudo:
             detalhe_area = " | Medida não reconhecida (nome sem medida, e PDF sem conteúdo pra medir pela arte)"
         else:
@@ -712,6 +769,7 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
         itens_os.append({
             "arquivo": arquivo,
             "categoria": categoria_encontrada,
+            "categoria_extra": categoria_extra,
             "quantidade": quantidade,
             "dimensao": dimensao,
             "thumbnail_bytes": thumbnail_bytes,
@@ -758,7 +816,11 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
 
     for cat in ordem_unificado:
         cat_info = dados_categorias[cat]
-        if cat_info["contem_arquivos"]:
+        # 'tem_etiqueta' (não 'contem_arquivos'): uma categoria extra de
+        # material composto (ex: ADESIVO em "PS ADESIVADO") tem consumo a
+        # reportar mas NUNCA página própria — inserir um pdf_saida vazio
+        # (sem página nenhuma) trava o PyMuPDF ("malformed page tree").
+        if cat_info["tem_etiqueta"]:
             pagina_inicio = len(pdf_unificado) + 1
             toc.append([1, f"{cat} ({cat_info['total_etiquetas']} etiquetas)", pagina_inicio])
 
@@ -824,14 +886,20 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
         else:
             itens_os_com_selo.append(item)
     itens_para_os = itens_anteriores + itens_os_com_selo
+    # Material composto (ex: "PS ADESIVADO" também consome ADESIVO — ver
+    # 'categoria_extra', dimensoes.identificar_categoria_extra): conta na
+    # categoria extra também, mesma medida/quantidade da peça — só não
+    # entra em 'total_etiquetas' (isso continua sendo só a categoria
+    # principal, já que é uma etiqueta física só).
     dados_categorias_os = {
         cat: {
-            "contem_arquivos": any(i["categoria"] == cat for i in itens_para_os),
-            # área de cada item é de UMA peça — multiplica pela quantidade
-            # antes de somar (mesmo motivo do acúmulo lá em cima).
+            "contem_arquivos": any(
+                i["categoria"] == cat or i.get("categoria_extra") == cat for i in itens_para_os
+            ),
             "area_total_m2": sum(
                 i["dimensao"]["area_m2"] * i.get("quantidade", 1)
-                for i in itens_para_os if i["categoria"] == cat and i.get("dimensao")
+                for i in itens_para_os
+                if i.get("dimensao") and (i["categoria"] == cat or i.get("categoria_extra") == cat)
             ),
             "total_etiquetas": sum(1 for i in itens_para_os if i["categoria"] == cat),
         }

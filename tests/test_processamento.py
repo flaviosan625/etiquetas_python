@@ -256,3 +256,66 @@ def test_nome_padronizado_nao_repete_material_nem_empilha_marca_da_arte():
     assert resultado == "1 UN LONA 8.70x1.30M UCB_CWB IMPRESSA (3).pdf"
     assert resultado.upper().count("LONA") == 1
     assert "(medida pela arte)" not in resultado
+
+
+def test_material_composto_ps_e_acrilico_adesivado_somam_no_adesivo(tmp_path):
+    """
+    Regra do usuário (2026-08-29): "PS ADESIVADO"/"ACRÍLICO ADESIVADO"
+    são UMA peça física que consome DOIS materiais — o mesmo tamanho
+    conta pro subtotal de PS/ACRÍLICO E de ADESIVO na OS, mas só gera
+    UMA etiqueta/entrada no checklist cada (nunca duplica a peça
+    impressa). ADESIVO acumula as duas peças (PS + ACRÍLICO), mesmo
+    sem ter etiqueta própria nenhuma.
+    """
+    config = copy.deepcopy(CONFIG_PADRAO)
+    pasta_saida_base = tmp_path / "saida"
+    entrada = tmp_path / "entrada"
+    entrada.mkdir()
+    _pdf_de_uma_pagina(entrada / "1UN PS ADESIVADO 1,00X2,00M_a.pdf")
+    _pdf_de_uma_pagina(entrada / "1UN ACRILICO ADESIVADO 1,00X1,00M_b.pdf")
+
+    resultado = processar_etiquetas(
+        str(entrada), "CLIENTE TESTE", "Gerente", "Produtor",
+        config, pasta_saida_base=str(pasta_saida_base),
+    )
+
+    doc = pymupdf.open(resultado["os"])
+    texto = "".join(p.get_text() for p in doc)
+    doc.close()
+
+    assert "PS · 1 item" in texto
+    assert "ACRILICO · 1 item" in texto
+    # ADESIVO acumula as duas peças (2,00 + 1,00 = 3,00 m²), sem
+    # nenhuma etiqueta própria
+    assert "ADESIVO · 2 items" in texto
+    assert "3.00 m²" in texto
+
+    # cada peça continua com UMA etiqueta só (PS e ACRÍLICO separados,
+    # nada com ADESIVO no checklist)
+    pasta_saida = pathlib.Path(resultado["pasta_saida"])
+    doc_checklist = pymupdf.open(str(pasta_saida / "Checklist CLIENTE TESTE.pdf"))
+    toc = doc_checklist.get_toc()
+    doc_checklist.close()
+    assert {t[1] for t in toc} == {"PS (1 etiquetas)", "ACRILICO (1 etiquetas)"}
+
+
+def test_material_composto_nao_confunde_impresso_com_adesivado(tmp_path):
+    """"IMPRESSO" é outro processo (impressão direta, sem adesivo colado
+    em cima) — nunca deve contar ADESIVO junto."""
+    config = copy.deepcopy(CONFIG_PADRAO)
+    pasta_saida_base = tmp_path / "saida"
+    entrada = tmp_path / "entrada"
+    entrada.mkdir()
+    _pdf_de_uma_pagina(entrada / "1UN PS 10MM IMPRESSO 1,00X1,00M_b.pdf")
+
+    resultado = processar_etiquetas(
+        str(entrada), "CLIENTE TESTE", "Gerente", "Produtor",
+        config, pasta_saida_base=str(pasta_saida_base),
+    )
+
+    doc = pymupdf.open(resultado["os"])
+    texto = "".join(p.get_text() for p in doc)
+    doc.close()
+
+    assert "PS · 1 item" in texto
+    assert "ADESIVO" not in texto

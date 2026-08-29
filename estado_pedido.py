@@ -16,7 +16,10 @@ import csv
 import json
 import pathlib
 
-from dimensoes import extrair_dimensoes, extrair_quantidade, identificar_categoria, identificar_variante
+from dimensoes import (
+    extrair_dimensoes, extrair_quantidade, identificar_categoria, identificar_categoria_extra,
+    identificar_variante,
+)
 from relatorios import NOME_SUBPASTA_LOG
 from utils import chave_comparacao_cliente, nome_cliente_da_pasta
 
@@ -116,7 +119,7 @@ def _reconstruir_item_legado(nome_arquivo, config):
     com categoria=None.
     """
     item = {
-        "arquivo": nome_arquivo, "categoria": None, "quantidade": 1,
+        "arquivo": nome_arquivo, "categoria": None, "categoria_extra": None, "quantidade": 1,
         "dimensao": None, "variante": None, "thumbnail_bytes": None,
     }
     if not config:
@@ -130,6 +133,8 @@ def _reconstruir_item_legado(nome_arquivo, config):
 
     quantidade, _ = extrair_quantidade(nome_arquivo)
     item["categoria"] = categoria
+    categoria_extra = identificar_categoria_extra(nome_upper, materiais, config.get("materiais_compostos", {}))
+    item["categoria_extra"] = categoria_extra if categoria_extra != categoria else None
     item["dimensao"] = extrair_dimensoes(nome_arquivo, config.get("typos_unidade", {}))
     item["quantidade"] = quantidade
     item["variante"] = identificar_variante(nome_upper, materiais.get(categoria, {}).get("variantes", []))

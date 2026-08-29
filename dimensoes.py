@@ -74,6 +74,31 @@ def identificar_categoria(nome_arquivo_upper, materiais, sinonimos_categoria=Non
     return max(categorias_encontradas, key=len), categorias_encontradas
 
 
+def identificar_categoria_extra(nome_arquivo_upper, materiais, materiais_compostos=None):
+    """
+    Alguns materiais são compostos: a MESMA peça física consome dois
+    materiais diferentes ao mesmo tempo — ex: "PS ADESIVADO" (chapa de
+    PS com um adesivo colado em cima) consome PS (categoria principal,
+    achada por identificar_categoria) E ADESIVO (categoria extra, essa
+    função). "ACRÍLICO ADESIVADO" é o mesmo caso com ACRÍLICO.
+
+    'materiais_compostos' (do config.json) mapeia a palavra-gatilho
+    (ex: "ADESIVADO") pra categoria extra consumida (ex: "ADESIVO") —
+    nunca confundir com "IMPRESSO" (impressão direto na chapa, sem
+    adesivo — não é material composto, só a categoria principal conta).
+
+    Retorna a categoria extra encontrada (que ainda precisa existir em
+    'materiais'), ou None.
+    """
+    materiais_compostos = materiais_compostos or {}
+    for palavra_gatilho, categoria_extra in materiais_compostos.items():
+        if categoria_extra not in materiais:
+            continue
+        if contem_palavra(nome_arquivo_upper, palavra_gatilho):
+            return categoria_extra
+    return None
+
+
 _PADRAO_QUANTIDADE = rf'{_SEPARADOR}(\d+){_SEPARADOR}UN(?![A-Z])'
 
 

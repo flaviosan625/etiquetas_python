@@ -7,8 +7,8 @@ import pymupdf
 
 from dimensoes import (
     contem_palavra, extrair_dimensoes, calcular_desperdicio_item, extrair_quantidade,
-    identificar_categoria, identificar_variante, formatar_variante, calcular_desperdicio_chapa_grande,
-    medir_conteudo_pagina, dimensao_da_arte, nome_sem_prefixo_reconhecido,
+    identificar_categoria, identificar_categoria_extra, identificar_variante, formatar_variante,
+    calcular_desperdicio_chapa_grande, medir_conteudo_pagina, dimensao_da_arte, nome_sem_prefixo_reconhecido,
 )
 
 
@@ -51,6 +51,37 @@ def test_identificar_categoria_nenhuma_bate():
 
 def test_contem_palavra_evita_falso_positivo_em_substring():
     assert contem_palavra("BANNER_XPS_60X40.PDF", "PS") is False
+
+
+def test_identificar_categoria_extra_ps_adesivado():
+    materiais = {"PS": {}, "ADESIVO": {}, "ACRILICO": {}}
+    materiais_compostos = {"ADESIVADO": "ADESIVO"}
+    categoria_extra = identificar_categoria_extra("1UN PS ADESIVADO 1,00X1,00.PDF", materiais, materiais_compostos)
+    assert categoria_extra == "ADESIVO"
+
+
+def test_identificar_categoria_extra_acrilico_adesivado():
+    materiais = {"PS": {}, "ADESIVO": {}, "ACRILICO": {}}
+    materiais_compostos = {"ADESIVADO": "ADESIVO"}
+    categoria_extra = identificar_categoria_extra(
+        "1UN ACRILICO ADESIVADO 1,00X1,00.PDF", materiais, materiais_compostos
+    )
+    assert categoria_extra == "ADESIVO"
+
+
+def test_identificar_categoria_extra_nao_confunde_impresso_com_adesivado():
+    # "IMPRESSO" é um processo diferente (impressão direta, sem adesivo
+    # colado em cima) — nunca deve contar categoria extra nenhuma
+    materiais = {"PS": {}, "ADESIVO": {}}
+    materiais_compostos = {"ADESIVADO": "ADESIVO"}
+    categoria_extra = identificar_categoria_extra("1UN PS 10MM IMPRESSO 1,00X1,00.PDF", materiais, materiais_compostos)
+    assert categoria_extra is None
+
+
+def test_identificar_categoria_extra_sem_material_composto_configurado():
+    materiais = {"PS": {}}
+    categoria_extra = identificar_categoria_extra("1UN PS ADESIVADO 1,00X1,00.PDF", materiais, {})
+    assert categoria_extra is None
     assert contem_palavra("PLACA_PS_60X40.PDF", "PS") is True
 
 
