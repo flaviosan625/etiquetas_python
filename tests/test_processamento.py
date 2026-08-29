@@ -17,6 +17,16 @@ def _pdf_de_uma_pagina(caminho):
     doc.close()
 
 
+def _imagem_de_uma_pagina(caminho):
+    """PNG/JPG real (não um PDF com extensão trocada) — o PyMuPDF abre imagem crua como documento de 1 página."""
+    doc = pymupdf.open()
+    pagina = doc.new_page(width=200, height=200)
+    pagina.draw_rect(pymupdf.Rect(0, 0, 200, 200), fill=(0, 0, 0))
+    pix = pagina.get_pixmap()
+    pix.save(str(caminho))
+    doc.close()
+
+
 def test_eh_reposicao_reconhece_variacoes_de_acento():
     nomes = [
         "1UN LONA 2,00X1,00 - REPOSIÇÃO.PDF",
@@ -325,3 +335,60 @@ def test_material_composto_nao_confunde_impresso_com_adesivado(tmp_path):
 
     assert "PS · 1 item" in texto
     assert "ADESIVO" not in texto
+
+
+def test_le_png_e_jpg_alem_de_pdf(tmp_path):
+    """
+    Pedido do usuário (2026-08-29): entrada não pode ler só PDF — PNG/
+    JPG já funcionam de verdade com o PyMuPDF (testado direto antes de
+    aplicar), sem precisar de nenhuma conversão.
+    """
+    config = copy.deepcopy(CONFIG_PADRAO)
+    pasta_saida_base = tmp_path / "saida"
+    entrada = tmp_path / "entrada"
+    entrada.mkdir()
+    _imagem_de_uma_pagina(entrada / "1UN LONA 1,00X1,00M_a.png")
+    _imagem_de_uma_pagina(entrada / "1UN PVC 1,00X1,00M_b.jpg")
+
+    resultado = processar_etiquetas(
+        str(entrada), "CLIENTE TESTE", "Gerente", "Produtor",
+        config, pasta_saida_base=str(pasta_saida_base),
+    )
+
+    assert resultado is not None
+    assert resultado["arquivos_novos"] == 2
+
+    doc = pymupdf.open(resultado["os"])
+    texto = "".join(p.get_text() for p in doc)
+    doc.close()
+    assert "2 itens no total" in texto
+
+
+def test_formato_reconhecido_sem_suporte_avisa_e_nao_trava(tmp_path):
+    """
+    EPS/PSD/CDR aparecem na prática mas o PyMuPDF não consegue abrir
+    nesse ambiente (confirmado testando EPS direto: "Failed to open...
+    as type eps") — precisa avisar que o arquivo foi visto, não ficar
+    invisível como antes, mas sem travar o resto da rodada.
+    """
+    config = copy.deepcopy(CONFIG_PADRAO)
+    pasta_saida_base = tmp_path / "saida"
+    entrada = tmp_path / "entrada"
+    entrada.mkdir()
+    (entrada / "1UN LONA 2,00X1,00M_arte.eps").write_bytes(b"%!PS-Adobe-3.0 EPSF-3.0\n%%BoundingBox: 0 0 10 10\n")
+    _pdf_de_uma_pagina(entrada / "1UN PVC 1,00X1,00M_valido.pdf")
+
+    avisos = []
+
+    def on_log(nivel, msg):
+        if nivel == "warn":
+            avisos.append(msg)
+
+    resultado = processar_etiquetas(
+        str(entrada), "CLIENTE TESTE", "Gerente", "Produtor",
+        config, pasta_saida_base=str(pasta_saida_base), on_log=on_log,
+    )
+
+    assert resultado is not None
+    assert resultado["arquivos_novos"] == 1, "só o PDF válido deveria ter sido processado"
+    assert any("EPS" in a and "não" in a for a in avisos), "deveria avisar sobre o EPS não suportado"

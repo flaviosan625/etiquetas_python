@@ -165,7 +165,7 @@ class JanelaPrincipal(tk.Tk):
     # ---------- ações ----------
 
     def _escolher_pasta(self):
-        pasta = filedialog.askdirectory(title="Selecione a pasta com os PDFs")
+        pasta = filedialog.askdirectory(title="Selecione a pasta com os arquivos (PDF, AI, PNG, JPG)")
         if pasta:
             self.var_pasta.set(pasta)
 

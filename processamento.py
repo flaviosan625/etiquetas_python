@@ -63,6 +63,21 @@ ALTURA_A4 = 841.89
 DPI_ETIQUETA = 150
 QUALIDADE_JPG_ETIQUETA = 78
 
+# Formatos que o PyMuPDF abre de verdade nesse ambiente (testado
+# diretamente, 2026-08-29) — PDF sempre foi suportado; ".AI" entra
+# porque um arquivo Illustrator exportado com "Compatibilidade PDF"
+# (padrão do programa) é um PDF de verdade por dentro, então abre igual;
+# PNG/JPG são imagem crua, o PyMuPDF trata como documento de 1 página.
+EXTENSOES_SUPORTADAS = (".pdf", ".ai", ".png", ".jpg", ".jpeg")
+
+# Formatos que aparecem na prática mas o PyMuPDF NÃO consegue abrir
+# nesse ambiente (confirmado testando: EPS falha com "Failed to open...
+# as type eps" — precisaria de Ghostscript, não instalado nesse PC;
+# PSD/CDR são formato proprietário sem leitor livre nenhum disponível).
+# Listado aqui só pra AVISAR que o arquivo foi visto mas não pôde ser
+# lido, em vez de ficar invisível/ignorado em silêncio como antes.
+EXTENSOES_RECONHECIDAS_SEM_SUPORTE = (".eps", ".psd", ".cdr")
+
 _PREFIXOS_CONSOLE = {"ok": "✅", "warn": "⚠️", "err": "❌", "info": "ℹ️"}
 
 
@@ -356,7 +371,7 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
         return None
 
     try:
-        arquivos_pdf = [f for f in os.listdir(pasta_entrada) if f.lower().endswith(".pdf")]
+        nomes_pasta = os.listdir(pasta_entrada)
     except FileNotFoundError:
         logger.emitir("err", f"A pasta '{pasta_entrada}' não foi encontrada.")
         return None
@@ -367,8 +382,19 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
         logger.emitir("err", f"Não foi possível ler a pasta '{pasta_entrada}': {e}")
         return None
 
-    if not arquivos_pdf:
-        logger.emitir("err", f"Nenhum arquivo PDF encontrado na pasta '{pasta_entrada}'.")
+    arquivos_arte = [f for f in nomes_pasta if f.lower().endswith(EXTENSOES_SUPORTADAS)]
+    for nome in nomes_pasta:
+        if nome.lower().endswith(EXTENSOES_RECONHECIDAS_SEM_SUPORTE):
+            extensao = pathlib.Path(nome).suffix.upper()
+            logger.emitir(
+                "warn",
+                f"'{nome}': formato {extensao} reconhecido, mas ainda não suportado — não foi lido. "
+                f"Exporte pra PDF (ou AI com compatibilidade PDF) antes de colocar na pasta de entrada.",
+                arquivo=nome, status_csv=f"AVISO - FORMATO {extensao} NAO SUPORTADO",
+            )
+
+    if not arquivos_arte:
+        logger.emitir("err", f"Nenhum arquivo suportado (PDF/AI/PNG/JPG) encontrado na pasta '{pasta_entrada}'.")
         return None
 
     modo_atualizacao = pasta_saida_existente is not None
@@ -390,7 +416,7 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
         nomes_conhecidos = nomes_ja_processados(itens_anteriores)
 
         arquivos_novos = []
-        for arquivo in arquivos_pdf:
+        for arquivo in arquivos_arte:
             if arquivo in nomes_conhecidos:
                 arquivos_ignorados += 1
                 logger.emitir(
@@ -399,9 +425,9 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
                 )
             else:
                 arquivos_novos.append(arquivo)
-        arquivos_pdf = arquivos_novos
+        arquivos_arte = arquivos_novos
 
-        if not arquivos_pdf:
+        if not arquivos_arte:
             logger.emitir(
                 "info",
                 "Nenhum arquivo novo — todos os arquivos da pasta de entrada já tinham sido "
@@ -432,9 +458,9 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
     agora = datetime.now()
     data_hora_atual = agora.strftime("%d/%m/%Y %H:%M:%S")
     data_chegada_curta = agora.strftime("%d/%m")
-    total_arquivos = len(arquivos_pdf)
+    total_arquivos = len(arquivos_arte)
 
-    for indice, arquivo in enumerate(arquivos_pdf, start=1):
+    for indice, arquivo in enumerate(arquivos_arte, start=1):
         if on_progress:
             on_progress(indice, total_arquivos)
 
@@ -994,7 +1020,7 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
         "log_csv": caminho_log,
         "os": caminho_os,
         "os_json": caminho_os_json,
-        "arquivos_novos": len(arquivos_pdf),
+        "arquivos_novos": len(arquivos_arte),
         "arquivos_ignorados": arquivos_ignorados,
         "atualizacao": modo_atualizacao,
     }
