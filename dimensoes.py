@@ -11,6 +11,13 @@ import re
 # Isso é físico (mm/cm/m), não precisa ser configurável pelo usuário.
 FATORES_UNIDADE = {"MM": 0.001, "CM": 0.01, "M": 1.0}
 
+# Nome de arquivo vem de digitação manual — separador entre os pedaços
+# (quantidade, medida, unidade) varia sem padrão: espaço, "_", "-", "."
+# ou ",", em qualquer combinação, sem afetar o que está sendo dito. Usado
+# em vez de '\s*' cru nos padrões abaixo, pra não depender de espaço
+# especificamente.
+_SEPARADOR = r'[\s._,\-]*'
+
 
 def contem_palavra(texto, termo):
     """
@@ -103,7 +110,7 @@ def extrair_dimensoes(nome_arquivo, typos_unidade=None):
     )
     grupo_unidades = "|".join(re.escape(t) for t in tokens_unidade)
 
-    padrao = rf'(\d+(?:[.,]\d+)?)\s*X\s*(\d+(?:[.,]\d+)?)\s*({grupo_unidades})?(?![A-Z])'
+    padrao = rf'(\d+(?:[.,]\d+)?){_SEPARADOR}X{_SEPARADOR}(\d+(?:[.,]\d+)?){_SEPARADOR}({grupo_unidades})?(?![A-Z])'
     matches = list(re.finditer(padrao, nome_upper))
     if not matches:
         return None
@@ -154,7 +161,7 @@ def extrair_quantidade(nome_arquivo):
 
     Retorna (quantidade, encontrada).
     """
-    m = re.match(r'\s*(\d+)\s*UN\b', nome_arquivo.upper())
+    m = re.match(rf'{_SEPARADOR}(\d+){_SEPARADOR}UN(?![A-Z])', nome_arquivo.upper())
     if m:
         return int(m.group(1)), True
     return 1, False

@@ -91,8 +91,11 @@ def test_rodadas_seguintes_geram_checklist_separado_e_versionado(tmp_path):
     reposição) vira um checklist SEPARADO — nunca mais cola página num
     checklist que já foi impresso/marcado à caneta antes. Primeira
     rodada sem sufixo, segunda "V2", terceira "V3" — cada uma só com o
-    que foi processado NAQUELA rodada. Roda 3 rodadas reais e confere
-    o nome de cada arquivo em disco e quantas etiquetas cada um tem.
+    que foi processado NAQUELA rodada. Desde 2026-08-28 só existe UM
+    checklist por rodada (não mais um arquivo separado por categoria) —
+    "Checklist CLIENTE.pdf", "V2.pdf", "V3.pdf". Roda 3 rodadas reais e
+    confere o nome de cada arquivo em disco e quantas etiquetas cada um
+    tem, e que nenhum arquivo por categoria foi gerado.
     """
     config = copy.deepcopy(CONFIG_PADRAO)
     pasta_saida_base = tmp_path / "saida"
@@ -122,11 +125,11 @@ def test_rodadas_seguintes_geram_checklist_separado_e_versionado(tmp_path):
         config, pasta_saida_base=str(pasta_saida_base), pasta_saida_existente=pasta_saida,
     )
 
-    nomes_checklist = sorted(p.name for p in pasta_saida.glob("Checklist * - LONA*.pdf"))
+    nomes_checklist = sorted(p.name for p in pasta_saida.glob("Checklist *.pdf"))
     assert nomes_checklist == [
-        "Checklist CLIENTE TESTE - LONA V2.pdf",
-        "Checklist CLIENTE TESTE - LONA V3.pdf",
-        "Checklist CLIENTE TESTE - LONA.pdf",
+        "Checklist CLIENTE TESTE V2.pdf",
+        "Checklist CLIENTE TESTE V3.pdf",
+        "Checklist CLIENTE TESTE.pdf",
     ]
 
     def _paginas(nome):
@@ -136,16 +139,9 @@ def test_rodadas_seguintes_geram_checklist_separado_e_versionado(tmp_path):
         return n
 
     # cada rodada tem 1 arquivo só (banner + 1 etiqueta = 1 página cada)
-    assert _paginas("Checklist CLIENTE TESTE - LONA.pdf") == 1
-    assert _paginas("Checklist CLIENTE TESTE - LONA V2.pdf") == 1
-    assert _paginas("Checklist CLIENTE TESTE - LONA V3.pdf") == 1
-
-    nomes_unificado = sorted(p.name for p in pasta_saida.glob("Checklist * - UNIFICADO*.pdf"))
-    assert nomes_unificado == [
-        "Checklist CLIENTE TESTE - UNIFICADO V2.pdf",
-        "Checklist CLIENTE TESTE - UNIFICADO V3.pdf",
-        "Checklist CLIENTE TESTE - UNIFICADO.pdf",
-    ]
+    assert _paginas("Checklist CLIENTE TESTE.pdf") == 1
+    assert _paginas("Checklist CLIENTE TESTE V2.pdf") == 1
+    assert _paginas("Checklist CLIENTE TESTE V3.pdf") == 1
 
 
 def test_cliente_digitado_com_espaco_diferente_nao_fragmenta_os_nem_checklist(tmp_path):
@@ -191,8 +187,8 @@ def test_cliente_digitado_com_espaco_diferente_nao_fragmenta_os_nem_checklist(tm
     doc.close()
     assert "2 itens no total" in texto, "OS devia ter os itens das DUAS rodadas, não só a última"
 
-    nomes_checklist = sorted(p.name for p in pasta_saida.glob("Checklist * - LONA*.pdf"))
-    assert nomes_checklist == ["Checklist SUPERBET - LONA V2.pdf", "Checklist SUPERBET - LONA.pdf"]
+    nomes_checklist = sorted(p.name for p in pasta_saida.glob("Checklist *.pdf"))
+    assert nomes_checklist == ["Checklist SUPERBET V2.pdf", "Checklist SUPERBET.pdf"]
 
 
 def test_log_processamento_fica_dentro_da_subpasta_log(tmp_path):

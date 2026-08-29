@@ -138,24 +138,31 @@ _PADRAO_VERSAO_CHECKLIST = re.compile(r" V(\d+)\.pdf$", re.IGNORECASE)
 def _proxima_versao_checklist(pasta_saida, nome_cliente_seguro):
     """
     Cada rodada de processamento (arquivo novo OU reposição) vira um
-    checklist SEPARADO — "Checklist CLIENTE - CATEGORIA V2.pdf",
-    "V3.pdf" etc — em vez de colar páginas no mesmo PDF de sempre.
-    Decisão do usuário (2026-08-26): o checklist já impresso e marcado
-    à caneta na produção não muda mais depois; cada leva nova de
-    material vira uma folha própria, só com o que precisa ser feito
-    naquela rodada — sem reimprimir o que já foi produzido antes. A OS
-    continua sendo UM documento só, sempre com o pedido inteiro (ver
-    'itens_para_os' mais abaixo) — só o checklist (o documento de
-    produção, físico) é que passa a ser por rodada.
+    checklist SEPARADO — "Checklist CLIENTE.pdf" na primeira rodada,
+    "Checklist CLIENTE V2.pdf", "V3.pdf" etc nas seguintes — em vez de
+    colar páginas no mesmo PDF de sempre. Decisão do usuário
+    (2026-08-26): o checklist já impresso e marcado à caneta na
+    produção não muda mais depois; cada leva nova de material vira uma
+    folha própria, só com o que precisa ser feito naquela rodada — sem
+    reimprimir o que já foi produzido antes. A OS continua sendo UM
+    documento só, sempre com o pedido inteiro (ver 'itens_para_os' mais
+    abaixo) — só o checklist (o documento de produção, físico) é que
+    passa a ser por rodada.
+
+    Desde 2026-08-28, só existe UM checklist por rodada (o que antes
+    era "- UNIFICADO") — os arquivos separados por categoria pararam de
+    ser salvos em disco (o usuário pediu pra buscar item individual por
+    aqui, quando precisar, em vez de gerar arquivo a mais toda rodada).
 
     A primeira rodada de um pedido não leva sufixo (mantém o nome já
     usado antes); a segunda vira V2, a terceira V3 — sempre o maior
     número já usado em qualquer checklist dessa pasta, mais um. Não
     guarda esse número em nenhum estado à parte: conta pelos arquivos
-    que já existem em disco, então funciona mesmo se uma rodada não
-    tiver gerado checklist pra alguma categoria específica.
+    que já existem em disco.
     """
-    arquivos = list(pathlib.Path(pasta_saida).glob(f"Checklist {nome_cliente_seguro.upper()} - *.pdf"))
+    pasta = pathlib.Path(pasta_saida)
+    nome_base = f"Checklist {nome_cliente_seguro.upper()}"
+    arquivos = list(pasta.glob(f"{nome_base}.pdf")) + list(pasta.glob(f"{nome_base} V*.pdf"))
     if not arquivos:
         return 1
     maior = 1
@@ -571,37 +578,18 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
             )
             cat_info["pdf_saida"][0].insert_htmlbox(cat_info["caixa_contagem_banner"], html_contagem)
 
-    # Salva os arquivos individuais por categoria — sempre um arquivo
-    # NOVO (nunca mexe num checklist já gerado antes, ver
-    # _proxima_versao_checklist). Cada save é isolado num try/except: se
-    # um falhar (arquivo aberto em outro programa, por exemplo), os
-    # demais ainda são tentados.
-    for cat in categorias:
-        cat_info = dados_categorias[cat]
-        if cat_info["contem_arquivos"]:
-            nome_individual = pasta_saida / (
-                f"Checklist {nome_cliente_seguro.upper()} - {sanitizar_nome_arquivo(cat)}{sufixo_versao_checklist}.pdf"
-            )
-            try:
-                cat_info["pdf_saida"].save(str(nome_individual), garbage=4, deflate=True)
-                logger.emitir("ok", f"Gerado: {nome_individual.name}")
-            except Exception as e:
-                logger.emitir(
-                    "err",
-                    f"Não foi possível salvar '{nome_individual.name}': {e}. "
-                    f"Verifique se o arquivo não está aberto em outro programa.",
-                )
-
-    # Monta o PDF unificado respeitando a ordem configurada, com sumário
-    # (TOC) clicável, numerando as páginas ao final. O banner de cada
+    # Monta o checklist único da rodada (variável ainda chamada
+    # "unificado" — nome de antes de virar o único checklist gerado,
+    # ver histórico da função) respeitando a ordem configurada, com
+    # sumário (TOC) clicável, numerando as páginas ao final. O banner de cada
     # categoria já está embutido na primeira página copiada de
     # cat_info["pdf_saida"] — não precisa mais de uma página de título
     # separada (isso desperdiçava uma folha inteira na impressão).
     #
-    # Sempre um documento NOVO (mesmo espírito do checklist por
-    # categoria acima) — só com o que foi processado NESSA rodada, com
-    # o sufixo de versão no nome (V2, V3...) quando não for a primeira.
-    caminho_unificado = pasta_saida / f"Checklist {nome_cliente_seguro.upper()} - UNIFICADO{sufixo_versao_checklist}.pdf"
+    # Sempre um documento NOVO — só com o que foi processado NESSA
+    # rodada, com o sufixo de versão no nome (V2, V3...) quando não for
+    # a primeira (ver _proxima_versao_checklist).
+    caminho_unificado = pasta_saida / f"Checklist {nome_cliente_seguro.upper()}{sufixo_versao_checklist}.pdf"
     pdf_unificado = pymupdf.open()
     toc = []
 
@@ -614,10 +602,8 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
             indice_inicio_paginas = len(pdf_unificado)
             pdf_unificado.insert_pdf(cat_info["pdf_saida"])
 
-            # só na cópia que vai para o unificado: checkbox de conferência
-            # no local + aviso de responsabilidade do produtor, em cada
-            # etiqueta (os checklists individuais por categoria, salvos
-            # acima, continuam sem isso). Usa a posição real de cada
+            # checkbox de conferência no local + aviso de responsabilidade
+            # do produtor, em cada etiqueta. Usa a posição real de cada
             # etiqueta (guardada durante a montagem) em vez de assumir
             # sempre 2 por página — a página do banner tem só 1.
             sobras = cat_info["sobra_rodape"]
@@ -639,9 +625,9 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
             # do que precisa (mesmo problema resolvido antes na OS)
             pdf_unificado.save(str(caminho_unificado), garbage=4, deflate=True)
             pdf_unificado.close()
-            logger.emitir("ok", f"UNIFICADO criado: {caminho_unificado.name}")
+            logger.emitir("ok", f"Checklist gerado: {caminho_unificado.name}")
         except Exception as e:
-            logger.emitir("err", f"Não foi possível salvar o PDF unificado: {e}")
+            logger.emitir("err", f"Não foi possível salvar o checklist: {e}")
             caminho_unificado = None
             try:
                 pdf_unificado.close()

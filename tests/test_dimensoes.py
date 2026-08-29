@@ -109,6 +109,26 @@ def test_extrair_quantidade_assume_1_quando_ausente():
     assert extrair_quantidade("banner_58x60.pdf") == (1, False)
 
 
+def test_extrair_quantidade_ignora_separador_entre_numero_e_un():
+    # nome vem de digitação manual — separador entre a quantidade e
+    # "UN" varia sem padrão (2026-08-29, pedido do usuário: pontuação
+    # não pode influenciar a leitura do arquivo)
+    assert extrair_quantidade("1_UN_LONA_2,00X1,00M.pdf") == (1, True)
+    assert extrair_quantidade("1-UN-LONA-2,00X1,00M.pdf") == (1, True)
+    assert extrair_quantidade("1.UN.LONA.2,00X1,00M.pdf") == (1, True)
+    assert extrair_quantidade("1UN_LONA_2,00X1,00M.pdf") == (1, True)  # "UN" colado no número, mas seguido de "_"
+    assert extrair_quantidade("4UN-PVC-recorte.pdf") == (4, True)
+
+
+def test_extrair_dimensoes_ignora_separador_ao_redor_do_x():
+    d1 = extrair_dimensoes("1UN LONA 2,10_X_2,10M.pdf", {})
+    assert round(d1["area_m2"], 2) == 4.41
+    d2 = extrair_dimensoes("1UN LONA 2,10-X-2,10M.pdf", {})
+    assert round(d2["area_m2"], 2) == 4.41
+    d3 = extrair_dimensoes("1UN LONA 2,10.X.2,10M.pdf", {})
+    assert round(d3["area_m2"], 2) == 4.41
+
+
 _VARIANTES_PVC = [
     {"espessura": "10MM", "cor": "BRANCO"},
     {"espessura": "10MM", "cor": "PRETO"},
