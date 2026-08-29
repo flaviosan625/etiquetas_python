@@ -185,5 +185,8 @@
     "ACRILICO"
   ],
   "ultimo_gerente": "Flavio Santos",
-  "ultimo_produtor": "Flavio"
+  "ultimo_produtor": "Natalia",
+  "materiais_compostos": {
+    "ADESIVADO": "ADESIVO"
+  }
 }
