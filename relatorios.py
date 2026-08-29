@@ -12,7 +12,7 @@ from datetime import datetime
 import pymupdf
 
 from branding import inserir_logo, CAMINHO_LOGO_GUI
-from dimensoes import formatar_variante
+from dimensoes import formatar_variante, nome_sem_prefixo_reconhecido, remover_palavra
 from utils import formatar_duracao_minutos
 
 # Subpasta onde o log de processamento fica guardado, dentro da pasta
@@ -72,16 +72,28 @@ def _cor_categoria(categoria, ordem_categorias):
     return _PALETA_CATEGORIAS[indice % len(_PALETA_CATEGORIAS)]
 
 
-def _descricao_arquivo(nome_arquivo):
+def _descricao_arquivo(nome_arquivo, categoria=None, nome_cliente=None):
     """
-    Nome do arquivo sem o prefixo de quantidade ("1UN ") e sem a
-    extensão, só como referência visual do item. Evita tentar adivinhar
-    qual pedaço do nome é "o nome do produto" — isso varia demais de
-    pedido pra pedido pra ter uma regra confiável.
+    Nome do arquivo sem o que já aparece em outro lugar do mesmo item
+    na OS — quantidade e medida (mostradas na linha de área logo
+    abaixo), categoria (já é a etiqueta colorida acima) e cliente (já é
+    o cabeçalho da página) — sem extensão. Evita tentar adivinhar qual
+    pedaço do nome é "o nome do produto" (varia demais de pedido pra
+    pedido pra ter uma regra confiável), só tira o que é redundante.
+
+    Nome de arquivo já padronizado (ver processamento._nome_padronizado)
+    tem exatamente esses quatro pedaços na frente — sem essa limpeza, a
+    descrição saía "LONA 2.10x2.10M CLIENTE resto...", repetindo tudo
+    que já está visível em volta.
     """
-    sem_qtd = re.sub(r'^\s*\d+\s*UN\s*', '', nome_arquivo, flags=re.IGNORECASE)
-    sem_extensao = re.sub(r'\.pdf$', '', sem_qtd, flags=re.IGNORECASE)
-    return sem_extensao.strip() or nome_arquivo
+    sem_prefixo = nome_sem_prefixo_reconhecido(nome_arquivo)
+    for termo in (categoria, nome_cliente):
+        if termo:
+            sem_prefixo = remover_palavra(sem_prefixo, termo)
+    sem_prefixo = re.sub(re.escape("(medida pela arte)"), '', sem_prefixo, flags=re.IGNORECASE)
+    sem_prefixo = re.sub(r'[\s._,\-]{2,}', ' ', sem_prefixo).strip(" ._-")
+    sem_extensao = re.sub(r'\.pdf$', '', sem_prefixo, flags=re.IGNORECASE)
+    return sem_extensao.strip(" ._-") or nome_arquivo
 
 
 def _nova_pagina_os(pdf_os, nome_cliente, nome_gerente, nome_produtor, data_hora_atual, caixas_pagina):
@@ -121,7 +133,7 @@ def _nova_pagina_os(pdf_os, nome_cliente, nome_gerente, nome_produtor, data_hora
     return pagina, y
 
 
-def _desenhar_item_os(pagina, y, x_thumb, x_texto, largura_texto, item, cor_fundo, cor_texto):
+def _desenhar_item_os(pagina, y, x_thumb, x_texto, largura_texto, item, cor_fundo, cor_texto, nome_cliente):
     rect_thumb = pymupdf.Rect(
         x_thumb, y + (ALTURA_ITEM_OS - ALTURA_THUMB_OS) / 2,
         x_thumb + ALTURA_THUMB_OS, y + (ALTURA_ITEM_OS - ALTURA_THUMB_OS) / 2 + ALTURA_THUMB_OS,
@@ -174,7 +186,7 @@ def _desenhar_item_os(pagina, y, x_thumb, x_texto, largura_texto, item, cor_fund
     <div style="font-family: sans-serif;">
         <div style="font-size: 7.5pt; font-weight: bold; color: {cor_texto}; background-color: {cor_fundo}; display: inline-block; padding: 2px 7px;">{item['categoria']}</div>{html_variante}{html_selo_novo}
         <span style="float: right; font-size: 8pt; color: #666666;">{item['quantidade']} UN</span>
-        <p style="font-size: 8.5pt; margin: 4px 0 2px 0; color: #444444; line-height: 1.25;">{_descricao_arquivo(item['arquivo'])}</p>
+        <p style="font-size: 8.5pt; margin: 4px 0 2px 0; color: #444444; line-height: 1.25;">{_descricao_arquivo(item['arquivo'], item.get('categoria'), nome_cliente)}</p>
         <p style="font-size: 9pt; font-weight: bold; margin: 0; color: #1a1a1a;">{area_texto}</p>
     </div>
     """
@@ -214,7 +226,14 @@ def gerar_os(pasta_saida, nome_cliente, nome_gerente, nome_produtor,
     representaria um tempo real de espera.
     """
     materiais_config = materiais_config or {}
-    categorias_com_item = [c for c in ordem_categorias if dados_categorias[c]["contem_arquivos"]]
+    # 'categorias_com_item': só quem tem etiqueta de verdade na lista (pra
+    # não desenhar um cabeçalho de categoria vazio no corpo da OS —
+    # material composto, ex: ADESIVO em "PS ADESIVADO", nunca tem item
+    # próprio, só consumo). 'categorias_com_subtotal' é mais abrangente
+    # (usa 'contem_arquivos', que inclui consumo de material composto)
+    # e só serve pro resumo "Subtotal por material" no fim.
+    categorias_com_item = [c for c in ordem_categorias if any(i["categoria"] == c for i in itens)]
+    categorias_com_subtotal = [c for c in ordem_categorias if dados_categorias[c]["contem_arquivos"]]
 
     x_thumb = MARGEM_OS
     x_texto = x_thumb + ALTURA_THUMB_OS + 10
@@ -249,11 +268,11 @@ def gerar_os(pasta_saida, nome_cliente, nome_gerente, nome_produtor,
                 )
                 y += ALTURA_GRUPO_OS
 
-            y = _desenhar_item_os(pagina, y, x_thumb, x_texto, largura_texto, item, cor_fundo, cor_texto)
+            y = _desenhar_item_os(pagina, y, x_thumb, x_texto, largura_texto, item, cor_fundo, cor_texto, nome_cliente)
 
     # Resumo: subtotal de m² separado por material — nunca soma
     # materiais diferentes num único número
-    altura_resumo = 24 + len(categorias_com_item) * 20 + 30
+    altura_resumo = 24 + len(categorias_com_subtotal) * 20 + 30
     if y + altura_resumo > limite_y:
         pagina, y = _nova_pagina_os(pdf_os, nome_cliente, nome_gerente, nome_produtor, data_hora_atual, caixas_pagina)
     else:
@@ -266,7 +285,7 @@ def gerar_os(pasta_saida, nome_cliente, nome_gerente, nome_produtor,
     y += 20
 
     total_itens_visiveis = 0
-    for cat in categorias_com_item:
+    for cat in categorias_com_subtotal:
         cat_info = dados_categorias[cat]
         qtd_itens_categoria = sum(1 for i in itens if i["categoria"] == cat)
         # material composto (ex: "PS ADESIVADO" também consome ADESIVO)

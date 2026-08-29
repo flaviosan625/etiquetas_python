@@ -41,7 +41,8 @@ import pymupdf
 from dimensoes import (
     contem_palavra, extrair_dimensoes, calcular_desperdicio_item, extrair_quantidade,
     identificar_categoria, identificar_categoria_extra, identificar_variante, formatar_variante,
-    calcular_desperdicio_chapa_grande, dimensao_da_arte, nome_sem_prefixo_reconhecido, FATORES_UNIDADE,
+    calcular_desperdicio_chapa_grande, dimensao_da_arte, nome_sem_prefixo_reconhecido, remover_palavra,
+    FATORES_UNIDADE,
 )
 from estado_pedido import carregar_estado, nomes_ja_processados, salvar_estado
 from pdf_layout import iniciar_pagina_com_banner, numerar_paginas_a_partir_de, estampar_conferencia_local
@@ -176,7 +177,7 @@ def _nome_padronizado(nome_original, quantidade, categoria, dimensao, typos_unid
         resto = resto[: -len(extensao)]
 
     for termo in (categoria, nome_cliente_seguro):
-        resto = re.sub(r'(?<![A-Z0-9])' + re.escape(termo) + r'(?![A-Z])', '', resto, flags=re.IGNORECASE)
+        resto = remover_palavra(resto, termo)
     resto = re.sub(re.escape("(medida pela arte)"), '', resto, flags=re.IGNORECASE)
     resto = re.sub(r'[\s._,\-]{2,}', ' ', resto).strip(" ._-")
 

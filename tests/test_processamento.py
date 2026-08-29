@@ -298,6 +298,12 @@ def test_material_composto_ps_e_acrilico_adesivado_somam_no_adesivo(tmp_path):
     doc_checklist.close()
     assert {t[1] for t in toc} == {"PS (1 etiquetas)", "ACRILICO (1 etiquetas)"}
 
+    # regressão: ADESIVO nunca tem item de verdade (só consumo) — não
+    # pode aparecer como cabeçalho de seção vazio no corpo da OS, só na
+    # linha de subtotal do fim (achado nessa varredura, 2026-08-29)
+    corpo_os, _, _ = texto.partition("Subtotal por material")
+    assert "ADESIVO" not in corpo_os, "ADESIVO não pode virar cabeçalho de seção vazio no corpo da OS"
+
 
 def test_material_composto_nao_confunde_impresso_com_adesivado(tmp_path):
     """"IMPRESSO" é outro processo (impressão direta, sem adesivo colado

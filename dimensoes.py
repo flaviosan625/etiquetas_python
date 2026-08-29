@@ -41,6 +41,20 @@ def contem_palavra(texto, termo):
     return re.search(padrao, texto) is not None
 
 
+def remover_palavra(texto, termo):
+    """
+    Tira 'termo' de 'texto' onde aparecer como palavra inteira (mesma
+    regra de fronteira de contem_palavra), sem sensibilidade a
+    maiúscula/minúscula. Usado pra não repetir informação que já
+    aparece formatada em outro lugar (ex: categoria/cliente que já
+    viraram prefixo do nome padronizado, ou já aparecem numa etiqueta/
+    cabeçalho ao lado — ver processamento._nome_padronizado e
+    relatorios._descricao_arquivo).
+    """
+    padrao = r'(?<![A-Z0-9])' + re.escape(termo) + r'(?![A-Z])'
+    return re.sub(padrao, '', texto, flags=re.IGNORECASE)
+
+
 def identificar_categoria(nome_arquivo_upper, materiais, sinonimos_categoria=None):
     """
     Descobre qual categoria de material o nome do arquivo indica,
