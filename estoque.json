@@ -10,7 +10,8 @@
       "minimo": 6,
       "maximo": 60,
       "codigo_planilha": null,
-      "acumulado_m": 0.0
+      "acumulado_m": 0.0,
+      "custo": 1250.0
     },
     "ADESIVO_BRANCO_FOSCO_127": {
       "descricao": "Adesivo Branco Fosco 1,27x50m",
@@ -22,7 +23,8 @@
       "minimo": 3,
       "maximo": 60,
       "codigo_planilha": null,
-      "acumulado_m": 0.0
+      "acumulado_m": 0.0,
+      "custo": null
     },
     "ADESIVO_PRETO_FOSCO_127": {
       "descricao": "Adesivo Preto Fosco 1,27x50m",
@@ -34,7 +36,8 @@
       "minimo": 3,
       "maximo": 60,
       "codigo_planilha": "5C_025",
-      "acumulado_m": 0.0
+      "acumulado_m": 0.0,
+      "custo": null
     },
     "ADESIVO_CRISTAL_127": {
       "descricao": "Adesivo Cristal (transparente) 1,27x50m",
@@ -46,7 +49,8 @@
       "minimo": 3,
       "maximo": 60,
       "codigo_planilha": null,
-      "acumulado_m": 0.0
+      "acumulado_m": 0.0,
+      "custo": null
     },
     "VINIL_JATEADO_127": {
       "descricao": "Vinil Jateado 1,27x50m",
@@ -58,7 +62,8 @@
       "minimo": 6,
       "maximo": 60,
       "codigo_planilha": "5C_040",
-      "acumulado_m": 0.0
+      "acumulado_m": 0.0,
+      "custo": null
     },
     "MDF_6MM": {
       "descricao": "MDF 6mm",
@@ -70,7 +75,8 @@
       },
       "minimo": 10,
       "maximo": 60,
-      "codigo_planilha": "5C_055"
+      "codigo_planilha": "5C_055",
+      "custo": null
     },
     "MDF_9MM": {
       "descricao": "MDF 9mm",
@@ -82,7 +88,8 @@
       },
       "minimo": 10,
       "maximo": 60,
-      "codigo_planilha": "5C_056"
+      "codigo_planilha": "5C_056",
+      "custo": null
     },
     "MDF_15MM": {
       "descricao": "MDF 15mm",
@@ -94,7 +101,8 @@
       },
       "minimo": 10,
       "maximo": 60,
-      "codigo_planilha": "5C_057"
+      "codigo_planilha": "5C_057",
+      "custo": null
     },
     "PVC_3MM_BRANCO": {
       "descricao": "PVC 3mm Branco",
@@ -107,7 +115,8 @@
       },
       "minimo": 10,
       "maximo": 10,
-      "codigo_planilha": "5C_005"
+      "codigo_planilha": "5C_005",
+      "custo": null
     },
     "PVC_3MM_PRETO": {
       "descricao": "PVC 3mm Preto",
@@ -120,7 +129,8 @@
       },
       "minimo": 3,
       "maximo": 10,
-      "codigo_planilha": null
+      "codigo_planilha": null,
+      "custo": null
     },
     "PVC_10MM_BRANCO": {
       "descricao": "PVC 10mm Branco",
@@ -133,7 +143,8 @@
       },
       "minimo": 10,
       "maximo": 15,
-      "codigo_planilha": "5C_006"
+      "codigo_planilha": "5C_006",
+      "custo": null
     },
     "PVC_10MM_PRETO": {
       "descricao": "PVC 10mm Preto",
@@ -146,7 +157,8 @@
       },
       "minimo": 3,
       "maximo": 8,
-      "codigo_planilha": "5C_008"
+      "codigo_planilha": "5C_008",
+      "custo": null
     },
     "PVC_20MM_BRANCO": {
       "descricao": "PVC 20mm Branco",
@@ -159,7 +171,8 @@
       },
       "minimo": 5,
       "maximo": 10,
-      "codigo_planilha": "5C_007"
+      "codigo_planilha": "5C_007",
+      "custo": null
     },
     "PVC_20MM_PRETO": {
       "descricao": "PVC 20mm Preto",
@@ -172,7 +185,8 @@
       },
       "minimo": 3,
       "maximo": 10,
-      "codigo_planilha": "5C_009"
+      "codigo_planilha": "5C_009",
+      "custo": null
     },
     "PS_1MM_BRANCO": {
       "descricao": "PS 1mm Branco",
@@ -185,7 +199,8 @@
       },
       "minimo": 6,
       "maximo": 60,
-      "codigo_planilha": "5C_001"
+      "codigo_planilha": "5C_001",
+      "custo": 50.0
     },
     "PS_1MM_PRETO": {
       "descricao": "PS 1mm Preto",
@@ -198,7 +213,8 @@
       },
       "minimo": 6,
       "maximo": 60,
-      "codigo_planilha": null
+      "codigo_planilha": null,
+      "custo": 50.0
     },
     "PS_2MM_BRANCO": {
       "descricao": "PS 2mm Branco",
@@ -211,7 +227,8 @@
       },
       "minimo": 6,
       "maximo": 60,
-      "codigo_planilha": "5C_002"
+      "codigo_planilha": "5C_002",
+      "custo": 75.0
     },
     "PS_2MM_PRETO": {
       "descricao": "PS 2mm Preto",
@@ -224,7 +241,8 @@
       },
       "minimo": 3,
       "maximo": 60,
-      "codigo_planilha": "5C_003"
+      "codigo_planilha": "5C_003",
+      "custo": 75.0
     },
     "PS_3MM_BRANCO": {
       "descricao": "PS 3mm Branco",
@@ -237,7 +255,8 @@
       },
       "minimo": 6,
       "maximo": 60,
-      "codigo_planilha": null
+      "codigo_planilha": null,
+      "custo": null
     },
     "PS_3MM_PRETO": {
       "descricao": "PS 3mm Preto",
@@ -250,7 +269,8 @@
       },
       "minimo": 6,
       "maximo": 60,
-      "codigo_planilha": null
+      "codigo_planilha": null,
+      "custo": null
     },
     "MASCARA_VINIL_PAPEL": {
       "descricao": "Máscara Vinil Papel 1,27x50m",
@@ -260,7 +280,8 @@
       "variante_vinculada": null,
       "minimo": 6,
       "maximo": 60,
-      "codigo_planilha": "5C_041"
+      "codigo_planilha": "5C_041",
+      "custo": null
     },
     "MASCARA_VINIL_TRANSPARENTE": {
       "descricao": "Máscara Vinil Transparente 1,27x50m",
@@ -270,7 +291,8 @@
       "variante_vinculada": null,
       "minimo": 6,
       "maximo": 60,
-      "codigo_planilha": "5C_042"
+      "codigo_planilha": "5C_042",
+      "custo": null
     },
     "ILHOS_ZERO_AT": {
       "descricao": "Ilhós Zero AT C/ARR FN - 0.5 MI (caixa 500un)",
@@ -280,7 +302,8 @@
       "variante_vinculada": null,
       "minimo": 6,
       "maximo": 60,
-      "codigo_planilha": "5C_052"
+      "codigo_planilha": "5C_052",
+      "custo": null
     },
     "TINTA_UV_160_CIANO": {
       "descricao": "Tinta Uv UJV-100-160Plus Ciano",
@@ -291,7 +314,8 @@
       "minimo": 10,
       "maximo": 60,
       "codigo_planilha": "5C_043",
-      "capacidade_ml": 1000
+      "capacidade_ml": 1000,
+      "custo": null
     },
     "TINTA_UV_160_MAGENTA": {
       "descricao": "Tinta Uv UJV-100-160Plus Magenta",
@@ -302,7 +326,8 @@
       "minimo": 10,
       "maximo": 60,
       "codigo_planilha": "5C_044",
-      "capacidade_ml": 1000
+      "capacidade_ml": 1000,
+      "custo": null
     },
     "TINTA_UV_160_YELLOW": {
       "descricao": "Tinta Uv UJV-100-160Plus Yellow",
@@ -313,7 +338,8 @@
       "minimo": 10,
       "maximo": 60,
       "codigo_planilha": "5C_045",
-      "capacidade_ml": 1000
+      "capacidade_ml": 1000,
+      "custo": null
     },
     "TINTA_UV_160_BLACK": {
       "descricao": "Tinta Uv UJV-100-160Plus Black",
@@ -324,7 +350,8 @@
       "minimo": 10,
       "maximo": 60,
       "codigo_planilha": "5C_046",
-      "capacidade_ml": 1000
+      "capacidade_ml": 1000,
+      "custo": null
     },
     "TINTA_SWJ_320_CIANO": {
       "descricao": "Tinta SWJ-320EA Ciano",
@@ -335,7 +362,8 @@
       "minimo": 10,
       "maximo": 60,
       "codigo_planilha": "5C_047",
-      "capacidade_ml": 2000
+      "capacidade_ml": 2000,
+      "custo": null
     },
     "TINTA_SWJ_320_MAGENTA": {
       "descricao": "Tinta SWJ-320EA Magenta",
@@ -346,7 +374,8 @@
       "minimo": 10,
       "maximo": 60,
       "codigo_planilha": "5C_048",
-      "capacidade_ml": 2000
+      "capacidade_ml": 2000,
+      "custo": null
     },
     "TINTA_SWJ_320_YELLOW": {
       "descricao": "Tinta SWJ-320EA Yellow",
@@ -357,7 +386,8 @@
       "minimo": 10,
       "maximo": 60,
       "codigo_planilha": "5C_049",
-      "capacidade_ml": 2000
+      "capacidade_ml": 2000,
+      "custo": null
     },
     "TINTA_SWJ_320_BLACK": {
       "descricao": "Tinta SWJ-320EA Black",
@@ -368,7 +398,8 @@
       "minimo": 10,
       "maximo": 60,
       "codigo_planilha": "5C_050",
-      "capacidade_ml": 2000
+      "capacidade_ml": 2000,
+      "custo": null
     },
     "POLICARBONATO_5MM": {
       "descricao": "Policarbonato 5mm",
@@ -378,7 +409,8 @@
       "variante_vinculada": null,
       "minimo": 20,
       "maximo": 60,
-      "codigo_planilha": "5C_058"
+      "codigo_planilha": "5C_058",
+      "custo": null
     },
     "POLICARBONATO_ALVEOLAR_5MM": {
       "descricao": "Policarbonato Alveolar 5mm",
@@ -388,7 +420,8 @@
       "variante_vinculada": null,
       "minimo": 20,
       "maximo": 60,
-      "codigo_planilha": "5C_059"
+      "codigo_planilha": "5C_059",
+      "custo": null
     },
     "ACRILICO_1MM_CRISTAL": {
       "descricao": "Acrílico 1mm Cristal",
@@ -401,7 +434,8 @@
       },
       "minimo": 6,
       "maximo": 60,
-      "codigo_planilha": null
+      "codigo_planilha": null,
+      "custo": null
     },
     "ACRILICO_1MM_LEITOSO": {
       "descricao": "Acrílico 1mm Leitoso",
@@ -414,7 +448,8 @@
       },
       "minimo": 6,
       "maximo": 60,
-      "codigo_planilha": null
+      "codigo_planilha": null,
+      "custo": null
     },
     "ACRILICO_2MM_CRISTAL": {
       "descricao": "Acrílico 2mm Cristal",
@@ -427,7 +462,8 @@
       },
       "minimo": 6,
       "maximo": 60,
-      "codigo_planilha": null
+      "codigo_planilha": null,
+      "custo": null
     },
     "ACRILICO_2MM_LEITOSO": {
       "descricao": "Acrílico 2mm Leitoso",
@@ -440,7 +476,8 @@
       },
       "minimo": 6,
       "maximo": 60,
-      "codigo_planilha": null
+      "codigo_planilha": null,
+      "custo": null
     },
     "ACRILICO_3MM_CRISTAL": {
       "descricao": "Acrílico 3mm Cristal",
@@ -453,7 +490,8 @@
       },
       "minimo": 6,
       "maximo": 60,
-      "codigo_planilha": "5C_010"
+      "codigo_planilha": "5C_010",
+      "custo": null
     },
     "ACRILICO_3MM_LEITOSO": {
       "descricao": "Acrílico 3mm Leitoso",
@@ -466,7 +504,8 @@
       },
       "minimo": 6,
       "maximo": 60,
-      "codigo_planilha": null
+      "codigo_planilha": null,
+      "custo": null
     },
     "ACRILICO_4MM_CRISTAL": {
       "descricao": "Acrílico 4mm Cristal",
@@ -479,7 +518,8 @@
       },
       "minimo": 6,
       "maximo": 60,
-      "codigo_planilha": "5C_011"
+      "codigo_planilha": "5C_011",
+      "custo": null
     },
     "ACRILICO_4MM_LEITOSO": {
       "descricao": "Acrílico 4mm Leitoso",
@@ -492,7 +532,8 @@
       },
       "minimo": 6,
       "maximo": 60,
-      "codigo_planilha": null
+      "codigo_planilha": null,
+      "custo": null
     },
     "ACRILICO_5MM_CRISTAL": {
       "descricao": "Acrílico 5mm Cristal",
@@ -505,7 +546,8 @@
       },
       "minimo": 6,
       "maximo": 60,
-      "codigo_planilha": "5C_012"
+      "codigo_planilha": "5C_012",
+      "custo": null
     },
     "ACRILICO_5MM_LEITOSO": {
       "descricao": "Acrílico 5mm Leitoso",
@@ -518,7 +560,8 @@
       },
       "minimo": 6,
       "maximo": 60,
-      "codigo_planilha": null
+      "codigo_planilha": null,
+      "custo": null
     },
     "ACRILICO_6MM_CRISTAL": {
       "descricao": "Acrílico 6mm Cristal",
@@ -531,7 +574,8 @@
       },
       "minimo": 6,
       "maximo": 60,
-      "codigo_planilha": "5C_013"
+      "codigo_planilha": "5C_013",
+      "custo": null
     },
     "ACRILICO_6MM_LEITOSO": {
       "descricao": "Acrílico 6mm Leitoso",
@@ -544,7 +588,8 @@
       },
       "minimo": 6,
       "maximo": 60,
-      "codigo_planilha": null
+      "codigo_planilha": null,
+      "custo": null
     },
     "ACRILICO_7MM_CRISTAL": {
       "descricao": "Acrílico 7mm Cristal",
@@ -557,7 +602,8 @@
       },
       "minimo": 6,
       "maximo": 60,
-      "codigo_planilha": "5C_014"
+      "codigo_planilha": "5C_014",
+      "custo": null
     },
     "ACRILICO_7MM_LEITOSO": {
       "descricao": "Acrílico 7mm Leitoso",
@@ -570,7 +616,8 @@
       },
       "minimo": 6,
       "maximo": 60,
-      "codigo_planilha": null
+      "codigo_planilha": null,
+      "custo": null
     },
     "ACRILICO_8MM_CRISTAL": {
       "descricao": "Acrílico 8mm Cristal",
@@ -583,7 +630,8 @@
       },
       "minimo": 6,
       "maximo": 60,
-      "codigo_planilha": "5C_015"
+      "codigo_planilha": "5C_015",
+      "custo": null
     },
     "ACRILICO_8MM_LEITOSO": {
       "descricao": "Acrílico 8mm Leitoso",
@@ -596,7 +644,8 @@
       },
       "minimo": 6,
       "maximo": 60,
-      "codigo_planilha": null
+      "codigo_planilha": null,
+      "custo": null
     },
     "ACRILICO_10MM_CRISTAL": {
       "descricao": "Acrílico 10mm Cristal",
@@ -609,7 +658,8 @@
       },
       "minimo": 6,
       "maximo": 60,
-      "codigo_planilha": "5C_016"
+      "codigo_planilha": "5C_016",
+      "custo": null
     },
     "ACRILICO_10MM_LEITOSO": {
       "descricao": "Acrílico 10mm Leitoso",
@@ -622,7 +672,8 @@
       },
       "minimo": 6,
       "maximo": 60,
-      "codigo_planilha": null
+      "codigo_planilha": null,
+      "custo": null
     }
   },
   "movimentos": [

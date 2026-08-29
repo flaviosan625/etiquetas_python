@@ -33,29 +33,32 @@ BASE_DIR = pathlib.Path(__file__).resolve().parent
 ESTOQUE_PATH = BASE_DIR / "estoque.json"
 
 
-def _produto_rolo(descricao, categoria, comprimento_rolo_m, minimo=0, maximo=0, codigo_planilha=None):
+def _produto_rolo(descricao, categoria, comprimento_rolo_m, minimo=0, maximo=0, codigo_planilha=None, custo=None):
     return {
         "descricao": descricao, "tipo": "rolo", "unidade": "rolo",
         "comprimento_rolo_m": comprimento_rolo_m,
         "categoria_vinculada": categoria, "variante_vinculada": None,
         "minimo": minimo, "maximo": maximo, "codigo_planilha": codigo_planilha,
         "acumulado_m": 0.0,
+        "custo": custo,  # R$ por rolo — None quando ainda não informado (ver [[project-backlog-ideas]])
     }
 
 
-def _produto_chapa(descricao, categoria, variante, minimo=0, maximo=0, codigo_planilha=None):
+def _produto_chapa(descricao, categoria, variante, minimo=0, maximo=0, codigo_planilha=None, custo=None):
     return {
         "descricao": descricao, "tipo": "chapa", "unidade": "chapa",
         "categoria_vinculada": categoria, "variante_vinculada": variante,
         "minimo": minimo, "maximo": maximo, "codigo_planilha": codigo_planilha,
+        "custo": custo,  # R$ por chapa — None quando ainda não informado
     }
 
 
-def _produto_insumo(descricao, unidade="un", minimo=0, maximo=0, codigo_planilha=None, capacidade_ml=None):
+def _produto_insumo(descricao, unidade="un", minimo=0, maximo=0, codigo_planilha=None, capacidade_ml=None, custo=None):
     produto = {
         "descricao": descricao, "tipo": "insumo", "unidade": unidade,
         "categoria_vinculada": None, "variante_vinculada": None,
         "minimo": minimo, "maximo": maximo, "codigo_planilha": codigo_planilha,
+        "custo": custo,  # R$ por unidade — None quando ainda não informado
     }
     # só as tintas usam isso — quantos mL tem 1 unidade (frasco) do
     # produto, pra converter "quantos frascos saíram" em "quantos mL
@@ -86,7 +89,7 @@ def _catalogo_padrao():
     catalogo = {
         # ---- ROLO (LONA / ADESIVO) ----
         "LONA_FOSCA_440_320": _produto_rolo(
-            "Lona Fosca Front 440g 3,20x50m", "LONA", 50, minimo=6, maximo=60,
+            "Lona Fosca Front 440g 3,20x50m", "LONA", 50, minimo=6, maximo=60, custo=1250.00,
         ),
         "ADESIVO_BRANCO_FOSCO_127": _produto_rolo(
             "Adesivo Branco Fosco 1,27x50m", "ADESIVO", 50, minimo=3, maximo=60,
@@ -115,10 +118,10 @@ def _catalogo_padrao():
         "PVC_20MM_PRETO": _produto_chapa("PVC 20mm Preto", "PVC", {"espessura": "20MM", "cor": "PRETO"}, minimo=3, maximo=10, codigo_planilha="5C_009"),
 
         # ---- CHAPA — PS ----
-        "PS_1MM_BRANCO": _produto_chapa("PS 1mm Branco", "PS", {"espessura": "1MM", "cor": "BRANCO"}, minimo=6, maximo=60, codigo_planilha="5C_001"),
-        "PS_1MM_PRETO": _produto_chapa("PS 1mm Preto", "PS", {"espessura": "1MM", "cor": "PRETO"}, minimo=6, maximo=60),
-        "PS_2MM_BRANCO": _produto_chapa("PS 2mm Branco", "PS", {"espessura": "2MM", "cor": "BRANCO"}, minimo=6, maximo=60, codigo_planilha="5C_002"),
-        "PS_2MM_PRETO": _produto_chapa("PS 2mm Preto", "PS", {"espessura": "2MM", "cor": "PRETO"}, minimo=3, maximo=60, codigo_planilha="5C_003"),
+        "PS_1MM_BRANCO": _produto_chapa("PS 1mm Branco", "PS", {"espessura": "1MM", "cor": "BRANCO"}, minimo=6, maximo=60, codigo_planilha="5C_001", custo=50.00),
+        "PS_1MM_PRETO": _produto_chapa("PS 1mm Preto", "PS", {"espessura": "1MM", "cor": "PRETO"}, minimo=6, maximo=60, custo=50.00),
+        "PS_2MM_BRANCO": _produto_chapa("PS 2mm Branco", "PS", {"espessura": "2MM", "cor": "BRANCO"}, minimo=6, maximo=60, codigo_planilha="5C_002", custo=75.00),
+        "PS_2MM_PRETO": _produto_chapa("PS 2mm Preto", "PS", {"espessura": "2MM", "cor": "PRETO"}, minimo=3, maximo=60, codigo_planilha="5C_003", custo=75.00),
         "PS_3MM_BRANCO": _produto_chapa("PS 3mm Branco", "PS", {"espessura": "3MM", "cor": "BRANCO"}, minimo=6, maximo=60),
         "PS_3MM_PRETO": _produto_chapa("PS 3mm Preto", "PS", {"espessura": "3MM", "cor": "PRETO"}, minimo=6, maximo=60),
 
