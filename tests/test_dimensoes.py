@@ -3,9 +3,12 @@ import pathlib
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
+import pymupdf
+
 from dimensoes import (
     contem_palavra, extrair_dimensoes, calcular_desperdicio_item, extrair_quantidade,
     identificar_categoria, identificar_variante, formatar_variante, calcular_desperdicio_chapa_grande,
+    medir_conteudo_pagina, dimensao_da_arte, nome_sem_prefixo_reconhecido,
 )
 
 
@@ -214,3 +217,74 @@ def test_calcular_desperdicio_peca_nao_cabe_no_rolo():
     dimensao = {"largura_m": 2.0, "altura_m": 1.5}
     r = calcular_desperdicio_item(dimensao, 1.0)
     assert r is None
+
+
+def _pagina_com_desenho(largura_pagina, altura_pagina, retangulo):
+    doc = pymupdf.open()
+    pagina = doc.new_page(width=largura_pagina, height=altura_pagina)
+    pagina.draw_rect(retangulo, color=(0, 0, 0), fill=(0, 0, 0))
+    return doc, pagina
+
+
+def test_medir_conteudo_pagina_ignora_margem_em_volta_do_desenho():
+    # arquivo com "gabarito"/máscara: a página é maior que a peça real —
+    # medir_conteudo_pagina deve achar só o desenho, não a página inteira
+    doc, pagina = _pagina_com_desenho(400, 400, pymupdf.Rect(50, 50, 150, 150))
+    caixa = medir_conteudo_pagina(pagina)
+    assert round(caixa.width) == 100
+    assert round(caixa.height) == 100
+    doc.close()
+
+
+def test_medir_conteudo_pagina_nao_extrapola_a_pagina():
+    # desenho com coordenadas fora da página (linha-guia/marca de corte
+    # sobrando fora da área visível) não pode inflar o resultado — o
+    # conteúdo real nunca é considerado maior que a própria página
+    doc = pymupdf.open()
+    pagina = doc.new_page(width=200, height=200)
+    pagina.draw_line(pymupdf.Point(-1000, -1000), pymupdf.Point(5000, 5000))
+    caixa = medir_conteudo_pagina(pagina)
+    assert caixa.width <= 200
+    assert caixa.height <= 200
+    doc.close()
+
+
+def test_medir_conteudo_pagina_vazia_retorna_vazio():
+    doc = pymupdf.open()
+    pagina = doc.new_page(width=200, height=200)
+    caixa = medir_conteudo_pagina(pagina)
+    assert caixa.is_empty
+    doc.close()
+
+
+def test_dimensao_da_arte_sem_conteudo_retorna_none():
+    doc = pymupdf.open()
+    pagina = doc.new_page(width=200, height=200)
+    assert dimensao_da_arte(pagina) is None
+    doc.close()
+
+
+def test_dimensao_da_arte_usa_tamanho_do_desenho_sem_escala():
+    # sem referência confiável pra comparar, não inventa escala — usa
+    # o tamanho do desenho como veio, mesmo se parecer "pequeno demais"
+    doc, pagina = _pagina_com_desenho(2000, 2000, pymupdf.Rect(0, 0, 1500, 200))
+    dimensao = dimensao_da_arte(pagina)
+    largura_esperada_m = 1500 / 72 * 0.0254
+    assert round(dimensao["largura_m"], 3) == round(largura_esperada_m, 3)
+    assert dimensao["origem"] == "arte"
+    doc.close()
+
+
+def test_nome_sem_prefixo_reconhecido_tira_quantidade_e_medida():
+    nome = nome_sem_prefixo_reconhecido("1UN PS 10MM IMPRESSO + GABARITO 1.20X0.22 UCB_120xproporcao.pdf")
+    assert nome == "PS 10MM IMPRESSO + GABARITO UCB_120xproporcao.pdf"
+
+
+def test_nome_sem_prefixo_reconhecido_preserva_marca_de_reposicao():
+    nome = nome_sem_prefixo_reconhecido("1UN LONA 2,00X1,00M_c - REPOSICAO.pdf")
+    assert "REPOSICAO" in nome
+
+
+def test_nome_sem_prefixo_reconhecido_sem_medida_so_tira_quantidade():
+    nome = nome_sem_prefixo_reconhecido("2UN LOGO EM PS RECORTE APLICADO EM ACRILICO CRISTAL.pdf")
+    assert nome == "LOGO EM PS RECORTE APLICADO EM ACRILICO CRISTAL.pdf"

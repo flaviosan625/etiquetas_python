@@ -41,6 +41,7 @@ import pymupdf
 from dimensoes import (
     contem_palavra, extrair_dimensoes, calcular_desperdicio_item, extrair_quantidade,
     identificar_categoria, identificar_variante, formatar_variante, calcular_desperdicio_chapa_grande,
+    dimensao_da_arte, nome_sem_prefixo_reconhecido, FATORES_UNIDADE,
 )
 from estado_pedido import carregar_estado, nomes_ja_processados, salvar_estado
 from pdf_layout import iniciar_pagina_com_banner, numerar_paginas_a_partir_de, estampar_conferencia_local
@@ -130,6 +131,88 @@ def _eh_reposicao(nome_arquivo_upper):
     """
     nome_sem_acento = remover_acentos(nome_arquivo_upper)
     return any(contem_palavra(nome_sem_acento, palavra) for palavra in _PALAVRAS_REPOSICAO)
+
+
+def _nome_padronizado(nome_original, quantidade, categoria, dimensao, typos_unidade):
+    """
+    Nome de arquivo padrão da oficina (pedido do usuário, 2026-08-29):
+    sempre "{QTD} UN {MATERIAL} {LARGURAxALTURA}{UNIDADE} {resto do
+    nome original}" — quantidade e material sempre visíveis de cara,
+    sem precisar abrir o arquivo pra saber o que é. O resto do nome
+    original (descrição do projeto, marca de reposição etc.) é mantido
+    depois — nada é excluído, só a quantidade/medida que já existiam
+    soltas no nome saem de onde estavam (senão duplicaria a
+    informação, já que elas voltam formatadas no início).
+
+    'dimensao' pode ser None (nem o nome nem a arte tinham medida
+    reconhecível) — nesse caso o bloco de medida simplesmente não
+    entra no nome. Quando a medida veio da arte (não do nome), o nome
+    ganha "(medida pela arte)" — sinaliza uma medida menos certa que
+    uma escrita à mão pelo cliente/produção, fácil de achar depois se
+    precisar conferir.
+    """
+    resto = nome_sem_prefixo_reconhecido(nome_original, typos_unidade)
+    extensao = pathlib.Path(resto).suffix or ".pdf"
+    if extensao and resto.lower().endswith(extensao.lower()):
+        resto = resto[: -len(extensao)]
+    resto = resto.strip(" ._-")
+
+    prefixo = f"{quantidade} UN {categoria}"
+    if dimensao is not None:
+        fator = FATORES_UNIDADE.get(dimensao["unidade_usada"], 1.0)
+        largura_na_unidade = dimensao["largura_m"] / fator
+        altura_na_unidade = dimensao["altura_m"] / fator
+        prefixo += f" {largura_na_unidade:.2f}x{altura_na_unidade:.2f}{dimensao['unidade_usada']}"
+        if dimensao.get("origem") == "arte":
+            prefixo += " (medida pela arte)"
+
+    if resto:
+        return f"{prefixo} {resto}{extensao}"
+    return f"{prefixo}{extensao}"
+
+
+def _renomear_para_padrao(pasta_entrada, nome_antigo, nome_novo, logger):
+    """
+    Renomeia o arquivo de origem, direto na pasta de entrada, pro nome
+    padronizado — pedido do usuário (2026-08-29): quer os arquivos já
+    organizados na origem, não só a etiqueta/OS gerada depois.
+
+    Nunca sobrescreve nada: se o nome novo já existe (colidiu com
+    outro arquivo), acrescenta um sufixo numérico. Se o rename falhar
+    por qualquer motivo (permissão, arquivo aberto em outro programa),
+    avisa e segue processando com o nome ORIGINAL — nunca trava a
+    rodada inteira por causa disso.
+
+    Retorna o nome final do arquivo (novo, ou o original se não deu
+    pra renomear).
+    """
+    if nome_novo == nome_antigo:
+        return nome_antigo
+
+    pasta = pathlib.Path(pasta_entrada)
+    caminho_antigo = pasta / nome_antigo
+    caminho_novo = pasta / nome_novo
+
+    if caminho_novo.exists():
+        base = caminho_novo.stem
+        extensao = caminho_novo.suffix
+        contador = 2
+        while caminho_novo.exists():
+            caminho_novo = pasta / f"{base} ({contador}){extensao}"
+            contador += 1
+
+    try:
+        caminho_antigo.rename(caminho_novo)
+    except OSError as e:
+        logger.emitir(
+            "warn",
+            f"Não foi possível renomear '{nome_antigo}' pro padrão: {e}. Seguindo com o nome original.",
+            arquivo=nome_antigo, status_csv="AVISO - RENOME FALHOU",
+        )
+        return nome_antigo
+
+    logger.emitir("info", f"Renomeado pro padrão: {caminho_novo.name}")
+    return caminho_novo.name
 
 
 _PADRAO_VERSAO_CHECKLIST = re.compile(r" V(\d+)\.pdf$", re.IGNORECASE)
@@ -319,6 +402,48 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
         cat_info = dados_categorias[categoria_encontrada]
         cat_info["contem_arquivos"] = True
 
+        # Medida vem do nome sempre que possível; só recorre à arte
+        # (ver dimensoes.dimensao_da_arte) quando o nome não tem
+        # NENHUMA medida — decisão do usuário (2026-08-29): o nome, se
+        # tiver medida, é sempre a fonte da verdade.
+        dimensao = extrair_dimensoes(arquivo, typos_unidade)
+        arte_sem_conteudo = False
+        if dimensao is None:
+            caminho_medicao = os.path.join(pasta_entrada, arquivo)
+            try:
+                with pymupdf.open(caminho_medicao) as doc_medicao:
+                    if len(doc_medicao) > 0:
+                        dimensao = dimensao_da_arte(doc_medicao[0])
+                        arte_sem_conteudo = dimensao is None
+            except Exception as e:
+                logger.emitir(
+                    "warn",
+                    f"Não foi possível abrir '{arquivo}' pra medir pela arte: {e}",
+                    arquivo=arquivo, status_csv="AVISO - ERRO AO MEDIR",
+                )
+
+        if arte_sem_conteudo:
+            logger.emitir(
+                "warn",
+                f"'{arquivo}': PDF sem nenhum conteúdo visível (nem imagem, nem desenho, nem "
+                f"texto) — não deu pra medir pela arte. Um arquivo pra impressão deveria ter "
+                f"conteúdo; confira se ele não está corrompido ou com exportação incompleta.",
+                arquivo=arquivo, status_csv="AVISO - PDF SEM CONTEUDO",
+            )
+
+        quantidade, qtd_encontrada = extrair_quantidade(arquivo)
+        variantes_config = materiais[categoria_encontrada].get("variantes", [])
+        variante = identificar_variante(nome_arquivo_upper, variantes_config)
+
+        # Padroniza o nome do arquivo de origem, direto na pasta de
+        # entrada — pedido do usuário (2026-08-29): quer os arquivos já
+        # organizados, não só a etiqueta/OS gerada. Falha de rename
+        # (permissão, arquivo aberto em outro programa) nunca trava a
+        # rodada — só segue com o nome original.
+        nome_padronizado = _nome_padronizado(arquivo, quantidade, categoria_encontrada, dimensao, typos_unidade)
+        arquivo = _renomear_para_padrao(pasta_entrada, arquivo, nome_padronizado, logger)
+        nome_arquivo_upper = arquivo.upper()
+
         caminho_completo = os.path.join(pasta_entrada, arquivo)
 
         try:
@@ -492,16 +617,22 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
 
         pdf_original.close()
 
-        dimensao = extrair_dimensoes(arquivo, typos_unidade)
         if dimensao:
             cat_info["area_total_m2"] += dimensao["area_m2"]
-            detalhe_area = (
-                f" | Medida: {dimensao['medida_bruta']} → "
-                f"{dimensao['largura_m']:.2f}m x {dimensao['altura_m']:.2f}m = "
-                f"{dimensao['area_m2']:.2f}m²"
-            )
-            if dimensao["unidade_corrigida"]:
-                detalhe_area += f" (unidade corrigida de {dimensao['unidade_bruta']} para {dimensao['unidade_usada']})"
+            if dimensao["origem"] == "arte":
+                detalhe_area = (
+                    f" | Medida (nome sem medida, extraída da arte): "
+                    f"{dimensao['largura_m']:.2f}m x {dimensao['altura_m']:.2f}m = "
+                    f"{dimensao['area_m2']:.2f}m²"
+                )
+            else:
+                detalhe_area = (
+                    f" | Medida: {dimensao['medida_bruta']} → "
+                    f"{dimensao['largura_m']:.2f}m x {dimensao['altura_m']:.2f}m = "
+                    f"{dimensao['area_m2']:.2f}m²"
+                )
+                if dimensao["unidade_corrigida"]:
+                    detalhe_area += f" (unidade corrigida de {dimensao['unidade_bruta']} para {dimensao['unidade_usada']})"
 
             info_material = materiais[categoria_encontrada]
             largura_rolo_m = info_material["largura_cm"] / 100
@@ -530,14 +661,13 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
                     )
                 else:
                     detalhe_area += " | ⚠️ Peça mais larga que o rolo — desperdício não calculado"
+        elif arte_sem_conteudo:
+            detalhe_area = " | Medida não reconhecida (nome sem medida, e PDF sem conteúdo pra medir pela arte)"
         else:
             detalhe_area = " | Medida não reconhecida no nome do arquivo"
 
-        quantidade, qtd_encontrada = extrair_quantidade(arquivo)
         detalhe_qtd = f" | Qtd: {quantidade} UN" if qtd_encontrada else " | Qtd não informada (assumida 1 UN)"
 
-        variantes_config = materiais[categoria_encontrada].get("variantes", [])
-        variante = identificar_variante(nome_arquivo_upper, variantes_config)
         if variantes_config:
             detalhe_variante = (
                 f" | Variante: {formatar_variante(variante)}" if variante

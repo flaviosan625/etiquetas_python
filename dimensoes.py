@@ -7,6 +7,8 @@ isoladamente — veja tests/test_dimensoes.py.
 import math
 import re
 
+import pymupdf
+
 # Unidades reconhecidas no nome do arquivo, e seu fator de conversão pra metros.
 # Isso é físico (mm/cm/m), não precisa ser configurável pelo usuário.
 FATORES_UNIDADE = {"MM": 0.001, "CM": 0.01, "M": 1.0}
@@ -17,6 +19,7 @@ FATORES_UNIDADE = {"MM": 0.001, "CM": 0.01, "M": 1.0}
 # em vez de '\s*' cru nos padrões abaixo, pra não depender de espaço
 # especificamente.
 _SEPARADOR = r'[\s._,\-]*'
+
 
 
 def contem_palavra(texto, termo):
@@ -71,6 +74,22 @@ def identificar_categoria(nome_arquivo_upper, materiais, sinonimos_categoria=Non
     return max(categorias_encontradas, key=len), categorias_encontradas
 
 
+_PADRAO_QUANTIDADE = rf'{_SEPARADOR}(\d+){_SEPARADOR}UN(?![A-Z])'
+
+
+def _padrao_medida(typos_unidade):
+    # Tokens de unidade reconhecidos no regex: as unidades válidas +
+    # os erros de digitação configurados. Ordenado do mais longo pro
+    # mais curto para o regex não "parar" num token curto (ex: "M")
+    # quando na verdade era um token mais longo (ex: "MM").
+    tokens_unidade = sorted(
+        set(list(FATORES_UNIDADE.keys()) + list(typos_unidade.keys())),
+        key=len, reverse=True,
+    )
+    grupo_unidades = "|".join(re.escape(t) for t in tokens_unidade)
+    return rf'(\d+(?:[.,]\d+)?){_SEPARADOR}X{_SEPARADOR}(\d+(?:[.,]\d+)?){_SEPARADOR}({grupo_unidades})?(?![A-Z])'
+
+
 def extrair_dimensoes(nome_arquivo, typos_unidade=None):
     """
     Procura no nome do arquivo um padrão do tipo "NUMEROxNUMERO" seguido
@@ -100,17 +119,7 @@ def extrair_dimensoes(nome_arquivo, typos_unidade=None):
 
     nome_upper = nome_arquivo.upper()
 
-    # Tokens de unidade reconhecidos no regex: as unidades válidas +
-    # os erros de digitação configurados. Ordenado do mais longo pro
-    # mais curto para o regex não "parar" num token curto (ex: "M")
-    # quando na verdade era um token mais longo (ex: "MM").
-    tokens_unidade = sorted(
-        set(list(FATORES_UNIDADE.keys()) + list(typos_unidade.keys())),
-        key=len, reverse=True,
-    )
-    grupo_unidades = "|".join(re.escape(t) for t in tokens_unidade)
-
-    padrao = rf'(\d+(?:[.,]\d+)?){_SEPARADOR}X{_SEPARADOR}(\d+(?:[.,]\d+)?){_SEPARADOR}({grupo_unidades})?(?![A-Z])'
+    padrao = _padrao_medida(typos_unidade)
     matches = list(re.finditer(padrao, nome_upper))
     if not matches:
         return None
@@ -147,6 +156,77 @@ def extrair_dimensoes(nome_arquivo, typos_unidade=None):
         "medida_bruta": m.group(0).strip(),
         "unidade_corrigida": unidade_corrigida,
         "unidade_bruta": unidade_bruta,
+        "origem": "nome",
+    }
+
+
+def medir_conteudo_pagina(page):
+    """
+    Retângulo do conteúdo REAL de uma página de PDF (imagem + desenho
+    vetorial + texto) — em vez do tamanho da página/canvas em si.
+    Arquivo com margem de gabarito/máscara sempre tem página maior que
+    a peça de verdade; confiar só na página superestima a medida (visto
+    na prática, 2026-08-29 — ver [[project-backlog-ideas]]).
+
+    Limitado ao retângulo da própria página (nunca maior que ela):
+    alguns arquivos têm linha-guia/marca de corte fora da área
+    visível, que sem esse limite infla o resultado pro lado errado (o
+    conteúdo pode ser MENOR que a página, nunca deve ser considerado
+    maior).
+
+    Retorna um pymupdf.Rect — pode vir vazio se a página não tiver
+    nenhum conteúdo detectável (arquivo provavelmente vazio/corrompido).
+    Não abre nem fecha arquivo — recebe a página já aberta por quem
+    chama, mesmo espírito "função pura" do resto deste módulo.
+    """
+    caixa = pymupdf.Rect()
+    for img in page.get_image_info():
+        caixa |= img["bbox"]
+    for desenho in page.get_drawings():
+        caixa |= desenho["rect"]
+    for bloco in page.get_text("dict")["blocks"]:
+        if "bbox" in bloco:
+            caixa |= bloco["bbox"]
+    return caixa & page.rect
+
+
+def dimensao_da_arte(page):
+    """
+    Fallback pra quando o nome do arquivo não tem NENHUMA medida: mede
+    o conteúdo real da página (ver medir_conteudo_pagina) e converte
+    pra metros (1 ponto PDF = 1/72 polegada). Usa o valor como veio no
+    desenho, sem tentar adivinhar escala — testado contra escala 1:10
+    (2026-08-29) e descartado por enquanto: o tamanho "bruto" de uma
+    peça normal já costuma passar de 50cm sozinho, então qualquer regra
+    baseada só em "x10 passa de N metros" dispara errado na maioria dos
+    arquivos reais, não só nos que são de fato reduzidos. Sem uma
+    referência confiável pra comparar (ex: medida já confirmada no nome
+    de outro arquivo do mesmo pedido), não tem sinal seguro pra decidir
+    escala sozinho — decisão do usuário: avisar quando desconfiar, não
+    multiplicar sozinho.
+
+    Retorna o dicionário no mesmo formato de extrair_dimensoes (com
+    'origem': 'arte' e 'medida_bruta'/'unidade_bruta' como None, já
+    que não veio de texto), ou None quando a página não tem nenhum
+    conteúdo detectável — quem chama decide o que fazer (não inventa
+    medida nesse caso).
+    """
+    caixa = medir_conteudo_pagina(page)
+    if caixa.is_empty or caixa.is_infinite:
+        return None
+
+    largura_m = caixa.width / 72 * 0.0254
+    altura_m = caixa.height / 72 * 0.0254
+
+    return {
+        "largura_m": largura_m,
+        "altura_m": altura_m,
+        "area_m2": largura_m * altura_m,
+        "unidade_usada": "M",
+        "medida_bruta": None,
+        "unidade_corrigida": False,
+        "unidade_bruta": None,
+        "origem": "arte",
     }
 
 
@@ -161,10 +241,39 @@ def extrair_quantidade(nome_arquivo):
 
     Retorna (quantidade, encontrada).
     """
-    m = re.match(rf'{_SEPARADOR}(\d+){_SEPARADOR}UN(?![A-Z])', nome_arquivo.upper())
+    m = re.match(_PADRAO_QUANTIDADE, nome_arquivo.upper())
     if m:
         return int(m.group(1)), True
     return 1, False
+
+
+def nome_sem_prefixo_reconhecido(nome_arquivo, typos_unidade=None):
+    """
+    Tira do nome do arquivo os trechos já reconhecidos como quantidade
+    ("NUN") e medida ("NxN[UNIDADE]") — usado ao padronizar o nome (ver
+    processamento._nome_padronizado), pra não duplicar essa informação
+    quando ela volta pro início do nome, já formatada. Preserva o
+    resto do nome (descrição do projeto, marca de reposição etc.) e a
+    extensão, exatamente como veio.
+    """
+    typos_unidade = typos_unidade or {}
+    nome_upper = nome_arquivo.upper()
+    resultado = nome_arquivo
+
+    m_qtd = re.match(_PADRAO_QUANTIDADE, nome_upper)
+    if m_qtd:
+        resultado = resultado[m_qtd.end():]
+        nome_upper = nome_upper[m_qtd.end():]
+
+    m_medida = re.search(_padrao_medida(typos_unidade), nome_upper)
+    if m_medida:
+        resultado = resultado[:m_medida.start()] + resultado[m_medida.end():]
+
+    # remover um trecho do meio do nome deixa separador dobrado no lugar
+    # (ex: "IMPRESSA _Photo" depois de tirar a medida entre eles) —
+    # junta qualquer sequência de 2+ separadores num espaço só.
+    resultado = re.sub(r'[\s._,\-]{2,}', ' ', resultado)
+    return resultado.strip(" ._-")
 
 
 def identificar_variante(nome_arquivo, variantes):
