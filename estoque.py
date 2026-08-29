@@ -112,8 +112,8 @@ def _catalogo_padrao():
         # ---- CHAPA — PVC ----
         "PVC_3MM_BRANCO": _produto_chapa("PVC 3mm Branco", "PVC", {"espessura": "3MM", "cor": "BRANCO"}, minimo=10, maximo=10, codigo_planilha="5C_005"),
         "PVC_3MM_PRETO": _produto_chapa("PVC 3mm Preto", "PVC", {"espessura": "3MM", "cor": "PRETO"}, minimo=3, maximo=10),
-        "PVC_10MM_BRANCO": _produto_chapa("PVC 10mm Branco", "PVC", {"espessura": "10MM", "cor": "BRANCO"}, minimo=10, maximo=15, codigo_planilha="5C_006"),
-        "PVC_10MM_PRETO": _produto_chapa("PVC 10mm Preto", "PVC", {"espessura": "10MM", "cor": "PRETO"}, minimo=3, maximo=8, codigo_planilha="5C_008"),
+        "PVC_10MM_BRANCO": _produto_chapa("PVC 10mm Branco", "PVC", {"espessura": "10MM", "cor": "BRANCO"}, minimo=10, maximo=15, codigo_planilha="5C_006", custo=280.00),
+        "PVC_10MM_PRETO": _produto_chapa("PVC 10mm Preto", "PVC", {"espessura": "10MM", "cor": "PRETO"}, minimo=3, maximo=8, codigo_planilha="5C_008", custo=280.00),
         "PVC_20MM_BRANCO": _produto_chapa("PVC 20mm Branco", "PVC", {"espessura": "20MM", "cor": "BRANCO"}, minimo=5, maximo=10, codigo_planilha="5C_007"),
         "PVC_20MM_PRETO": _produto_chapa("PVC 20mm Preto", "PVC", {"espessura": "20MM", "cor": "PRETO"}, minimo=3, maximo=10, codigo_planilha="5C_009"),
 

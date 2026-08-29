@@ -144,7 +144,7 @@
       "minimo": 10,
       "maximo": 15,
       "codigo_planilha": "5C_006",
-      "custo": null
+      "custo": 280.0
     },
     "PVC_10MM_PRETO": {
       "descricao": "PVC 10mm Preto",
@@ -158,7 +158,7 @@
       "minimo": 3,
       "maximo": 8,
       "codigo_planilha": "5C_008",
-      "custo": null
+      "custo": 280.0
     },
     "PVC_20MM_BRANCO": {
       "descricao": "PVC 20mm Branco",
