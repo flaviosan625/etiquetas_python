@@ -9,7 +9,8 @@
     "ADESIVO": {
       "tipo": "rolo",
       "largura_cm": 127.0,
-      "comprimento_cm": 5000.0
+      "comprimento_cm": 5000.0,
+      "minutos_por_m2": 4.0
     },
     "PS": {
       "tipo": "chapa",
@@ -185,7 +186,7 @@
     "ACRILICO"
   ],
   "ultimo_gerente": "Flavio Santos",
-  "ultimo_produtor": "Natalia",
+  "ultimo_produtor": "Grazi",
   "materiais_compostos": {
     "ADESIVADO": "ADESIVO"
   }

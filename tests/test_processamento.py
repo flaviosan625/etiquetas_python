@@ -337,6 +337,39 @@ def test_material_composto_nao_confunde_impresso_com_adesivado(tmp_path):
     assert "ADESIVO" not in texto
 
 
+def test_material_composto_sem_categoria_base_vira_categoria_propria(tmp_path):
+    """
+    Bug real de produção (2026-08-29, pedido Unilever): arquivo nomeado
+    só "1UN ADESIVADO 0,80X1,29M_..." (sem MDF/PS/ACRÍLICO junto — é o
+    próprio adesivo impresso pra colar, sem chapa base nesse arquivo)
+    não batia em NENHUMA categoria (identificar_categoria não reconhece
+    "ADESIVADO" como sinônimo de "ADESIVO") e sumia inteiro da OS/
+    checklist, sem aviso nenhum além do log. Correção: quando não há
+    categoria base, a própria categoria extra do composto vira a
+    categoria principal, em vez de descartar o arquivo.
+    """
+    config = copy.deepcopy(CONFIG_PADRAO)
+    pasta_saida_base = tmp_path / "saida"
+    entrada = tmp_path / "entrada"
+    entrada.mkdir()
+    _pdf_de_uma_pagina(entrada / "1UN ADESIVADO 0,80X1,29M_cliente_resto.pdf")
+
+    resultado = processar_etiquetas(
+        str(entrada), "CLIENTE TESTE", "Gerente", "Produtor",
+        config, pasta_saida_base=str(pasta_saida_base),
+    )
+
+    assert resultado["arquivos_novos"] == 1
+
+    doc = pymupdf.open(resultado["os"])
+    texto = "".join(p.get_text() for p in doc)
+    doc.close()
+
+    assert "1 item no total" in texto
+    assert "ADESIVO · 1 item" in texto
+    assert "1.03 m²" in texto
+
+
 def test_le_png_e_jpg_alem_de_pdf(tmp_path):
     """
     Pedido do usuário (2026-08-29): entrada não pode ler só PDF — PNG/

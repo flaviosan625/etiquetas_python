@@ -98,7 +98,13 @@ def converter_se_necessario(pasta_entrada, nome_arquivo, pasta_originais, logger
     if conversor is None:
         return None
 
-    pasta = pathlib.Path(pasta_entrada)
+    # sempre absoluto: o Illustrator/Photoshop roda num processo à parte
+    # (COM), então um caminho relativo seria resolvido em cima do
+    # diretório de trabalho DELE, não do processo Python que chamou —
+    # sem isso, a conversão falhava com "arquivo não encontrado" mesmo
+    # com o arquivo existindo de verdade (bug real visto em produção,
+    # 2026-08-29).
+    pasta = pathlib.Path(pasta_entrada).resolve()
     caminho_original = pasta / nome_arquivo
     caminho_pdf = pasta / (pathlib.Path(nome_arquivo).stem + ".pdf")
     if caminho_pdf.exists():

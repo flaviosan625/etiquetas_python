@@ -493,6 +493,22 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
             nome_arquivo_upper, materiais, sinonimos_categoria
         )
 
+        # Material composto: mesma peça consome uma categoria extra além
+        # da principal (ex: "PS ADESIVADO" também consome ADESIVO) — ver
+        # _acumular_consumo_categoria mais abaixo, onde isso é usado.
+        categoria_extra = identificar_categoria_extra(nome_arquivo_upper, materiais, materiais_compostos)
+
+        if categoria_encontrada is None and categoria_extra is not None:
+            # Nome só tem a palavra-gatilho do composto (ex: "ADESIVADO"
+            # sozinho, sem MDF/PS/ACRILICO junto — caso real: peça de
+            # adesivo impresso pra colar, sem chapa base nenhuma nesse
+            # arquivo). Sem categoria base pra compor, a categoria extra
+            # vira a principal, em vez de descartar o arquivo inteiro
+            # (2026-08-29: 3 arquivos "ADESIVADO" da Unilever sumiam da
+            # OS/checklist por causa disso).
+            categoria_encontrada = categoria_extra
+            categoria_extra = None
+
         if categoria_encontrada is None:
             logger.emitir("err", f"Ignorado (sem categoria no nome): {arquivo}",
                            arquivo=arquivo, status_csv="IGNORADO")
@@ -510,10 +526,6 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
         cat_info["contem_arquivos"] = True
         cat_info["tem_etiqueta"] = True
 
-        # Material composto: mesma peça consome uma categoria extra além
-        # da principal (ex: "PS ADESIVADO" também consome ADESIVO) — ver
-        # _acumular_consumo_categoria mais abaixo, onde isso é usado.
-        categoria_extra = identificar_categoria_extra(nome_arquivo_upper, materiais, materiais_compostos)
         if categoria_extra == categoria_encontrada:
             categoria_extra = None
 
