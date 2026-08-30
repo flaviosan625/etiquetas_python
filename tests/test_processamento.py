@@ -17,6 +17,15 @@ def _pdf_de_uma_pagina(caminho):
     doc.close()
 
 
+def _pdf_com_desenho(caminho, largura_pt, altura_pt):
+    """PDF de 1 página cujo conteúdo (não só a página) tem o tamanho exato pedido — pra testar medição pela arte."""
+    doc = pymupdf.open()
+    pagina = doc.new_page(width=largura_pt, height=altura_pt)
+    pagina.draw_rect(pymupdf.Rect(0, 0, largura_pt, altura_pt), color=(0, 0, 0), fill=(0, 0, 0))
+    doc.save(str(caminho))
+    doc.close()
+
+
 def _imagem_de_uma_pagina(caminho):
     """PNG/JPG real (não um PDF com extensão trocada) — o PyMuPDF abre imagem crua como documento de 1 página."""
     doc = pymupdf.open()
@@ -428,6 +437,50 @@ def test_formato_reconhecido_sem_suporte_avisa_e_nao_trava(tmp_path):
     assert resultado is not None
     assert resultado["arquivos_novos"] == 1, "só o PDF válido deveria ter sido processado"
     assert any("CDR" in a and "não" in a for a in avisos), "deveria avisar sobre o CDR não suportado"
+
+
+def test_medida_impossivel_para_chapa_recorre_a_arte(tmp_path):
+    """
+    Bug real de produção (2026-08-29, MDF "073X1.73M" virando 73 METROS
+    por causa do zero à esquerda engolido pelo float() — reapareceu
+    mais de uma vez porque só o dado salvo era corrigido, nunca a causa
+    raiz). Pedido do usuário: "no caso de dúvida sempre recorra ao
+    tamanho da imagem". 73m não cabe em NENHUMA chapa de MDF (máx
+    1.85x2.70m no CONFIG_PADRAO) em nenhuma orientação — isso não é um
+    chute de escala (a regra 1:10 testada e descartada), é geometria
+    pura: a peça não cabe na chapa. Nesse caso o nome deixa de ser
+    confiável e o sistema mede pela arte, como já faz quando o nome não
+    tem medida nenhuma.
+    """
+    config = copy.deepcopy(CONFIG_PADRAO)
+    pasta_saida_base = tmp_path / "saida"
+    entrada = tmp_path / "entrada"
+    entrada.mkdir()
+
+    largura_pt = round(0.74 / 0.0254 * 72)
+    altura_pt = round(1.73 / 0.0254 * 72)
+    _pdf_com_desenho(entrada / "1UN MDF 73,00X1,73M_cliente_recorte.pdf", largura_pt, altura_pt)
+
+    avisos = []
+
+    def on_log(nivel, msg):
+        if nivel == "warn":
+            avisos.append(msg)
+
+    resultado = processar_etiquetas(
+        str(entrada), "CLIENTE TESTE", "Gerente", "Produtor",
+        config, pasta_saida_base=str(pasta_saida_base), on_log=on_log,
+    )
+
+    assert resultado["arquivos_novos"] == 1
+    assert any("não cabe na chapa" in a for a in avisos), "deveria avisar que a medida do nome é impossível"
+
+    doc = pymupdf.open(resultado["os"])
+    texto = "".join(p.get_text() for p in doc)
+    doc.close()
+
+    assert "126.29" not in texto and "73.00" not in texto, "não pode confiar cegamente na medida impossível do nome"
+    assert "1.28 m²" in texto, "devia ter medido pela arte (0.74 x 1.73 ≈ 1.28 m²)"
 
 
 def test_eps_e_convertido_e_entra_na_rodada(tmp_path, monkeypatch):

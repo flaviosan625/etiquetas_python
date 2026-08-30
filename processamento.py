@@ -534,6 +534,36 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
         # NENHUMA medida — decisão do usuário (2026-08-29): o nome, se
         # tiver medida, é sempre a fonte da verdade.
         dimensao = extrair_dimensoes(arquivo, typos_unidade)
+
+        # Exceção — medida do nome fisicamente impossível pra chapa:
+        # nenhuma peça cortada pode ser maior que a chapa crua
+        # cadastrada, em qualquer das duas orientações. Isso é
+        # geometria, não um chute de escala (ver a regra 1:10 testada e
+        # descartada) — pedido do usuário (2026-08-29): "todo caso de
+        # dúvida... use sempre o tamanho da arte como referência". Só
+        # se aplica a chapa (MDF/PVC/PS/ACRÍLICO); rolo (LONA/ADESIVO)
+        # não tem esse teto por peça, "comprimento_cm" é só quanto tem
+        # num rolo típico, não um limite físico de corte.
+        info_material_atual = materiais.get(categoria_encontrada, {})
+        if dimensao is not None and info_material_atual.get("tipo") == "chapa":
+            largura_max_cm = info_material_atual.get("largura_cm")
+            comprimento_max_cm = info_material_atual.get("comprimento_cm")
+            if largura_max_cm and comprimento_max_cm:
+                largura_peca_cm = dimensao["largura_m"] * 100
+                altura_peca_cm = dimensao["altura_m"] * 100
+                cabe_direto = largura_peca_cm <= largura_max_cm and altura_peca_cm <= comprimento_max_cm
+                cabe_rotacionado = largura_peca_cm <= comprimento_max_cm and altura_peca_cm <= largura_max_cm
+                if not cabe_direto and not cabe_rotacionado:
+                    logger.emitir(
+                        "warn",
+                        f"'{arquivo}': medida do nome ({dimensao['largura_m']:.2f}x{dimensao['altura_m']:.2f}m) "
+                        f"não cabe na chapa de {categoria_encontrada} cadastrada "
+                        f"({largura_max_cm / 100:.2f}x{comprimento_max_cm / 100:.2f}m) — provável erro de "
+                        f"digitação no nome, medindo pela arte em vez de confiar nele.",
+                        arquivo=arquivo, status_csv="AVISO - MEDIDA IMPOSSIVEL, USANDO ARTE",
+                    )
+                    dimensao = None
+
         arte_sem_conteudo = False
         if dimensao is None:
             caminho_medicao = os.path.join(pasta_entrada, arquivo)
