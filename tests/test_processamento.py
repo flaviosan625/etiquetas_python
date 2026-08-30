@@ -483,6 +483,71 @@ def test_medida_impossivel_para_chapa_recorre_a_arte(tmp_path):
     assert "1.28 m²" in texto, "devia ter medido pela arte (0.74 x 1.73 ≈ 1.28 m²)"
 
 
+def test_medida_impossivel_para_rolo_recorre_a_arte(tmp_path):
+    """
+    Bug real de produção (2026-08-30, pedido Unilever GJA): "1.46X094M"
+    virou 1.46 x 94,00 METROS por causa do MESMO bug do zero à esquerda
+    (item de totem, devia ser 0,94m) — 94m passa muito do comprimento
+    de rolo cadastrado (5000cm/50m no CONFIG_PADRAO), sinal claro de
+    erro de digitação. Mesmo princípio do teste de chapa acima, mas pra
+    rolo: largura maior que o rolo é cenário legítimo (emenda), não
+    entra nessa trava — só comprimento implausível entra.
+    """
+    config = copy.deepcopy(CONFIG_PADRAO)
+    pasta_saida_base = tmp_path / "saida"
+    entrada = tmp_path / "entrada"
+    entrada.mkdir()
+
+    largura_pt = round(1.46 / 0.0254 * 72)
+    altura_pt = round(0.94 / 0.0254 * 72)
+    _pdf_com_desenho(entrada / "1UN ADESIVO 1,46X094M_cliente_totem.pdf", largura_pt, altura_pt)
+
+    avisos = []
+
+    def on_log(nivel, msg):
+        if nivel == "warn":
+            avisos.append(msg)
+
+    resultado = processar_etiquetas(
+        str(entrada), "CLIENTE TESTE", "Gerente", "Produtor",
+        config, pasta_saida_base=str(pasta_saida_base), on_log=on_log,
+    )
+
+    assert resultado["arquivos_novos"] == 1
+    assert any("passa do comprimento de rolo" in a for a in avisos), "deveria avisar que a medida do nome é impossível"
+
+    doc = pymupdf.open(resultado["os"])
+    texto = "".join(p.get_text() for p in doc)
+    doc.close()
+
+    assert "94.00" not in texto, "não pode confiar cegamente na medida impossível do nome"
+    assert "1.37 m²" in texto, "devia ter medido pela arte (1.46 x 0.94 ≈ 1.37 m²)"
+
+
+def test_medida_de_rolo_mais_larga_que_o_rolo_nao_recorre_a_arte(tmp_path):
+    """
+    Regressão: peça mais larga que o rolo (precisaria de emenda) é
+    cenário real e legítimo, não erro de digitação — só o comprimento
+    implausível deve derrubar a confiança no nome, nunca a largura.
+    """
+    config = copy.deepcopy(CONFIG_PADRAO)
+    pasta_saida_base = tmp_path / "saida"
+    entrada = tmp_path / "entrada"
+    entrada.mkdir()
+    _pdf_de_uma_pagina(entrada / "1UN ADESIVO 1,50X2,00M_cliente.pdf")
+
+    resultado = processar_etiquetas(
+        str(entrada), "CLIENTE TESTE", "Gerente", "Produtor",
+        config, pasta_saida_base=str(pasta_saida_base),
+    )
+
+    doc = pymupdf.open(resultado["os"])
+    texto = "".join(p.get_text() for p in doc)
+    doc.close()
+
+    assert "3.00 m²" in texto, "1.50 x 2.00, mesmo mais largo que o rolo de 1.27m, devia confiar no nome"
+
+
 def test_eps_e_convertido_e_entra_na_rodada(tmp_path, monkeypatch):
     """
     Integração da conversão automática (ver conversao_adobe.py) —

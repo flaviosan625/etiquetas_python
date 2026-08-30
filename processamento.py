@@ -535,17 +535,26 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
         # tiver medida, é sempre a fonte da verdade.
         dimensao = extrair_dimensoes(arquivo, typos_unidade)
 
-        # Exceção — medida do nome fisicamente impossível pra chapa:
-        # nenhuma peça cortada pode ser maior que a chapa crua
-        # cadastrada, em qualquer das duas orientações. Isso é
-        # geometria, não um chute de escala (ver a regra 1:10 testada e
+        # Exceção — medida do nome fisicamente impossível: geometria,
+        # não um chute de escala (ver a regra 1:10 testada e
         # descartada) — pedido do usuário (2026-08-29): "todo caso de
-        # dúvida... use sempre o tamanho da arte como referência". Só
-        # se aplica a chapa (MDF/PVC/PS/ACRÍLICO); rolo (LONA/ADESIVO)
-        # não tem esse teto por peça, "comprimento_cm" é só quanto tem
-        # num rolo típico, não um limite físico de corte.
+        # dúvida... use sempre o tamanho da arte como referência".
+        #   - chapa (MDF/PVC/PS/ACRÍLICO): peça cortada não pode ser
+        #     maior que a chapa crua cadastrada, em nenhuma orientação.
+        #   - rolo (LONA/ADESIVO): só a LARGURA do rolo é um limite
+        #     físico de verdade (é a largura de impressão da máquina);
+        #     o comprimento não tem teto (dá pra imprimir/emendar
+        #     quanto precisar). Por isso o teste é só "o lado mais
+        #     estreito da peça cabe na largura do rolo, em alguma
+        #     orientação" — nunca as duas dimensões como na chapa.
+        #     Achado ao vivo (2026-08-30): "1.46X094M" (zero à esquerda
+        #     engolido pelo float(), devia ser 0,94m) virou 94 METROS
+        #     de altura pra um item de totem — nem a largura nem a
+        #     "altura" de 94m cabiam no rolo de 1,27m, sinal claro de
+        #     erro de digitação.
         info_material_atual = materiais.get(categoria_encontrada, {})
-        if dimensao is not None and info_material_atual.get("tipo") == "chapa":
+        tipo_material_atual = info_material_atual.get("tipo")
+        if dimensao is not None and tipo_material_atual == "chapa":
             largura_max_cm = info_material_atual.get("largura_cm")
             comprimento_max_cm = info_material_atual.get("comprimento_cm")
             if largura_max_cm and comprimento_max_cm:
@@ -560,6 +569,30 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
                         f"não cabe na chapa de {categoria_encontrada} cadastrada "
                         f"({largura_max_cm / 100:.2f}x{comprimento_max_cm / 100:.2f}m) — provável erro de "
                         f"digitação no nome, medindo pela arte em vez de confiar nele.",
+                        arquivo=arquivo, status_csv="AVISO - MEDIDA IMPOSSIVEL, USANDO ARTE",
+                    )
+                    dimensao = None
+        elif dimensao is not None and tipo_material_atual == "rolo":
+            # Largura MAIOR que o rolo não entra aqui — isso é cenário
+            # real e legítimo (peça grande, emenda de mais de um rolo;
+            # já existe aviso separado "mais larga que o rolo" pra
+            # conferência manual, sem descartar a medida do nome). O
+            # que pega aqui é só o comprimento implausível: nenhuma
+            # peça de verdade processada até hoje passou do
+            # 'comprimento_cm' cadastrado (quanto tem num rolo típico)
+            # — usar isso como teto generoso pega o erro de digitação
+            # (ex: "094M" virando 94 metros) sem incomodar peça grande
+            # de verdade.
+            comprimento_rolo_cm = info_material_atual.get("comprimento_cm")
+            if comprimento_rolo_cm:
+                lado_maior_cm = max(dimensao["largura_m"], dimensao["altura_m"]) * 100
+                if lado_maior_cm > comprimento_rolo_cm:
+                    logger.emitir(
+                        "warn",
+                        f"'{arquivo}': medida do nome ({dimensao['largura_m']:.2f}x{dimensao['altura_m']:.2f}m) "
+                        f"passa do comprimento de rolo cadastrado pra {categoria_encontrada} "
+                        f"({comprimento_rolo_cm / 100:.2f}m) — provável erro de digitação no nome, medindo "
+                        f"pela arte em vez de confiar nele.",
                         arquivo=arquivo, status_csv="AVISO - MEDIDA IMPOSSIVEL, USANDO ARTE",
                     )
                     dimensao = None
