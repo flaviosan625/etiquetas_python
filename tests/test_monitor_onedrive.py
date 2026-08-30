@@ -1,10 +1,15 @@
 import sys
 import pathlib
 import time
+from datetime import datetime
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-from monitor_onedrive import _deve_ignorar, _mensagem_evento, _mensagem_movido, _Handler, EstadoVigia
+import os
+
+from monitor_onedrive import (
+    _deve_ignorar, _mensagem_evento, _mensagem_movido, _Handler, EstadoVigia, gerar_relatorio_atividade,
+)
 
 
 def test_ignora_arquivo_temporario_do_office_e_do_download():
@@ -130,3 +135,85 @@ def test_estado_vigia_liga_desliga_religa(tmp_path):
     assert "a.pdf" in nomes_avisados, f"deveria ter avisado sobre a.pdf (criado enquanto ativo): {avisos}"
     assert "b.pdf" not in nomes_avisados, f"não deveria avisar sobre b.pdf (criado enquanto pausado): {avisos}"
     assert "c.pdf" in nomes_avisados, f"deveria ter avisado sobre c.pdf (criado depois de religar): {avisos}"
+
+
+def _tocar_arquivo_com_data(caminho, dias_atras):
+    caminho.parent.mkdir(parents=True, exist_ok=True)
+    caminho.write_bytes(b"conteudo")
+    momento = (time.time()) - dias_atras * 86400
+    os.utime(caminho, (momento, momento))
+
+
+def test_relatorio_de_hoje_so_pega_arquivo_modificado_hoje(tmp_path):
+    _tocar_arquivo_com_data(tmp_path / "Cliente A" / "arte_hoje.pdf", dias_atras=0)
+    _tocar_arquivo_com_data(tmp_path / "Cliente A" / "arte_ontem.pdf", dias_atras=1.2)
+    _tocar_arquivo_com_data(tmp_path / "Cliente B" / "arte_velha.pdf", dias_atras=10)
+
+    relatorio = gerar_relatorio_atividade(tmp_path, dias=1)
+
+    assert "Cliente A" in relatorio
+    assert "arte_hoje.pdf" in relatorio
+    assert "arte_ontem.pdf" not in relatorio
+    assert "Cliente B" not in relatorio
+    assert "arte_velha.pdf" not in relatorio
+
+
+def test_relatorio_da_semana_inclui_arquivo_de_ontem_mas_nao_o_antigo(tmp_path):
+    _tocar_arquivo_com_data(tmp_path / "Cliente A" / "arte_hoje.pdf", dias_atras=0)
+    _tocar_arquivo_com_data(tmp_path / "Cliente A" / "arte_ontem.pdf", dias_atras=1.2)
+    _tocar_arquivo_com_data(tmp_path / "Cliente B" / "arte_velha.pdf", dias_atras=10)
+
+    relatorio = gerar_relatorio_atividade(tmp_path, dias=7)
+
+    assert "arte_hoje.pdf" in relatorio
+    assert "arte_ontem.pdf" in relatorio
+    assert "arte_velha.pdf" not in relatorio
+
+
+def test_relatorio_ignora_arquivo_temporario(tmp_path):
+    _tocar_arquivo_com_data(tmp_path / "Cliente A" / "~$rascunho.docx", dias_atras=0)
+    _tocar_arquivo_com_data(tmp_path / "Cliente A" / "arte.pdf", dias_atras=0)
+
+    relatorio = gerar_relatorio_atividade(tmp_path, dias=1)
+
+    assert "arte.pdf" in relatorio
+    assert "rascunho" not in relatorio
+
+
+def test_relatorio_sem_nenhuma_mudanca_avisa_isso_claramente(tmp_path):
+    _tocar_arquivo_com_data(tmp_path / "Cliente A" / "arte_velha.pdf", dias_atras=30)
+
+    relatorio = gerar_relatorio_atividade(tmp_path, dias=1)
+
+    assert "Nenhum arquivo modificado" in relatorio
+
+
+def _tocar_arquivo_no_dia(caminho, data):
+    """Como _tocar_arquivo_com_data, mas ancorado num dia-calendário exato (meio-dia), sem depender da hora atual."""
+    caminho.parent.mkdir(parents=True, exist_ok=True)
+    caminho.write_bytes(b"conteudo")
+    momento = datetime.combine(data, datetime.min.time()).timestamp() + 12 * 3600
+    os.utime(caminho, (momento, momento))
+
+
+def test_relatorio_com_data_especifica_ignora_dias(tmp_path):
+    """
+    Pedido do usuário (2026-08-30): "se eu precisar de um relatório de
+    outro dia específico peço aqui diretamente" — data_inicio/data_fim
+    dão um período exato do passado, sem depender de 'dias' contado a
+    partir de hoje.
+    """
+    import datetime as dt
+
+    hoje = dt.date.today()
+    dia_alvo = hoje - dt.timedelta(days=5)
+    dia_fora = hoje - dt.timedelta(days=6)
+
+    _tocar_arquivo_no_dia(tmp_path / "Cliente A" / "arte_do_dia_alvo.pdf", dia_alvo)
+    _tocar_arquivo_no_dia(tmp_path / "Cliente A" / "arte_de_outro_dia.pdf", dia_fora)
+
+    relatorio = gerar_relatorio_atividade(tmp_path, data_inicio=dia_alvo)
+
+    assert dia_alvo.strftime("%d/%m/%Y") in relatorio
+    assert "arte_do_dia_alvo.pdf" in relatorio
+    assert "arte_de_outro_dia.pdf" not in relatorio

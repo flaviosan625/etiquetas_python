@@ -15,6 +15,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from datetime import datetime, timedelta
 
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
@@ -321,6 +322,91 @@ class EstadoVigia:
         self._observer = None
 
 
+def _inicio_do_dia(dias_atras=0):
+    """Meia-noite do dia alvo (hoje - dias_atras), como timestamp — usado como corte do relatório."""
+    alvo = datetime.now().date() - timedelta(days=dias_atras)
+    return datetime.combine(alvo, datetime.min.time()).timestamp()
+
+
+def gerar_relatorio_atividade(pasta=None, dias=1, data_inicio=None, data_fim=None):
+    """
+    Lista, agrupado por subpasta de primeiro nível (cliente/evento),
+    todo arquivo com data de modificação dentro do período pedido —
+    pra dar uma visão rápida de "o que mudou" sem precisar abrir a
+    pasta e conferir subpasta por subpasta na mão.
+
+    Por padrão considera os últimos 'dias' dias corridos a partir de
+    hoje (1 = só hoje, contado desde meia-noite). Pra um dia específico
+    do passado (ex: "o relatório do dia 15/08") ou um intervalo, passe
+    'data_inicio' (e opcionalmente 'data_fim' — um único dia se
+    omitido) como `datetime.date`; nesse caso 'dias' é ignorado.
+
+    Só reflete o ARQUIVO COMO ESTÁ AGORA (data de modificação) — não
+    é um histórico completo de todo evento que já passou (isso exigiria
+    o vigia ter ficado rodando o tempo todo, guardando cada evento;
+    isso aqui funciona mesmo sobre arquivo que já estava lá antes do
+    vigia existir). Por isso também não mostra arquivo apagado.
+    """
+    pasta = pathlib.Path(pasta or PASTA_PADRAO)
+
+    if data_inicio is not None:
+        data_fim = data_fim or data_inicio
+        limite_inicio = datetime.combine(data_inicio, datetime.min.time()).timestamp()
+        limite_fim = datetime.combine(data_fim, datetime.min.time()).timestamp() + 86400
+        periodo = data_inicio.strftime("%d/%m/%Y") if data_fim == data_inicio else (
+            f"{data_inicio.strftime('%d/%m/%Y')} a {data_fim.strftime('%d/%m/%Y')}"
+        )
+    else:
+        limite_inicio = _inicio_do_dia(dias_atras=dias - 1)
+        limite_fim = None
+        periodo = "hoje" if dias == 1 else f"últimos {dias} dias"
+
+    por_subpasta = {}
+    for caminho in pasta.rglob("*"):
+        if caminho.is_dir() or _deve_ignorar(caminho):
+            continue
+        try:
+            mtime = caminho.stat().st_mtime
+        except OSError:
+            continue
+        if mtime < limite_inicio:
+            continue
+        if limite_fim is not None and mtime >= limite_fim:
+            continue
+        relativo = caminho.relative_to(pasta)
+        subpasta = relativo.parts[0] if len(relativo.parts) > 1 else "(raiz)"
+        por_subpasta.setdefault(subpasta, []).append((mtime, relativo))
+
+    linhas = [f"Relatório de atividade — {periodo}", f"Pasta: {pasta}", ""]
+
+    if not por_subpasta:
+        linhas.append("Nenhum arquivo modificado nesse período.")
+        return "\n".join(linhas)
+
+    total_arquivos = 0
+    for subpasta in sorted(por_subpasta, key=str.lower):
+        itens = sorted(por_subpasta[subpasta], reverse=True)
+        total_arquivos += len(itens)
+        linhas.append(f"{subpasta}  ({len(itens)} arquivo{'s' if len(itens) != 1 else ''})")
+        for mtime, relativo in itens:
+            hora = datetime.fromtimestamp(mtime).strftime("%d/%m %H:%M")
+            linhas.append(f"  [{hora}] {relativo.name}")
+        linhas.append("")
+
+    linhas.insert(2, f"{total_arquivos} arquivo{'s' if total_arquivos != 1 else ''} em {len(por_subpasta)} pasta{'s' if len(por_subpasta) != 1 else ''}")
+    linhas.insert(3, "")
+    return "\n".join(linhas)
+
+
+def abrir_relatorio_atividade(pasta=None, dias=1, data_inicio=None, data_fim=None):
+    """Gera o relatório, salva num arquivo temporário e abre no Bloco de Notas."""
+    texto = gerar_relatorio_atividade(pasta, dias, data_inicio, data_fim)
+    caminho = pathlib.Path(tempfile.gettempdir()) / f"relatorio_atividade_{datetime.now():%Y%m%d_%H%M%S}.txt"
+    caminho.write_text(texto, encoding="utf-8")
+    subprocess.Popen(["notepad.exe", str(caminho)])
+    return caminho
+
+
 def _icone_bandeja():
     """Ícone simples gerado na hora — sem depender de nenhum arquivo de imagem externo."""
     from PIL import Image, ImageDraw
@@ -367,6 +453,24 @@ def rodar_com_bandeja(pasta=None, notificar=notificar_windows):
             except Exception:
                 pass
 
+    def _relatorio_hoje(icon, item):
+        try:
+            abrir_relatorio_atividade(pasta, dias=1)
+        except Exception as e:
+            try:
+                notificar("Não consegui gerar o relatório: " + str(e), titulo="Erro")
+            except Exception:
+                pass
+
+    def _relatorio_semana(icon, item):
+        try:
+            abrir_relatorio_atividade(pasta, dias=7)
+        except Exception as e:
+            try:
+                notificar("Não consegui gerar o relatório: " + str(e), titulo="Erro")
+            except Exception:
+                pass
+
     def _sair(icon, item):
         vigia.parar()
         icon.stop()
@@ -374,6 +478,8 @@ def rodar_com_bandeja(pasta=None, notificar=notificar_windows):
     menu = pystray.Menu(
         pystray.MenuItem("Monitorando", _alternar, checked=lambda item: vigia.ativo),
         pystray.MenuItem("Abrir pasta", _abrir_pasta),
+        pystray.MenuItem("Relatório de hoje", _relatorio_hoje),
+        pystray.MenuItem("Relatório dos últimos 7 dias", _relatorio_semana),
         pystray.MenuItem("Sair", _sair),
     )
     icon = pystray.Icon("uny_cv_monitor", _icone_bandeja(), "Monitor de Pastas - Uny CV", menu)
