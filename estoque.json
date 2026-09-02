@@ -24,7 +24,7 @@
       "maximo": 60,
       "codigo_planilha": null,
       "acumulado_m": 0.0,
-      "custo": null
+      "custo": 450.0
     },
     "ADESIVO_PRETO_FOSCO_127": {
       "descricao": "Adesivo Preto Fosco 1,27x50m",
@@ -37,7 +37,7 @@
       "maximo": 60,
       "codigo_planilha": "5C_025",
       "acumulado_m": 0.0,
-      "custo": null
+      "custo": 450.0
     },
     "ADESIVO_CRISTAL_127": {
       "descricao": "Adesivo Cristal (transparente) 1,27x50m",
@@ -50,7 +50,7 @@
       "maximo": 60,
       "codigo_planilha": null,
       "acumulado_m": 0.0,
-      "custo": null
+      "custo": 450.0
     },
     "VINIL_JATEADO_127": {
       "descricao": "Vinil Jateado 1,27x50m",
@@ -63,7 +63,7 @@
       "maximo": 60,
       "codigo_planilha": "5C_040",
       "acumulado_m": 0.0,
-      "custo": null
+      "custo": 450.0
     },
     "MDF_6MM": {
       "descricao": "MDF 6mm",
@@ -102,7 +102,7 @@
       "minimo": 10,
       "maximo": 60,
       "codigo_planilha": "5C_057",
-      "custo": null
+      "custo": 150.0
     },
     "PVC_3MM_BRANCO": {
       "descricao": "PVC 3mm Branco",
