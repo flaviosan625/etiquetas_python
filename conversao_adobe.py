@@ -1,5 +1,5 @@
 """
-Conversão de EPS/PSD pra PDF usando o Illustrator/Photoshop já
+Conversão de EPS/PSD/TIF pra PDF usando o Illustrator/Photoshop já
 instalados na máquina, via automação COM (Windows) — não depende de
 Ghostscript nem de nenhuma instalação nova, só dos programas que já
 existem aqui.
@@ -14,10 +14,31 @@ arquivo original.
 import pathlib
 
 try:
+    import pythoncom
     import win32com.client
     COM_DISPONIVEL = True
 except ImportError:
     COM_DISPONIVEL = False
+
+
+def _garantir_com_iniciado():
+    """
+    COM precisa ser inicializado em CADA thread que for usá-lo — não é
+    automático. A tela principal roda o processamento numa thread
+    separada (pra não travar a janela — ver gui.py), então a primeira
+    automação COM chamada ali sempre falhava com "CoInitialize não foi
+    chamado" (bug real de produção, 2026-09-01: conversão de TIF da
+    FESTA ALEMÃ falhou silenciosamente por causa disso — nunca tinha
+    aparecido antes porque nenhum pedido anterior tinha EPS/PSD/TIF
+    processado de verdade pela tela, só por script direto, que já roda
+    numa thread com COM iniciado). Chamar de novo numa thread já
+    iniciada não dá erro (só devolve S_FALSE) — seguro chamar sempre,
+    no início de cada conversão.
+    """
+    try:
+        pythoncom.CoInitialize()
+    except Exception:
+        pass
 
 # aiDontDisplayAlerts / psDisplayNoDialogs — impede caixa de diálogo
 # (fonte faltando, perfil de cor etc.) de travar a automação esperando
@@ -39,6 +60,7 @@ def converter_eps_para_pdf(caminho_eps, caminho_pdf_destino):
     if not COM_DISPONIVEL:
         raise RuntimeError("pywin32 não está instalado — não dá pra automatizar o Illustrator.")
 
+    _garantir_com_iniciado()
     app = win32com.client.Dispatch("Illustrator.Application")
     app.UserInteractionLevel = _AI_NAO_EXIBIR_ALERTAS
     doc = app.Open(str(caminho_eps))
@@ -58,6 +80,7 @@ def converter_psd_para_pdf(caminho_psd, caminho_pdf_destino):
     if not COM_DISPONIVEL:
         raise RuntimeError("pywin32 não está instalado — não dá pra automatizar o Photoshop.")
 
+    _garantir_com_iniciado()
     app = win32com.client.Dispatch("Photoshop.Application")
     app.DisplayDialogs = _PS_NAO_EXIBIR_DIALOGOS
     doc = app.Open(str(caminho_psd))
@@ -68,9 +91,108 @@ def converter_psd_para_pdf(caminho_psd, caminho_pdf_destino):
         doc.Close(_PS_NAO_SALVAR)
 
 
+def converter_tif_para_pdf(caminho_tif, caminho_pdf_destino):
+    """
+    Igual converter_psd_para_pdf, mesmo programa (Photoshop) — TIF de
+    arte de impressão (alta resolução, CMYK, às vezes vários GB) trava
+    o PyMuPDF por muito tempo só pra ABRIR (testado ao vivo, 2026-08-31:
+    um TIF de 3,1GB não abriu nem depois de vários minutos), enquanto o
+    Photoshop já é feito pra esse tipo de arquivo — pedido do usuário
+    ("abertura do tif... no photoshop suporta").
+    """
+    if not COM_DISPONIVEL:
+        raise RuntimeError("pywin32 não está instalado — não dá pra automatizar o Photoshop.")
+
+    _garantir_com_iniciado()
+    app = win32com.client.Dispatch("Photoshop.Application")
+    app.DisplayDialogs = _PS_NAO_EXIBIR_DIALOGOS
+    doc = app.Open(str(caminho_tif))
+    try:
+        opcoes = win32com.client.Dispatch("Photoshop.PDFSaveOptions")
+        doc.SaveAs(str(caminho_pdf_destino), opcoes, True)  # asCopy=True — nunca sobrescreve o .tif original
+    finally:
+        doc.Close(_PS_NAO_SALVAR)
+
+
+def reduzir_pdf_grande(caminho_pdf, caminho_pdf_reduzido, dpi_alvo=150):
+    """
+    Abre um PDF cuja imagem embutida está grande demais pra essa
+    máquina processar (achado real, 2026-09-01: PDFs de produção
+    nascidos de TIF gigante — malloc falhando ao gerar a etiqueta,
+    mesmo com pouca memória de sobra) e salva uma CÓPIA com a
+    resolução reduzida pra 'dpi_alvo' em 'caminho_pdf_reduzido' — nunca
+    sobrescreve nem move o original, só cria um arquivo novo à parte.
+    Pedido do usuário (2026-09-01): "pode reduzir o que precisar... a
+    única coisa é não mexer nos arquivos originais".
+
+    Só define a resolução de abertura (Photoshop.PDFOpenOptions) —
+    deixa cor/anti-serrilhado no padrão do próprio Photoshop, pra não
+    arriscar um valor de enum errado (ver o mesmo cuidado documentado
+    em monitor_onedrive sobre nunca assumir um valor sem testar ao
+    vivo). AINDA NÃO TESTADO contra o Photoshop de verdade (memória da
+    máquina estava crítica demais pra testar com segurança no momento
+    em que isso foi escrito) — testar com um arquivo real assim que a
+    máquina estiver com memória livre de novo.
+    """
+    if not COM_DISPONIVEL:
+        raise RuntimeError("pywin32 não está instalado — não dá pra automatizar o Photoshop.")
+
+    _garantir_com_iniciado()
+    app = win32com.client.Dispatch("Photoshop.Application")
+    app.DisplayDialogs = _PS_NAO_EXIBIR_DIALOGOS
+    opcoes_abertura = win32com.client.Dispatch("Photoshop.PDFOpenOptions")
+    opcoes_abertura.Resolution = dpi_alvo
+    app.Open(str(caminho_pdf), opcoes_abertura)
+    doc = app.ActiveDocument
+    try:
+        opcoes_salvar = win32com.client.Dispatch("Photoshop.PDFSaveOptions")
+        doc.SaveAs(str(caminho_pdf_reduzido), opcoes_salvar, True)  # asCopy=True — nunca sobrescreve o original
+    finally:
+        doc.Close(_PS_NAO_SALVAR)
+
+
+def reduzir_imagem_grande(caminho_imagem, caminho_pdf_reduzido, largura_max_px=3000):
+    """
+    Mesma ideia de reduzir_pdf_grande, mas pra imagem crua (PNG/JPG) —
+    pedido do usuário (2026-09-01): "preciso adicionar a extensão png,
+    preciso que leia esse formato também via Photoshop" (mesmo caminho
+    de resgate já usado pro PDF/TIF grande demais). PNG/JPG continuam
+    lidos direto pelo PyMuPDF no caso normal (ver EXTENSOES_SUPORTADAS
+    em processamento.py) — isso aqui só entra quando o arquivo já
+    falhou por falta de memória (ver processamento._obter_arte_reduzida).
+
+    Diferente do PDF (onde dá pra pedir a resolução já na abertura),
+    imagem crua abre no tamanho nativo — por isso reduz DEPOIS de
+    aberta (Document.ResizeImage), só se a largura já ultrapassar
+    'largura_max_px'. Nunca sobrescreve nem move o original.
+
+    AINDA NÃO TESTADO contra o Photoshop de verdade (mesma ressalva de
+    reduzir_pdf_grande) — testar com um PNG real assim que possível.
+    """
+    if not COM_DISPONIVEL:
+        raise RuntimeError("pywin32 não está instalado — não dá pra automatizar o Photoshop.")
+
+    _garantir_com_iniciado()
+    app = win32com.client.Dispatch("Photoshop.Application")
+    app.DisplayDialogs = _PS_NAO_EXIBIR_DIALOGOS
+    doc = app.Open(str(caminho_imagem))
+    try:
+        largura_atual = doc.Width
+        if largura_atual > largura_max_px:
+            altura_atual = doc.Height
+            proporcao = largura_max_px / largura_atual
+            doc.ResizeImage(largura_max_px, altura_atual * proporcao)
+        opcoes = win32com.client.Dispatch("Photoshop.PDFSaveOptions")
+        doc.SaveAs(str(caminho_pdf_reduzido), opcoes, True)  # asCopy=True — nunca sobrescreve o original
+    finally:
+        doc.Close(_PS_NAO_SALVAR)
+
+
 CONVERSORES_POR_EXTENSAO = {
     ".eps": converter_eps_para_pdf,
     ".psd": converter_psd_para_pdf,
+    ".tif": converter_tif_para_pdf,
+    ".tiff": converter_tif_para_pdf,
 }
 
 

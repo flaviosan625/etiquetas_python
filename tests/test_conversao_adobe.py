@@ -3,7 +3,27 @@ import pathlib
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-from conversao_adobe import converter_se_necessario
+from conversao_adobe import CONVERSORES_POR_EXTENSAO, converter_se_necessario, converter_tif_para_pdf
+
+
+def test_garantir_com_iniciado_e_seguro_chamar_varias_vezes():
+    # bug real de produção (2026-09-01): conversão de TIF falhava com
+    # "CoInitialize não foi chamado" quando rodada pela thread de
+    # processamento da tela principal (COM precisa ser inicializado
+    # por thread, não é automático) — a correção precisa poder ser
+    # chamada repetidas vezes na mesma thread sem levantar erro (uma
+    # vez por arquivo convertido).
+    from conversao_adobe import _garantir_com_iniciado
+    _garantir_com_iniciado()
+    _garantir_com_iniciado()
+
+
+def test_tif_e_tiff_registrados_no_conversor_padrao_via_photoshop():
+    # TIF de arte de impressão às vezes vem gigante (achado real,
+    # 2026-08-31: 3,1GB) e trava o PyMuPDF por minutos só pra abrir —
+    # o Photoshop (mesmo caminho já usado pro PSD) dá conta melhor.
+    assert CONVERSORES_POR_EXTENSAO[".tif"] is converter_tif_para_pdf
+    assert CONVERSORES_POR_EXTENSAO[".tiff"] is converter_tif_para_pdf
 
 
 def _logger():

@@ -71,16 +71,26 @@ QUALIDADE_JPG_ETIQUETA = 78
 # PNG/JPG são imagem crua, o PyMuPDF trata como documento de 1 página.
 EXTENSOES_SUPORTADAS = (".pdf", ".ai", ".png", ".jpg", ".jpeg")
 
-# EPS/PSD não abrem direto no PyMuPDF nesse ambiente, mas têm conversão
-# automática via Illustrator/Photoshop (ver conversao_adobe.py) — não
-# entram aqui. CDR não tem conversão nenhuma (decisão do usuário,
-# 2026-08-29: "não precisa mexer") — só avisa que foi visto, não lido.
+# EPS/PSD/TIF não entram em EXTENSOES_SUPORTADAS acima — têm conversão
+# automática pra PDF via Illustrator/Photoshop (ver conversao_adobe.py)
+# antes de chegar no resto do processamento. TIF em especial: mesmo
+# quando o PyMuPDF TECNICAMENTE consegue abrir um TIF, arte de
+# impressão nesse formato costuma vir gigante (visto na prática,
+# 2026-08-31: arquivo de 3,1GB não terminou de abrir nem depois de
+# vários minutos) — o Photoshop dá conta bem melhor desse tamanho.
+# CDR não tem conversão nenhuma (decisão do usuário, 2026-08-29: "não
+# precisa mexer") — só avisa que foi visto, não lido.
 EXTENSOES_RECONHECIDAS_SEM_SUPORTE = (".cdr",)
 
 # Onde vai o arquivo original depois de convertido com sucesso (ver
 # conversao_adobe.converter_se_necessario) — nunca apagado, só sai da
 # vista pra não tentar converter de novo na rodada seguinte.
 NOME_SUBPASTA_ORIGINAIS_CONVERTIDOS = "_originais_convertidos"
+
+# Onde fica a cópia com resolução reduzida de um PDF grande demais pra
+# processar direto (ver _obter_pdf_reduzido) — o original NUNCA entra
+# aqui nem é tocado, só a cópia derivada.
+NOME_SUBPASTA_REDUZIDOS = "_reduzidos_para_processar"
 
 _PREFIXOS_CONSOLE = {"ok": "✅", "warn": "⚠️", "err": "❌", "info": "ℹ️"}
 
@@ -159,6 +169,63 @@ def _eh_reposicao(nome_arquivo_upper):
     """
     nome_sem_acento = remover_acentos(nome_arquivo_upper)
     return any(contem_palavra(nome_sem_acento, palavra) for palavra in _PALAVRAS_REPOSICAO)
+
+
+# Extensão original -> conversor de redução certo (ver conversao_adobe):
+# PDF pede a resolução já na abertura; imagem crua (PNG/JPG) precisa
+# abrir no tamanho nativo e reduzir depois (Document.ResizeImage) —
+# são caminhos diferentes no Photoshop, por isso dois conversores.
+# Pedido do usuário (2026-09-01): "preciso adicionar a extensão png,
+# preciso que leia esse formato também via Photoshop" — mesmo caminho
+# de resgate por falta de memória já usado pro PDF, agora também pra
+# PNG/JPG.
+def _reduzir_conforme_extensao(caminho_original, caminho_reduzido, extensao):
+    from conversao_adobe import reduzir_pdf_grande, reduzir_imagem_grande
+    if extensao == ".pdf":
+        reduzir_pdf_grande(caminho_original, caminho_reduzido)
+    else:
+        reduzir_imagem_grande(caminho_original, caminho_reduzido)
+
+
+def _obter_pdf_reduzido(pasta_entrada, arquivo, logger, reduzir=None):
+    """
+    Cria (ou reaproveita, se uma tentativa anterior nessa mesma pasta
+    já criou) uma cópia de 'arquivo' com resolução reduzida, numa
+    subpasta separada (NOME_SUBPASTA_REDUZIDOS) — nunca mexe no
+    original. A cópia é sempre um PDF (mesmo se o original for PNG/JPG
+    — ver _reduzir_conforme_extensao), então o nome do arquivo na
+    cópia troca de extensão pra ".pdf". Devolve o caminho completo da
+    cópia reduzida, ou None se não foi possível (Photoshop indisponível
+    ou a própria redução falhou).
+
+    'reduzir' (opcional) sobrescreve o conversor escolhido por
+    _reduzir_conforme_extensao — só existe pra teste automatizado poder
+    simular sem abrir o Photoshop de verdade.
+    """
+    from conversao_adobe import COM_DISPONIVEL
+    if reduzir is None:
+        extensao = pathlib.Path(arquivo).suffix.lower()
+        reduzir = lambda origem, destino: _reduzir_conforme_extensao(origem, destino, extensao)
+    if not COM_DISPONIVEL:
+        return None
+
+    pasta_reduzidos = pathlib.Path(pasta_entrada).resolve() / NOME_SUBPASTA_REDUZIDOS
+    caminho_original = pathlib.Path(pasta_entrada).resolve() / arquivo
+    nome_reduzido = pathlib.Path(arquivo).stem + ".pdf"
+    caminho_reduzido = pasta_reduzidos / nome_reduzido
+    if caminho_reduzido.exists():
+        return str(caminho_reduzido)
+
+    try:
+        pasta_reduzidos.mkdir(parents=True, exist_ok=True)
+        reduzir(str(caminho_original), str(caminho_reduzido))
+    except Exception as e:
+        logger.emitir(
+            "err", f"'{arquivo}': não foi possível reduzir a resolução pra processar: {e}",
+            arquivo=arquivo, status_csv="ERRO - REDUCAO FALHOU",
+        )
+        return None
+    return str(caminho_reduzido)
 
 
 def _nome_padronizado(nome_original, quantidade, categoria, dimensao, typos_unidade, nome_cliente_seguro):
@@ -296,47 +363,6 @@ def _acumular_consumo_categoria(cat_info, info_material, dimensao, quantidade):
     return {"resultado_corte": None, "estimativa_chapa_grande": None}
 
 
-_PADRAO_VERSAO_CHECKLIST = re.compile(r" V(\d+)\.pdf$", re.IGNORECASE)
-
-
-def _proxima_versao_checklist(pasta_saida, nome_cliente_seguro):
-    """
-    Cada rodada de processamento (arquivo novo OU reposição) vira um
-    checklist SEPARADO — "Checklist CLIENTE.pdf" na primeira rodada,
-    "Checklist CLIENTE V2.pdf", "V3.pdf" etc nas seguintes — em vez de
-    colar páginas no mesmo PDF de sempre. Decisão do usuário
-    (2026-08-26): o checklist já impresso e marcado à caneta na
-    produção não muda mais depois; cada leva nova de material vira uma
-    folha própria, só com o que precisa ser feito naquela rodada — sem
-    reimprimir o que já foi produzido antes. A OS continua sendo UM
-    documento só, sempre com o pedido inteiro (ver 'itens_para_os' mais
-    abaixo) — só o checklist (o documento de produção, físico) é que
-    passa a ser por rodada.
-
-    Desde 2026-08-28, só existe UM checklist por rodada (o que antes
-    era "- UNIFICADO") — os arquivos separados por categoria pararam de
-    ser salvos em disco (o usuário pediu pra buscar item individual por
-    aqui, quando precisar, em vez de gerar arquivo a mais toda rodada).
-
-    A primeira rodada de um pedido não leva sufixo (mantém o nome já
-    usado antes); a segunda vira V2, a terceira V3 — sempre o maior
-    número já usado em qualquer checklist dessa pasta, mais um. Não
-    guarda esse número em nenhum estado à parte: conta pelos arquivos
-    que já existem em disco.
-    """
-    pasta = pathlib.Path(pasta_saida)
-    nome_base = f"Checklist {nome_cliente_seguro.upper()}"
-    arquivos = list(pasta.glob(f"{nome_base}.pdf")) + list(pasta.glob(f"{nome_base} V*.pdf"))
-    if not arquivos:
-        return 1
-    maior = 1
-    for caminho in arquivos:
-        m = _PADRAO_VERSAO_CHECKLIST.search(caminho.name)
-        if m:
-            maior = max(maior, int(m.group(1)))
-    return maior + 1
-
-
 def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor,
                          config, pasta_saida_base="etiquetas_geradas",
                          on_log=None, on_progress=None, pasta_saida_existente=None):
@@ -351,12 +377,17 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
     reconhece pelo nome do arquivo o que já foi processado nela antes
     (estado_pedido.json) e ignora — não importa se a pasta de entrada
     for jogada inteira de novo, misturada com o que já foi mandado.
-    Só o que é realmente novo vira etiqueta, ganha o selo "NOVO" e
-    entra nos totais que alimentam a baixa de estoque; o checklist dessa
-    rodada vira um arquivo À PARTE, versionado (V2, V3... — ver
-    _proxima_versao_checklist), nunca mexe num checklist já gerado
-    antes. A OS continua sendo um documento só, sempre com o pedido
-    inteiro atualizado.
+    Só o que é realmente novo vira etiqueta, ganha o selo "NOVO" (ou
+    "REPOSIÇÃO", ver '_eh_reposicao') e entra nos totais que alimentam
+    a baixa de estoque. Desde 2026-09-02 (pedido do usuário — antes um
+    checklist por pedido virava vários arquivos versionados, V2, V3...,
+    e ele queria só UM pra mandar pra produção), o checklist passou a
+    se comportar como a OS: um documento só por pedido, que cada rodada
+    ACRESCENTA página no final (nunca reabre/reordena o que já existia
+    — o que já foi impresso e marcado à caneta na produção continua
+    exatamente como estava, só entra página nova depois). Os selos
+    NOVO/REPOSIÇÃO em cada etiqueta continuam sendo o jeito de saber
+    visualmente o que foi acrescentado em qual rodada.
     """
     logger = _Logger(on_log)
 
@@ -394,12 +425,24 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
     # mesma rodada) e o original vai pra NOME_SUBPASTA_ORIGINAIS_
     # CONVERTIDOS (nunca apagado, só sai da vista pra não tentar
     # converter nele de novo na rodada seguinte).
+    # Arquivo que precisava de conversão (EPS/PSD/TIF) mas falhou nunca
+    # chega a entrar em 'arquivos_arte' (só o PDF convertido entraria,
+    # e não existe) — sem isso registrado à parte, a regra de
+    # reconciliação de quantidade lá embaixo não tem como saber que
+    # esse arquivo devia ter virado etiqueta e não virou (bug real de
+    # produção, 2026-09-01: conversão de TIF falhou por "CoInitialize
+    # não foi chamado" — ver conversao_adobe._garantir_com_iniciado —
+    # e a OS/Checklist saíram "completos" com 1 item a menos, sem
+    # ninguém perceber).
+    arquivos_com_falha_conversao = []
     for nome in nomes_pasta:
         if pathlib.Path(nome).suffix.lower() in CONVERSORES_POR_EXTENSAO:
             pasta_originais = pathlib.Path(pasta_entrada) / NOME_SUBPASTA_ORIGINAIS_CONVERTIDOS
             pdf_gerado = converter_se_necessario(pasta_entrada, nome, pasta_originais, logger.emitir)
             if pdf_gerado:
                 arquivos_arte.append(pdf_gerado)
+            else:
+                arquivos_com_falha_conversao.append(nome)
 
     for nome in nomes_pasta:
         if nome.lower().endswith(EXTENSOES_RECONHECIDAS_SEM_SUPORTE):
@@ -465,13 +508,11 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
             logger.emitir("err", f"Não foi possível criar a pasta de saída: {e}")
             return None
 
-    versao_checklist = _proxima_versao_checklist(pasta_saida, nome_cliente_seguro)
-    sufixo_versao_checklist = "" if versao_checklist == 1 else f" V{versao_checklist}"
-
     ALTURA_ETIQUETA = ALTURA_A4 / 2
 
     dados_categorias = {cat: _novo_estado_categoria() for cat in categorias}
     itens_os = []
+    nomes_processados_com_sucesso = set()
 
     agora = datetime.now()
     data_hora_atual = agora.strftime("%d/%m/%Y %H:%M:%S")
@@ -479,6 +520,12 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
     total_arquivos = len(arquivos_arte)
 
     for indice, arquivo in enumerate(arquivos_arte, start=1):
+        # nome ANTES de qualquer renomeação padronizada (ver
+        # _renomear_para_padrao mais abaixo, que reatribui 'arquivo') —
+        # é esse nome que aparece em 'arquivos_arte', então é ele que
+        # precisa ser comparado no final pra saber se bateu a
+        # quantidade (ver 'nomes_processados_com_sucesso' abaixo).
+        arquivo_original = arquivo
         if on_progress:
             on_progress(indice, total_arquivos)
 
@@ -649,6 +696,52 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
                            arquivo=arquivo, status_csv="AVISO - ARQUIVO VAZIO")
             pdf_original.close()
             continue
+
+        # Pré-checagem: renderiza a primeira página ANTES de comprometer
+        # qualquer página/posição no documento da categoria (cat_info) —
+        # se a arte tem imagem embutida grande demais pra essa máquina
+        # processar (achado real, 2026-09-01: PDF de produção nascido de
+        # TIF gigante, "malloc failed" mesmo com pouca memória de
+        # sobra), troca pra uma cópia com resolução reduzida ANTES de
+        # desenhar qualquer coisa — nunca no meio da montagem, pra nunca
+        # sobrar página parcial de uma tentativa que falhou no documento
+        # final. A cópia nunca sobrescreve nem move o original (pedido
+        # do usuário: "reduza o que precisar... não mexer nos arquivos
+        # originais" — ver conversao_adobe.reduzir_pdf_grande).
+        try:
+            pymupdf.TOOLS.reset_mupdf_warnings()
+            _rect_teste = pdf_original[0].rect
+            _caixa_largura_teste = LARGURA_A4 - 20
+            _caixa_altura_teste = ALTURA_ETIQUETA - 75
+            if _rect_teste.width > 0 and _rect_teste.height > 0:
+                _escala_teste = min(_caixa_largura_teste / _rect_teste.width, _caixa_altura_teste / _rect_teste.height)
+            else:
+                _escala_teste = 1.0
+            _escala_teste *= DPI_ETIQUETA / 72.0
+            pdf_original[0].get_pixmap(matrix=pymupdf.Matrix(_escala_teste, _escala_teste))
+        except Exception:
+            pdf_original.close()
+            logger.emitir(
+                "warn",
+                f"'{arquivo}': imagem grande demais pra processar direto — reduzindo resolução numa "
+                f"cópia à parte (arquivo original fica intocado)...",
+                arquivo=arquivo, status_csv="AVISO - REDUZINDO RESOLUCAO",
+            )
+            caminho_reduzido = _obter_pdf_reduzido(pasta_entrada, arquivo, logger)
+            if caminho_reduzido is None:
+                logger.emitir(
+                    "err", f"'{arquivo}': não foi possível processar mesmo depois de tentar reduzir a resolução.",
+                    arquivo=arquivo, status_csv="ERRO",
+                )
+                continue
+            try:
+                pdf_original = pymupdf.open(caminho_reduzido)
+            except Exception as e:
+                logger.emitir(
+                    "err", f"'{arquivo}': erro ao abrir a versão reduzida: {e}",
+                    arquivo=arquivo, status_csv="ERRO",
+                )
+                continue
 
         thumbnail_bytes = None
         try:
@@ -896,6 +989,7 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
             "variante": variante,
             "reposicao": eh_reposicao,
         })
+        nomes_processados_com_sucesso.add(arquivo_original)
 
         detalhe_reposicao = " | REPOSIÇÃO (material refeito, nome renomeado de propósito)" if eh_reposicao else ""
         logger.emitir(
@@ -903,6 +997,37 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
             f"{arquivo} — Categoria: {categoria_encontrada} | Páginas: {num_pag + 1}{detalhe_area}{detalhe_qtd}{detalhe_variante}{detalhe_reposicao}",
             arquivo=arquivo, status_csv="OK",
         )
+
+    # Regra de segurança: OS e Checklist só são gerados se a quantidade
+    # bater exatamente com a pasta de entrada — cada arquivo de
+    # 'arquivos_arte' precisa ter virado um item de verdade em
+    # 'itens_os'. Se algum foi pulado no meio do laço acima (sem
+    # categoria no nome, PDF corrompido/vazio, erro ao montar a
+    # etiqueta...), NENHUM documento sai — em vez de gerar uma OS/
+    # Checklist "quase completo" com um item faltando sem ninguém
+    # perceber (pedido do usuário, 2026-08-31, depois do caso real
+    # "temos 32 itens na pasta de entrada, a OS e o Checklist não
+    # bate" — 2026-08-30). Nada é salvo em disco (nem o estado do
+    # pedido) além do log, pra próxima tentativa — depois de corrigido
+    # o arquivo problemático — pegar TODOS os arquivos de novo, não só
+    # os que faltaram.
+    arquivos_sem_etiqueta = arquivos_com_falha_conversao + [
+        a for a in arquivos_arte if a not in nomes_processados_com_sucesso
+    ]
+    if arquivos_sem_etiqueta:
+        for cat in categorias:
+            dados_categorias[cat]["pdf_saida"].close()
+        logger.emitir(
+            "err",
+            f"OS e Checklist NÃO foram gerados — a quantidade não bate com a pasta de entrada. "
+            f"{len(arquivos_sem_etiqueta)} de {len(arquivos_arte)} arquivo(s) não viraram etiqueta "
+            f"(motivo de cada um no log acima): {', '.join(arquivos_sem_etiqueta)}. Corrija e rode de novo.",
+        )
+        try:
+            salvar_log(str(pasta_saida), nome_cliente_seguro, logger.registro)
+        except Exception:
+            pass
+        return None
 
     # Preenche a contagem de etiquetas no banner de cada categoria — só
     # dá pra saber o total depois que todos os arquivos já foram lidos.
@@ -919,7 +1044,7 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
             )
             cat_info["pdf_saida"][0].insert_htmlbox(cat_info["caixa_contagem_banner"], html_contagem)
 
-    # Monta o checklist único da rodada (variável ainda chamada
+    # Monta o checklist único do PEDIDO (variável ainda chamada
     # "unificado" — nome de antes de virar o único checklist gerado,
     # ver histórico da função) respeitando a ordem configurada, com
     # sumário (TOC) clicável, numerando as páginas ao final. O banner de cada
@@ -927,12 +1052,21 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
     # cat_info["pdf_saida"] — não precisa mais de uma página de título
     # separada (isso desperdiçava uma folha inteira na impressão).
     #
-    # Sempre um documento NOVO — só com o que foi processado NESSA
-    # rodada, com o sufixo de versão no nome (V2, V3...) quando não for
-    # a primeira (ver _proxima_versao_checklist).
-    caminho_unificado = pasta_saida / f"Checklist {nome_cliente_seguro.upper()}{sufixo_versao_checklist}.pdf"
+    # Um documento só por pedido, como a OS: se já existe um checklist
+    # dessa pasta (rodada anterior), essa rodada ACRESCENTA página nele
+    # em vez de criar um arquivo "V2" à parte — as páginas antigas nunca
+    # são reabertas/renumeradas de novo (podem já estar impressas e
+    # marcadas à caneta na produção), só o TOC ganha as novas entradas
+    # no final (ver numerar_paginas_a_partir_de).
+    caminho_unificado = pasta_saida / f"Checklist {nome_cliente_seguro.upper()}.pdf"
     pdf_unificado = pymupdf.open()
     toc = []
+    if modo_atualizacao and caminho_unificado.exists():
+        pdf_checklist_anterior = pymupdf.open(str(caminho_unificado))
+        toc = pdf_checklist_anterior.get_toc()
+        pdf_unificado.insert_pdf(pdf_checklist_anterior)
+        pdf_checklist_anterior.close()
+    indice_inicio_rodada = len(pdf_unificado)
 
     for cat in ordem_unificado:
         cat_info = dados_categorias[cat]
@@ -964,7 +1098,7 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
     if len(pdf_unificado) > 0:
         try:
             pdf_unificado.set_toc(toc)
-            numerar_paginas_a_partir_de(pdf_unificado, 0)
+            numerar_paginas_a_partir_de(pdf_unificado, indice_inicio_rodada)
             # garbage=4/deflate: sem isso, cada insert_htmlbox deixa uma cópia
             # de fonte solta no arquivo e o PDF fica ordens de grandeza maior
             # do que precisa (mesmo problema resolvido antes na OS)

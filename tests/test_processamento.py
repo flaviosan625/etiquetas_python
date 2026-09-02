@@ -7,7 +7,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 import pymupdf
 
 from config import CONFIG_PADRAO
-from processamento import _eh_reposicao, _nome_padronizado, processar_etiquetas
+from processamento import _eh_reposicao, _nome_padronizado, _obter_pdf_reduzido, processar_etiquetas
 
 
 def _pdf_de_uma_pagina(caminho):
@@ -104,17 +104,19 @@ def test_segunda_rodada_mantem_itens_da_primeira_na_os(tmp_path):
     assert "2 itens no total" in texto
 
 
-def test_rodadas_seguintes_geram_checklist_separado_e_versionado(tmp_path):
+def test_rodadas_seguintes_acrescentam_no_mesmo_checklist(tmp_path):
     """
-    Decisão do usuário (2026-08-26): cada rodada (arquivo novo ou
-    reposição) vira um checklist SEPARADO — nunca mais cola página num
-    checklist que já foi impresso/marcado à caneta antes. Primeira
-    rodada sem sufixo, segunda "V2", terceira "V3" — cada uma só com o
-    que foi processado NAQUELA rodada. Desde 2026-08-28 só existe UM
-    checklist por rodada (não mais um arquivo separado por categoria) —
-    "Checklist CLIENTE.pdf", "V2.pdf", "V3.pdf". Roda 3 rodadas reais e
-    confere o nome de cada arquivo em disco e quantas etiquetas cada um
-    tem, e que nenhum arquivo por categoria foi gerado.
+    Decisão do usuário (2026-09-02): o checklist virou um documento só
+    por pedido, como a OS — cada rodada nova ACRESCENTA página nele em
+    vez de gerar um arquivo "V2"/"V3" à parte (era assim antes,
+    2026-08-26, quando cada rodada virava um checklist separado pra
+    nunca reabrir uma folha já impressa/marcada à caneta). As páginas
+    antigas nunca são renumeradas de novo — só o texto "Página X de Y"
+    de quando foram criadas fica desatualizado, que é o preço aceito
+    pra nunca desenhar em cima de uma página que já pode estar impressa
+    (ver numerar_paginas_a_partir_de). Roda 3 rodadas reais e confere
+    que sobra um arquivo só, com uma seção de TOC por rodada e o selo
+    (NOVO/REPOSIÇÃO) certo em cada página.
     """
     config = copy.deepcopy(CONFIG_PADRAO)
     pasta_saida_base = tmp_path / "saida"
@@ -145,22 +147,18 @@ def test_rodadas_seguintes_geram_checklist_separado_e_versionado(tmp_path):
     )
 
     nomes_checklist = sorted(p.name for p in pasta_saida.glob("Checklist *.pdf"))
-    assert nomes_checklist == [
-        "Checklist CLIENTE TESTE V2.pdf",
-        "Checklist CLIENTE TESTE V3.pdf",
-        "Checklist CLIENTE TESTE.pdf",
-    ]
+    assert nomes_checklist == ["Checklist CLIENTE TESTE.pdf"], "tem que sobrar um arquivo só, nunca V2/V3"
 
-    def _paginas(nome):
-        doc = pymupdf.open(str(pasta_saida / nome))
-        n = len(doc)
-        doc.close()
-        return n
+    doc = pymupdf.open(str(pasta_saida / "Checklist CLIENTE TESTE.pdf"))
+    assert len(doc) == 3, "1 etiqueta por rodada (banner+etiqueta na mesma página) = 3 páginas no total"
+    toc = doc.get_toc()
+    assert len(toc) == 3, "uma seção de TOC por rodada, mesmo repetindo a categoria LONA"
+    textos = [p.get_text() for p in doc]
+    doc.close()
 
-    # cada rodada tem 1 arquivo só (banner + 1 etiqueta = 1 página cada)
-    assert _paginas("Checklist CLIENTE TESTE.pdf") == 1
-    assert _paginas("Checklist CLIENTE TESTE V2.pdf") == 1
-    assert _paginas("Checklist CLIENTE TESTE V3.pdf") == 1
+    assert "NOVO" not in textos[0] and "REPOSIÇÃO" not in textos[0], "primeira rodada não leva selo"
+    assert "NOVO" in textos[1], "segunda rodada (material novo) precisa do selo NOVO"
+    assert "REPOSIÇÃO" in textos[2], "terceira rodada (nome com REPOSICAO) precisa do selo REPOSIÇÃO"
 
 
 def test_cliente_digitado_com_espaco_diferente_nao_fragmenta_os_nem_checklist(tmp_path):
@@ -207,7 +205,11 @@ def test_cliente_digitado_com_espaco_diferente_nao_fragmenta_os_nem_checklist(tm
     assert "2 itens no total" in texto, "OS devia ter os itens das DUAS rodadas, não só a última"
 
     nomes_checklist = sorted(p.name for p in pasta_saida.glob("Checklist *.pdf"))
-    assert nomes_checklist == ["Checklist SUPERBET V2.pdf", "Checklist SUPERBET.pdf"]
+    assert nomes_checklist == ["Checklist SUPERBET.pdf"], "checklist também é um arquivo só por pedido, como a OS"
+
+    doc_checklist = pymupdf.open(str(pasta_saida / "Checklist SUPERBET.pdf"))
+    assert len(doc_checklist) == 2, "as etiquetas das DUAS rodadas, acrescentadas no mesmo arquivo"
+    doc_checklist.close()
 
 
 def test_log_processamento_fica_dentro_da_subpasta_log(tmp_path):
@@ -592,3 +594,302 @@ def test_eps_e_convertido_e_entra_na_rodada(tmp_path, monkeypatch):
     assert (entrada / "_originais_convertidos" / "1UN LONA 2,00X1,00M_arte.eps").exists(), \
         "original deveria ter sido movido pra subpasta, nunca apagado"
     assert not (entrada / "1UN LONA 2,00X1,00M_arte.eps").exists()
+
+
+def test_tif_e_convertido_e_quantidade_por_extenso_e_reconhecida(tmp_path, monkeypatch):
+    """
+    Integração da conversão de TIF (mesmo espírito do teste de EPS
+    acima, conversor SIMULADO — TIF de verdade é grande demais/lento
+    pra testar aqui) + a leitura de "N Unidades" por extenso no nome
+    (ver dimensoes.py), com um nome de arquivo real (FESTA ALEMA,
+    2026-08-31): "AF_Banner 50x250_Lona_8 Unidades.tif".
+    """
+    import processamento as mod_processamento
+
+    def conversor_fake(caminho_origem, caminho_pdf_destino):
+        _pdf_com_desenho(caminho_pdf_destino, round(0.5 / 0.0254 * 72), round(2.5 / 0.0254 * 72))
+
+    def converter_fake(pasta_entrada, nome_arquivo, pasta_originais, logger_emitir, conversores=None):
+        from conversao_adobe import converter_se_necessario
+        return converter_se_necessario(
+            pasta_entrada, nome_arquivo, pasta_originais, logger_emitir,
+            conversores={".tif": conversor_fake},
+        )
+
+    monkeypatch.setattr(mod_processamento, "converter_se_necessario", converter_fake)
+    monkeypatch.setattr(mod_processamento, "CONVERSORES_POR_EXTENSAO", {".tif": conversor_fake})
+
+    config = copy.deepcopy(CONFIG_PADRAO)
+    pasta_saida_base = tmp_path / "saida"
+    entrada = tmp_path / "entrada"
+    entrada.mkdir()
+    (entrada / "AF_Banner 50x250_Lona_8 Unidades.tif").write_bytes(b"conteudo fake, o conversor nem olha isso")
+
+    resultado = processar_etiquetas(
+        str(entrada), "CLIENTE TESTE", "Gerente", "Produtor",
+        config, pasta_saida_base=str(pasta_saida_base),
+    )
+
+    assert resultado is not None
+    assert resultado["arquivos_novos"] == 1
+    assert (entrada / "_originais_convertidos" / "AF_Banner 50x250_Lona_8 Unidades.tif").exists()
+
+    doc = pymupdf.open(resultado["os"])
+    texto = "".join(p.get_text() for p in doc)
+    doc.close()
+    assert "10.00 m²" in texto, \
+        "quantidade 8 (por extenso, 'Unidades') devia ter multiplicado a área: 8 x 1.25m² (0.5x2.5m) = 10.00m²"
+
+
+def test_conversao_que_falha_bloqueia_a_rodada_inteira(tmp_path, monkeypatch):
+    """
+    Bug real de produção (2026-09-01, pedido FESTA ALEMÃ): a conversão
+    de um TIF falhou ("CoInitialize não foi chamado" — ver
+    conversao_adobe._garantir_com_iniciado) e a OS/Checklist saíram
+    "completos" com 1 item a menos, sem nenhum aviso — porque um
+    arquivo que precisa de conversão (EPS/PSD/TIF) NUNCA chega a entrar
+    em 'arquivos_arte' quando a conversão falha, então a regra de
+    reconciliação de quantidade (ver test_arquivo_sem_categoria_
+    bloqueia_os_e_checklist_da_rodada_inteira) não enxergava essa falta.
+    Essa é a MESMA regra, mas cobrindo o caminho da conversão.
+    """
+    import processamento as mod_processamento
+
+    def conversor_que_falha(caminho_origem, caminho_pdf_destino):
+        raise RuntimeError("CoInitialize não foi chamado")
+
+    def converter_fake(pasta_entrada, nome_arquivo, pasta_originais, logger_emitir, conversores=None):
+        from conversao_adobe import converter_se_necessario
+        return converter_se_necessario(
+            pasta_entrada, nome_arquivo, pasta_originais, logger_emitir,
+            conversores={".tif": conversor_que_falha},
+        )
+
+    monkeypatch.setattr(mod_processamento, "converter_se_necessario", converter_fake)
+    monkeypatch.setattr(mod_processamento, "CONVERSORES_POR_EXTENSAO", {".tif": conversor_que_falha})
+
+    config = copy.deepcopy(CONFIG_PADRAO)
+    pasta_saida_base = tmp_path / "saida"
+    entrada = tmp_path / "entrada"
+    entrada.mkdir()
+    _pdf_de_uma_pagina(entrada / "1UN LONA 2,00X1,00M_valido.pdf")
+    (entrada / "8UN LONA 0,50X2,50M_banner.tif").write_bytes(b"conteudo fake, o conversor nem olha isso")
+
+    resultado = processar_etiquetas(
+        str(entrada), "CLIENTE TESTE", "Gerente", "Produtor",
+        config, pasta_saida_base=str(pasta_saida_base),
+    )
+
+    assert resultado is None, "não pode gerar nada — o TIF que falhou na conversão nunca virou etiqueta"
+    assert (entrada / "8UN LONA 0,50X2,50M_banner.tif").exists(), "original do TIF não pode sumir numa falha"
+
+    pastas_geradas = list(pasta_saida_base.iterdir()) if pasta_saida_base.exists() else []
+    assert len(pastas_geradas) == 1
+    pasta_pedido = pastas_geradas[0]
+    assert not list(pasta_pedido.glob("OS - *.pdf"))
+    assert not list(pasta_pedido.glob("Checklist *.pdf"))
+
+
+def test_arquivo_sem_categoria_bloqueia_os_e_checklist_da_rodada_inteira(tmp_path):
+    """
+    Regra de segurança pedida pelo usuário (2026-08-31), depois do caso
+    real "temos 32 itens na pasta de entrada, a OS e o Checklist não
+    bate" (2026-08-30): se algum arquivo da pasta de entrada não vira
+    etiqueta (aqui, por não ter categoria nenhuma no nome), a
+    quantidade não bate — e NENHUM documento é gerado pra essa rodada,
+    nem pros arquivos que estavam OK. Preferível travar tudo e mostrar
+    o erro a mandar pra fábrica uma OS/Checklist faltando peça sem
+    ninguém perceber.
+    """
+    config = copy.deepcopy(CONFIG_PADRAO)
+    pasta_saida_base = tmp_path / "saida"
+    entrada = tmp_path / "entrada"
+    entrada.mkdir()
+    _pdf_de_uma_pagina(entrada / "1UN LONA 2,00X1,00M_valido.pdf")
+    _pdf_de_uma_pagina(entrada / "arquivo_sem_material_nenhum_no_nome.pdf")
+
+    erros = []
+
+    def on_log(nivel, msg):
+        if nivel == "err":
+            erros.append(msg)
+
+    resultado = processar_etiquetas(
+        str(entrada), "CLIENTE TESTE", "Gerente", "Produtor",
+        config, pasta_saida_base=str(pasta_saida_base), on_log=on_log,
+    )
+
+    assert resultado is None, "não pode gerar nada — a quantidade não bateu com a pasta de entrada"
+    assert any("NÃO foram gerados" in e and "quantidade não bate" in e for e in erros)
+
+    pastas_geradas = list(pasta_saida_base.iterdir()) if pasta_saida_base.exists() else []
+    assert len(pastas_geradas) == 1, "a pasta do pedido é criada, mas sem OS nem Checklist dentro"
+    pasta_pedido = pastas_geradas[0]
+    assert not list(pasta_pedido.glob("OS - *.pdf"))
+    assert not list(pasta_pedido.glob("Checklist *.pdf"))
+    assert not (pasta_pedido / "estado_pedido.json").exists(), \
+        "não pode salvar estado — senão o arquivo válido nunca mais seria reprocessado numa rodada futura"
+
+
+def test_todos_os_arquivos_processados_gera_normalmente(tmp_path):
+    """Contraprova da regra acima: quando todos os arquivos da pasta de entrada viram etiqueta, gera normal."""
+    config = copy.deepcopy(CONFIG_PADRAO)
+    pasta_saida_base = tmp_path / "saida"
+    entrada = tmp_path / "entrada"
+    entrada.mkdir()
+    _pdf_de_uma_pagina(entrada / "1UN LONA 2,00X1,00M_valido.pdf")
+    _pdf_de_uma_pagina(entrada / "1UN PVC 1,00X1,00M_valido.pdf")
+
+    resultado = processar_etiquetas(
+        str(entrada), "CLIENTE TESTE", "Gerente", "Produtor",
+        config, pasta_saida_base=str(pasta_saida_base),
+    )
+
+    assert resultado is not None
+    assert resultado["arquivos_novos"] == 2
+    assert resultado["os"] is not None
+    assert resultado["unificado"] is not None
+
+
+def test_obter_pdf_reduzido_cria_copia_e_nunca_toca_no_original(tmp_path):
+    entrada = tmp_path
+    caminho_original = entrada / "grande.pdf"
+    _pdf_de_uma_pagina(caminho_original)
+    conteudo_original = caminho_original.read_bytes()
+
+    chamadas = []
+
+    def reduzir_fake(caminho_origem, caminho_destino):
+        chamadas.append((caminho_origem, caminho_destino))
+        pathlib.Path(caminho_destino).write_bytes(b"pdf fake reduzido")
+
+    class _LoggerFake:
+        def emitir(self, *a, **k):
+            pass
+
+    resultado = _obter_pdf_reduzido(str(entrada), "grande.pdf", _LoggerFake(), reduzir=reduzir_fake)
+
+    assert resultado is not None
+    assert pathlib.Path(resultado).name == "grande.pdf"
+    assert pathlib.Path(resultado).parent.name == "_reduzidos_para_processar"
+    assert pathlib.Path(resultado).read_bytes() == b"pdf fake reduzido"
+    assert caminho_original.read_bytes() == conteudo_original, "original não pode ser tocado"
+    assert len(chamadas) == 1
+
+
+def test_obter_pdf_reduzido_reaproveita_copia_ja_existente(tmp_path):
+    entrada = tmp_path
+    _pdf_de_uma_pagina(entrada / "grande.pdf")
+
+    chamadas = []
+
+    def reduzir_fake(caminho_origem, caminho_destino):
+        chamadas.append(1)
+        pathlib.Path(caminho_destino).write_bytes(b"pdf fake reduzido")
+
+    class _LoggerFake:
+        def emitir(self, *a, **k):
+            pass
+
+    logger = _LoggerFake()
+    _obter_pdf_reduzido(str(entrada), "grande.pdf", logger, reduzir=reduzir_fake)
+    _obter_pdf_reduzido(str(entrada), "grande.pdf", logger, reduzir=reduzir_fake)
+
+    assert len(chamadas) == 1, "não pode reduzir de novo se a cópia já existe"
+
+
+def test_obter_pdf_reduzido_troca_extensao_pra_pdf_quando_original_e_imagem(tmp_path, monkeypatch):
+    """
+    Pedido do usuário (2026-09-01): "preciso adicionar a extensão png,
+    preciso que leia esse formato também via Photoshop" — mesmo caminho
+    de resgate por falta de memória já usado pro PDF, agora pra PNG/JPG
+    também. A redução sempre produz PDF (mesmo de um PNG de origem),
+    então o nome da cópia troca de extensão.
+    """
+    import processamento as mod_processamento
+    import conversao_adobe
+
+    monkeypatch.setattr(conversao_adobe, "COM_DISPONIVEL", True)
+
+    entrada = tmp_path
+    (entrada / "foto.png").write_bytes(b"conteudo fake de imagem, nao importa aqui")
+
+    chamadas = []
+
+    def reduzir_imagem_fake(caminho_origem, caminho_destino):
+        chamadas.append((caminho_origem, caminho_destino))
+        pathlib.Path(caminho_destino).write_bytes(b"pdf fake reduzido a partir de imagem")
+
+    monkeypatch.setattr(conversao_adobe, "reduzir_imagem_grande", reduzir_imagem_fake)
+
+    class _LoggerFake:
+        def emitir(self, *a, **k):
+            pass
+
+    resultado = mod_processamento._obter_pdf_reduzido(str(entrada), "foto.png", _LoggerFake())
+
+    assert resultado is not None
+    assert pathlib.Path(resultado).suffix == ".pdf", "a cópia reduzida é sempre PDF, mesmo vindo de PNG"
+    assert pathlib.Path(resultado).stem == "foto"
+    assert len(chamadas) == 1, "devia ter usado reduzir_imagem_grande, não reduzir_pdf_grande"
+
+
+def test_arte_grande_demais_reduz_resolucao_automaticamente_sem_mexer_no_original(tmp_path, monkeypatch):
+    """
+    Bug real de produção (2026-09-01, pedido FESTA ALEMÃ): PDFs
+    nascidos de TIF gigante falhavam com "malloc failed" ao montar a
+    etiqueta, mesmo com pouca memória de sobra na máquina. Pedido do
+    usuário: "pode reduzir o que precisar... a única coisa é não mexer
+    nos arquivos originais, pode criar uma regra". Simula a falha de
+    memória na pré-checagem (ver processar_etiquetas) e confere que o
+    sistema troca pra uma cópia reduzida automaticamente, processa
+    normal a partir dela, e nunca toca no arquivo original.
+    """
+    import processamento as mod_processamento
+
+    reducoes = []
+
+    def obter_pdf_reduzido_fake(pasta_entrada, arquivo, logger, reduzir=None):
+        pasta_reduzidos = pathlib.Path(pasta_entrada).resolve() / "_reduzidos_para_processar"
+        pasta_reduzidos.mkdir(parents=True, exist_ok=True)
+        caminho_reduzido = pasta_reduzidos / arquivo
+        reducoes.append(str(caminho_reduzido))
+        _pdf_de_uma_pagina(caminho_reduzido)
+        return str(caminho_reduzido)
+
+    monkeypatch.setattr(mod_processamento, "_obter_pdf_reduzido", obter_pdf_reduzido_fake)
+
+    pixmap_original = pymupdf.Page.get_pixmap
+    chamadas = {"n": 0}
+
+    def get_pixmap_fake(self, *args, **kwargs):
+        chamadas["n"] += 1
+        if chamadas["n"] == 1:
+            raise RuntimeError("code=2: malloc (999999999 bytes) failed")
+        return pixmap_original(self, *args, **kwargs)
+
+    monkeypatch.setattr(pymupdf.Page, "get_pixmap", get_pixmap_fake)
+
+    config = copy.deepcopy(CONFIG_PADRAO)
+    pasta_saida_base = tmp_path / "saida"
+    entrada = tmp_path / "entrada"
+    entrada.mkdir()
+    caminho_original = entrada / "1UN LONA 2,00X1,00M_grande.pdf"
+    _pdf_de_uma_pagina(caminho_original)
+    conteudo_original = caminho_original.read_bytes()
+
+    resultado = processar_etiquetas(
+        str(entrada), "CLIENTE TESTE", "Gerente", "Produtor",
+        config, pasta_saida_base=str(pasta_saida_base),
+    )
+
+    assert resultado is not None, "devia ter processado normal depois de trocar pra cópia reduzida"
+    assert resultado["arquivos_novos"] == 1
+    assert reducoes, "devia ter tentado reduzir a resolução"
+
+    # o arquivo é renomeado pro padrão ANTES da checagem de memória (já
+    # é assim independente dessa regra nova) — o que importa aqui é que
+    # o conteúdo original nunca foi reescrito, só o nome do arquivo.
+    arquivos_finais = list(entrada.glob("*.pdf"))
+    assert len(arquivos_finais) == 1
+    assert arquivos_finais[0].read_bytes() == conteudo_original, "conteúdo original não pode ser alterado"
