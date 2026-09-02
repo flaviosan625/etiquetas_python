@@ -24,7 +24,7 @@ from tkinter import filedialog, messagebox, ttk
 
 from arquivamento import PASTA_DESTINO_PADRAO, enviar_os, listar_pedidos
 from branding import CAMINHO_LOGO_GUI
-from config import atualizar_ultimo_uso, carregar_config, salvar_config
+from config import atualizar_ultimo_uso, atualizar_ultima_impressora, carregar_config, salvar_config
 from dimensoes import formatar_variante
 from estado_pedido import estado_existe, localizar_pastas_cliente
 from estoque import (
@@ -33,6 +33,7 @@ from estoque import (
     novo_produto, adicionar_produto, atualizar_produto, remover_produto,
     meses_disponiveis, resumo_mensal, rendimento_tinta_mensal,
 )
+from impressao import imprimir_pdf, impressora_padrao, listar_impressoras
 from processamento import processar_etiquetas
 from utils import sanitizar_nome_arquivo
 
@@ -49,6 +50,28 @@ COR_POSITIVO = "#0f7a3d"
 
 def _rotulo_variantes(variantes):
     return f"Variantes ({len(variantes)})" if variantes else "Variantes..."
+
+
+def _pedidos_para_impressao(pasta_base="etiquetas_geradas"):
+    """
+    Lista cada pasta de pedido que tem OS e/ou Checklist em disco, mais
+    recente primeiro — usado pela tela de reimpressão manual (não
+    reaproveita arquivamento.listar_pedidos porque essa só devolve os
+    PDFs de OS, e aqui precisamos do Checklist também).
+    """
+    base = pathlib.Path(pasta_base)
+    if not base.exists():
+        return []
+    pedidos = []
+    for pasta in sorted(base.iterdir(), reverse=True):
+        if not pasta.is_dir():
+            continue
+        arquivos_os = sorted(pasta.glob("OS - *.pdf"))
+        arquivos_checklist = sorted(pasta.glob("Checklist *.pdf"))
+        if not arquivos_os and not arquivos_checklist:
+            continue
+        pedidos.append({"pasta": pasta, "nome": pasta.name, "os": arquivos_os, "checklist": arquivos_checklist})
+    return pedidos
 
 
 class JanelaPrincipal(tk.Tk):
@@ -108,6 +131,11 @@ class JanelaPrincipal(tk.Tk):
             fg=COR_ACENTO, cursor="hand2", command=self._abrir_estoque,
         ).pack(anchor="w", padx=16, pady=(0, 2))
 
+        tk.Button(
+            self, text="🖨 Imprimir OS/Checklist de um pedido...", relief="flat",
+            fg=COR_ACENTO, cursor="hand2", command=self._abrir_impressao_manual,
+        ).pack(anchor="w", padx=16, pady=(0, 2))
+
         ttk.Separator(self).pack(fill="x", padx=16, pady=(0, 10))
 
         self.var_enviar_onedrive = tk.BooleanVar(value=False)
@@ -118,6 +146,25 @@ class JanelaPrincipal(tk.Tk):
         ).pack(anchor="w")
         tk.Label(
             frame_onedrive, text=f"    Destino: {PASTA_DESTINO_PADRAO}", fg="#888888", font=("Segoe UI", 8),
+        ).pack(anchor="w")
+
+        frame_impressao = tk.Frame(self)
+        frame_impressao.pack(fill="x", padx=16, pady=(0, 6))
+        linha_impressora = tk.Frame(frame_impressao)
+        linha_impressora.pack(fill="x")
+        tk.Label(linha_impressora, text="Impressora:").pack(side="left")
+        self.var_impressora = tk.StringVar()
+        self.combo_impressora = ttk.Combobox(
+            linha_impressora, textvariable=self.var_impressora, state="readonly", width=32,
+        )
+        self.combo_impressora.pack(side="left", padx=(6, 6), fill="x", expand=True)
+        self.combo_impressora.bind("<<ComboboxSelected>>", self._impressora_selecionada)
+        tk.Button(linha_impressora, text="↻", width=3, command=self._atualizar_impressoras).pack(side="left")
+        self._atualizar_impressoras(selecionar_salva=True)
+
+        self.var_imprimir_ao_gerar = tk.BooleanVar(value=False)
+        tk.Checkbutton(
+            frame_impressao, text="🖨 Imprimir OS e Checklist assim que gerar", variable=self.var_imprimir_ao_gerar,
         ).pack(anchor="w")
 
         self.btn_processar = tk.Button(
@@ -175,8 +222,35 @@ class JanelaPrincipal(tk.Tk):
     def _abrir_estoque(self):
         JanelaEstoque(self, self.config_dados)
 
+    def _abrir_impressao_manual(self):
+        JanelaImprimirPedido(self, self.var_impressora.get())
+
     def _config_atualizada(self, nova_config):
         self.config_dados = nova_config
+
+    def _atualizar_impressoras(self, selecionar_salva=False):
+        """
+        Repopula a lista de impressoras que o Windows reconhece agora
+        (pode ter mudado — impressora ligada/desligada, USB conectado).
+        Na primeira chamada (selecionar_salva=True), tenta manter a
+        última impressora escolhida; senão cai pra impressora padrão do
+        Windows, ou a primeira da lista se nem isso houver.
+        """
+        impressoras = listar_impressoras()
+        self.combo_impressora["values"] = impressoras
+        if not impressoras:
+            self.var_impressora.set("")
+            return
+        if selecionar_salva:
+            salva = self.config_dados.get("ultima_impressora", "")
+            if salva in impressoras:
+                self.var_impressora.set(salva)
+                return
+        padrao = impressora_padrao()
+        self.var_impressora.set(padrao if padrao in impressoras else impressoras[0])
+
+    def _impressora_selecionada(self, event=None):
+        self.config_dados = atualizar_ultima_impressora(self.config_dados, self.var_impressora.get())
 
     def _registrar_log(self, nivel, mensagem):
         prefixos = {"ok": "✅ ", "warn": "⚠️ ", "err": "❌ ", "info": "ℹ️ "}
@@ -215,7 +289,10 @@ class JanelaPrincipal(tk.Tk):
 
         thread = threading.Thread(
             target=self._executar_em_thread,
-            args=(pasta, cliente, gerente, produtor, pasta_saida_existente, self.var_enviar_onedrive.get()),
+            args=(
+                pasta, cliente, gerente, produtor, pasta_saida_existente,
+                self.var_enviar_onedrive.get(), self.var_imprimir_ao_gerar.get(), self.var_impressora.get(),
+            ),
             daemon=True,
         )
         thread.start()
@@ -262,7 +339,10 @@ class JanelaPrincipal(tk.Tk):
         self.wait_window(janela)
         return janela.resultado
 
-    def _executar_em_thread(self, pasta, cliente, gerente, produtor, pasta_saida_existente, enviar_onedrive):
+    def _executar_em_thread(
+        self, pasta, cliente, gerente, produtor, pasta_saida_existente,
+        enviar_onedrive, imprimir_ao_gerar, impressora,
+    ):
         def on_log(nivel, msg):
             self.fila_eventos.put(("log", nivel, msg))
 
@@ -289,7 +369,30 @@ class JanelaPrincipal(tk.Tk):
                 # com sucesso antes disso.
                 self.fila_eventos.put(("log", "err", f"Erro inesperado ao enviar a OS pro OneDrive: {e}"))
 
+        if resultado and imprimir_ao_gerar:
+            try:
+                self._imprimir_os_checklist(resultado, impressora, on_log)
+            except Exception as e:
+                self.fila_eventos.put(("log", "err", f"Erro inesperado ao imprimir: {e}"))
+
         self.fila_eventos.put(("fim", resultado, None))
+
+    def _imprimir_os_checklist(self, resultado, impressora, on_log):
+        """
+        Roda logo depois do processamento, na mesma thread, só quando o
+        checkbox "Imprimir OS e Checklist assim que gerar" estava
+        marcado. Erro numa impressão (ex: impressora desligada) não
+        impede a outra de tentar.
+        """
+        for rotulo, caminho in (("OS", resultado.get("os")), ("Checklist", resultado.get("unificado"))):
+            if not caminho:
+                continue
+            on_log("info", f"Imprimindo {rotulo}...")
+            try:
+                imprimir_pdf(caminho, impressora)
+                on_log("ok", f"{rotulo} enviada pra impressora: {pathlib.Path(caminho).name}")
+            except RuntimeError as e:
+                on_log("err", str(e))
 
     def _enviar_os_onedrive(self, pasta_saida, on_log):
         """
@@ -403,6 +506,108 @@ class JanelaEscolherPedido(tk.Toplevel):
     def _criar_novo(self):
         self.resultado = None
         self.destroy()
+
+
+class JanelaImprimirPedido(tk.Toplevel):
+    """
+    Reimprime a OS e/ou o Checklist de um pedido já gerado — pra quando
+    a via impressa se perde ou estraga na fábrica e precisa de outra
+    via, sem regenerar nada.
+    """
+
+    def __init__(self, mestre, impressora_inicial):
+        super().__init__(mestre)
+        self.title("Imprimir OS/Checklist de um pedido")
+        self.geometry("480x420")
+        self.transient(mestre)
+        self.pedidos = _pedidos_para_impressao()
+
+        tk.Label(self, text="Escolha o pedido", font=("Segoe UI", 12, "bold")).pack(anchor="w", padx=16, pady=(14, 2))
+
+        self.lista = tk.Listbox(self, activestyle="dotbox")
+        for pedido in self.pedidos:
+            rotulos = []
+            if pedido["os"]:
+                rotulos.append("OS")
+            if pedido["checklist"]:
+                rotulos.append("Checklist")
+            self.lista.insert("end", f"{pedido['nome']}  ({' + '.join(rotulos)})")
+        if self.pedidos:
+            self.lista.selection_set(0)
+        self.lista.pack(fill="both", expand=True, padx=16)
+
+        self.var_os = tk.BooleanVar(value=True)
+        self.var_checklist = tk.BooleanVar(value=True)
+        frame_opcoes = tk.Frame(self)
+        frame_opcoes.pack(anchor="w", padx=16, pady=(10, 4))
+        tk.Checkbutton(frame_opcoes, text="OS", variable=self.var_os).pack(side="left")
+        tk.Checkbutton(frame_opcoes, text="Checklist", variable=self.var_checklist).pack(side="left", padx=(10, 0))
+
+        frame_impressora = tk.Frame(self)
+        frame_impressora.pack(fill="x", padx=16, pady=(0, 6))
+        tk.Label(frame_impressora, text="Impressora:").pack(side="left")
+        self.var_impressora = tk.StringVar(value=impressora_inicial)
+        ttk.Combobox(
+            frame_impressora, textvariable=self.var_impressora, state="readonly",
+            values=listar_impressoras(), width=32,
+        ).pack(side="left", padx=(6, 0), fill="x", expand=True)
+
+        self.var_status = tk.StringVar(value="")
+        tk.Label(self, textvariable=self.var_status, fg="#666666", wraplength=440, justify="left").pack(
+            anchor="w", padx=16,
+        )
+
+        frame_botoes = tk.Frame(self)
+        frame_botoes.pack(fill="x", padx=16, pady=14)
+        tk.Button(frame_botoes, text="Fechar", command=self.destroy).pack(side="left")
+        self.btn_imprimir = tk.Button(
+            frame_botoes, text="🖨 Imprimir", bg=COR_ACENTO, fg="white", relief="flat", command=self._imprimir,
+        )
+        self.btn_imprimir.pack(side="right")
+
+        if not self.pedidos:
+            tk.Label(self, text="Nenhum pedido com OS ou Checklist encontrado.", fg=COR_ALERTA).pack(padx=16)
+            self.btn_imprimir.configure(state="disabled")
+
+        self.grab_set()
+
+    def _imprimir(self):
+        selecao = self.lista.curselection()
+        if not selecao:
+            messagebox.showwarning("Escolha um pedido", "Selecione um pedido na lista.")
+            return
+        pedido = self.pedidos[selecao[0]]
+        arquivos = []
+        if self.var_os.get():
+            arquivos += pedido["os"]
+        if self.var_checklist.get():
+            arquivos += pedido["checklist"]
+        if not arquivos:
+            messagebox.showwarning("Nada selecionado", "Marque OS e/ou Checklist pra imprimir.")
+            return
+
+        impressora = self.var_impressora.get()
+        self.btn_imprimir.configure(state="disabled", text="Imprimindo...")
+        self.var_status.set("")
+        thread = threading.Thread(target=self._imprimir_em_thread, args=(arquivos, impressora), daemon=True)
+        thread.start()
+
+    def _imprimir_em_thread(self, arquivos, impressora):
+        erros = []
+        for caminho in arquivos:
+            try:
+                imprimir_pdf(caminho, impressora)
+            except RuntimeError as e:
+                erros.append(str(e))
+        self.after(0, lambda: self._imprimir_concluido(len(arquivos) - len(erros), erros))
+
+    def _imprimir_concluido(self, ok, erros):
+        self.btn_imprimir.configure(state="normal", text="🖨 Imprimir")
+        if erros:
+            self.var_status.set(f"{ok} arquivo(s) enviado(s), {len(erros)} com erro.")
+            messagebox.showerror("Erro ao imprimir", "\n".join(erros))
+        else:
+            self.var_status.set(f"{ok} arquivo(s) enviado(s) pra impressora.")
 
 
 class JanelaConfiguracoes(tk.Toplevel):

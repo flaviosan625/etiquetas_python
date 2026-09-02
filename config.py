@@ -83,6 +83,7 @@ CONFIG_PADRAO = {
     "ordem_unificado": ["LONA", "ADESIVO", "PVC", "PS", "MDF", "ACRILICO"],
     "ultimo_gerente": "",
     "ultimo_produtor": "",
+    "ultima_impressora": "",
 }
 
 
@@ -133,5 +134,12 @@ def atualizar_ultimo_uso(config, gerente, produtor):
     """Atualiza e já salva o último gerente/produtor usados."""
     config["ultimo_gerente"] = gerente
     config["ultimo_produtor"] = produtor
+    salvar_config(config)
+    return config
+
+
+def atualizar_ultima_impressora(config, nome_impressora):
+    """Atualiza e já salva a última impressora escolhida na tela principal."""
+    config["ultima_impressora"] = nome_impressora
     salvar_config(config)
     return config
