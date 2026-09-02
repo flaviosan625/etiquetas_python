@@ -143,6 +143,24 @@ def test_extrair_quantidade_assume_1_quando_ausente():
     assert extrair_quantidade("banner_58x60.pdf") == (1, False)
 
 
+def test_extrair_quantidade_reconhece_unidades_por_extenso_no_fim_do_nome():
+    # arte vinda de fora (agência/cliente) não segue a convenção "NUN"
+    # no início — traz "N Unidade(s)" por extenso no FIM do nome.
+    # Achado real (2026-08-31): arquivos TIF da FESTA ALEMA perdiam a
+    # quantidade real, virando sempre 1.
+    assert extrair_quantidade("AF_Banner 50x250_Lona_8 Unidades.tif") == (8, True)
+    assert extrair_quantidade("AF_Colunas_220x300+sangria_lona_18 Unidades.tif") == (18, True)
+    assert extrair_quantidade("AF_saia_palco_900x100+sangria_LONA_1 Unidade.tif") == (1, True)
+    assert extrair_quantidade("AF_mapa_entrada_300x250+sangria_lona_1Unidade.tif") == (1, True)  # sem espaço
+
+
+def test_extrair_quantidade_prefixo_nun_tem_prioridade_sobre_extenso():
+    # quando os dois padrões aparecem (improvável, mas não pode dar
+    # resultado ambíguo), o prefixo "NUN" — convenção interna da
+    # fábrica — sempre vence.
+    assert extrair_quantidade("2UN LONA banner_5 Unidades.pdf") == (2, True)
+
+
 def test_extrair_quantidade_ignora_separador_entre_numero_e_un():
     # nome vem de digitação manual — separador entre a quantidade e
     # "UN" varia sem padrão (2026-08-29, pedido do usuário: pontuação

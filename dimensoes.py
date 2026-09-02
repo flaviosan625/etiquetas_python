@@ -115,6 +115,14 @@ def identificar_categoria_extra(nome_arquivo_upper, materiais, materiais_compost
 
 _PADRAO_QUANTIDADE = rf'{_SEPARADOR}(\d+){_SEPARADOR}UN(?![A-Z])'
 
+# "N Unidades"/"N Unidade" por extenso — aparece no FIM do nome (não no
+# início, como o padrão acima), em arte vinda de fora (agência/cliente)
+# que não segue a convenção interna da fábrica ("NUN" na frente).
+# Achado com arquivo real (2026-08-31): "AF_...220x5500+sangria_lona_
+# 2 Unidades.tif" perdia a quantidade real, virando sempre 1 — usado
+# como alternativa quando o padrão "NUN" não bate no começo do nome.
+_PADRAO_QUANTIDADE_POR_EXTENSO = rf'(\d+){_SEPARADOR}UNIDADES?(?![A-Z])'
+
 
 def _padrao_medida(typos_unidade):
     # Tokens de unidade reconhecidos no regex: as unidades válidas +
@@ -271,18 +279,28 @@ def dimensao_da_arte(page):
 
 def extrair_quantidade(nome_arquivo):
     """
-    Procura a quantidade no início do nome do arquivo, no padrão "NUN"
-    (ex: "1UN", "2UN"), do jeito que já vem nos arquivos da fábrica.
+    Procura a quantidade no nome do arquivo — primeiro no início, no
+    padrão "NUN" (ex: "1UN", "2UN"), do jeito que já vem nos arquivos
+    da fábrica; se não achar, procura "N Unidade(s)" por extenso em
+    qualquer lugar do nome (comum em arte vinda de fora, geralmente no
+    fim do nome — ver _PADRAO_QUANTIDADE_POR_EXTENSO).
 
-    Se não encontrar, assume 1 e sinaliza isso pra quem chamou poder
-    avisar no log — mesmo espírito de tolerância a erro usado em
-    extrair_dimensoes.
+    Se não encontrar nenhum dos dois, assume 1 e sinaliza isso pra
+    quem chamou poder avisar no log — mesmo espírito de tolerância a
+    erro usado em extrair_dimensoes.
 
     Retorna (quantidade, encontrada).
     """
-    m = re.match(_PADRAO_QUANTIDADE, nome_arquivo.upper())
+    nome_upper = nome_arquivo.upper()
+
+    m = re.match(_PADRAO_QUANTIDADE, nome_upper)
     if m:
         return int(m.group(1)), True
+
+    m = re.search(_PADRAO_QUANTIDADE_POR_EXTENSO, nome_upper)
+    if m:
+        return int(m.group(1)), True
+
     return 1, False
 
 
@@ -303,6 +321,11 @@ def nome_sem_prefixo_reconhecido(nome_arquivo, typos_unidade=None):
     if m_qtd:
         resultado = resultado[m_qtd.end():]
         nome_upper = nome_upper[m_qtd.end():]
+    else:
+        m_qtd_extenso = re.search(_PADRAO_QUANTIDADE_POR_EXTENSO, nome_upper)
+        if m_qtd_extenso:
+            resultado = resultado[:m_qtd_extenso.start()] + resultado[m_qtd_extenso.end():]
+            nome_upper = nome_upper[:m_qtd_extenso.start()] + nome_upper[m_qtd_extenso.end():]
 
     m_medida = re.search(_padrao_medida(typos_unidade), nome_upper)
     if m_medida:
