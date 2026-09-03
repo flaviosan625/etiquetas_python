@@ -95,6 +95,37 @@ def test_contem_palavra_ainda_rejeita_letra_colada_depois():
     assert contem_palavra("BANNER VINILICO ESPECIAL.PDF", "VINIL") is False
 
 
+def test_contem_palavra_reconhece_plural_com_s():
+    """Pedido do usuário (2026-09-04): "lona" ou "Lonas" têm que ser reconhecidos do mesmo jeito."""
+    assert contem_palavra("1UN LONAS 1,00X1,00.PDF", "LONA") is True
+    assert contem_palavra("1UN ADESIVOS 1,00X1,00.PDF", "ADESIVO") is True
+
+
+def test_contem_palavra_plural_nao_reabre_falso_positivo_de_substring():
+    # "XPS" continua não sendo "PS", mesmo com a tolerância a plural
+    assert contem_palavra("BANNER_XPS_60X40.PDF", "PS") is False
+
+
+def test_identificar_categoria_reconhece_plural():
+    materiais = {"LONA": {}, "ADESIVO": {}}
+    categoria, _ = identificar_categoria("1UN LONAS 1,00X1,00.PDF", materiais)
+    assert categoria == "LONA"
+
+
+def test_identificar_categoria_extra_reconhece_gatilho_no_plural():
+    materiais = {"PS": {}, "ADESIVO": {}}
+    materiais_compostos = {"ADESIVADO": "ADESIVO"}
+    categoria_extra = identificar_categoria_extra(
+        "2UN PS ADESIVADOS 1,00X1,00.PDF", materiais, materiais_compostos,
+    )
+    assert categoria_extra == "ADESIVO"
+
+
+def test_remover_palavra_remove_plural_tambem():
+    from dimensoes import remover_palavra
+    assert remover_palavra("1UN LONAS BANNER.PDF", "LONA") == "1UN  BANNER.PDF"
+
+
 def test_extrair_dimensoes_assume_cm_quando_sem_unidade():
     d = extrair_dimensoes("banner_58x60.pdf", {})
     assert d is not None

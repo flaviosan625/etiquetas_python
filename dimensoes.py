@@ -22,14 +22,14 @@ _SEPARADOR = r'[\s._,\-]*'
 
 
 
-def contem_palavra(texto, termo):
+def _padrao_palavra(termo):
     """
-    Verifica se 'termo' aparece em 'texto' como palavra inteira, e não
-    como parte de outra palavra. Evita falso positivo como "PS" sendo
-    encontrado dentro de "XPS" (que na verdade deve virar PVC) — por
-    isso, antes do termo não pode vir letra nem número.
-
-    Depois do termo, um número colado é permitido (mas não uma letra):
+    Monta o padrão de "palavra inteira" compartilhado por contem_palavra
+    e remover_palavra — antes do termo não pode vir letra nem número
+    (evita "PS" sendo achado dentro de "XPS"); depois, aceita um "S"
+    de plural opcional (pedido do usuário, 2026-09-04: "lona" ou
+    "Lonas" têm que ser reconhecidos do mesmo jeito) e, colado nisso
+    (com ou sem o S), um número é permitido, mas não outra letra —
     nomes reais do dia a dia colam a medida direto no material, tipo
     "VINIL150" (Vinil, 150cm de largura) sem espaço ou underscore
     separando. Se essa checagem fosse simétrica, esse arquivo real
@@ -37,22 +37,29 @@ def contem_palavra(texto, termo):
     risco (bem menor) de uma coincidência tipo "PS2" nunca visto na
     prática.
     """
-    padrao = r'(?<![A-Z0-9])' + re.escape(termo) + r'(?![A-Z])'
-    return re.search(padrao, texto) is not None
+    return r'(?<![A-Z0-9])' + re.escape(termo) + r'S?(?![A-Z])'
+
+
+def contem_palavra(texto, termo):
+    """
+    Verifica se 'termo' aparece em 'texto' como palavra inteira (no
+    singular ou no plural — ver _padrao_palavra), e não como parte de
+    outra palavra.
+    """
+    return re.search(_padrao_palavra(termo), texto) is not None
 
 
 def remover_palavra(texto, termo):
     """
     Tira 'termo' de 'texto' onde aparecer como palavra inteira (mesma
-    regra de fronteira de contem_palavra), sem sensibilidade a
-    maiúscula/minúscula. Usado pra não repetir informação que já
-    aparece formatada em outro lugar (ex: categoria/cliente que já
-    viraram prefixo do nome padronizado, ou já aparecem numa etiqueta/
-    cabeçalho ao lado — ver processamento._nome_padronizado e
-    relatorios._descricao_arquivo).
+    regra de fronteira de contem_palavra, singular ou plural), sem
+    sensibilidade a maiúscula/minúscula. Usado pra não repetir
+    informação que já aparece formatada em outro lugar (ex: categoria/
+    cliente que já viraram prefixo do nome padronizado, ou já aparecem
+    numa etiqueta/cabeçalho ao lado — ver processamento._nome_
+    padronizado e relatorios._descricao_arquivo).
     """
-    padrao = r'(?<![A-Z0-9])' + re.escape(termo) + r'(?![A-Z])'
-    return re.sub(padrao, '', texto, flags=re.IGNORECASE)
+    return re.sub(_padrao_palavra(termo), '', texto, flags=re.IGNORECASE)
 
 
 def identificar_categoria(nome_arquivo_upper, materiais, sinonimos_categoria=None):

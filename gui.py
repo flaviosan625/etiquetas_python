@@ -35,6 +35,7 @@ from estoque import (
 )
 from impressao import imprimir_pdf, impressora_padrao, listar_impressoras
 from processamento import processar_etiquetas
+from rasterlink import rastrear as rastrear_rip
 from utils import sanitizar_nome_arquivo
 
 COR_ACENTO = "#0067c0"
@@ -136,6 +137,11 @@ class JanelaPrincipal(tk.Tk):
             fg=COR_ACENTO, cursor="hand2", command=self._abrir_impressao_manual,
         ).pack(anchor="w", padx=16, pady=(0, 2))
 
+        tk.Button(
+            self, text="🔀 Cruzar pasta com lista do RIP...", relief="flat",
+            fg=COR_ACENTO, cursor="hand2", command=self._abrir_cruzamento_rip,
+        ).pack(anchor="w", padx=16, pady=(0, 2))
+
         ttk.Separator(self).pack(fill="x", padx=16, pady=(0, 10))
 
         self.var_enviar_onedrive = tk.BooleanVar(value=False)
@@ -224,6 +230,9 @@ class JanelaPrincipal(tk.Tk):
 
     def _abrir_impressao_manual(self):
         JanelaImprimirPedido(self, self.var_impressora.get())
+
+    def _abrir_cruzamento_rip(self):
+        JanelaCruzarRIP(self)
 
     def _config_atualizada(self, nova_config):
         self.config_dados = nova_config
@@ -608,6 +617,121 @@ class JanelaImprimirPedido(tk.Toplevel):
             messagebox.showerror("Erro ao imprimir", "\n".join(erros))
         else:
             self.var_status.set(f"{ok} arquivo(s) enviado(s) pra impressora.")
+
+
+class JanelaCruzarRIP(tk.Toplevel):
+    """
+    Cola a lista de tarefas de um RIP (RasterLink...) e cruza com uma
+    pasta de produção: o que bate EXATO no nome move sozinho (solto ->
+    Prontos, ou Prontos -> solto quando não está mais na lista); o
+    resto só é avisado, nunca movido sem confirmação — ver
+    rasterlink.rastrear. Não existe exportação nativa de lista no
+    RasterLink, por isso a lista sempre é colada à mão (de um print da
+    Job List), nunca lida automaticamente de um arquivo do RIP.
+    """
+
+    def __init__(self, mestre):
+        super().__init__(mestre)
+        self.title("Cruzar pasta com lista do RIP")
+        self.geometry("640x600")
+        self.minsize(560, 520)
+        self.transient(mestre)
+
+        tk.Label(self, text="Pasta de produção", font=("Segoe UI", 11, "bold")).pack(
+            anchor="w", padx=16, pady=(14, 2),
+        )
+        frame_pasta = tk.Frame(self)
+        frame_pasta.pack(fill="x", padx=16)
+        self.var_pasta = tk.StringVar()
+        tk.Entry(frame_pasta, textvariable=self.var_pasta).pack(side="left", fill="x", expand=True)
+        tk.Button(frame_pasta, text="Procurar...", command=self._escolher_pasta).pack(side="left", padx=(6, 0))
+
+        tk.Label(
+            self, text='Trecho a ignorar na comparação (opcional — ex: nome do cliente inserido depois)',
+        ).pack(anchor="w", padx=16, pady=(10, 2))
+        self.var_termo = tk.StringVar()
+        tk.Entry(self, textvariable=self.var_termo).pack(fill="x", padx=16)
+
+        tk.Label(
+            self, text="Cole aqui a lista de tarefas do RIP (uma por linha)", font=("Segoe UI", 11, "bold"),
+        ).pack(anchor="w", padx=16, pady=(10, 2))
+        self.texto_lista = tk.Text(self, height=8, wrap="none")
+        self.texto_lista.pack(fill="both", padx=16)
+
+        self.btn_cruzar = tk.Button(
+            self, text="🔀 Cruzar", bg=COR_ACENTO, fg="white", relief="flat", command=self._cruzar,
+        )
+        self.btn_cruzar.pack(anchor="e", padx=16, pady=(10, 6))
+
+        tk.Label(self, text="Resultado", font=("Segoe UI", 11, "bold")).pack(anchor="w", padx=16)
+        self.texto_resultado = tk.Text(self, height=12, state="disabled", wrap="word", bg="#fafafa")
+        self.texto_resultado.pack(fill="both", expand=True, padx=16, pady=(2, 14))
+
+        self.grab_set()
+
+    def _escolher_pasta(self):
+        pasta = filedialog.askdirectory()
+        if pasta:
+            self.var_pasta.set(pasta)
+
+    def _cruzar(self):
+        pasta = self.var_pasta.get().strip()
+        if not pasta:
+            messagebox.showwarning("Pasta vazia", "Escolha a pasta de produção.")
+            return
+        lista = [linha for linha in self.texto_lista.get("1.0", "end").splitlines() if linha.strip()]
+        if not lista:
+            messagebox.showwarning("Lista vazia", "Cole a lista de tarefas do RIP, uma por linha.")
+            return
+
+        termo = self.var_termo.get().strip() or None
+        try:
+            resultado = rastrear_rip(pasta, lista, termo_ignorado=termo)
+        except FileNotFoundError as e:
+            messagebox.showerror("Pasta não encontrada", str(e))
+            return
+        except OSError as e:
+            messagebox.showerror("Erro ao mover arquivo", str(e))
+            return
+
+        self._mostrar_resultado(resultado)
+
+    def _mostrar_resultado(self, resultado):
+        linhas = [f"Movidos pra Prontos ({len(resultado['movidos_pra_prontos'])}):"]
+        linhas += [f"  {nome}" for nome in resultado["movidos_pra_prontos"]] or ["  (nenhum)"]
+        linhas.append("")
+        linhas.append(f"Movidos de volta pra solto ({len(resultado['movidos_pra_solto'])}):")
+        linhas += [f"  {nome}" for nome in resultado["movidos_pra_solto"]] or ["  (nenhum)"]
+        linhas.append("")
+        linhas.append(f"Achados em pasta de OUTRO cliente e inseridos no Prontos de lá ({len(resultado['achados_em_outra_pasta'])}):")
+        if resultado["achados_em_outra_pasta"]:
+            for entrada_rip, origem, destino in resultado["achados_em_outra_pasta"]:
+                linhas.append(f"  {entrada_rip}")
+                linhas.append(f"      de: {origem}")
+                linhas.append(f"      pra: {destino}")
+        else:
+            linhas.append("  (nenhum)")
+        linhas.append("")
+        linhas.append(f"Duvidosos, NÃO movidos ({len(resultado['duvidosos'])}):")
+        if resultado["duvidosos"]:
+            for direcao, nome, parecido_com in resultado["duvidosos"]:
+                linhas.append(f"  [{direcao}] {nome}")
+                linhas.append(f"      parecido com: {parecido_com}")
+        else:
+            linhas.append("  (nenhum)")
+        if resultado["nao_encontrados"]:
+            linhas.append("")
+            linhas.append(f"Não encontrados em pasta nenhuma ({len(resultado['nao_encontrados'])}):")
+            linhas += [f"  {nome}" for nome in resultado["nao_encontrados"]]
+        if resultado["erros"]:
+            linhas.append("")
+            linhas.append(f"Colisões, NÃO movidos ({len(resultado['erros'])}):")
+            linhas += [f"  {msg}" for msg in resultado["erros"]]
+
+        self.texto_resultado.configure(state="normal")
+        self.texto_resultado.delete("1.0", "end")
+        self.texto_resultado.insert("1.0", "\n".join(linhas))
+        self.texto_resultado.configure(state="disabled")
 
 
 class JanelaConfiguracoes(tk.Toplevel):

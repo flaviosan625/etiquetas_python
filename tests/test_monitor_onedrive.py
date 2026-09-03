@@ -1,6 +1,8 @@
 import sys
 import pathlib
+import subprocess
 import time
+import uuid
 from datetime import datetime
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
@@ -9,6 +11,7 @@ import os
 
 from monitor_onedrive import (
     _deve_ignorar, _mensagem_evento, _mensagem_movido, _Handler, EstadoVigia, gerar_relatorio_atividade,
+    _ja_esta_rodando, _organizar_producao_ao_iniciar, _tem_pendencia, _icone_bandeja,
 )
 
 
@@ -65,6 +68,159 @@ def test_debounce_e_por_caminho_nao_global():
     handler._avisar("criado", "C:/pasta/b.pdf")
 
     assert len(avisos) == 2, "arquivos diferentes nunca deveriam suprimir um ao outro"
+
+
+def test_ja_esta_rodando_detecta_segunda_instancia():
+    """
+    Bug real de produção (2026-09-02): o atalho de inicialização
+    automática do monitor rodou 2x sem ninguém perceber (2 pythonw.exe
+    idênticos vigiando a mesma pasta, gastando RAM à toa numa máquina
+    que já estava com só 0,4GB livre). Usa um nome de mutex exclusivo
+    pro teste, nunca o nome real usado pela instância de produção.
+    """
+    nome_mutex = f"Uny.CV.Teste.{uuid.uuid4()}"
+
+    assert _ja_esta_rodando(nome_mutex) is False, "primeira instância não pode se achar duplicada"
+
+    codigo = (
+        "import sys; sys.path.insert(0, r'" + str(pathlib.Path(__file__).resolve().parent.parent) + "'); "
+        "from monitor_onedrive import _ja_esta_rodando; "
+        "print(_ja_esta_rodando(" + repr(nome_mutex) + ")); "
+        "import time; time.sleep(0.2)"
+    )
+    resultado = subprocess.run(
+        [sys.executable, "-c", codigo], capture_output=True, text=True, timeout=15,
+    )
+    assert resultado.stdout.strip() == "True", "segunda instância (processo separado) precisa se achar duplicada"
+
+
+def test_organizar_producao_ao_iniciar_organiza_e_avisa(tmp_path):
+    """
+    Pedido do usuário (2026-09-03): funcionário joga arquivo de
+    madrugada, tudo bagunçado — ao ligar o PC de manhã, o monitor
+    organiza sozinho antes de começar a vigiar.
+    """
+    eventos = tmp_path / "EVENTOS"
+    (eventos / "CLIENTE A" / "PRODUCAO").mkdir(parents=True)
+    (eventos / "CLIENTE A" / "PRODUCAO" / "1UN LONA 2,00X1,00M_a.pdf").write_bytes(b"x")
+
+    avisos = []
+    _organizar_producao_ao_iniciar(eventos, notificar=lambda msg, titulo=None: avisos.append(msg))
+
+    assert (eventos / "CLIENTE A" / "PRODUCAO" / "LONAS" / "1UN LONA 2,00X1,00M_a.pdf").exists()
+    assert len(avisos) == 1
+    assert "CLIENTE A" in avisos[0]
+
+
+def test_organizar_producao_ao_iniciar_nao_avisa_se_nada_pra_organizar(tmp_path):
+    eventos = tmp_path / "EVENTOS"
+    eventos.mkdir()
+
+    avisos = []
+    _organizar_producao_ao_iniciar(eventos, notificar=lambda msg, titulo=None: avisos.append(msg))
+
+    assert avisos == []
+
+
+def test_organizar_producao_ao_iniciar_nunca_trava_o_monitor(tmp_path, monkeypatch):
+    import monitor_onedrive as mod
+
+    def quebra(*args, **kwargs):
+        raise RuntimeError("config ilegível, por exemplo")
+
+    monkeypatch.setattr(mod, "carregar_config", quebra)
+
+    # não pode levantar exceção nenhuma
+    _organizar_producao_ao_iniciar(tmp_path, notificar=lambda msg, titulo=None: None)
+
+
+def test_tem_pendencia_detecta_arquivo_fora_do_prontos(tmp_path):
+    from producao import garantir_estrutura_producao, PASTA_LONA
+
+    eventos = tmp_path / "EVENTOS"
+    assert _tem_pendencia(eventos) is False, "pasta vazia/inexistente nao pode acusar pendencia"
+
+    pasta_producao = eventos / "CLIENTE A" / "PRODUCAO"
+    garantir_estrutura_producao(pasta_producao)
+    assert _tem_pendencia(eventos) is False, "estrutura recem-criada, sem arquivo, nao e pendencia"
+
+    (pasta_producao / PASTA_LONA / "a.pdf").write_bytes(b"x")
+    assert _tem_pendencia(eventos) is True
+
+
+def test_icone_bandeja_com_alerta_e_diferente_do_normal():
+    normal = _icone_bandeja(alerta=False)
+    com_alerta = _icone_bandeja(alerta=True)
+    assert normal.tobytes() != com_alerta.tobytes()
+
+
+class _EventoFalso:
+    def __init__(self, src_path, is_directory):
+        self.src_path = src_path
+        self.is_directory = is_directory
+
+
+def test_criar_pasta_producao_ja_estrutura_na_hora(tmp_path):
+    """Pedido do usuário (2026-09-03): não espera reiniciar — reage assim que a pasta é criada."""
+    import copy
+    from config import CONFIG_PADRAO
+    from producao import PASTA_LONA, PASTA_ADESIVO, PASTA_CORTE, PASTA_COMPOSTOS, NOME_SUBPASTA_PRONTOS
+
+    pasta_producao = tmp_path / "CLIENTE X" / "PRODUCAO 01_09"
+    pasta_producao.mkdir(parents=True)
+
+    handler = _Handler(tmp_path, notificar=lambda *a, **k: None,
+                        carregar_config_fn=lambda: copy.deepcopy(CONFIG_PADRAO))
+    handler.on_created(_EventoFalso(str(pasta_producao), is_directory=True))
+
+    for nome in (PASTA_LONA, PASTA_ADESIVO, PASTA_CORTE, PASTA_COMPOSTOS):
+        assert (pasta_producao / nome / NOME_SUBPASTA_PRONTOS).is_dir()
+
+
+def test_criar_arquivo_solto_dentro_de_producao_ja_organiza_na_hora(tmp_path):
+    import copy
+    from config import CONFIG_PADRAO
+    from producao import PASTA_LONA, garantir_estrutura_producao
+
+    pasta_producao = tmp_path / "CLIENTE X" / "PRODUCAO"
+    garantir_estrutura_producao(pasta_producao)
+    arquivo = pasta_producao / "1UN LONA 2,00X1,00M_a.pdf"
+    arquivo.write_bytes(b"x")
+
+    handler = _Handler(tmp_path, notificar=lambda *a, **k: None,
+                        carregar_config_fn=lambda: copy.deepcopy(CONFIG_PADRAO))
+    handler.on_created(_EventoFalso(str(arquivo), is_directory=False))
+
+    assert (pasta_producao / PASTA_LONA / "1UN LONA 2,00X1,00M_a.pdf").exists()
+    assert not arquivo.exists()
+
+
+def test_arquivo_fora_de_pasta_producao_nao_e_mexido(tmp_path):
+    import copy
+    from config import CONFIG_PADRAO
+
+    pasta_qualquer = tmp_path / "CLIENTE X" / "OUTRA_COISA"
+    pasta_qualquer.mkdir(parents=True)
+    arquivo = pasta_qualquer / "1UN LONA 2,00X1,00M_a.pdf"
+    arquivo.write_bytes(b"x")
+
+    handler = _Handler(tmp_path, notificar=lambda *a, **k: None,
+                        carregar_config_fn=lambda: copy.deepcopy(CONFIG_PADRAO))
+    handler.on_created(_EventoFalso(str(arquivo), is_directory=False))
+
+    assert arquivo.exists(), "so reage dentro de pasta PRODUCAO*, resto fica quieto"
+
+
+def test_reagir_producao_nunca_estoura_erro_mesmo_se_config_falhar(tmp_path):
+    pasta_producao = tmp_path / "CLIENTE X" / "PRODUCAO"
+    pasta_producao.mkdir(parents=True)
+
+    def config_quebrada():
+        raise RuntimeError("config ilegível")
+
+    handler = _Handler(tmp_path, notificar=lambda *a, **k: None, carregar_config_fn=config_quebrada)
+    # não pode levantar exceção nenhuma
+    handler.on_created(_EventoFalso(str(pasta_producao), is_directory=True))
 
 
 def test_arquivo_temporario_nunca_avisa_mesmo_fora_da_janela():

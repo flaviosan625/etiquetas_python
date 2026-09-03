@@ -14,11 +14,18 @@ import pathlib
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from datetime import datetime, timedelta
 
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
+
+from config import carregar_config
+from producao import (
+    varrer_e_organizar_todas, gerar_relatorio_pendencias, abrir_relatorio_pendencias,
+    garantir_estrutura_producao, organizar_pasta_producao, NOME_PASTA_PRODUCAO,
+)
 
 PASTA_PADRAO = pathlib.Path.home() / "OneDrive" / "UNYCOMUNICACAO" / "EVENTOS"
 
@@ -157,12 +164,15 @@ class _Handler(FileSystemEventHandler):
     'notificar' e 'agora' são injetáveis pra dar pra testar a lógica
     de debounce/filtro sem precisar de um relógio de verdade nem
     disparar notificação real (ver tests/test_monitor_onedrive.py).
+    'carregar_config_fn' é injetável pelo mesmo motivo, pra reagir a
+    pasta de produção em teste sem depender do config.json real.
     """
 
-    def __init__(self, pasta_raiz, notificar, agora=time.monotonic):
+    def __init__(self, pasta_raiz, notificar, agora=time.monotonic, carregar_config_fn=carregar_config):
         self._pasta_raiz = pathlib.Path(pasta_raiz)
         self._notificar = notificar
         self._agora = agora
+        self._carregar_config = carregar_config_fn
         self._ultimo_aviso = {}
 
     def _pronto_pra_avisar(self, caminho):
@@ -180,7 +190,36 @@ class _Handler(FileSystemEventHandler):
             return
         self._notificar(_mensagem_evento(tipo, caminho, self._pasta_raiz))
 
+    def _reagir_producao(self, caminho, eh_diretorio):
+        """
+        Pedido do usuário (2026-09-03): não precisa esperar reiniciar
+        o monitor pra organizar — reage na hora. Pasta nova cujo nome
+        começa com "PRODUCAO" (ex: "PRODUCAO 01_09") já ganha a
+        estrutura (IMPRESSAO/CORTE/COMPOSTOS + Prontos) na hora que é
+        criada; arquivo novo caindo solto direto dentro de uma pasta
+        de produção já existente é reorganizado na hora, sem esperar
+        próxima vez que o monitor ligar. Nunca estoura erro — reação
+        best-effort, não pode derrubar o monitor.
+        """
+        try:
+            caminho = pathlib.Path(caminho)
+            if eh_diretorio:
+                pasta_producao = caminho if caminho.name.upper().startswith(NOME_PASTA_PRODUCAO) else None
+            else:
+                pasta_producao = caminho.parent if caminho.parent.name.upper().startswith(NOME_PASTA_PRODUCAO) else None
+
+            if pasta_producao is None:
+                return
+
+            config = self._carregar_config()
+            if eh_diretorio:
+                garantir_estrutura_producao(pasta_producao)
+            organizar_pasta_producao(pasta_producao, config)
+        except Exception:
+            pass
+
     def on_created(self, event):
+        self._reagir_producao(event.src_path, event.is_directory)
         if not event.is_directory:
             self._avisar("criado", event.src_path)
 
@@ -407,14 +446,104 @@ def abrir_relatorio_atividade(pasta=None, dias=1, data_inicio=None, data_fim=Non
     return caminho
 
 
-def _icone_bandeja():
-    """Ícone simples gerado na hora — sem depender de nenhum arquivo de imagem externo."""
+_NOME_MUTEX = "Uny.CV.MonitorDePastas.InstanciaUnica"
+_mutex_instancia = None  # precisa ficar viva até o processo terminar — ver _ja_esta_rodando
+
+
+def _ja_esta_rodando(nome_mutex=_NOME_MUTEX):
+    """
+    Trava de instância única via mutex nomeado do Windows — o Windows
+    libera esse mutex sozinho quando o processo termina, não importa
+    como (crash incluso), então nunca fica "preso" do jeito que um
+    arquivo de lock comum ficaria. Achado ao vivo (2026-09-02): o
+    atalho de inicialização automática rodou 2x sem ninguém perceber
+    (2 pythonw.exe idênticos), consumindo RAM à toa numa máquina que
+    já estava com só 0,4GB livre.
+
+    'nome_mutex' só existe pro teste conseguir usar um nome exclusivo
+    (nunca o mesmo mutex da instância real rodando de verdade).
+    """
+    global _mutex_instancia
+    import win32api
+    import win32event
+    import winerror
+
+    _mutex_instancia = win32event.CreateMutex(None, False, nome_mutex)
+    return win32api.GetLastError() == winerror.ERROR_ALREADY_EXISTS
+
+
+def _icone_bandeja(alerta=False):
+    """
+    Ícone simples gerado na hora — sem depender de nenhum arquivo de
+    imagem externo. Com 'alerta=True', ganha um selo vermelho no canto
+    (pedido do usuário, 2026-09-03: saber de relance se algum cliente
+    tem pendência, sem precisar abrir nada).
+    """
     from PIL import Image, ImageDraw
 
     imagem = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
     desenho = ImageDraw.Draw(imagem)
     desenho.ellipse((4, 4, 60, 60), fill=(37, 99, 235, 255))
+    if alerta:
+        desenho.ellipse((40, 2, 62, 24), fill=(220, 38, 38, 255), outline=(255, 255, 255, 255), width=2)
     return imagem
+
+
+def _tem_pendencia(pasta_eventos):
+    """True se algum cliente tiver arquivo fora do Prontos — nunca estoura erro (extra best-effort)."""
+    try:
+        return bool(gerar_relatorio_pendencias(pasta_eventos))
+    except Exception:
+        return False
+
+
+def _monitorar_pendencias_pra_icone(icon, pasta_eventos, intervalo_segundos=300):
+    """
+    Roda numa thread separada (daemon — some sozinha quando o programa
+    fecha) recalculando de tempos em tempos se tem pendência, pra
+    manter o ícone da bandeja atualizado mesmo sem nenhum evento de
+    arquivo disparar nesse meio tempo.
+    """
+    estado_anterior = None
+    while True:
+        tem_pendencia = _tem_pendencia(pasta_eventos)
+        if tem_pendencia != estado_anterior:
+            try:
+                icon.icon = _icone_bandeja(alerta=tem_pendencia)
+            except Exception:
+                pass
+            estado_anterior = tem_pendencia
+        time.sleep(intervalo_segundos)
+
+
+def _organizar_producao_ao_iniciar(pasta_eventos, notificar):
+    """
+    Varredura de "arrumar tudo que ficou bagunçado enquanto o
+    computador estava desligado" (pedido do usuário, 2026-09-03: tem
+    funcionário que joga arquivo direto na pasta de madrugada, tudo
+    misturado). Roda uma vez, ao iniciar o monitor — nunca decide
+    sozinho o que está "pronto" (impresso/cortado), só garante a
+    estrutura de pastas (IMPRESSAO/CORTE/COMPOSTOS + Prontos) e separa
+    o que caiu solto pra pasta certa (ver producao.py).
+
+    Nunca trava o monitor se der problema (config ilegível, etc.) —
+    só a organização automática fica sem rodar dessa vez.
+    """
+    try:
+        config = carregar_config()
+        resultado = varrer_e_organizar_todas(pasta_eventos, config)
+    except Exception:
+        return
+
+    total_movidos = sum(len(r["movidos"]) for r in resultado.values())
+    if total_movidos == 0:
+        return
+
+    linhas = [f"{cliente}: {len(r['movidos'])} arquivo(s) organizado(s)" for cliente, r in resultado.items() if r["movidos"]]
+    try:
+        notificar("\n".join(linhas), titulo="Produção organizada automaticamente")
+    except Exception:
+        pass
 
 
 def rodar_com_bandeja(pasta=None, notificar=notificar_windows):
@@ -431,6 +560,7 @@ def rodar_com_bandeja(pasta=None, notificar=notificar_windows):
         raise FileNotFoundError(f"Pasta não encontrada: {pasta}")
 
     _garantir_atalho_registrado()
+    _organizar_producao_ao_iniciar(pasta, notificar)
 
     handler = _Handler(pasta, notificar)
     vigia = EstadoVigia(pasta, handler)
@@ -471,6 +601,15 @@ def rodar_com_bandeja(pasta=None, notificar=notificar_windows):
             except Exception:
                 pass
 
+    def _pendencias_por_cliente(icon, item):
+        try:
+            abrir_relatorio_pendencias(pasta)
+        except Exception as e:
+            try:
+                notificar("Não consegui gerar o relatório: " + str(e), titulo="Erro")
+            except Exception:
+                pass
+
     def _sair(icon, item):
         vigia.parar()
         icon.stop()
@@ -480,13 +619,23 @@ def rodar_com_bandeja(pasta=None, notificar=notificar_windows):
         pystray.MenuItem("Abrir pasta", _abrir_pasta),
         pystray.MenuItem("Relatório de hoje", _relatorio_hoje),
         pystray.MenuItem("Relatório dos últimos 7 dias", _relatorio_semana),
+        pystray.MenuItem("Pendências por cliente", _pendencias_por_cliente),
         pystray.MenuItem("Sair", _sair),
     )
-    icon = pystray.Icon("uny_cv_monitor", _icone_bandeja(), "Monitor de Pastas - Uny CV", menu)
+    icon = pystray.Icon(
+        "uny_cv_monitor", _icone_bandeja(alerta=_tem_pendencia(pasta)), "Monitor de Pastas - Uny CV", menu,
+    )
+
+    thread_pendencias = threading.Thread(
+        target=_monitorar_pendencias_pra_icone, args=(icon, pasta), daemon=True,
+    )
+    thread_pendencias.start()
 
     vigia.iniciar()
     icon.run()
 
 
 if __name__ == "__main__":
+    if _ja_esta_rodando():
+        sys.exit(0)
     rodar_com_bandeja()
