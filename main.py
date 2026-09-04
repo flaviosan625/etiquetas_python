@@ -58,6 +58,31 @@ def rodar_gui():
 
 
 if __name__ == "__main__":
+    # O log do modo linha de comando usa emoji — sem isso, um console
+    # preso na codepage legada do Windows (cp1252, comum fora do
+    # Windows Terminal) quebra com UnicodeEncodeError na primeira linha.
+    for _stream in (sys.stdout, sys.stderr):
+        if hasattr(_stream, "reconfigure"):
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+
+    # rodando via pythonw.exe (sem console — o jeito normal de abrir a
+    # interface gráfica, com duplo clique), sys.stdout/stderr são None,
+    # não um stream fechado. Qualquer print() perdido em algum lugar do
+    # código (aviso de biblioteca, debug esquecido) levantaria
+    # AttributeError ao tentar escrever em None — troca por um destino
+    # que só descarta, pra nunca derrubar o programa por causa disso.
+    class _SemSaida:
+        def write(self, *a, **k):
+            pass
+
+        def flush(self):
+            pass
+
+    if sys.stdout is None:
+        sys.stdout = _SemSaida()
+    if sys.stderr is None:
+        sys.stderr = _SemSaida()
+
     try:
         args = parse_argumentos()
         if args.cliente or args.gerente or args.produtor or args.cli:

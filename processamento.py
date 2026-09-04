@@ -708,6 +708,8 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
         # final. A cópia nunca sobrescreve nem move o original (pedido
         # do usuário: "reduza o que precisar... não mexer nos arquivos
         # originais" — ver conversao_adobe.reduzir_pdf_grande).
+        pix_pagina0_cache = None
+        pix_pagina0_teve_warning = False
         try:
             pymupdf.TOOLS.reset_mupdf_warnings()
             _rect_teste = pdf_original[0].rect
@@ -718,7 +720,16 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
             else:
                 _escala_teste = 1.0
             _escala_teste *= DPI_ETIQUETA / 72.0
-            pdf_original[0].get_pixmap(matrix=pymupdf.Matrix(_escala_teste, _escala_teste))
+            # Guarda o resultado (em vez de só testar e descartar) — é
+            # exatamente o mesmo render que a primeira página do
+            # arquivo ia precisar de novo logo abaixo (mesma caixa de
+            # destino), então reaproveitar aqui evita renderizar a
+            # página mais pesada do arquivo duas vezes (achado real,
+            # 2026-09-04: dobrava o tempo/memória logo no pior caso —
+            # arquivos gigantes — que é exatamente o que essa
+            # pré-checagem existe pra proteger).
+            pix_pagina0_cache = pdf_original[0].get_pixmap(matrix=pymupdf.Matrix(_escala_teste, _escala_teste))
+            pix_pagina0_teve_warning = bool(pymupdf.TOOLS.mupdf_warnings())
         except Exception:
             pdf_original.close()
             logger.emitir(
@@ -794,11 +805,20 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
                 # aviso interno, e o resultado seria uma etiqueta em branco
                 # se a gente não conferisse. TOOLS.mupdf_warnings() é a
                 # única forma de detectar isso.
-                pymupdf.TOOLS.reset_mupdf_warnings()
                 escala_render = escala_fit * (DPI_ETIQUETA / 72.0)
-                pix_etiqueta = pagina_fonte.get_pixmap(matrix=pymupdf.Matrix(escala_render, escala_render))
+                reaproveitar_pagina0 = (
+                    num_pag == 0 and pix_pagina0_cache is not None
+                    and abs(escala_render - _escala_teste) < 1e-6
+                )
+                if reaproveitar_pagina0:
+                    pix_etiqueta = pix_pagina0_cache
+                    houve_warning = pix_pagina0_teve_warning
+                else:
+                    pymupdf.TOOLS.reset_mupdf_warnings()
+                    pix_etiqueta = pagina_fonte.get_pixmap(matrix=pymupdf.Matrix(escala_render, escala_render))
+                    houve_warning = bool(pymupdf.TOOLS.mupdf_warnings())
 
-                if pymupdf.TOOLS.mupdf_warnings():
+                if houve_warning:
                     # não deu pra rasterizar — e embutir o PDF de origem
                     # como vetor (o jeito antigo) arrastaria a imagem
                     # gigante de origem pro checklist inteiro (já vimos

@@ -89,6 +89,20 @@ class JanelaPrincipal(tk.Tk):
         self._montar_layout()
         self.after(100, self._checar_fila)
 
+    def report_callback_exception(self, exc, val, tb):
+        # Tkinter chama isso quando um comando de botão/atalho/evento
+        # levanta uma exceção não tratada — o padrão é só imprimir no
+        # console, que rodando via pythonw.exe (sem console, o jeito
+        # normal de abrir o programa) não existe: o erro simplesmente
+        # desaparece e a tela fica num estado esquisito sem explicação
+        # nenhuma. Aqui ele pelo menos aparece no log da própria tela.
+        import traceback
+        mensagem = "".join(traceback.format_exception(exc, val, tb)).strip()
+        try:
+            self._registrar_log("err", f"Erro inesperado: {mensagem}")
+        except Exception:
+            pass
+
     # ---------- montagem da tela ----------
 
     def _montar_layout(self):
@@ -425,43 +439,60 @@ class JanelaPrincipal(tk.Tk):
             on_log("ok", f"OS enviada pro OneDrive: {destino}")
 
     def _checar_fila(self):
+        # O 'finally' é o que garante que essa checagem sempre volta a
+        # se reagendar (self.after mais abaixo) — sem isso, um erro
+        # inesperado ao tratar UM evento (ex: um resultado com um
+        # formato que a tela não esperava) quebrava esse
+        # reagendamento pra sempre: a tela parava de atualizar (barra
+        # de progresso, log, botão "Processando...") ainda no meio de
+        # um processamento longo, mesmo que a thread de verdade
+        # continuasse rodando por trás — pro usuário isso é
+        # indistinguível de "travou" (achado real, 2026-09-04).
         try:
             while True:
-                evento = self.fila_eventos.get_nowait()
-                tipo = evento[0]
-                if tipo == "log":
-                    self._registrar_log(evento[1], evento[2])
-                elif tipo == "progress":
-                    atual, total = evento[1], evento[2]
-                    self.barra_progresso["maximum"] = max(total, 1)
-                    self.barra_progresso["value"] = atual
-                    self.var_progresso_texto.set(f"Processando {atual} de {total}...")
-                elif tipo == "fim":
-                    self.processando = False
-                    self.btn_processar.configure(state="normal", text="▶  Processar Etiquetas")
-                    resultado = evento[1]
-                    if resultado:
-                        self.var_progresso_texto.set("Concluído.")
-                        novos = resultado.get("arquivos_novos", 0)
-                        ignorados = resultado.get("arquivos_ignorados", 0)
-                        if resultado.get("atualizacao") and novos == 0:
-                            messagebox.showinfo(
-                                "Nada novo pra processar",
-                                f"Todos os {ignorados} arquivo(s) da pasta de entrada já tinham sido "
-                                f"processados nesse pedido antes. Nada foi gerado.",
-                            )
-                        elif resultado.get("atualizacao"):
-                            texto = f"{novos} arquivo(s) novo(s) processado(s) em:\n{resultado['pasta_saida']}"
-                            if ignorados:
-                                texto += f"\n\n({ignorados} arquivo(s) já processado(s) antes foram ignorados.)"
-                            messagebox.showinfo("Pedido atualizado", texto)
-                        else:
-                            messagebox.showinfo("Concluído", f"Etiquetas geradas em:\n{resultado['pasta_saida']}")
-                    else:
-                        self.var_progresso_texto.set("Processamento interrompido — veja o log acima.")
-        except queue.Empty:
-            pass
-        self.after(150, self._checar_fila)
+                try:
+                    evento = self.fila_eventos.get_nowait()
+                except queue.Empty:
+                    break
+                try:
+                    self._tratar_evento_fila(evento)
+                except Exception as e:
+                    self._registrar_log("err", f"Erro inesperado ao atualizar a tela: {e}")
+        finally:
+            self.after(150, self._checar_fila)
+
+    def _tratar_evento_fila(self, evento):
+        tipo = evento[0]
+        if tipo == "log":
+            self._registrar_log(evento[1], evento[2])
+        elif tipo == "progress":
+            atual, total = evento[1], evento[2]
+            self.barra_progresso["maximum"] = max(total, 1)
+            self.barra_progresso["value"] = atual
+            self.var_progresso_texto.set(f"Processando {atual} de {total}...")
+        elif tipo == "fim":
+            self.processando = False
+            self.btn_processar.configure(state="normal", text="▶  Processar Etiquetas")
+            resultado = evento[1]
+            if resultado:
+                self.var_progresso_texto.set("Concluído.")
+                novos = resultado.get("arquivos_novos", 0)
+                ignorados = resultado.get("arquivos_ignorados", 0)
+                if resultado.get("atualizacao") and novos == 0:
+                    messagebox.showinfo(
+                        "Nada novo pra processar",
+                        f"Todos os {ignorados} arquivo(s) da pasta de entrada já tinham sido "
+                        f"processados nesse pedido antes. Nada foi gerado.",
+                    )
+                elif resultado.get("atualizacao"):
+                    texto = f"{novos} arquivo(s) novo(s) processado(s) em:\n{resultado['pasta_saida']}"
+                    if ignorados:
+                        texto += f"\n\n({ignorados} arquivo(s) já processado(s) antes foram ignorados.)"
+                    messagebox.showinfo("Pedido atualizado", texto)
+                else:
+                    messagebox.showinfo("Concluído", f"Etiquetas geradas em:\n{resultado['pasta_saida']}")
+            else:
+                self.var_progresso_texto.set("Processamento interrompido — veja o log acima.")
 
 
 class JanelaEscolherPedido(tk.Toplevel):
