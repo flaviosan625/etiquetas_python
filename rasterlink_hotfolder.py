@@ -49,12 +49,19 @@ import time
 PASTA_FILA_ONEDRIVE = pathlib.Path.home() / "OneDrive" / "UNYCOMUNICACAO" / "Fila de Impressao RasterLink"
 NOME_SUBPASTA_ENVIADOS = "Enviados"
 
-# {nome do Favorito no RasterLink7: caminho da hot folder local dessa
-# impressora, NESSA máquina}. O nome tem que ser IDÊNTICO ao nome da
-# subpasta que enviar_para_fila cria dentro da fila do OneDrive.
+# {nome do Favorito no RasterLink7: config da impressora NESSA máquina}.
+# O nome tem que ser IDÊNTICO ao nome da subpasta que enviar_para_fila
+# cria dentro da fila do OneDrive.
+#
+# 'largura_util_m' é a largura que a máquina realmente imprime (já
+# descontada a margem lateral, medida na prática pelo usuário —
+# 2026-09-05), usada pra girar sozinho o arquivo que vier mais largo
+# que isso. É opcional: uma máquina configurada só com o caminho da
+# hot folder (string) continua funcionando, só não ganha o giro
+# automático.
 MAQUINAS = {
-    "UJV 100 UNY CV": r"C:\MijCtrl\Hot\UJV 100 UNY CV",
-    "SWJ320A": r"C:\MijCtrl\Hot\SWJ320A",
+    "UJV 100 UNY CV": {"hot_folder": r"C:\MijCtrl\Hot\UJV 100 UNY CV", "largura_util_m": 1.48},
+    "SWJ320A": {"hot_folder": r"C:\MijCtrl\Hot\SWJ320A", "largura_util_m": 3.20},
 }
 
 # Extensões que o RasterLink7 aceita como arte de impressão — mesma
@@ -62,6 +69,9 @@ MAQUINAS = {
 # processamento.py), pra nunca empurrar um .txt/.zip de referência
 # pra dentro da hot folder do RIP sem querer.
 _EXTENSOES_ACEITAS = (".pdf", ".ai", ".png", ".jpg", ".jpeg", ".eps", ".tif", ".tiff")
+
+# Folga de 1mm na comparação de largura — ver _copiar_para_hot_folder.
+_TOLERANCIA_LARGURA_M = 0.001
 
 
 def enviar_para_fila(caminho_arquivo, nome_maquina, pasta_fila=None, maquinas=None):
@@ -110,8 +120,125 @@ def _arquivo_estavel(caminho, espera_segundos=3):
     return tamanho_antes == tamanho_depois
 
 
-def _vigiar_uma_maquina(pasta_maquina, hot_folder_str, logger):
+def _config_maquina(valor):
+    """
+    Aceita as duas formas de configurar uma máquina em MAQUINAS: só o
+    caminho da hot folder (string) ou um dict com 'hot_folder' e
+    'largura_util_m'. Devolve sempre (hot_folder, largura_util_m), com
+    largura None quando não foi informada — nesse caso o giro
+    automático simplesmente não acontece pra essa máquina.
+    """
+    if isinstance(valor, dict):
+        return valor.get("hot_folder"), valor.get("largura_util_m")
+    return valor, None
+
+
+def _importar_pymupdf():
+    """
+    Devolve o módulo pymupdf, ou None se não estiver instalado. A
+    máquina do RIP tem um Python instalado do zero só pra rodar esse
+    vigia (2026-09-04) e pode não ter a biblioteca — sem ela o vigia
+    perde só a análise de largura, nunca para de enviar arquivo.
+    """
+    try:
+        import pymupdf
+        return pymupdf
+    except ImportError:
+        return None
+
+
+def _largura_altura_m(caminho, pymupdf):
+    """Tamanho físico da 1ª página do PDF em metros, ou None se não der pra ler."""
+    metros_por_ponto = 0.0254 / 72
+    try:
+        doc = pymupdf.open(str(caminho))
+        try:
+            rect = doc.load_page(0).rect
+        finally:
+            doc.close()
+    except Exception:
+        return None
+    return rect.width * metros_por_ponto, rect.height * metros_por_ponto
+
+
+def _copiar_para_hot_folder(arquivo, destino, largura_util_m, logger):
+    """
+    Copia 'arquivo' pra hot folder do RIP, girando 90° quando for um
+    PDF mais largo que a máquina que caberia deitado. O giro é sempre
+    só na CÓPIA — o arquivo que fica guardado em 'Enviados' continua
+    exatamente como chegou.
+
+    Quando não cabe nem girado, manda assim mesmo e registra o aviso
+    (escolha do usuário, 2026-09-05: prefere decidir dentro do
+    RasterLink a ter arquivo represado sem ele ver).
+    """
+    if not largura_util_m or arquivo.suffix.lower() != ".pdf":
+        shutil.copy2(arquivo, destino)
+        return
+
+    pymupdf = _importar_pymupdf()
+    if pymupdf is None:
+        logger("warn", f"pymupdf não instalado nesta máquina — '{arquivo.name}' enviado sem conferir a largura.")
+        shutil.copy2(arquivo, destino)
+        return
+
+    tamanho = _largura_altura_m(arquivo, pymupdf)
+    if tamanho is None:
+        logger("warn", f"Não consegui ler o tamanho de '{arquivo.name}' — enviado sem conferir a largura.")
+        shutil.copy2(arquivo, destino)
+        return
+
+    largura_m, altura_m = tamanho
+    # Tolerância de 1mm: uma arte fechada exatamente na largura da
+    # bobina vira 3.2000000038m depois da conversão de pontos pra
+    # metros, e sem folga ela seria recusada por erro de arredondamento.
+    limite = largura_util_m + _TOLERANCIA_LARGURA_M
+    cabe_em_pe = largura_m <= limite
+    cabe_deitado = altura_m <= limite
+
+    if not cabe_em_pe and not cabe_deitado:
+        logger(
+            "warn",
+            f"'{arquivo.name}' tem {largura_m:.2f}x{altura_m:.2f}m e não cabe nem girado na "
+            f"máquina ({largura_util_m:.2f}m úteis) — enviado assim mesmo, confira no RasterLink.",
+        )
+        shutil.copy2(arquivo, destino)
+        return
+
+    # O que gasta bobina é o lado que corre no comprimento: em pé
+    # gasta 'altura_m', deitado gasta 'largura_m'. Então deitar só
+    # compensa quando a arte é mais alta do que larga — aí o lado
+    # maior atravessa a bobina e sobra material (pedido do usuário,
+    # 2026-09-05: "a ideia é reaproveitar o máximo de material").
+    if not cabe_deitado or (cabe_em_pe and largura_m >= altura_m):
+        shutil.copy2(arquivo, destino)
+        return
+
+    economia_m = altura_m - largura_m
+
+    try:
+        doc = pymupdf.open(str(arquivo))
+        try:
+            for pagina in doc:
+                pagina.set_rotation((pagina.rotation + 90) % 360)
+            doc.save(str(destino))
+        finally:
+            doc.close()
+    except Exception as e:
+        logger("warn", f"Falhei ao girar '{arquivo.name}' ({e}) — enviado sem girar.")
+        shutil.copy2(arquivo, destino)
+        return
+
+    if cabe_em_pe:
+        motivo = f"economiza {economia_m:.2f}m de bobina ({altura_m:.2f}m em pé contra {largura_m:.2f}m deitado)"
+    else:
+        motivo = f"tinha {largura_m:.2f}m de largura, mais que os {largura_util_m:.2f}m úteis da máquina"
+    logger("ok", f"'{arquivo.name}' girado 90° automaticamente: {motivo}.")
+
+
+def _vigiar_uma_maquina(pasta_maquina, config_maquina, logger):
     """Um ciclo, só pra UMA máquina/hot folder — ver vigiar_fila_uma_vez."""
+    hot_folder_str, largura_util_m = _config_maquina(config_maquina)
     hot_folder = pathlib.Path(hot_folder_str)
     if not hot_folder.is_dir():
         raise FileNotFoundError(f"Hot folder do RasterLink7 não encontrada: {hot_folder}")
@@ -132,7 +259,7 @@ def _vigiar_uma_maquina(pasta_maquina, hot_folder_str, logger):
             continue
 
         destino_hot_folder = hot_folder / arquivo.name
-        shutil.copy2(arquivo, destino_hot_folder)
+        _copiar_para_hot_folder(arquivo, destino_hot_folder, largura_util_m, logger)
 
         destino_enviados = pasta_enviados / arquivo.name
         if destino_enviados.exists():
@@ -169,9 +296,9 @@ def vigiar_fila_uma_vez(pasta_fila=None, maquinas=None, logger=print):
     pasta_raiz = pathlib.Path(pasta_fila or PASTA_FILA_ONEDRIVE)
 
     resultado_por_maquina = {}
-    for nome_maquina, hot_folder_str in maquinas.items():
+    for nome_maquina, config_maquina in maquinas.items():
         pasta_maquina = pasta_raiz / nome_maquina
-        resultado_por_maquina[nome_maquina] = _vigiar_uma_maquina(pasta_maquina, hot_folder_str, logger)
+        resultado_por_maquina[nome_maquina] = _vigiar_uma_maquina(pasta_maquina, config_maquina, logger)
 
     if pasta_raiz.is_dir():
         for item in pasta_raiz.iterdir():
@@ -231,15 +358,53 @@ def logger_arquivo(nivel, mensagem, caminho_log=None):
         pass
 
 
-if __name__ == "__main__":
-    # Diagnóstico bruto (2026-09-04), caminho fixo, sem depender de
-    # __file__/pathlib pra nada — só pra confirmar se o processo
-    # chegou até aqui de verdade quando rodado via pythonw.exe.
+CAMINHO_TRAVA = pathlib.Path(__file__).resolve().parent / "rasterlink_hotfolder.lock"
+
+
+def _travar_instancia_unica(caminho_trava=None):
+    """
+    Impede dois vigias rodando ao mesmo tempo na mesma máquina. Dois
+    processos varrendo a mesma fila conseguem pegar o MESMO arquivo no
+    mesmo ciclo e copiar duas vezes pra hot folder — e aí o RasterLink
+    cria job duplicado, que vira material impresso duas vezes.
+    Aconteceu de verdade (2026-09-05): a tarefa agendada e uma
+    execução manual ficaram vivas juntas.
+
+    Devolve (pode_rodar, trava). A 'trava' precisa continuar
+    referenciada enquanto o vigia roda: fechar o arquivo solta a trava.
+    """
+    caminho = pathlib.Path(caminho_trava or CAMINHO_TRAVA)
     try:
-        with open(r"C:\RasterLink\diagnostico_inicio.txt", "a", encoding="utf-8") as _f:
-            _f.write(f"iniciado em {datetime.datetime.now()}\n")
-    except Exception:
-        pass
+        arquivo = open(caminho, "a+")
+    except OSError:
+        # Sem conseguir nem criar o arquivo de trava, deixa rodar: fila
+        # parada é pior que o risco de duplicata, e é a mesma regra do
+        # resto do módulo — falha nossa nunca segura arquivo.
+        return True, None
+
+    try:
+        import msvcrt
+    except ImportError:
+        return True, arquivo  # fora do Windows não trava, mas não atrapalha
+
+    try:
+        arquivo.seek(0)
+        msvcrt.locking(arquivo.fileno(), msvcrt.LK_NBLCK, 1)
+    except OSError:
+        arquivo.close()
+        return False, None
+    return True, arquivo
+
+
+if __name__ == "__main__":
+    _pode_rodar, _trava = _travar_instancia_unica()
+    if not _pode_rodar:
+        logger_arquivo(
+            "warn",
+            "Já existe outro vigia rodando nesta máquina — esta instância vai sair "
+            "pra não mandar arquivo duplicado pro RIP.",
+        )
+        raise SystemExit(0)
 
     try:
         vigiar_fila(logger=logger_arquivo)

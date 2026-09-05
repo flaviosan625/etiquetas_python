@@ -6,8 +6,31 @@ from rasterlink_hotfolder import enviar_para_fila, logger_arquivo, vigiar_fila, 
 MAQUINAS_TESTE = {"UJV100": None}  # caminho da hot folder preenchido por teste, via tmp_path
 
 
-def _maquinas(hot_folder):
-    return {"UJV100": str(hot_folder)}
+def _maquinas(hot_folder, largura_util_m=None):
+    if largura_util_m is None:
+        return {"UJV100": str(hot_folder)}
+    return {"UJV100": {"hot_folder": str(hot_folder), "largura_util_m": largura_util_m}}
+
+
+def _pdf_de(caminho, largura_cm, altura_cm):
+    """PDF de 1 pagina com tamanho fisico exato, pra testar o giro automatico."""
+    import pymupdf
+
+    pt_por_cm = 72 / 2.54
+    doc = pymupdf.open()
+    doc.new_page(width=largura_cm * pt_por_cm, height=altura_cm * pt_por_cm)
+    doc.save(str(caminho))
+    doc.close()
+
+
+def _tamanho_cm(caminho):
+    import pymupdf
+
+    pt_por_cm = 72 / 2.54
+    doc = pymupdf.open(str(caminho))
+    rect = doc.load_page(0).rect
+    doc.close()
+    return round(rect.width / pt_por_cm), round(rect.height / pt_por_cm)
 
 
 def test_enviar_para_fila_copia_pra_subpasta_da_maquina_sem_mexer_no_original(tmp_path):
@@ -183,6 +206,161 @@ def test_vigiar_fila_uma_vez_avisa_sobre_pasta_que_nao_bate_com_nenhuma_maquina(
     assert any(nivel == "warn" and "NOME_ERRADO_DIGITADO" in msg for nivel, msg in avisos)
 
 
+def _fila_com_pdf(tmp_path, monkeypatch, largura_cm, altura_cm, nome="arte.pdf"):
+    monkeypatch.setattr(rl_hf.time, "sleep", lambda s: None)
+    fila = tmp_path / "fila"
+    (fila / "UJV100").mkdir(parents=True)
+    hot_folder = tmp_path / "hotfolder"
+    hot_folder.mkdir()
+    _pdf_de(fila / "UJV100" / nome, largura_cm, altura_cm)
+    return fila, hot_folder
+
+
+def test_pdf_mais_largo_que_a_maquina_vai_girado_pra_hot_folder(tmp_path, monkeypatch):
+    # 200cm de largura numa maquina de 148cm uteis, mas so 100cm de
+    # altura — girado passa a ter 100cm de largura e cabe.
+    fila, hot_folder = _fila_com_pdf(tmp_path, monkeypatch, largura_cm=200, altura_cm=100)
+
+    avisos = []
+    vigiar_fila_uma_vez(
+        pasta_fila=str(fila), maquinas=_maquinas(hot_folder, largura_util_m=1.48),
+        logger=lambda nivel, msg: avisos.append((nivel, msg)),
+    )
+
+    assert _tamanho_cm(hot_folder / "arte.pdf") == (100, 200), "devia chegar girado no RIP"
+    assert any("gir" in msg.lower() for _, msg in avisos), "o giro precisa ficar registrado no log"
+
+
+def test_pdf_alto_e_estreito_gira_pra_gastar_menos_bobina(tmp_path, monkeypatch):
+    # 1,00x3,00m numa bobina de 3,20m: cabe dos dois jeitos, mas em pe
+    # gasta 3m de material e deitado gasta so 1m.
+    fila, hot_folder = _fila_com_pdf(tmp_path, monkeypatch, largura_cm=100, altura_cm=300)
+
+    avisos = []
+    vigiar_fila_uma_vez(
+        pasta_fila=str(fila), maquinas=_maquinas(hot_folder, largura_util_m=3.20),
+        logger=lambda nivel, msg: avisos.append((nivel, msg)),
+    )
+
+    assert _tamanho_cm(hot_folder / "arte.pdf") == (300, 100), "devia deitar pra economizar bobina"
+    assert any("economiza 2.00m" in msg for _, msg in avisos), "a economia precisa aparecer no log"
+
+
+def test_pdf_ja_deitado_do_jeito_mais_economico_nao_gira(tmp_path, monkeypatch):
+    # 3,00x1,00m na bobina de 3,20m ja esta na melhor posicao: gasta 1m.
+    fila, hot_folder = _fila_com_pdf(tmp_path, monkeypatch, largura_cm=300, altura_cm=100)
+
+    vigiar_fila_uma_vez(pasta_fila=str(fila), maquinas=_maquinas(hot_folder, largura_util_m=3.20))
+
+    assert _tamanho_cm(hot_folder / "arte.pdf") == (300, 100), "girar so trocaria os lados sem ganho"
+
+
+def test_pdf_exatamente_na_largura_da_bobina_passa_sem_giro_nem_aviso(tmp_path, monkeypatch):
+    # 3,20x10,00m numa bobina de 3,20m — encaixe exato. Sem folga na
+    # comparacao, a conversao de pontos pra metros faria isso virar
+    # 3.2000000038 e ser recusado por arredondamento.
+    fila, hot_folder = _fila_com_pdf(tmp_path, monkeypatch, largura_cm=320, altura_cm=1000)
+
+    avisos = []
+    vigiar_fila_uma_vez(
+        pasta_fila=str(fila), maquinas=_maquinas(hot_folder, largura_util_m=3.20),
+        logger=lambda nivel, msg: avisos.append((nivel, msg)),
+    )
+
+    assert _tamanho_cm(hot_folder / "arte.pdf") == (320, 1000)
+    assert not any(nivel == "warn" for nivel, _ in avisos), "encaixe exato nao e problema"
+
+
+def test_pdf_que_ja_cabe_na_maquina_nunca_e_girado(tmp_path, monkeypatch):
+    fila, hot_folder = _fila_com_pdf(tmp_path, monkeypatch, largura_cm=100, altura_cm=200)
+
+    vigiar_fila_uma_vez(pasta_fila=str(fila), maquinas=_maquinas(hot_folder, largura_util_m=1.48))
+
+    assert _tamanho_cm(hot_folder / "arte.pdf") == (100, 200), "cabia do jeito que estava"
+
+
+def test_pdf_que_nao_cabe_nem_girado_vai_assim_mesmo_com_aviso(tmp_path, monkeypatch):
+    fila, hot_folder = _fila_com_pdf(tmp_path, monkeypatch, largura_cm=200, altura_cm=300)
+
+    avisos = []
+    resultado = vigiar_fila_uma_vez(
+        pasta_fila=str(fila), maquinas=_maquinas(hot_folder, largura_util_m=1.48),
+        logger=lambda nivel, msg: avisos.append((nivel, msg)),
+    )
+
+    assert resultado["UJV100"]["enviados"] == ["arte.pdf"], "escolha do usuario: manda mesmo assim"
+    assert _tamanho_cm(hot_folder / "arte.pdf") == (200, 300), "girar nao resolveria, entao vai como veio"
+    assert any(nivel == "warn" and "nem girado" in msg for nivel, msg in avisos)
+
+
+def test_original_na_fila_nunca_e_girado_mesmo_quando_a_copia_gira(tmp_path, monkeypatch):
+    fila, hot_folder = _fila_com_pdf(tmp_path, monkeypatch, largura_cm=200, altura_cm=100)
+
+    vigiar_fila_uma_vez(pasta_fila=str(fila), maquinas=_maquinas(hot_folder, largura_util_m=1.48))
+
+    arquivado = fila / "UJV100" / "Enviados" / "arte.pdf"
+    assert _tamanho_cm(arquivado) == (200, 100), "o arquivo guardado tem que ser sempre o original intacto"
+
+
+def test_maquina_sem_largura_configurada_nao_analisa_nem_gira(tmp_path, monkeypatch):
+    fila, hot_folder = _fila_com_pdf(tmp_path, monkeypatch, largura_cm=200, altura_cm=100)
+
+    vigiar_fila_uma_vez(pasta_fila=str(fila), maquinas=_maquinas(hot_folder))
+
+    assert _tamanho_cm(hot_folder / "arte.pdf") == (200, 100)
+
+
+def test_arquivo_que_nao_e_pdf_passa_intacto_sem_analise_de_largura(tmp_path, monkeypatch):
+    monkeypatch.setattr(rl_hf.time, "sleep", lambda s: None)
+    fila = tmp_path / "fila"
+    (fila / "UJV100").mkdir(parents=True)
+    hot_folder = tmp_path / "hotfolder"
+    hot_folder.mkdir()
+    (fila / "UJV100" / "foto.jpg").write_bytes(b"nao e um pdf de verdade")
+
+    resultado = vigiar_fila_uma_vez(
+        pasta_fila=str(fila), maquinas=_maquinas(hot_folder, largura_util_m=1.48),
+    )
+
+    assert resultado["UJV100"]["enviados"] == ["foto.jpg"]
+    assert (hot_folder / "foto.jpg").read_bytes() == b"nao e um pdf de verdade"
+
+
+def test_pdf_ilegivel_vai_assim_mesmo_com_aviso(tmp_path, monkeypatch):
+    monkeypatch.setattr(rl_hf.time, "sleep", lambda s: None)
+    fila = tmp_path / "fila"
+    (fila / "UJV100").mkdir(parents=True)
+    hot_folder = tmp_path / "hotfolder"
+    hot_folder.mkdir()
+    (fila / "UJV100" / "quebrado.pdf").write_bytes(b"%PDF-1.4 lixo que nao abre")
+
+    avisos = []
+    resultado = vigiar_fila_uma_vez(
+        pasta_fila=str(fila), maquinas=_maquinas(hot_folder, largura_util_m=1.48),
+        logger=lambda nivel, msg: avisos.append((nivel, msg)),
+    )
+
+    assert resultado["UJV100"]["enviados"] == ["quebrado.pdf"], "nunca segura arquivo por falha nossa de leitura"
+    assert any(nivel == "warn" for nivel, _ in avisos)
+
+
+def test_giro_continua_funcionando_sem_pymupdf_instalado(tmp_path, monkeypatch):
+    # A maquina do RIP tem um Python novo em folha — se o pymupdf nao
+    # estiver la, o vigia nao pode parar de enviar: so avisa e copia.
+    fila, hot_folder = _fila_com_pdf(tmp_path, monkeypatch, largura_cm=200, altura_cm=100)
+    monkeypatch.setattr(rl_hf, "_importar_pymupdf", lambda: None)
+
+    avisos = []
+    resultado = vigiar_fila_uma_vez(
+        pasta_fila=str(fila), maquinas=_maquinas(hot_folder, largura_util_m=1.48),
+        logger=lambda nivel, msg: avisos.append((nivel, msg)),
+    )
+
+    assert resultado["UJV100"]["enviados"] == ["arte.pdf"]
+    assert _tamanho_cm(hot_folder / "arte.pdf") == (200, 100), "sem pymupdf, copia sem mexer"
+    assert any(nivel == "warn" and "pymupdf" in msg.lower() for nivel, msg in avisos)
+
+
 def test_vigiar_fila_nunca_trava_com_erro_no_ciclo(monkeypatch):
     chamadas = []
 
@@ -203,6 +381,38 @@ def test_vigiar_fila_nunca_trava_com_erro_no_ciclo(monkeypatch):
 
     assert len(chamadas) == 2, "erro num ciclo nao pode impedir o proximo"
     assert any(nivel == "err" for nivel, _ in erros)
+
+
+def test_trava_impede_dois_vigias_ao_mesmo_tempo(tmp_path):
+    trava = tmp_path / "vigia.lock"
+
+    pode_primeiro, handle = rl_hf._travar_instancia_unica(caminho_trava=trava)
+    try:
+        assert pode_primeiro
+        pode_segundo, _ = rl_hf._travar_instancia_unica(caminho_trava=trava)
+        assert not pode_segundo, "dois vigias juntos mandam arquivo duplicado pro RIP"
+    finally:
+        if handle:
+            handle.close()
+
+
+def test_trava_liberada_deixa_o_proximo_vigia_subir(tmp_path):
+    trava = tmp_path / "vigia.lock"
+    _, handle = rl_hf._travar_instancia_unica(caminho_trava=trava)
+    handle.close()  # simula o vigia anterior morrendo
+
+    pode, handle2 = rl_hf._travar_instancia_unica(caminho_trava=trava)
+    try:
+        assert pode, "com o vigia anterior morto, o proximo tem que conseguir subir"
+    finally:
+        if handle2:
+            handle2.close()
+
+
+def test_trava_impossivel_de_criar_nao_impede_o_vigia(tmp_path):
+    pode, _ = rl_hf._travar_instancia_unica(caminho_trava=tmp_path / "pasta_que_nao_existe" / "vigia.lock")
+
+    assert pode, "falha nossa de trava nunca pode deixar a fila parada"
 
 
 def test_logger_arquivo_grava_no_arquivo_mesmo_sem_console(tmp_path, monkeypatch):
