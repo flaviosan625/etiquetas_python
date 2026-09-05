@@ -263,9 +263,14 @@ $argXml = [System.Security.SecurityElement]::Escape($ARGUMENTOS)
 #     um logon que não disparou não deixam a fila parada.
 #   - Repetition sem <Duration> = repete PRA SEMPRE. Com duração, ela
 #     acaba (foi assim que o conserto anterior morreu calado).
-#   - ExecutionTimeLimit PT5M: passada travada (OneDrive pendurado) é
-#     morta em 5 min em vez de segurar o lugar pra sempre e bloquear
-#     todas as próximas por causa do IgnoreNew.
+#   - ExecutionTimeLimit PT30M: passada travada (OneDrive pendurado) é
+#     morta em vez de segurar o lugar pra sempre e bloquear todas as
+#     próximas por causa do IgnoreNew. Meia hora, e não cinco minutos,
+#     porque uma cópia LEGÍTIMA pode demorar muito: já existe TIF de
+#     1,83 GB nessas pastas, e se o original for um placeholder do
+#     OneDrive a cópia ainda baixa o arquivo inteiro no meio do
+#     caminho. Ser morto no meio deixou de ser perigoso — o arquivo é
+#     montado FORA da hot folder e entra por rename atômico.
 #   - IgnoreNew + a trava de instância única do próprio script: duas
 #     passadas juntas pegariam o MESMO arquivo e o RIP criaria job
 #     duplicado, que vira material impresso duas vezes.
@@ -322,7 +327,7 @@ $xml = @"
     <RunOnlyIfIdle>false</RunOnlyIfIdle>
     <UseUnifiedSchedulingEngine>true</UseUnifiedSchedulingEngine>
     <WakeToRun>false</WakeToRun>
-    <ExecutionTimeLimit>PT5M</ExecutionTimeLimit>
+    <ExecutionTimeLimit>PT30M</ExecutionTimeLimit>
     <Priority>7</Priority>
   </Settings>
   <Actions Context="Author">

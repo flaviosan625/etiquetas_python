@@ -39,6 +39,7 @@ impressoras forem configuradas no RasterLink7.
 """
 import datetime
 import json
+import os
 import pathlib
 import shutil
 import sys
@@ -260,11 +261,99 @@ def _largura_altura_m(caminho, pymupdf):
     return rect.width * metros_por_ponto, rect.height * metros_por_ponto
 
 
+# Marca dos arquivos de montagem. O prefixo '~' e o sufixo juntos
+# existem pra que a faxina NUNCA apague nada que não tenha sido nosso.
+_PREFIXO_MONTAGEM = "~montando~"
+_SUFIXO_MONTAGEM = ".parcial"
+
+
+def _caminho_de_montagem(destino):
+    """
+    Onde o arquivo é montado ANTES de entrar na hot folder — ou None
+    quando não dá, e aí escreve direto como era antes.
+
+    Fica na pasta-MÃE da hot folder de propósito. O RasterLink vigia a
+    hot folder ativamente: escrever 1,83 GB direto lá dentro significa
+    que ele enxerga o nome do arquivo já no primeiro byte e pode tentar
+    ripar um arquivo pela metade — impressão perdida e material gasto à
+    toa. Na pasta-mãe ele não olha; e como é o mesmo volume, a entrada
+    final vira um os.replace, que é atômico: o arquivo aparece inteiro
+    ou não aparece.
+
+    Com 45 MB isso passava despercebido. O usuário avisou (2026-09-05)
+    que vêm arquivos MUITO maiores — e já existe um TIF de 1,83 GB
+    nessas pastas.
+    """
+    pasta_mae = destino.parent.parent
+    try:
+        if pasta_mae.is_dir() and os.access(pasta_mae, os.W_OK):
+            return pasta_mae / f"{_PREFIXO_MONTAGEM}{destino.parent.name}~{destino.name}{_SUFIXO_MONTAGEM}"
+    except OSError:
+        pass
+    return None
+
+
+def _limpar_montagens_abandonadas(hot_folder, horas=6, logger=print, agora=None):
+    """
+    Apaga restos de uma montagem que foi morta no meio (a tarefa tem
+    limite de tempo). Só olha a pasta-mãe, e só o que tem a NOSSA marca
+    — nunca entra na hot folder.
+    """
+    pasta_mae = pathlib.Path(hot_folder).parent
+    if not pasta_mae.is_dir():
+        return []
+
+    agora = agora or datetime.datetime.now()
+    limite = agora - datetime.timedelta(hours=horas)
+    apagados = []
+    for resto in pasta_mae.iterdir():
+        if not resto.is_file():
+            continue
+        if not (resto.name.startswith(_PREFIXO_MONTAGEM) and resto.name.endswith(_SUFIXO_MONTAGEM)):
+            continue
+        try:
+            if datetime.datetime.fromtimestamp(resto.stat().st_mtime) >= limite:
+                continue
+            resto.unlink()
+        except OSError:
+            continue
+        apagados.append(resto.name)
+
+    if apagados:
+        logger("warn", f"{len(apagados)} montagem(ns) abandonada(s) apagada(s) de '{pasta_mae}' — "
+                       f"alguma passada foi interrompida no meio de uma cópia grande.")
+    return apagados
+
+
 def _copiar_para_hot_folder(arquivo, destino, largura_util_m, logger):
     """
-    Copia 'arquivo' pra hot folder do RIP, girando 90° quando for um
-    PDF mais largo que a máquina que caberia deitado. O giro é sempre
-    só na CÓPIA — o arquivo que fica guardado em 'Enviados' continua
+    Põe 'arquivo' na hot folder do RIP — montando fora dela e entrando
+    com um rename atômico, pra o RIP nunca ver arquivo pela metade (ver
+    _caminho_de_montagem). Devolve se girou.
+    """
+    montagem = _caminho_de_montagem(destino)
+    if montagem is None:
+        return _montar_para_hot_folder(arquivo, destino, largura_util_m, logger)
+
+    try:
+        girado = _montar_para_hot_folder(arquivo, montagem, largura_util_m, logger)
+        os.replace(montagem, destino)
+    except BaseException:
+        # inclui a morte por limite de tempo da tarefa: o resto não pode
+        # ficar ocupando disco nem confundir quem for olhar a pasta
+        try:
+            montagem.unlink()
+        except OSError:
+            pass
+        raise
+    return girado
+
+
+def _montar_para_hot_folder(arquivo, destino, largura_util_m, logger):
+    """
+    Escreve a cópia em 'destino', girando 90° quando for um PDF mais
+    largo que a máquina que caberia deitado. O giro é sempre só na
+    CÓPIA — o arquivo que fica guardado em 'Enviados' continua
     exatamente como chegou.
 
     Quando não cabe nem girado, manda assim mesmo e registra o aviso
@@ -348,6 +437,7 @@ def _vigiar_uma_maquina(pasta_maquina, config_maquina, logger, pasta_relatorios=
 
     pasta_enviados = pasta_maquina / NOME_SUBPASTA_ENVIADOS
     pasta_enviados.mkdir(parents=True, exist_ok=True)
+    _limpar_montagens_abandonadas(hot_folder, logger=logger)
 
     resultado = {"enviados": [], "ignorados": [], "falharam": []}
     for arquivo in [f for f in pasta_maquina.iterdir() if f.is_file()]:

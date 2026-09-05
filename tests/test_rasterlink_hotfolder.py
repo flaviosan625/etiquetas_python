@@ -1,5 +1,7 @@
 import datetime
 import json
+import os
+import pathlib
 
 import pytest
 
@@ -1018,3 +1020,87 @@ def test_sem_console_nao_tenta_escrever_na_tela(monkeypatch):
     monkeypatch.setattr(modulo.sys, "stdout", None)
     assert modulo._tem_saida() is False
     modulo._falar("nao pode estourar")
+
+
+# --- arquivo grande: o RIP nao pode ver arquivo pela metade ---
+
+
+def test_arquivo_e_montado_fora_da_hot_folder_e_entra_por_rename(tmp_path, monkeypatch):
+    """
+    O RasterLink vigia a hot folder ATIVAMENTE. Escrevendo direto la
+    dentro, ele enxerga o nome no primeiro byte e pode ripar um arquivo
+    pela metade — com 45 MB passa batido, com 1,83 GB nao.
+
+    O teste espia o que existe dentro da hot folder DURANTE a copia.
+    """
+    import rasterlink_hotfolder as modulo
+
+    fila = tmp_path / "fila"
+    hot = tmp_path / "MijCtrl" / "Hot" / "UJV100"
+    hot.mkdir(parents=True)
+    (fila / "UJV100").mkdir(parents=True)
+    (fila / "UJV100" / "grande.pdf").write_bytes(b"x" * 5000)
+
+    visto_durante = []
+    copia_real = modulo.shutil.copy2
+
+    def espiar(origem, destino, *args, **kwargs):
+        visto_durante.append(sorted(p.name for p in hot.iterdir()))
+        return copia_real(origem, destino, *args, **kwargs)
+
+    monkeypatch.setattr(modulo.shutil, "copy2", espiar)
+    monkeypatch.setattr(modulo.time, "sleep", lambda s: None)
+
+    vigiar_fila_uma_vez(pasta_fila=str(fila), maquinas={"UJV100": str(hot)})
+
+    assert visto_durante == [[]], "a hot folder tem que estar VAZIA enquanto o arquivo e montado"
+    assert (hot / "grande.pdf").read_bytes() == b"x" * 5000, "e o arquivo inteiro aparece no fim"
+
+
+def test_montagem_nao_sobra_quando_a_copia_falha(tmp_path, monkeypatch):
+    """Passada morta no meio (limite de tempo da tarefa) nao pode deixar lixo pra tras."""
+    import rasterlink_hotfolder as modulo
+
+    fila = tmp_path / "fila"
+    hot = tmp_path / "MijCtrl" / "Hot" / "UJV100"
+    hot.mkdir(parents=True)
+    (fila / "UJV100").mkdir(parents=True)
+    (fila / "UJV100" / "grande.pdf").write_bytes(b"x" * 100)
+
+    def morre_no_meio(origem, destino, *args, **kwargs):
+        pathlib.Path(destino).write_bytes(b"pela metade")
+        raise OSError("passada encerrada no meio da copia")
+
+    monkeypatch.setattr(modulo.shutil, "copy2", morre_no_meio)
+    monkeypatch.setattr(modulo.time, "sleep", lambda s: None)
+
+    resultado = vigiar_fila_uma_vez(pasta_fila=str(fila), maquinas={"UJV100": str(hot)},
+                                    logger=lambda n, m: None)
+
+    assert resultado["UJV100"]["falharam"] == ["grande.pdf"]
+    assert list(hot.iterdir()) == [], "nada pela metade dentro da hot folder"
+    assert [p.name for p in hot.parent.iterdir() if p.is_file()] == [], "nem resto de montagem na pasta-mae"
+
+
+def test_faxina_apaga_montagem_abandonada_antiga_e_poupa_a_recente(tmp_path):
+    import datetime as dt
+    from rasterlink_hotfolder import _limpar_montagens_abandonadas, _PREFIXO_MONTAGEM, _SUFIXO_MONTAGEM
+
+    hot = tmp_path / "Hot" / "UJV100"
+    hot.mkdir(parents=True)
+    mae = hot.parent
+
+    antiga = mae / f"{_PREFIXO_MONTAGEM}UJV100~velha.pdf{_SUFIXO_MONTAGEM}"
+    recente = mae / f"{_PREFIXO_MONTAGEM}UJV100~agora.pdf{_SUFIXO_MONTAGEM}"
+    alheio = mae / "arquivo_de_outra_pessoa.pdf"
+    for p in (antiga, recente, alheio):
+        p.write_bytes(b"x")
+    velho = (dt.datetime.now() - dt.timedelta(hours=48)).timestamp()
+    os.utime(antiga, (velho, velho))
+    os.utime(alheio, (velho, velho))
+
+    apagados = _limpar_montagens_abandonadas(hot, horas=6, logger=lambda n, m: None)
+
+    assert apagados == [antiga.name]
+    assert recente.exists(), "montagem recente pode ser de uma copia acontecendo AGORA"
+    assert alheio.exists(), "so mexe no que tem a nossa marca"

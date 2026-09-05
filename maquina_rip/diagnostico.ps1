@@ -76,6 +76,19 @@ if ($null -eq $vigias -or @($vigias).Count -eq 0) {
 # --------------------------------------------------------------------
 Titulo "3  O SCRIPT QUE ESTA INSTALADO"
 
+if (Test-Path $PASTA) {
+    Write-Host "  Tudo que existe em $PASTA :"
+    $tudo = @(Get-ChildItem $PASTA -Force -ErrorAction SilentlyContinue)
+    if ($tudo.Count -eq 0) {
+        Write-Host "    (PASTA VAZIA)" -ForegroundColor Red
+    } else {
+        foreach ($f in $tudo) { Write-Host ("    {0,-42} {1,9}  {2}" -f $f.Name, $f.Length, $f.LastWriteTime) }
+    }
+} else {
+    Write-Host "  A PASTA $PASTA NAO EXISTE." -ForegroundColor Red
+}
+Write-Host ""
+
 if (Test-Path $SCRIPT) {
     $i = Get-Item $SCRIPT
     Write-Host "  $SCRIPT"
