@@ -17,6 +17,7 @@ periodicamente com root.after(...).
 import json
 import pathlib
 import queue
+import subprocess
 import threading
 import tkinter as tk
 from datetime import date
@@ -28,6 +29,14 @@ from tkinter import filedialog, messagebox, ttk
 from branding import CAMINHO_LOGO_GUI
 from config import atualizar_ultimo_uso, atualizar_ultima_impressora, carregar_config, salvar_config
 from dimensoes import formatar_variante
+from documento_enviados import (
+    carregar as carregar_envios, caminho_pdf as caminho_documento_pdf,
+    miniatura as gerar_miniatura, registrar as registrar_envios, regravar_pdf as regravar_documento,
+)
+from envio_impressao import (
+    cabe_na_maquina, conferir as conferir_envio, enviar as enviar_para_maquinas,
+    listar as listar_para_envio, prever_giro, raiz_do_cliente, subtotais_por_material,
+)
 from estado_pedido import estado_existe, localizar_pastas_cliente
 from estoque import (
     carregar_estoque, saldo_produto, registrar_movimento, desfazer_movimento,
@@ -38,7 +47,12 @@ from estoque import (
 from impressao import imprimir_pdf, impressora_padrao, listar_impressoras
 from processamento import processar_etiquetas
 from rasterlink import rastrear as rastrear_rip
+from rasterlink_hotfolder import MAQUINAS as MAQUINAS_RIP
 from utils import sanitizar_nome_arquivo
+
+# Onde o seletor de pasta da tela de envio começa quando ainda não há
+# uma última pasta usada — mesma raiz que o monitor de pastas vigia.
+PASTA_EVENTOS = pathlib.Path.home() / "OneDrive" / "UNYCOMUNICACAO" / "EVENTOS"
 
 COR_ACENTO = "#0067c0"
 COR_FUNDO_JANELA = "#f5f6f8"
@@ -153,6 +167,11 @@ class JanelaPrincipal(tk.Tk):
             fg=COR_ACENTO, cursor="hand2", command=self._abrir_impressao_manual,
         ).pack(anchor="w", padx=16, pady=(0, 2))
 
+        tk.Button(
+            self, text="📤 Enviar para impressão...", relief="flat",
+            fg=COR_ACENTO, cursor="hand2", command=self._abrir_envio_impressao,
+        ).pack(anchor="w", padx=16, pady=(0, 2))
+
         # DESATIVADO a pedido do usuário (2026-09-05): "ficou muito
         # complicado de operar, vou pensar em alguma coisa melhor pra
         # essa função". O botão saiu da tela, mas JanelaCruzarRIP e
@@ -247,6 +266,9 @@ class JanelaPrincipal(tk.Tk):
 
     def _abrir_impressao_manual(self):
         JanelaImprimirPedido(self, self.var_impressora.get())
+
+    def _abrir_envio_impressao(self):
+        JanelaEnviarImpressao(self, self.config_dados)
 
     def _abrir_cruzamento_rip(self):
         # sem botão que chame isso hoje — ver comentário do botão
@@ -1963,3 +1985,480 @@ class JanelaDashboard(tk.Toplevel):
             barra_fundo.grid_propagate(False)
             barra_fundo.grid(row=len(self.frame_conteudo.grid_slaves()), column=0, sticky="w", pady=(0, 7))
             tk.Frame(barra_fundo, bg=cor_barra, height=6, width=largura).place(x=0, y=0)
+
+
+class JanelaEnviarImpressao(tk.Toplevel):
+    """
+    Manda pra fila das máquinas o que está numa pasta de produção.
+
+    Fluxo em três tempos, na ordem em que o usuário pediu (2026-09-05):
+    escolhe a pasta -> marca e confere -> envia. Entre marcar e enviar
+    entra a conferência: nada se mexe até ela passar.
+
+    Duas regras de tela que vêm direto do usuário:
+      - Nada vem marcado. A lista mistura material de vários dias e um
+        clique distraído mandaria arte que não devia.
+      - A máquina sugerida NUNCA fica travada: "não sabemos o que pode
+        acontecer no meio de uma produção".
+    """
+
+    def __init__(self, mestre, config_dados):
+        super().__init__(mestre)
+        self.title("Enviar para impressão — UNY CV")
+        self.geometry("1120x680")
+        self.minsize(900, 520)
+        self.configure(bg=COR_FUNDO_JANELA)
+        self.transient(mestre)
+
+        self.config_dados = config_dados
+        self.pasta = None
+        self.itens = []
+        self.marcados = {}     # índice do item -> BooleanVar
+        self.combos_maquina = {}   # índice do item -> StringVar da máquina escolhida
+        self.envios_anteriores = []
+
+        self.columnconfigure(0, weight=1)
+        self.rowconfigure(2, weight=1)
+        self._montar_layout()
+        self.grab_set()
+        self.after(80, self._escolher_pasta)
+
+    # ---------- montagem ----------
+
+    def _montar_layout(self):
+        tk.Label(
+            self, text="Enviar para impressão", font=("Segoe UI", 14, "bold"),
+            bg=COR_FUNDO_JANELA, fg=COR_TEXTO,
+        ).grid(row=0, column=0, sticky="w", padx=20, pady=(16, 2))
+
+        barra = tk.Frame(self, bg=COR_FUNDO_JANELA)
+        barra.grid(row=1, column=0, sticky="ew", padx=20, pady=(4, 8))
+        barra.columnconfigure(0, weight=1)
+
+        self.var_pasta = tk.StringVar(value="Nenhuma pasta escolhida")
+        tk.Label(
+            barra, textvariable=self.var_pasta, bg=COR_CARTAO, fg=COR_TEXTO, anchor="w",
+            relief="solid", bd=1, padx=8, pady=4, font=("Consolas", 9),
+        ).grid(row=0, column=0, sticky="ew")
+        tk.Button(barra, text="📁 Trocar pasta...", relief="flat", cursor="hand2",
+                  command=self._escolher_pasta).grid(row=0, column=1, padx=(6, 0))
+        tk.Button(barra, text="↻", width=3, relief="flat", cursor="hand2",
+                  command=self._recarregar).grid(row=0, column=2, padx=(4, 0))
+
+        self.var_contagem = tk.StringVar(value="")
+        tk.Label(barra, textvariable=self.var_contagem, bg=COR_FUNDO_JANELA, fg=COR_TEXTO_SECUNDARIO).grid(
+            row=0, column=3, padx=(10, 0))
+
+        frame_canvas = tk.Frame(self, bg=COR_FUNDO_JANELA)
+        frame_canvas.grid(row=2, column=0, sticky="nsew", padx=20)
+        frame_canvas.columnconfigure(0, weight=1)
+        frame_canvas.rowconfigure(0, weight=1)
+
+        canvas = tk.Canvas(frame_canvas, highlightthickness=0, bg=COR_FUNDO_JANELA)
+        scrollbar = ttk.Scrollbar(frame_canvas, orient="vertical", command=canvas.yview)
+        self.frame_lista = tk.Frame(canvas, bg=COR_FUNDO_JANELA)
+        janela_interna = canvas.create_window((0, 0), window=self.frame_lista, anchor="nw")
+        self.frame_lista.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.bind("<Configure>", lambda e: canvas.itemconfig(janela_interna, width=e.width))
+        self.frame_lista.columnconfigure(1, weight=1)
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.grid(row=0, column=0, sticky="nsew")
+        scrollbar.grid(row=0, column=1, sticky="ns")
+
+        rodape = tk.Frame(self, bg=COR_FUNDO_JANELA)
+        rodape.grid(row=3, column=0, sticky="ew", padx=20, pady=14)
+        rodape.columnconfigure(0, weight=1)
+
+        self.var_subtotais = tk.StringVar(value="")
+        tk.Label(
+            rodape, textvariable=self.var_subtotais, bg=COR_FUNDO_JANELA, fg=COR_TEXTO,
+            font=("Segoe UI", 9, "bold"), anchor="w", justify="left",
+        ).grid(row=0, column=0, sticky="w")
+
+        tk.Button(rodape, text="📄 Abrir o Enviados", relief="flat", fg=COR_ACENTO, cursor="hand2",
+                  command=self._abrir_documento).grid(row=0, column=1, padx=(0, 8))
+        self.btn_enviar = tk.Button(
+            rodape, text="Enviar", relief="flat", bg=COR_ACENTO, fg="white",
+            activebackground=COR_ACENTO, cursor="hand2", font=("Segoe UI", 10, "bold"),
+            command=self._conferir_e_enviar, state="disabled",
+        )
+        self.btn_enviar.grid(row=0, column=2, ipadx=14, ipady=4)
+        tk.Button(rodape, text="Fechar", relief="flat", cursor="hand2", command=self.destroy).grid(
+            row=0, column=3, padx=(8, 0))
+
+    # ---------- pasta e lista ----------
+
+    def _escolher_pasta(self):
+        inicial = self.config_dados.get("ultima_pasta_envio") or str(PASTA_EVENTOS)
+        escolhida = filedialog.askdirectory(
+            title="Escolha a pasta de produção (ex: EVENTOS\\CLIENTE\\PRODUCAO 03_09)",
+            initialdir=inicial, parent=self,
+        )
+        if not escolhida:
+            if self.pasta is None:
+                self.destroy()
+            return
+        self.pasta = pathlib.Path(escolhida)
+        self.config_dados["ultima_pasta_envio"] = str(self.pasta)
+        salvar_config(self.config_dados)
+        self._recarregar()
+
+    def _recarregar(self):
+        if self.pasta is None:
+            return
+        raiz = raiz_do_cliente(self.pasta)
+        self.envios_anteriores = carregar_envios(raiz)["envios"]
+        self.itens = listar_para_envio(self.pasta, self.config_dados, self.envios_anteriores)
+        self.var_pasta.set(str(self.pasta))
+        self._preencher_lista()
+
+    def _preencher_lista(self):
+        for widget in self.frame_lista.winfo_children():
+            widget.destroy()
+        self.marcados = {}
+        self.combos_maquina = {}
+
+        if not self.itens:
+            tk.Label(
+                self.frame_lista, bg=COR_FUNDO_JANELA, fg=COR_ALERTA, justify="left", wraplength=800,
+                text="Nenhum arquivo de arte nesta pasta.\n\n"
+                     "Lembrando: CORTES não aparece aqui (não passa por impressora) e Prontos nunca é lido.",
+            ).grid(row=0, column=0, columnspan=6, sticky="w", pady=20)
+            self._atualizar_rodape()
+            return
+
+        por_pasta = {}
+        for indice, item in enumerate(self.itens):
+            por_pasta.setdefault(item["pasta_trabalho"], []).append((indice, item))
+
+        linha = 0
+        for nome_pasta in sorted(por_pasta):
+            grupo = por_pasta[nome_pasta]
+            nunca_enviados = [i for i, item in grupo if not item["envios_anteriores"]]
+            cabecalho = tk.Frame(self.frame_lista, bg="#e9ebef")
+            cabecalho.grid(row=linha, column=0, columnspan=6, sticky="ew", pady=(12, 0))
+            tk.Button(
+                cabecalho, text=f"marcar todos  ·  {nome_pasta}", relief="flat", bg="#e9ebef", fg=COR_TEXTO,
+                font=("Segoe UI", 9, "bold"), cursor="hand2", anchor="w",
+                command=lambda ids=nunca_enviados: self._marcar_todos(ids),
+            ).pack(side="left", padx=6, pady=3)
+            tk.Label(
+                cabecalho, text=f"{len(grupo)} arquivo(s)", bg="#e9ebef", fg=COR_TEXTO_SECUNDARIO,
+            ).pack(side="left")
+            linha += 1
+
+            # já enviados vão pro fim do grupo: o que interessa marcar
+            # fica em cima, e o histórico continua visível embaixo
+            for indice, item in sorted(grupo, key=lambda par: bool(par[1]["envios_anteriores"])):
+                self._linha_item(linha, indice, item)
+                linha += 1
+
+        self._atualizar_rodape()
+
+    def _linha_item(self, linha, indice, item):
+        ja_foi = bool(item["envios_anteriores"])
+        cor_texto = COR_TEXTO_SECUNDARIO if ja_foi else COR_TEXTO
+
+        var = tk.BooleanVar(value=False)
+        var.trace_add("write", lambda *_: self._atualizar_rodape())
+        self.marcados[indice] = var
+        tk.Checkbutton(self.frame_lista, variable=var, bg=COR_FUNDO_JANELA).grid(
+            row=linha, column=0, sticky="w", padx=(2, 4))
+
+        tk.Label(
+            self.frame_lista, text=item["arquivo"], bg=COR_FUNDO_JANELA, fg=cor_texto,
+            font=("Consolas", 8), anchor="w", justify="left", wraplength=400,
+        ).grid(row=linha, column=1, sticky="w", pady=1)
+
+        if item["dimensao"]:
+            medida = (
+                f'{item["dimensao"]["largura_m"]:.2f} x {item["dimensao"]["altura_m"]:.2f} m'
+                f'  ·  {item["quantidade"]} un  ·  {item["area_total_m2"]:.2f} m²'
+            ).replace(".", ",")
+        else:
+            medida = f'sem medida no nome  ·  {item["quantidade"]} un'
+        tk.Label(self.frame_lista, text=medida, bg=COR_FUNDO_JANELA, fg=cor_texto, anchor="w").grid(
+            row=linha, column=2, sticky="w", padx=8)
+
+        var_maquina = tk.StringVar(value=item["maquina"])
+        self.combos_maquina[indice] = var_maquina
+        combo = ttk.Combobox(
+            self.frame_lista, textvariable=var_maquina, state="readonly", width=16,
+            values=list(MAQUINAS_RIP),
+        )
+        combo.grid(row=linha, column=3, padx=6)
+        combo.bind("<<ComboboxSelected>>", lambda e, i=indice: self._trocar_maquina(i))
+
+        tk.Label(
+            self.frame_lista, text=self._observacao(item), bg=COR_FUNDO_JANELA,
+            fg=COR_ALERTA if (ja_foi or not item["cabe"]) else (COR_POSITIVO if item["giro"] else COR_TEXTO_SECUNDARIO),
+            anchor="w", justify="left", wraplength=270,
+        ).grid(row=linha, column=4, sticky="w", padx=(4, 2))
+
+    def _observacao(self, item):
+        partes = []
+        if item["envios_anteriores"]:
+            quando = item["envios_anteriores"][-1]["quando"]
+            quantas = len(item["envios_anteriores"])
+            partes.append(f"já enviado {quantas}x · último {quando[8:10]}/{quando[5:7]} {quando[11:16]}")
+        if not item["cabe"]:
+            partes.append("não cabe nem girado — vai assim mesmo")
+        elif item["giro"]:
+            if item["giro"]["motivo"] == "nao_cabe":
+                partes.append("deve girar · não cabe em pé")
+            else:
+                partes.append(f'deve girar · economiza {item["giro"]["economia_m"]:.2f} m'.replace(".", ","))
+        elif not item["dimensao"]:
+            partes.append("sem medida — sem previsão de giro")
+        return "\n".join(partes) or "—"
+
+    def _trocar_maquina(self, indice):
+        """A máquina mudou: o giro previsto depende da largura útil dela, então a linha é refeita."""
+        item = self.itens[indice]
+        item["maquina"] = self.combos_maquina[indice].get()
+        item["giro"] = prever_giro(item["dimensao"], item["maquina"])
+        item["cabe"] = cabe_na_maquina(item["dimensao"], item["maquina"])
+        marcados_antes = {i for i, v in self.marcados.items() if v.get()}
+        self._preencher_lista()
+        for i in marcados_antes:
+            if i in self.marcados:
+                self.marcados[i].set(True)
+
+    def _marcar_todos(self, indices):
+        alvo = not all(self.marcados[i].get() for i in indices) if indices else False
+        for i in indices:
+            self.marcados[i].set(alvo)
+
+    def _itens_marcados(self):
+        return [self.itens[i] for i, var in self.marcados.items() if var.get()]
+
+    def _atualizar_rodape(self):
+        marcados = self._itens_marcados()
+        nunca_enviados = sum(1 for i in self.itens if not i["envios_anteriores"])
+        ja_enviados = len(self.itens) - nunca_enviados
+        self.var_contagem.set(
+            f"{nunca_enviados} nunca enviados · {len(marcados)} marcados"
+            + (f" · {ja_enviados} já enviados" if ja_enviados else "")
+        )
+
+        totais = subtotais_por_material(marcados)
+        self.var_subtotais.set(
+            "     ".join(f"{cat} {m2:.2f} m²".replace(".", ",") for cat, m2 in sorted(totais.items()))
+            or "Nada marcado"
+        )
+        self.btn_enviar.config(
+            text=f"Enviar {len(marcados)} arquivo(s)" if marcados else "Enviar",
+            state="normal" if marcados else "disabled",
+        )
+
+    # ---------- conferência e envio ----------
+
+    def _conferir_e_enviar(self):
+        marcados = self._itens_marcados()
+        if not marcados:
+            return
+        resultado = conferir_envio(marcados)
+        if not JanelaConferenciaEnvio(self, resultado).confirmado:
+            return
+
+        liberados = resultado["limpos"] + [item for item, _ in resultado["atencao"]]
+        if not liberados:
+            messagebox.showinfo(
+                "Nada a enviar",
+                "Todos os arquivos marcados estão travados pela conferência. "
+                "Resolva os conflitos e tente de novo.",
+                parent=self,
+            )
+            return
+
+        self._executar_envio(liberados, resultado["bloqueados"])
+
+    def _executar_envio(self, itens, bloqueados):
+        self.btn_enviar.config(state="disabled", text="Enviando...")
+        self.update_idletasks()
+        try:
+            resultado = enviar_para_maquinas(itens, self.pasta)
+            raiz = raiz_do_cliente(self.pasta)
+
+            # a miniatura só é feita pra quem ainda não tem uma guardada:
+            # o arquivo acabou de ser copiado, então está local — mas
+            # reabrir um TIF de 1,83 GB a cada reenvio seria desperdício
+            ja_tem = {e["arquivo"] for e in self.envios_anteriores if e.get("miniatura_b64")}
+            miniaturas = {}
+            for registro in resultado["enviados"]:
+                if registro["arquivo"] not in ja_tem:
+                    caminho = next(i["caminho"] for i in itens if i["arquivo"] == registro["arquivo"])
+                    miniaturas[registro["arquivo"]] = gerar_miniatura(caminho)
+
+            caminho_documento, erro_pdf = None, None
+            if resultado["enviados"]:
+                registrar_envios(raiz, resultado["enviados"], miniaturas)
+                caminho_documento, erro_pdf = regravar_documento(raiz, list(self.config_dados["materiais"]))
+        except Exception as e:
+            messagebox.showerror("Erro no envio", str(e), parent=self)
+            self._atualizar_rodape()
+            return
+
+        self._recarregar()
+        JanelaResultadoEnvio(self, resultado, bloqueados, self.itens, caminho_documento, erro_pdf)
+
+    def _abrir_documento(self):
+        if self.pasta is None:
+            return
+        caminho = caminho_documento_pdf(raiz_do_cliente(self.pasta))
+        if not caminho.exists():
+            messagebox.showinfo(
+                "Ainda não existe",
+                "O documento de enviados deste cliente só é criado no primeiro envio.",
+                parent=self,
+            )
+            return
+        try:
+            # explorer.exe em vez de os.startfile: ShellExecute depende de
+            # COM inicializado na thread que chama, e isso já falhou em
+            # silêncio neste projeto (ver monitor_onedrive._abrir_pasta)
+            subprocess.Popen(["explorer", str(caminho)])
+        except Exception as e:
+            messagebox.showerror("Erro", f"Não consegui abrir o documento: {e}", parent=self)
+
+
+class JanelaConferenciaEnvio(tk.Toplevel):
+    """
+    A régua fina antes de qualquer coisa se mexer. Mostra o que trava, o
+    que merece atenção e o que está limpo — e só continua com um clique
+    explícito. Fechar no X é cancelar.
+    """
+
+    def __init__(self, mestre, resultado):
+        super().__init__(mestre)
+        self.title("Conferência antes de enviar")
+        self.geometry("740x560")
+        self.configure(bg=COR_FUNDO_JANELA)
+        self.transient(mestre)
+        self.confirmado = False
+
+        total = len(resultado["bloqueados"]) + len(resultado["atencao"]) + len(resultado["limpos"])
+        tk.Label(
+            self, text=f"Conferência — {total} arquivo(s) marcado(s)", font=("Segoe UI", 12, "bold"),
+            bg=COR_FUNDO_JANELA, fg=COR_TEXTO,
+        ).pack(anchor="w", padx=18, pady=(16, 2))
+        tk.Label(
+            self, text="Nada foi copiado nem alterado ainda.", bg=COR_FUNDO_JANELA, fg=COR_TEXTO_SECUNDARIO,
+        ).pack(anchor="w", padx=18, pady=(0, 10))
+
+        texto = tk.Text(self, wrap="word", bg=COR_CARTAO, relief="solid", bd=1, padx=10, pady=8)
+        texto.pack(fill="both", expand=True, padx=18)
+        texto.tag_config("bloq", foreground="#9b2117", font=("Segoe UI", 9, "bold"))
+        texto.tag_config("atn", foreground=COR_ALERTA, font=("Segoe UI", 9, "bold"))
+        texto.tag_config("ok", foreground=COR_POSITIVO, font=("Segoe UI", 9, "bold"))
+        texto.tag_config("arquivo", font=("Consolas", 8))
+        texto.tag_config("motivo", foreground="#444444")
+
+        if resultado["bloqueados"]:
+            texto.insert("end", f"TRAVA O ENVIO — {len(resultado['bloqueados'])}\n\n", "bloq")
+            for item, motivo in resultado["bloqueados"]:
+                texto.insert("end", f"  {item['arquivo']}\n", "arquivo")
+                texto.insert("end", f"      {motivo}\n\n", "motivo")
+        if resultado["atencao"]:
+            texto.insert("end", f"VAI, MAS OLHA ISSO — {len(resultado['atencao'])}\n\n", "atn")
+            for item, avisos in resultado["atencao"]:
+                texto.insert("end", f"  {item['arquivo']}\n", "arquivo")
+                for aviso in avisos:
+                    texto.insert("end", f"      {aviso}\n", "motivo")
+                texto.insert("end", "\n")
+        if resultado["limpos"]:
+            texto.insert("end", f"LIMPO — {len(resultado['limpos'])}\n\n", "ok")
+            for item in resultado["limpos"]:
+                area = f'{item["area_total_m2"]:.2f} m²'.replace(".", ",") if item["area_total_m2"] else "sem medida"
+                texto.insert("end", f"  {item['arquivo']}\n", "arquivo")
+                texto.insert("end", f"      {item['maquina']} · {area}\n\n", "motivo")
+        texto.config(state="disabled")
+
+        liberados = len(resultado["limpos"]) + len(resultado["atencao"])
+        botoes = tk.Frame(self, bg=COR_FUNDO_JANELA)
+        botoes.pack(fill="x", padx=18, pady=14)
+        tk.Button(botoes, text="Cancelar", relief="flat", cursor="hand2", command=self.destroy).pack(side="left")
+        tk.Button(
+            botoes, text=f"Enviar {liberados} arquivo(s)", relief="flat", bg=COR_ACENTO, fg="white",
+            activebackground=COR_ACENTO, cursor="hand2", font=("Segoe UI", 10, "bold"),
+            state="normal" if liberados else "disabled", command=self._confirmar,
+        ).pack(side="right", ipadx=12, ipady=3)
+
+        self.grab_set()
+        self.wait_window(self)
+
+    def _confirmar(self):
+        self.confirmado = True
+        self.destroy()
+
+
+class JanelaResultadoEnvio(tk.Toplevel):
+    """
+    O que aconteceu de verdade. A seção do fim é a resposta ao "não pode
+    ficar nenhum arquivo pra trás": como nenhum arquivo sai do lugar,
+    quem sabe o que já foi é o documento — então a tela relê a pasta e
+    conta o que continua sem nenhum envio registrado.
+    """
+
+    def __init__(self, mestre, resultado, bloqueados, itens_recarregados, caminho_documento, erro_pdf):
+        super().__init__(mestre)
+        self.title("Resultado do envio")
+        self.geometry("740x520")
+        self.configure(bg=COR_FUNDO_JANELA)
+        self.transient(mestre)
+
+        tk.Label(
+            self, text="Resultado do envio", font=("Segoe UI", 12, "bold"),
+            bg=COR_FUNDO_JANELA, fg=COR_TEXTO,
+        ).pack(anchor="w", padx=18, pady=(16, 8))
+
+        texto = tk.Text(self, wrap="word", bg=COR_CARTAO, relief="solid", bd=1, padx=10, pady=8)
+        texto.pack(fill="both", expand=True, padx=18)
+        texto.tag_config("ok", foreground=COR_POSITIVO, font=("Segoe UI", 9, "bold"))
+        texto.tag_config("bloq", foreground="#9b2117", font=("Segoe UI", 9, "bold"))
+        texto.tag_config("atn", foreground=COR_ALERTA, font=("Segoe UI", 9, "bold"))
+        texto.tag_config("arquivo", font=("Consolas", 8))
+        texto.tag_config("motivo", foreground="#444444")
+
+        if resultado["enviados"]:
+            texto.insert("end", f"ENVIADOS E ANOTADOS — {len(resultado['enviados'])}\n\n", "ok")
+            for registro in resultado["enviados"]:
+                texto.insert("end", f"  {registro['arquivo']}\n", "arquivo")
+                texto.insert("end", f"      {registro['maquina']} · cópia conferida\n\n", "motivo")
+
+        nao_foram = list(resultado["falhas"]) + list(bloqueados)
+        if nao_foram:
+            texto.insert("end", f"NÃO FORAM — {len(nao_foram)}\n\n", "bloq")
+            for item, motivo in nao_foram:
+                texto.insert("end", f"  {item['arquivo']}\n", "arquivo")
+                texto.insert("end", f"      {motivo}\n\n", "motivo")
+
+        faltando = {}
+        for item in itens_recarregados:
+            if not item["envios_anteriores"]:
+                faltando[item["pasta_trabalho"]] = faltando.get(item["pasta_trabalho"], 0) + 1
+        total_faltando = sum(faltando.values())
+        texto.insert("end", f"NUNCA ENVIADOS NESTA PASTA — {total_faltando}\n\n", "atn" if total_faltando else "ok")
+        if faltando:
+            for nome_pasta, quantos in sorted(faltando.items()):
+                texto.insert("end", f"  {nome_pasta}: {quantos}\n", "motivo")
+        else:
+            texto.insert("end", "  Nada ficou pra trás nesta pasta.\n", "motivo")
+
+        if erro_pdf:
+            texto.insert("end", "\nDOCUMENTO NÃO REGRAVADO\n", "atn")
+            texto.insert(
+                "end",
+                f"  Os envios estão salvos, mas o PDF não pôde ser regravado: {erro_pdf}\n"
+                f"  Normalmente é o documento estar aberto no leitor de PDF. Feche e clique em "
+                f"'Abrir o Enviados' pra gerar de novo.\n",
+                "motivo",
+            )
+        elif caminho_documento:
+            texto.insert("end", f"\nDocumento atualizado: {caminho_documento.name}\n", "motivo")
+        texto.config(state="disabled")
+
+        tk.Button(self, text="Fechar", relief="flat", bg=COR_ACENTO, fg="white",
+                  activebackground=COR_ACENTO, cursor="hand2", command=self.destroy).pack(pady=14, ipadx=16, ipady=3)
+
+        self.grab_set()

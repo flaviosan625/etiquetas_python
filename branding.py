@@ -22,7 +22,7 @@ def logo_disponivel():
     return CAMINHO_LOGO.exists()
 
 
-def inserir_logo(pagina, rect, alinhamento="left", caminho=None):
+def inserir_logo(pagina, rect, alinhamento="left", caminho=None, xref=None):
     """
     Insere o logo da Uny CV dentro de 'rect', mantendo a proporção
     original da imagem (nunca distorce) e centralizado verticalmente
@@ -36,11 +36,17 @@ def inserir_logo(pagina, rect, alinhamento="left", caminho=None):
     reduzida usada na tela) em documentos onde tamanho de arquivo importa
     mais do que resolução — por padrão usa a versão em alta resolução.
 
+    'xref' reaproveita uma imagem JÁ embutida neste mesmo PDF, em vez de
+    embutir outra cópia: num documento de muitas páginas com o logo em
+    todas, cada página estava carregando seus próprios 24 KB. Devolve o
+    xref da imagem, pra passar de volta nas páginas seguintes (ver
+    documento_enviados._nova_pagina). Devolve None quando não desenhou.
+
     Não faz nada se o arquivo do logo não existir.
     """
     caminho_logo = caminho or CAMINHO_LOGO
     if not caminho_logo.exists():
-        return
+        return None
 
     pix = pymupdf.Pixmap(str(caminho_logo))
     proporcao = pix.width / pix.height
@@ -64,4 +70,6 @@ def inserir_logo(pagina, rect, alinhamento="left", caminho=None):
 
     y0 = rect.y0 + (altura_disponivel - altura_final) / 2
     rect_final = pymupdf.Rect(x0, y0, x0 + largura_final, y0 + altura_final)
-    pagina.insert_image(rect_final, filename=str(caminho_logo))
+    if xref:
+        return pagina.insert_image(rect_final, xref=xref)
+    return pagina.insert_image(rect_final, filename=str(caminho_logo))

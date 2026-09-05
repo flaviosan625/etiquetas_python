@@ -71,6 +71,12 @@ MAQUINAS = {
 # pra dentro da hot folder do RIP sem querer.
 _EXTENSOES_ACEITAS = (".pdf", ".ai", ".png", ".jpg", ".jpeg", ".eps", ".tif", ".tiff")
 
+# Mesmo conteúdo, com nome público: a tela de envio (envio_impressao.py)
+# precisa filtrar exatamente pelas mesmas extensões que o vigia aceita,
+# senão ela ofereceria pra mandar um arquivo que o vigia depois ignoraria
+# em silêncio dentro da fila.
+EXTENSOES_ACEITAS = _EXTENSOES_ACEITAS
+
 # Folga de 1mm na comparação de largura — ver _copiar_para_hot_folder.
 _TOLERANCIA_LARGURA_M = 0.001
 
