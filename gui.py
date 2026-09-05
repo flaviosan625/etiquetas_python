@@ -29,7 +29,7 @@ from dimensoes import formatar_variante
 from estado_pedido import estado_existe, localizar_pastas_cliente
 from estoque import (
     carregar_estoque, saldo_produto, registrar_movimento, desfazer_movimento,
-    prever_saida_os, confirmar_saida_os, pedido_ja_teve_saida,
+    prever_saida_os, confirmar_saida_os, pedido_ja_teve_saida, produtos_por_categoria,
     novo_produto, adicionar_produto, atualizar_produto, remover_produto,
     meses_disponiveis, resumo_mensal, rendimento_tinta_mensal,
 )
@@ -1333,6 +1333,7 @@ class JanelaSaidaOS(tk.Toplevel):
         self.ao_salvar = ao_salvar
         self.dados_os = None
         self.previsao = None
+        self.resolucoes_manuais = {}
 
         pad = {"padx": 16, "pady": 6}
         tk.Label(self, text="Escolha o arquivo da OS", font=("Segoe UI", 11, "bold")).pack(anchor="w", **pad)
@@ -1389,9 +1390,17 @@ class JanelaSaidaOS(tk.Toplevel):
             f"{pathlib.Path(caminho).name} — Cliente: {self.dados_os.get('cliente', '?')} "
             f"({self.dados_os.get('data_hora', '?')})"
         )
+        self.resolucoes_manuais = {}
         self.previsao = prever_saida_os(self.estoque, self.dados_os["itens"], self.config_dados["materiais"])
         self._mostrar_previa()
         self.btn_confirmar.configure(state="normal")
+
+    def _resolver_ambiguidade(self, categoria, codigo):
+        self.resolucoes_manuais[categoria] = codigo
+        self.previsao = prever_saida_os(
+            self.estoque, self.dados_os["itens"], self.config_dados["materiais"], self.resolucoes_manuais,
+        )
+        self._mostrar_previa()
 
     def _nome_pedido(self):
         return f"{self.dados_os.get('cliente', '?')} ({self.dados_os.get('data_hora', '?')})"
@@ -1413,6 +1422,32 @@ class JanelaSaidaOS(tk.Toplevel):
 
         for linha in self.previsao:
             variante_txt = f" · {formatar_variante(linha['variante'])}" if linha.get("variante") else ""
+            if linha["produto"] is None and linha.get("ambiguo"):
+                candidatos = produtos_por_categoria(self.estoque, linha["categoria"])
+                descricoes = {produto["descricao"]: codigo for codigo, produto in candidatos}
+
+                frame_item = tk.Frame(self.frame_previa)
+                frame_item.pack(anchor="w", fill="x", pady=4)
+                tk.Label(
+                    frame_item, text=f"{linha['categoria']}{variante_txt} — mais de um produto possível, escolha qual baixar:",
+                    anchor="w", fg=COR_ALERTA, justify="left", wraplength=500,
+                ).pack(anchor="w")
+
+                var_escolha = tk.StringVar()
+                codigo_ja_escolhido = self.resolucoes_manuais.get(linha["categoria"])
+                for descricao, codigo in descricoes.items():
+                    if codigo == codigo_ja_escolhido:
+                        var_escolha.set(descricao)
+                        break
+                combo = ttk.Combobox(frame_item, textvariable=var_escolha, values=list(descricoes.keys()), state="readonly", width=45)
+                combo.bind(
+                    "<<ComboboxSelected>>",
+                    lambda evento, categoria=linha["categoria"], descricoes=descricoes, var=var_escolha:
+                        self._resolver_ambiguidade(categoria, descricoes[var.get()]),
+                )
+                combo.pack(anchor="w", pady=(2, 0))
+                continue
+
             if linha["produto"] is None:
                 motivo = "mais de um produto possível, dê baixa manual" if linha.get("ambiguo") else "sem produto vinculado no estoque"
                 texto = f"{linha['categoria']}{variante_txt} — {motivo}"
@@ -1439,7 +1474,9 @@ class JanelaSaidaOS(tk.Toplevel):
                 icon="warning",
             ):
                 return
-        resumo = confirmar_saida_os(self.estoque, self.dados_os["itens"], self.config_dados["materiais"], nome_pedido)
+        resumo = confirmar_saida_os(
+            self.estoque, self.dados_os["itens"], self.config_dados["materiais"], nome_pedido, self.resolucoes_manuais,
+        )
         negativos = [r for r in resumo if r["saldo_resultante"] is not None and r["saldo_resultante"] < 0]
         self.ao_salvar()
         if negativos:

@@ -4,7 +4,7 @@ import pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 import estoque
-from estoque import confirmar_saida_os, pedido_ja_teve_saida, calcular_consumo
+from estoque import confirmar_saida_os, pedido_ja_teve_saida, calcular_consumo, prever_saida_os, produtos_por_categoria
 
 
 def _isolar_arquivo_estoque(monkeypatch, tmp_path):
@@ -63,6 +63,87 @@ def test_pedido_ja_teve_saida_verdadeiro_depois_de_confirmar(monkeypatch, tmp_pa
 
     assert pedido_ja_teve_saida(estoque_dados, nome_pedido) is True
     assert pedido_ja_teve_saida(estoque_dados, "OUTRO CLIENTE (02/01/2026 10:00:00)") is False
+
+
+def _estoque_adesivo_ambiguo():
+    def _adesivo(descricao):
+        return {
+            "descricao": descricao, "tipo": "rolo", "unidade": "rolo",
+            "comprimento_rolo_m": 50, "categoria_vinculada": "ADESIVO",
+            "variante_vinculada": None, "minimo": 0, "maximo": 0,
+            "codigo_planilha": None, "acumulado_m": 0.0,
+        }
+    return {
+        "produtos": {
+            "ADESIVO_BRANCO_FOSCO_127": _adesivo("Adesivo Branco Fosco"),
+            "ADESIVO_CRISTAL_127": _adesivo("Adesivo Cristal"),
+        },
+        "movimentos": [], "proximo_id": 1, "producao_mensal": [],
+    }
+
+
+def _itens_adesivo():
+    materiais_config = {"ADESIVO": {"tipo": "rolo", "largura_cm": 127.0, "comprimento_cm": 5000.0}}
+    itens = [{
+        "categoria": "ADESIVO", "variante": None, "quantidade": 1,
+        "dimensao": {"area_m2": 63.5, "largura_m": 1.27, "altura_m": 50.0},
+    }]
+    return itens, materiais_config
+
+
+def test_produtos_por_categoria_lista_os_candidatos_ambiguos():
+    estoque_dados = _estoque_adesivo_ambiguo()
+    candidatos = produtos_por_categoria(estoque_dados, "ADESIVO")
+    assert {codigo for codigo, _ in candidatos} == {"ADESIVO_BRANCO_FOSCO_127", "ADESIVO_CRISTAL_127"}
+
+
+def test_sem_resolucao_manual_adesivo_continua_ambiguo(monkeypatch, tmp_path):
+    _isolar_arquivo_estoque(monkeypatch, tmp_path)
+    estoque_dados = _estoque_adesivo_ambiguo()
+    itens, materiais_config = _itens_adesivo()
+
+    previsao = prever_saida_os(estoque_dados, itens, materiais_config)
+
+    assert previsao[0]["produto"] is None
+    assert previsao[0]["ambiguo"] is True
+
+
+def test_resolucao_manual_desconta_o_produto_escolhido(monkeypatch, tmp_path):
+    _isolar_arquivo_estoque(monkeypatch, tmp_path)
+    estoque_dados = _estoque_adesivo_ambiguo()
+    itens, materiais_config = _itens_adesivo()
+    resolucoes = {"ADESIVO": "ADESIVO_CRISTAL_127"}
+
+    resumo = confirmar_saida_os(estoque_dados, itens, materiais_config, "CLIENTE (01/01/2026 10:00:00)", resolucoes_manuais=resolucoes)
+
+    assert resumo[0]["produto"] == "Adesivo Cristal"
+    assert resumo[0]["ambiguo"] is False
+    assert estoque.saldo_produto(estoque_dados, "ADESIVO_CRISTAL_127") == -1
+    assert estoque.saldo_produto(estoque_dados, "ADESIVO_BRANCO_FOSCO_127") == 0, "so o escolhido pode ser descontado"
+
+
+def test_resolucao_manual_pra_outra_categoria_nao_afeta_esta(monkeypatch, tmp_path):
+    _isolar_arquivo_estoque(monkeypatch, tmp_path)
+    estoque_dados = _estoque_adesivo_ambiguo()
+    itens, materiais_config = _itens_adesivo()
+    resolucoes = {"OUTRA_CATEGORIA": "ADESIVO_CRISTAL_127"}
+
+    previsao = prever_saida_os(estoque_dados, itens, materiais_config, resolucoes_manuais=resolucoes)
+
+    assert previsao[0]["produto"] is None
+    assert previsao[0]["ambiguo"] is True
+
+
+def test_resolucao_manual_com_codigo_inexistente_nao_quebra(monkeypatch, tmp_path):
+    _isolar_arquivo_estoque(monkeypatch, tmp_path)
+    estoque_dados = _estoque_adesivo_ambiguo()
+    itens, materiais_config = _itens_adesivo()
+    resolucoes = {"ADESIVO": "CODIGO_QUE_NAO_EXISTE"}
+
+    previsao = prever_saida_os(estoque_dados, itens, materiais_config, resolucoes_manuais=resolucoes)
+
+    assert previsao[0]["produto"] is None
+    assert previsao[0]["ambiguo"] is True
 
 
 def test_calcular_consumo_multiplica_pela_quantidade_do_item():

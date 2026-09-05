@@ -387,6 +387,19 @@ def _produto_vinculado(estoque, categoria, variante):
     return None, None, bool(chapas)
 
 
+def produtos_por_categoria(estoque, categoria):
+    """
+    Lista (codigo, produto) cadastrados pra essa categoria de etiqueta —
+    usado pra deixar o usuário escolher manualmente qual produto baixar
+    quando há mais de um vinculado à mesma categoria sem jeito de saber
+    qual pelo nome do arquivo (caso do ADESIVO, com 4 acabamentos).
+    """
+    return [
+        (codigo, produto) for codigo, produto in estoque["produtos"].items()
+        if produto["categoria_vinculada"] == categoria
+    ]
+
+
 def calcular_consumo(itens, materiais_config):
     """
     Agrupa os itens de uma OS por categoria+variante e calcula quanto
@@ -461,11 +474,22 @@ def calcular_consumo(itens, materiais_config):
     return resultados
 
 
-def _processar_saida_os(estoque, itens, materiais_config, nome_pedido, persistir):
+def _processar_saida_os(estoque, itens, materiais_config, nome_pedido, persistir, resolucoes_manuais=None):
+    resolucoes_manuais = resolucoes_manuais or {}
     consumo = calcular_consumo(itens, materiais_config)
     resumo = []
     for grupo in consumo:
         codigo, produto, ambiguo = _produto_vinculado(estoque, grupo["categoria"], grupo["variante"])
+        if codigo is None and ambiguo:
+            # usuário escolheu manualmente qual dos produtos ambíguos
+            # baixar (ex: qual dos 4 acabamentos de ADESIVO) — resolvido
+            # na tela de Saída pela OS, chave é só a categoria porque é
+            # o único caso real de ambiguidade hoje (rolo, sem variante)
+            codigo_manual = resolucoes_manuais.get(grupo["categoria"])
+            if codigo_manual and codigo_manual in estoque["produtos"]:
+                codigo = codigo_manual
+                produto = estoque["produtos"][codigo]
+                ambiguo = False
         if codigo is None:
             resumo.append({
                 "categoria": grupo["categoria"], "variante": grupo["variante"], "produto": None,
@@ -649,12 +673,12 @@ def pedido_ja_teve_saida(estoque, nome_pedido):
     return any(m.get("origem_pedido") == nome_pedido for m in estoque["movimentos"])
 
 
-def prever_saida_os(estoque, itens, materiais_config):
+def prever_saida_os(estoque, itens, materiais_config, resolucoes_manuais=None):
     """Só calcula o que SERIA descontado, sem gravar nada no estoque real."""
     copia = copy.deepcopy(estoque)
-    return _processar_saida_os(copia, itens, materiais_config, nome_pedido=None, persistir=False)
+    return _processar_saida_os(copia, itens, materiais_config, nome_pedido=None, persistir=False, resolucoes_manuais=resolucoes_manuais)
 
 
-def confirmar_saida_os(estoque, itens, materiais_config, nome_pedido):
+def confirmar_saida_os(estoque, itens, materiais_config, nome_pedido, resolucoes_manuais=None):
     """Desconta de verdade (rolo: acumula e só baixa rolo fechado; chapa: baixa direto) e grava."""
-    return _processar_saida_os(estoque, itens, materiais_config, nome_pedido, persistir=True)
+    return _processar_saida_os(estoque, itens, materiais_config, nome_pedido, persistir=True, resolucoes_manuais=resolucoes_manuais)

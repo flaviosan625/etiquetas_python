@@ -706,8 +706,518 @@
       "observacao": "",
       "origem_pedido": null,
       "estorno_de": null
+    },
+    {
+      "id": 4,
+      "data": "05/09/2026 09:18:24",
+      "produto": "ACRILICO_10MM_CRISTAL",
+      "tipo": "ajuste",
+      "quantidade": 20,
+      "observacao": "Contagem fisica inicial de teste - saldo alvo 20 un (05/09/2026)",
+      "origem_pedido": null,
+      "estorno_de": null
+    },
+    {
+      "id": 5,
+      "data": "05/09/2026 09:18:24",
+      "produto": "ACRILICO_10MM_LEITOSO",
+      "tipo": "ajuste",
+      "quantidade": 20,
+      "observacao": "Contagem fisica inicial de teste - saldo alvo 20 un (05/09/2026)",
+      "origem_pedido": null,
+      "estorno_de": null
+    },
+    {
+      "id": 6,
+      "data": "05/09/2026 09:18:24",
+      "produto": "ACRILICO_1MM_CRISTAL",
+      "tipo": "ajuste",
+      "quantidade": 20,
+      "observacao": "Contagem fisica inicial de teste - saldo alvo 20 un (05/09/2026)",
+      "origem_pedido": null,
+      "estorno_de": null
+    },
+    {
+      "id": 7,
+      "data": "05/09/2026 09:18:24",
+      "produto": "ACRILICO_1MM_LEITOSO",
+      "tipo": "ajuste",
+      "quantidade": 20,
+      "observacao": "Contagem fisica inicial de teste - saldo alvo 20 un (05/09/2026)",
+      "origem_pedido": null,
+      "estorno_de": null
+    },
+    {
+      "id": 8,
+      "data": "05/09/2026 09:18:24",
+      "produto": "ACRILICO_2MM_CRISTAL",
+      "tipo": "ajuste",
+      "quantidade": 20,
+      "observacao": "Contagem fisica inicial de teste - saldo alvo 20 un (05/09/2026)",
+      "origem_pedido": null,
+      "estorno_de": null
+    },
+    {
+      "id": 9,
+      "data": "05/09/2026 09:18:24",
+      "produto": "ACRILICO_2MM_LEITOSO",
+      "tipo": "ajuste",
+      "quantidade": 20,
+      "observacao": "Contagem fisica inicial de teste - saldo alvo 20 un (05/09/2026)",
+      "origem_pedido": null,
+      "estorno_de": null
+    },
+    {
+      "id": 10,
+      "data": "05/09/2026 09:18:24",
+      "produto": "ACRILICO_3MM_CRISTAL",
+      "tipo": "ajuste",
+      "quantidade": 20,
+      "observacao": "Contagem fisica inicial de teste - saldo alvo 20 un (05/09/2026)",
+      "origem_pedido": null,
+      "estorno_de": null
+    },
+    {
+      "id": 11,
+      "data": "05/09/2026 09:18:24",
+      "produto": "ACRILICO_3MM_LEITOSO",
+      "tipo": "ajuste",
+      "quantidade": 20,
+      "observacao": "Contagem fisica inicial de teste - saldo alvo 20 un (05/09/2026)",
+      "origem_pedido": null,
+      "estorno_de": null
+    },
+    {
+      "id": 12,
+      "data": "05/09/2026 09:18:24",
+      "produto": "ACRILICO_4MM_CRISTAL",
+      "tipo": "ajuste",
+      "quantidade": 20,
+      "observacao": "Contagem fisica inicial de teste - saldo alvo 20 un (05/09/2026)",
+      "origem_pedido": null,
+      "estorno_de": null
+    },
+    {
+      "id": 13,
+      "data": "05/09/2026 09:18:24",
+      "produto": "ACRILICO_4MM_LEITOSO",
+      "tipo": "ajuste",
+      "quantidade": 20,
+      "observacao": "Contagem fisica inicial de teste - saldo alvo 20 un (05/09/2026)",
+      "origem_pedido": null,
+      "estorno_de": null
+    },
+    {
+      "id": 14,
+      "data": "05/09/2026 09:18:24",
+      "produto": "ACRILICO_5MM_CRISTAL",
+      "tipo": "ajuste",
+      "quantidade": 20,
+      "observacao": "Contagem fisica inicial de teste - saldo alvo 20 un (05/09/2026)",
+      "origem_pedido": null,
+      "estorno_de": null
+    },
+    {
+      "id": 15,
+      "data": "05/09/2026 09:18:24",
+      "produto": "ACRILICO_5MM_LEITOSO",
+      "tipo": "ajuste",
+      "quantidade": 20,
+      "observacao": "Contagem fisica inicial de teste - saldo alvo 20 un (05/09/2026)",
+      "origem_pedido": null,
+      "estorno_de": null
+    },
+    {
+      "id": 16,
+      "data": "05/09/2026 09:18:24",
+      "produto": "ACRILICO_6MM_CRISTAL",
+      "tipo": "ajuste",
+      "quantidade": 20,
+      "observacao": "Contagem fisica inicial de teste - saldo alvo 20 un (05/09/2026)",
+      "origem_pedido": null,
+      "estorno_de": null
+    },
+    {
+      "id": 17,
+      "data": "05/09/2026 09:18:24",
+      "produto": "ACRILICO_6MM_LEITOSO",
+      "tipo": "ajuste",
+      "quantidade": 20,
+      "observacao": "Contagem fisica inicial de teste - saldo alvo 20 un (05/09/2026)",
+      "origem_pedido": null,
+      "estorno_de": null
+    },
+    {
+      "id": 18,
+      "data": "05/09/2026 09:18:24",
+      "produto": "ACRILICO_7MM_CRISTAL",
+      "tipo": "ajuste",
+      "quantidade": 20,
+      "observacao": "Contagem fisica inicial de teste - saldo alvo 20 un (05/09/2026)",
+      "origem_pedido": null,
+      "estorno_de": null
+    },
+    {
+      "id": 19,
+      "data": "05/09/2026 09:18:24",
+      "produto": "ACRILICO_7MM_LEITOSO",
+      "tipo": "ajuste",
+      "quantidade": 20,
+      "observacao": "Contagem fisica inicial de teste - saldo alvo 20 un (05/09/2026)",
+      "origem_pedido": null,
+      "estorno_de": null
+    },
+    {
+      "id": 20,
+      "data": "05/09/2026 09:18:24",
+      "produto": "ACRILICO_8MM_CRISTAL",
+      "tipo": "ajuste",
+      "quantidade": 20,
+      "observacao": "Contagem fisica inicial de teste - saldo alvo 20 un (05/09/2026)",
+      "origem_pedido": null,
+      "estorno_de": null
+    },
+    {
+      "id": 21,
+      "data": "05/09/2026 09:18:24",
+      "produto": "ACRILICO_8MM_LEITOSO",
+      "tipo": "ajuste",
+      "quantidade": 20,
+      "observacao": "Contagem fisica inicial de teste - saldo alvo 20 un (05/09/2026)",
+      "origem_pedido": null,
+      "estorno_de": null
+    },
+    {
+      "id": 22,
+      "data": "05/09/2026 09:18:24",
+      "produto": "ADESIVO_BRANCO_FOSCO_127",
+      "tipo": "ajuste",
+      "quantidade": 15.0,
+      "observacao": "Contagem fisica inicial de teste - saldo alvo 20 un (05/09/2026)",
+      "origem_pedido": null,
+      "estorno_de": null
+    },
+    {
+      "id": 23,
+      "data": "05/09/2026 09:18:24",
+      "produto": "ADESIVO_CRISTAL_127",
+      "tipo": "ajuste",
+      "quantidade": 15.0,
+      "observacao": "Contagem fisica inicial de teste - saldo alvo 20 un (05/09/2026)",
+      "origem_pedido": null,
+      "estorno_de": null
+    },
+    {
+      "id": 24,
+      "data": "05/09/2026 09:18:24",
+      "produto": "ADESIVO_PRETO_FOSCO_127",
+      "tipo": "ajuste",
+      "quantidade": 20,
+      "observacao": "Contagem fisica inicial de teste - saldo alvo 20 un (05/09/2026)",
+      "origem_pedido": null,
+      "estorno_de": null
+    },
+    {
+      "id": 25,
+      "data": "05/09/2026 09:18:24",
+      "produto": "ILHOS_ZERO_AT",
+      "tipo": "ajuste",
+      "quantidade": 20,
+      "observacao": "Contagem fisica inicial de teste - saldo alvo 20 un (05/09/2026)",
+      "origem_pedido": null,
+      "estorno_de": null
+    },
+    {
+      "id": 26,
+      "data": "05/09/2026 09:18:24",
+      "produto": "LONA_FOSCA_440_320",
+      "tipo": "ajuste",
+      "quantidade": 16.0,
+      "observacao": "Contagem fisica inicial de teste - saldo alvo 20 un (05/09/2026)",
+      "origem_pedido": null,
+      "estorno_de": null
+    },
+    {
+      "id": 27,
+      "data": "05/09/2026 09:18:24",
+      "produto": "MASCARA_VINIL_PAPEL",
+      "tipo": "ajuste",
+      "quantidade": 20,
+      "observacao": "Contagem fisica inicial de teste - saldo alvo 20 un (05/09/2026)",
+      "origem_pedido": null,
+      "estorno_de": null
+    },
+    {
+      "id": 28,
+      "data": "05/09/2026 09:18:24",
+      "produto": "MASCARA_VINIL_TRANSPARENTE",
+      "tipo": "ajuste",
+      "quantidade": 20,
+      "observacao": "Contagem fisica inicial de teste - saldo alvo 20 un (05/09/2026)",
+      "origem_pedido": null,
+      "estorno_de": null
+    },
+    {
+      "id": 29,
+      "data": "05/09/2026 09:18:24",
+      "produto": "MDF_15MM",
+      "tipo": "ajuste",
+      "quantidade": 20,
+      "observacao": "Contagem fisica inicial de teste - saldo alvo 20 un (05/09/2026)",
+      "origem_pedido": null,
+      "estorno_de": null
+    },
+    {
+      "id": 30,
+      "data": "05/09/2026 09:18:24",
+      "produto": "MDF_6MM",
+      "tipo": "ajuste",
+      "quantidade": 20,
+      "observacao": "Contagem fisica inicial de teste - saldo alvo 20 un (05/09/2026)",
+      "origem_pedido": null,
+      "estorno_de": null
+    },
+    {
+      "id": 31,
+      "data": "05/09/2026 09:18:24",
+      "produto": "MDF_9MM",
+      "tipo": "ajuste",
+      "quantidade": 20,
+      "observacao": "Contagem fisica inicial de teste - saldo alvo 20 un (05/09/2026)",
+      "origem_pedido": null,
+      "estorno_de": null
+    },
+    {
+      "id": 32,
+      "data": "05/09/2026 09:18:24",
+      "produto": "POLICARBONATO_5MM",
+      "tipo": "ajuste",
+      "quantidade": 20,
+      "observacao": "Contagem fisica inicial de teste - saldo alvo 20 un (05/09/2026)",
+      "origem_pedido": null,
+      "estorno_de": null
+    },
+    {
+      "id": 33,
+      "data": "05/09/2026 09:18:24",
+      "produto": "POLICARBONATO_ALVEOLAR_5MM",
+      "tipo": "ajuste",
+      "quantidade": 20,
+      "observacao": "Contagem fisica inicial de teste - saldo alvo 20 un (05/09/2026)",
+      "origem_pedido": null,
+      "estorno_de": null
+    },
+    {
+      "id": 34,
+      "data": "05/09/2026 09:18:24",
+      "produto": "PS_1MM_BRANCO",
+      "tipo": "ajuste",
+      "quantidade": 20,
+      "observacao": "Contagem fisica inicial de teste - saldo alvo 20 un (05/09/2026)",
+      "origem_pedido": null,
+      "estorno_de": null
+    },
+    {
+      "id": 35,
+      "data": "05/09/2026 09:18:24",
+      "produto": "PS_1MM_PRETO",
+      "tipo": "ajuste",
+      "quantidade": 20,
+      "observacao": "Contagem fisica inicial de teste - saldo alvo 20 un (05/09/2026)",
+      "origem_pedido": null,
+      "estorno_de": null
+    },
+    {
+      "id": 36,
+      "data": "05/09/2026 09:18:24",
+      "produto": "PS_2MM_BRANCO",
+      "tipo": "ajuste",
+      "quantidade": 20,
+      "observacao": "Contagem fisica inicial de teste - saldo alvo 20 un (05/09/2026)",
+      "origem_pedido": null,
+      "estorno_de": null
+    },
+    {
+      "id": 37,
+      "data": "05/09/2026 09:18:24",
+      "produto": "PS_2MM_PRETO",
+      "tipo": "ajuste",
+      "quantidade": 20,
+      "observacao": "Contagem fisica inicial de teste - saldo alvo 20 un (05/09/2026)",
+      "origem_pedido": null,
+      "estorno_de": null
+    },
+    {
+      "id": 38,
+      "data": "05/09/2026 09:18:24",
+      "produto": "PS_3MM_BRANCO",
+      "tipo": "ajuste",
+      "quantidade": 20,
+      "observacao": "Contagem fisica inicial de teste - saldo alvo 20 un (05/09/2026)",
+      "origem_pedido": null,
+      "estorno_de": null
+    },
+    {
+      "id": 39,
+      "data": "05/09/2026 09:18:24",
+      "produto": "PS_3MM_PRETO",
+      "tipo": "ajuste",
+      "quantidade": 20,
+      "observacao": "Contagem fisica inicial de teste - saldo alvo 20 un (05/09/2026)",
+      "origem_pedido": null,
+      "estorno_de": null
+    },
+    {
+      "id": 40,
+      "data": "05/09/2026 09:18:24",
+      "produto": "PVC_10MM_BRANCO",
+      "tipo": "ajuste",
+      "quantidade": 20,
+      "observacao": "Contagem fisica inicial de teste - saldo alvo 20 un (05/09/2026)",
+      "origem_pedido": null,
+      "estorno_de": null
+    },
+    {
+      "id": 41,
+      "data": "05/09/2026 09:18:24",
+      "produto": "PVC_10MM_PRETO",
+      "tipo": "ajuste",
+      "quantidade": 20,
+      "observacao": "Contagem fisica inicial de teste - saldo alvo 20 un (05/09/2026)",
+      "origem_pedido": null,
+      "estorno_de": null
+    },
+    {
+      "id": 42,
+      "data": "05/09/2026 09:18:24",
+      "produto": "PVC_20MM_BRANCO",
+      "tipo": "ajuste",
+      "quantidade": 20,
+      "observacao": "Contagem fisica inicial de teste - saldo alvo 20 un (05/09/2026)",
+      "origem_pedido": null,
+      "estorno_de": null
+    },
+    {
+      "id": 43,
+      "data": "05/09/2026 09:18:24",
+      "produto": "PVC_20MM_PRETO",
+      "tipo": "ajuste",
+      "quantidade": 20,
+      "observacao": "Contagem fisica inicial de teste - saldo alvo 20 un (05/09/2026)",
+      "origem_pedido": null,
+      "estorno_de": null
+    },
+    {
+      "id": 44,
+      "data": "05/09/2026 09:18:24",
+      "produto": "PVC_3MM_BRANCO",
+      "tipo": "ajuste",
+      "quantidade": 20,
+      "observacao": "Contagem fisica inicial de teste - saldo alvo 20 un (05/09/2026)",
+      "origem_pedido": null,
+      "estorno_de": null
+    },
+    {
+      "id": 45,
+      "data": "05/09/2026 09:18:24",
+      "produto": "PVC_3MM_PRETO",
+      "tipo": "ajuste",
+      "quantidade": 20,
+      "observacao": "Contagem fisica inicial de teste - saldo alvo 20 un (05/09/2026)",
+      "origem_pedido": null,
+      "estorno_de": null
+    },
+    {
+      "id": 46,
+      "data": "05/09/2026 09:18:24",
+      "produto": "TINTA_SWJ_320_BLACK",
+      "tipo": "ajuste",
+      "quantidade": 20,
+      "observacao": "Contagem fisica inicial de teste - saldo alvo 20 un (05/09/2026)",
+      "origem_pedido": null,
+      "estorno_de": null
+    },
+    {
+      "id": 47,
+      "data": "05/09/2026 09:18:24",
+      "produto": "TINTA_SWJ_320_CIANO",
+      "tipo": "ajuste",
+      "quantidade": 20,
+      "observacao": "Contagem fisica inicial de teste - saldo alvo 20 un (05/09/2026)",
+      "origem_pedido": null,
+      "estorno_de": null
+    },
+    {
+      "id": 48,
+      "data": "05/09/2026 09:18:24",
+      "produto": "TINTA_SWJ_320_MAGENTA",
+      "tipo": "ajuste",
+      "quantidade": 20,
+      "observacao": "Contagem fisica inicial de teste - saldo alvo 20 un (05/09/2026)",
+      "origem_pedido": null,
+      "estorno_de": null
+    },
+    {
+      "id": 49,
+      "data": "05/09/2026 09:18:24",
+      "produto": "TINTA_SWJ_320_YELLOW",
+      "tipo": "ajuste",
+      "quantidade": 20,
+      "observacao": "Contagem fisica inicial de teste - saldo alvo 20 un (05/09/2026)",
+      "origem_pedido": null,
+      "estorno_de": null
+    },
+    {
+      "id": 50,
+      "data": "05/09/2026 09:18:24",
+      "produto": "TINTA_UV_160_BLACK",
+      "tipo": "ajuste",
+      "quantidade": 20,
+      "observacao": "Contagem fisica inicial de teste - saldo alvo 20 un (05/09/2026)",
+      "origem_pedido": null,
+      "estorno_de": null
+    },
+    {
+      "id": 51,
+      "data": "05/09/2026 09:18:24",
+      "produto": "TINTA_UV_160_CIANO",
+      "tipo": "ajuste",
+      "quantidade": 20,
+      "observacao": "Contagem fisica inicial de teste - saldo alvo 20 un (05/09/2026)",
+      "origem_pedido": null,
+      "estorno_de": null
+    },
+    {
+      "id": 52,
+      "data": "05/09/2026 09:18:24",
+      "produto": "TINTA_UV_160_MAGENTA",
+      "tipo": "ajuste",
+      "quantidade": 20,
+      "observacao": "Contagem fisica inicial de teste - saldo alvo 20 un (05/09/2026)",
+      "origem_pedido": null,
+      "estorno_de": null
+    },
+    {
+      "id": 53,
+      "data": "05/09/2026 09:18:24",
+      "produto": "TINTA_UV_160_YELLOW",
+      "tipo": "ajuste",
+      "quantidade": 20,
+      "observacao": "Contagem fisica inicial de teste - saldo alvo 20 un (05/09/2026)",
+      "origem_pedido": null,
+      "estorno_de": null
+    },
+    {
+      "id": 54,
+      "data": "05/09/2026 09:18:24",
+      "produto": "VINIL_JATEADO_127",
+      "tipo": "ajuste",
+      "quantidade": 20,
+      "observacao": "Contagem fisica inicial de teste - saldo alvo 20 un (05/09/2026)",
+      "origem_pedido": null,
+      "estorno_de": null
     }
   ],
-  "proximo_id": 4,
+  "proximo_id": 55,
   "producao_mensal": []
 }
