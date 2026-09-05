@@ -446,6 +446,51 @@ def _avisar_erro_de_maquina(nome_maquina, erro, logger):
         logger("ok", f"Máquina '{nome_maquina}' voltou a funcionar.")
 
 
+# Os dois dicionários acima guardam o estado dos avisos na MEMÓRIA do
+# processo, o que bastava enquanto o vigia era um processo eterno. No
+# modo "--uma-vez" (uma passada por minuto, disparada pelo Agendador) o
+# processo morre a cada minuto e a memória vai junto: uma hot folder
+# faltando num fim de semana escreveria a MESMA linha de erro umas 4.300
+# vezes no log, em vez de uma — que é exatamente o que a deduplicação
+# existe pra impedir. Por isso o estado vai e volta do disco a cada
+# passada.
+CAMINHO_ESTADO_AVISOS = pathlib.Path(__file__).resolve().parent / "rasterlink_hotfolder_avisos.json"
+
+
+def carregar_estado_avisos(caminho=None):
+    """
+    Traz de volta os avisos já dados numa passada anterior. Nunca
+    estoura: no pior caso o log repete uma linha, e linha repetida é
+    infinitamente melhor que fila parada.
+    """
+    caminho = pathlib.Path(caminho or CAMINHO_ESTADO_AVISOS)
+    try:
+        with open(caminho, "r", encoding="utf-8") as f:
+            dados = json.load(f)
+    except (OSError, json.JSONDecodeError, ValueError):
+        return
+    if not isinstance(dados, dict):
+        return
+    for destino, chave in ((_ultimo_erro_por_maquina, "maquinas"), (_ultimo_erro_por_arquivo, "arquivos")):
+        guardado = dados.get(chave)
+        if isinstance(guardado, dict):
+            destino.clear()
+            destino.update({k: v for k, v in guardado.items() if v is None or isinstance(v, str)})
+
+
+def salvar_estado_avisos(caminho=None):
+    """Guarda quais avisos já foram dados, pra próxima passada não repetir."""
+    caminho = pathlib.Path(caminho or CAMINHO_ESTADO_AVISOS)
+    try:
+        with open(caminho, "w", encoding="utf-8") as f:
+            json.dump(
+                {"maquinas": _ultimo_erro_por_maquina, "arquivos": _ultimo_erro_por_arquivo},
+                f, ensure_ascii=False, indent=2,
+            )
+    except OSError:
+        pass
+
+
 def vigiar_fila_uma_vez(pasta_fila=None, maquinas=None, logger=print, pasta_relatorios=None, dias_retencao=None):
     """
     Um ciclo só: pra cada máquina configurada, olha a subpasta dela
@@ -585,24 +630,28 @@ def _travar_instancia_unica(caminho_trava=None):
     return True, arquivo
 
 
-if __name__ == "__main__":
-    _pode_rodar, _trava = _travar_instancia_unica()
-    if not _pode_rodar:
+def _rodar_protegido(alvo):
+    """
+    Roda 'alvo' segurando a trava de instância única, e grava o
+    traceback num arquivo se quebrar.
+
+    A rede de diagnóstico existe (2026-09-04) porque sem console
+    (pythonw.exe/.pyw) um erro bem no início — antes até do primeiro
+    logger_arquivo(...) conseguir rodar — desaparecia sem deixar rastro
+    nenhum, nem no log normal.
+    """
+    pode_rodar, trava = _travar_instancia_unica()
+    if not pode_rodar:
         logger_arquivo(
             "warn",
             "Já existe outro vigia rodando nesta máquina — esta instância vai sair "
             "pra não mandar arquivo duplicado pro RIP.",
         )
-        raise SystemExit(0)
+        return False
 
     try:
-        vigiar_fila(logger=logger_arquivo)
+        alvo()
     except BaseException:
-        # Rede de segurança de diagnóstico (2026-09-04): sem console
-        # (pythonw.exe/.pyw), um erro bem no início — antes até do
-        # primeiro logger_arquivo(...) conseguir rodar — desaparecia
-        # sem deixar rastro nenhum, nem no log normal. Isso aqui grava
-        # o traceback completo, não importa em qual ponto quebrou.
         import traceback
         try:
             caminho_crash = pathlib.Path(__file__).resolve().parent / "rasterlink_hotfolder_crash.log"
@@ -610,3 +659,51 @@ if __name__ == "__main__":
                 f.write(f"{datetime.datetime.now():%Y-%m-%d %H:%M:%S}\n{traceback.format_exc()}\n")
         except Exception:
             pass
+    finally:
+        if trava is not None:
+            trava.close()
+    return True
+
+
+def principal_uma_vez():
+    """
+    Uma passada na fila e sai — é este o modo que a tarefa do Agendador
+    usa na máquina do RIP, disparada de minuto em minuto.
+
+    Por que não o loop eterno (vigiar_fila): ele já morreu sem deixar
+    rastro e a fila ficou parada até alguém abrir o Agendador e clicar
+    em "Executar" na mão (2026-09-05, três vezes). Um processo que
+    nasce, trabalha dois segundos e morre não tem como morrer sem
+    ninguém ver: se parar de disparar, a coluna "Última execução" do
+    Agendador envelhece na cara de quem olha, e o pior estrago possível
+    passa a ser um minuto de atraso — não o dia inteiro.
+
+    A trava de instância única continua valendo: é ela que impede duas
+    passadas de se atropelarem se alguma demorar mais que o intervalo.
+    """
+    carregar_estado_avisos()
+    try:
+        _rodar_protegido(lambda: vigiar_fila_uma_vez(logger=logger_arquivo))
+    finally:
+        salvar_estado_avisos()
+
+
+def principal():
+    """O vigia como processo eterno — modo antigo, mantido pra rodar na mão e ver acontecendo."""
+    _rodar_protegido(lambda: vigiar_fila(logger=logger_arquivo))
+
+
+if __name__ == "__main__":
+    import sys
+
+    if "--autoteste" in sys.argv:
+        # Só pra provar que este Python CONSEGUE iniciar este módulo
+        # deste jeito. Existe porque na máquina do RIP o pythonw.exe não
+        # inicia script por caminho de arquivo e falha em silêncio
+        # absoluto — sem uma linha no log não dá pra saber se a tarefa
+        # do Agendador não disparou ou se disparou e morreu no ar.
+        logger_arquivo("info", f"autoteste ok — iniciei por: {sys.executable} {' '.join(sys.argv)}")
+    elif "--uma-vez" in sys.argv:
+        principal_uma_vez()
+    else:
+        principal()

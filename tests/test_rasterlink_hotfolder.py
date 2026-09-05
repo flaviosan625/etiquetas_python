@@ -20,8 +20,16 @@ def _isolar_pasta_relatorios(tmp_path, monkeypatch):
     tropeço que já tinha acontecido com estoque.ESTOQUE_PATH.
 
     autouse de propósito: teste novo não pode ter a chance de esquecer.
+
+    Junto vão o log, a trava e o estado de avisos: todos moram AO LADO
+    do módulo, então sem isso um teste suja a pasta do projeto — e o
+    log de verdade, que é o que a gente lê quando a fila para, ganha
+    linha de mentira no meio.
     """
     monkeypatch.setattr(rl_hf, "PASTA_RELATORIOS", tmp_path / "_relatorios_isolados")
+    monkeypatch.setattr(rl_hf, "CAMINHO_LOG", tmp_path / "hotfolder.log")
+    monkeypatch.setattr(rl_hf, "CAMINHO_TRAVA", tmp_path / "hotfolder.lock")
+    monkeypatch.setattr(rl_hf, "CAMINHO_ESTADO_AVISOS", tmp_path / "hotfolder_avisos.json")
 
 
 def _maquinas(hot_folder, largura_util_m=None):
@@ -798,3 +806,126 @@ def test_arquivo_que_volta_a_funcionar_avisa_e_e_enviado(tmp_path, monkeypatch):
     assert resultado["UJV100"]["enviados"] == ["arte.pdf"]
     assert (hot / "arte.pdf").exists()
     assert any(nivel == "ok" and "passou depois de falhar" in msg for nivel, msg in linhas)
+
+
+# --- modo "uma passada e sai" (tarefa do Agendador na maquina do RIP) ---
+
+
+def test_principal_uma_vez_faz_uma_passada_e_sai(tmp_path, monkeypatch):
+    """
+    O modo do Agendador NAO pode entrar em loop: a tarefa dispara de
+    minuto em minuto e cada disparo tem que morrer sozinho.
+    """
+    import rasterlink_hotfolder as modulo
+
+    chamadas = []
+    monkeypatch.setattr(modulo, "vigiar_fila_uma_vez", lambda **kw: chamadas.append(kw))
+    monkeypatch.setattr(modulo, "vigiar_fila", lambda **kw: pytest.fail("nao pode chamar o loop eterno"))
+    monkeypatch.setattr(modulo, "CAMINHO_TRAVA", tmp_path / "trava.lock")
+    monkeypatch.setattr(modulo, "CAMINHO_ESTADO_AVISOS", tmp_path / "avisos.json")
+
+    modulo.principal_uma_vez()
+
+    assert len(chamadas) == 1
+
+
+def test_aviso_de_erro_nao_repete_entre_passadas_separadas(tmp_path, monkeypatch):
+    """
+    A deduplicacao do log vivia so na memoria do processo. Com uma
+    passada por minuto o processo morre a cada minuto: sem guardar o
+    estado em disco, uma hot folder faltando por um fim de semana
+    escreveria a mesma linha de erro umas 4.300 vezes.
+    """
+    import rasterlink_hotfolder as modulo
+    monkeypatch.setattr(modulo, "CAMINHO_ESTADO_AVISOS", tmp_path / "avisos.json")
+
+    fila = tmp_path / "fila"
+    maquinas = {"QUEBRADA": str(tmp_path / "nao_existe")}
+
+    linhas = []
+
+    def uma_passada():
+        # cada passada e um processo novo: memoria zerada, disco nao
+        modulo._ultimo_erro_por_maquina.clear()
+        modulo.carregar_estado_avisos()
+        vigiar_fila_uma_vez(pasta_fila=str(fila), maquinas=maquinas,
+                            logger=lambda n, m: linhas.append((n, m)))
+        modulo.salvar_estado_avisos()
+
+    for _ in range(3):
+        uma_passada()
+
+    assert sum(1 for nivel, _ in linhas if nivel == "err") == 1
+
+
+def test_maquina_que_volta_a_funcionar_ainda_avisa_entre_passadas(tmp_path, monkeypatch):
+    """Guardar o estado nao pode calar o aviso bom — o 'voltou a funcionar' tem que sobreviver igual."""
+    import rasterlink_hotfolder as modulo
+    monkeypatch.setattr(modulo, "CAMINHO_ESTADO_AVISOS", tmp_path / "avisos.json")
+
+    fila = tmp_path / "fila"
+    hot = tmp_path / "hot"
+    linhas = []
+
+    def uma_passada():
+        modulo._ultimo_erro_por_maquina.clear()
+        modulo.carregar_estado_avisos()
+        vigiar_fila_uma_vez(pasta_fila=str(fila), maquinas={"UJV100": str(hot)},
+                            logger=lambda n, m: linhas.append((n, m)))
+        modulo.salvar_estado_avisos()
+
+    uma_passada()
+    hot.mkdir()
+    uma_passada()
+
+    assert any(nivel == "ok" and "voltou a funcionar" in msg for nivel, msg in linhas)
+
+
+def test_estado_de_avisos_ilegivel_nao_derruba_a_passada(tmp_path, monkeypatch):
+    """Arquivo de estado corrompido, no pior caso, repete uma linha de log — nunca para a fila."""
+    import rasterlink_hotfolder as modulo
+    caminho = tmp_path / "avisos.json"
+    caminho.write_text("{ isso nao e json", encoding="utf-8")
+    monkeypatch.setattr(modulo, "CAMINHO_ESTADO_AVISOS", caminho)
+
+    modulo._ultimo_erro_por_maquina.clear()
+    modulo.carregar_estado_avisos()  # nao pode estourar
+
+    resultado = vigiar_fila_uma_vez(pasta_fila=str(tmp_path / "fila"),
+                                    maquinas={"UJV100": str(tmp_path / "hot")},
+                                    logger=lambda n, m: None)
+    assert "erro" in resultado["UJV100"]
+
+
+def test_segunda_passada_simultanea_desiste_em_vez_de_duplicar(tmp_path, monkeypatch):
+    """
+    Duas passadas ao mesmo tempo pegariam o MESMO arquivo e copiariam
+    duas vezes pra hot folder — e ai o RasterLink cria job duplicado,
+    que vira material impresso duas vezes.
+    """
+    import rasterlink_hotfolder as modulo
+    monkeypatch.setattr(modulo, "CAMINHO_TRAVA", tmp_path / "trava.lock")
+
+    pode, trava = modulo._travar_instancia_unica()
+    assert pode
+    try:
+        assert modulo._rodar_protegido(lambda: pytest.fail("nao podia ter rodado")) is False
+    finally:
+        trava.close()
+
+
+def test_erro_na_passada_vira_arquivo_de_crash_em_vez_de_sumir(tmp_path, monkeypatch):
+    """Sem console (pythonw), um erro sem essa rede desaparece sem deixar rastro nenhum."""
+    import rasterlink_hotfolder as modulo
+    monkeypatch.setattr(modulo, "CAMINHO_TRAVA", tmp_path / "trava.lock")
+    monkeypatch.setattr(modulo, "CAMINHO_ESTADO_AVISOS", tmp_path / "avisos.json")
+    monkeypatch.setattr(modulo, "__file__", str(tmp_path / "rasterlink_hotfolder.py"))
+
+    def estoura(**kw):
+        raise RuntimeError("quebrou bem no comeco")
+
+    monkeypatch.setattr(modulo, "vigiar_fila_uma_vez", estoura)
+    modulo.principal_uma_vez()  # nao pode propagar: a tarefa do Agendador nao tem quem olhe
+
+    crash = (tmp_path / "rasterlink_hotfolder_crash.log").read_text(encoding="utf-8")
+    assert "quebrou bem no comeco" in crash
