@@ -22,7 +22,9 @@ import tkinter as tk
 from datetime import date
 from tkinter import filedialog, messagebox, ttk
 
-from arquivamento import PASTA_DESTINO_PADRAO, enviar_os, listar_pedidos
+# arquivamento.py não é mais importado aqui: o checkbox que enviava a
+# OS pro OneDrive foi removido (2026-09-05). O módulo continua no
+# projeto, testado, caso o envio volte em outro formato.
 from branding import CAMINHO_LOGO_GUI
 from config import atualizar_ultimo_uso, atualizar_ultima_impressora, carregar_config, salvar_config
 from dimensoes import formatar_variante
@@ -163,15 +165,11 @@ class JanelaPrincipal(tk.Tk):
 
         ttk.Separator(self).pack(fill="x", padx=16, pady=(0, 10))
 
-        self.var_enviar_onedrive = tk.BooleanVar(value=False)
-        frame_onedrive = tk.Frame(self)
-        frame_onedrive.pack(anchor="w", padx=16, pady=(0, 6))
-        tk.Checkbutton(
-            frame_onedrive, text="☁ Enviar a OS pro OneDrive depois de gerar", variable=self.var_enviar_onedrive,
-        ).pack(anchor="w")
-        tk.Label(
-            frame_onedrive, text=f"    Destino: {PASTA_DESTINO_PADRAO}", fg="#888888", font=("Segoe UI", 8),
-        ).pack(anchor="w")
+        # O checkbox "Enviar a OS pro OneDrive depois de gerar" foi
+        # removido a pedido do usuário (2026-09-05): o recurso não era
+        # usado, e a pasta de destino no OneDrive foi apagada junto.
+        # arquivamento.py continua existindo e testado, só não tem mais
+        # nada na interface que dispare o envio.
 
         frame_impressao = tk.Frame(self)
         frame_impressao.pack(fill="x", padx=16, pady=(0, 6))
@@ -321,7 +319,7 @@ class JanelaPrincipal(tk.Tk):
             target=self._executar_em_thread,
             args=(
                 pasta, cliente, gerente, produtor, pasta_saida_existente,
-                self.var_enviar_onedrive.get(), self.var_imprimir_ao_gerar.get(), self.var_impressora.get(),
+                self.var_imprimir_ao_gerar.get(), self.var_impressora.get(),
             ),
             daemon=True,
         )
@@ -371,7 +369,7 @@ class JanelaPrincipal(tk.Tk):
 
     def _executar_em_thread(
         self, pasta, cliente, gerente, produtor, pasta_saida_existente,
-        enviar_onedrive, imprimir_ao_gerar, impressora,
+        imprimir_ao_gerar, impressora,
     ):
         def on_log(nivel, msg):
             self.fila_eventos.put(("log", nivel, msg))
@@ -387,17 +385,6 @@ class JanelaPrincipal(tk.Tk):
         except Exception as e:
             self.fila_eventos.put(("log", "err", f"Erro inesperado: {e}"))
             resultado = None
-
-        if resultado and enviar_onedrive:
-            try:
-                self._enviar_os_onedrive(resultado["pasta_saida"], on_log)
-            except Exception as e:
-                # nunca deixa um erro inesperado aqui travar o "fim" de
-                # ser enfileirado — sem isso, o botão "Processar Etiquetas"
-                # ficaria desabilitado pra sempre (self.processando nunca
-                # voltaria a False), mesmo com as etiquetas/OS já geradas
-                # com sucesso antes disso.
-                self.fila_eventos.put(("log", "err", f"Erro inesperado ao enviar a OS pro OneDrive: {e}"))
 
         if resultado and imprimir_ao_gerar:
             try:
@@ -423,27 +410,6 @@ class JanelaPrincipal(tk.Tk):
                 on_log("ok", f"{rotulo} enviada pra impressora: {pathlib.Path(caminho).name}")
             except RuntimeError as e:
                 on_log("err", str(e))
-
-    def _enviar_os_onedrive(self, pasta_saida, on_log):
-        """
-        Roda logo depois do processamento, na mesma thread, só quando o
-        checkbox "Enviar a OS pro OneDrive" estava marcado — copia (nunca
-        move) a OS desse pedido específico que acabou de ser gerado/
-        atualizado. Nunca apaga nada localmente (ver arquivamento.py).
-        """
-        on_log("info", "Enviando a OS pro OneDrive...")
-        pasta_gerada = pathlib.Path(pasta_saida)
-        pedido = next((p for p in listar_pedidos() if p["pasta"] == pasta_gerada), None)
-        if not pedido:
-            on_log("warn", "Não encontrei arquivo de OS pra enviar pro OneDrive (a OS pode não ter sido gerada nessa rodada).")
-            return
-
-        resumo = enviar_os([pedido])[0]
-        if resumo["erros"]:
-            on_log("warn", f"OS não pôde ser totalmente enviada pro OneDrive: {'; '.join(resumo['erros'])}")
-        else:
-            destino = PASTA_DESTINO_PADRAO / pedido["cliente"] / pedido["subpasta"]
-            on_log("ok", f"OS enviada pro OneDrive: {destino}")
 
     def _checar_fila(self):
         # O 'finally' é o que garante que essa checagem sempre volta a

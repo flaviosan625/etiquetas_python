@@ -61,11 +61,20 @@ CONFIG_PADRAO = {
         "XPS": "PVC",
         "ACRÍLICO": "ACRILICO",
     },
-    # Erros de digitação comuns no lugar da unidade de medida (MM/CM/M).
-    # "XM" normalmente é "CM" digitado errado (X e C são vizinhos no
-    # teclado). Adicione mais entradas aqui se aparecerem outros casos.
+    # Erros de digitação e abreviações usadas no lugar da unidade de
+    # medida (MM/CM/M). "XM" normalmente é "CM" digitado errado (X e C
+    # são vizinhos no teclado). "MTS"/"MT"/"METROS" não são erro, são
+    # como muita gente escreve metro no nome do arquivo — sem estar
+    # aqui, o parser não reconhecia a unidade e caía no padrão CM,
+    # errando a medida por 100x (achado em arquivo real de produção,
+    # 2026-09-05: "0,90X135mts" virava 0,01x0,13m).
     "typos_unidade": {
         "XM": "CM",
+        "MTS": "M",
+        "MT": "M",
+        "MTR": "M",
+        "METRO": "M",
+        "METROS": "M",
     },
     # Materiais compostos: a MESMA peça consome DOIS materiais ao mesmo
     # tempo (chapa base + adesivo colado em cima). Chave = palavra que,

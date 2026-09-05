@@ -1,9 +1,27 @@
+import datetime
+import json
+
 import pytest
 
 import rasterlink_hotfolder as rl_hf
 from rasterlink_hotfolder import enviar_para_fila, logger_arquivo, vigiar_fila, vigiar_fila_uma_vez
 
 MAQUINAS_TESTE = {"UJV100": None}  # caminho da hot folder preenchido por teste, via tmp_path
+
+
+@pytest.fixture(autouse=True)
+def _isolar_pasta_relatorios(tmp_path, monkeypatch):
+    """
+    PASTA_RELATORIOS aponta pro OneDrive REAL. Qualquer teste que
+    dispare um envio chama registrar_envio, que sem isso grava linha de
+    mentira no registro de produção — aconteceu de verdade
+    (2026-09-05): 45 linhas falsas com 'arte.pdf'/'foto.jpg' foram
+    parar no arquivo real e tiveram que ser limpas na mão. É o mesmo
+    tropeço que já tinha acontecido com estoque.ESTOQUE_PATH.
+
+    autouse de propósito: teste novo não pode ter a chance de esquecer.
+    """
+    monkeypatch.setattr(rl_hf, "PASTA_RELATORIOS", tmp_path / "_relatorios_isolados")
 
 
 def _maquinas(hot_folder, largura_util_m=None):
@@ -381,6 +399,134 @@ def test_vigiar_fila_nunca_trava_com_erro_no_ciclo(monkeypatch):
 
     assert len(chamadas) == 2, "erro num ciclo nao pode impedir o proximo"
     assert any(nivel == "err" for nivel, _ in erros)
+
+
+def _envelhecer(caminho, dias):
+    import os
+    quando = (datetime.datetime.now() - datetime.timedelta(days=dias)).timestamp()
+    os.utime(caminho, (quando, quando))
+
+
+def test_registrar_envio_grava_uma_linha_json_no_arquivo_do_mes(tmp_path):
+    arquivo = tmp_path / "arte.pdf"
+    arquivo.write_bytes(b"12345")
+    quando = datetime.datetime(2026, 9, 5, 14, 30, 0)
+
+    assert rl_hf.registrar_envio("SWJ320A", arquivo, girado=True, pasta_relatorios=tmp_path / "rel", quando=quando) is True
+
+    registro = tmp_path / "rel" / "_registro" / "2026-09.jsonl"
+    dados = json.loads(registro.read_text(encoding="utf-8").strip())
+    assert dados == {
+        "quando": "2026-09-05T14:30:00", "maquina": "SWJ320A",
+        "arquivo": "arte.pdf", "bytes": 5, "girado": True,
+    }
+
+
+def test_registrar_envio_acumula_sem_apagar_o_que_ja_tinha(tmp_path):
+    arquivo = tmp_path / "arte.pdf"
+    arquivo.write_bytes(b"x")
+    quando = datetime.datetime(2026, 9, 5, 8, 0, 0)
+
+    rl_hf.registrar_envio("SWJ320A", arquivo, False, pasta_relatorios=tmp_path / "rel", quando=quando)
+    rl_hf.registrar_envio("UJV 100 UNY CV", arquivo, False, pasta_relatorios=tmp_path / "rel", quando=quando)
+
+    linhas = (tmp_path / "rel" / "_registro" / "2026-09.jsonl").read_text(encoding="utf-8").strip().splitlines()
+    assert [json.loads(l)["maquina"] for l in linhas] == ["SWJ320A", "UJV 100 UNY CV"]
+
+
+def test_registrar_envio_separa_por_mes(tmp_path):
+    arquivo = tmp_path / "arte.pdf"
+    arquivo.write_bytes(b"x")
+    rel = tmp_path / "rel"
+
+    rl_hf.registrar_envio("SWJ320A", arquivo, False, pasta_relatorios=rel, quando=datetime.datetime(2026, 8, 31, 23, 59))
+    rl_hf.registrar_envio("SWJ320A", arquivo, False, pasta_relatorios=rel, quando=datetime.datetime(2026, 9, 1, 0, 1))
+
+    assert (rel / "_registro" / "2026-08.jsonl").exists()
+    assert (rel / "_registro" / "2026-09.jsonl").exists()
+
+
+def test_registrar_envio_nunca_estoura_quando_nao_consegue_gravar(tmp_path):
+    arquivo = tmp_path / "arte.pdf"
+    arquivo.write_bytes(b"x")
+    # caminho invalido no Windows (caractere proibido) — nao pode levantar
+    assert rl_hf.registrar_envio("SWJ320A", arquivo, False, pasta_relatorios=tmp_path / "in<>valido") is False
+
+
+def test_limpar_enviados_apaga_o_que_passou_do_prazo(tmp_path):
+    enviados = tmp_path / "SWJ320A" / "Enviados"
+    enviados.mkdir(parents=True)
+    velho = enviados / "de_20_dias.pdf"
+    novo = enviados / "de_ontem.pdf"
+    velho.write_bytes(b"x")
+    novo.write_bytes(b"x")
+    _envelhecer(velho, 20)
+    _envelhecer(novo, 1)
+
+    apagados = rl_hf.limpar_enviados_antigos(enviados, dias=15, logger=lambda n, m: None)
+
+    assert apagados == ["de_20_dias.pdf"]
+    assert not velho.exists()
+    assert novo.exists(), "o que esta dentro do prazo nao pode sumir"
+
+
+def test_limpar_enviados_nao_apaga_bem_no_limite(tmp_path):
+    enviados = tmp_path / "SWJ320A" / "Enviados"
+    enviados.mkdir(parents=True)
+    no_limite = enviados / "de_14_dias.pdf"
+    no_limite.write_bytes(b"x")
+    _envelhecer(no_limite, 14)
+
+    assert rl_hf.limpar_enviados_antigos(enviados, dias=15, logger=lambda n, m: None) == []
+    assert no_limite.exists()
+
+
+def test_limpar_enviados_ignora_pasta_inexistente(tmp_path):
+    assert rl_hf.limpar_enviados_antigos(tmp_path / "nao_existe", dias=15) == []
+
+
+def test_vigiar_fila_registra_cada_envio_e_limpa_o_antigo(tmp_path, monkeypatch):
+    monkeypatch.setattr(rl_hf.time, "sleep", lambda s: None)
+    fila = tmp_path / "fila"
+    (fila / "UJV100").mkdir(parents=True)
+    hot_folder = tmp_path / "hotfolder"
+    hot_folder.mkdir()
+    (fila / "UJV100" / "arte_nova.pdf").write_bytes(b"conteudo")
+
+    # arquivo antigo ja arquivado, que deve ser varrido no mesmo ciclo
+    enviados = fila / "UJV100" / "Enviados"
+    enviados.mkdir()
+    antigo = enviados / "arte_de_marco.pdf"
+    antigo.write_bytes(b"x")
+    _envelhecer(antigo, 40)
+
+    rel = tmp_path / "rel"
+    vigiar_fila_uma_vez(
+        pasta_fila=str(fila), maquinas=_maquinas(hot_folder),
+        logger=lambda n, m: None, pasta_relatorios=rel, dias_retencao=15,
+    )
+
+    registros = list((rel / "_registro").glob("*.jsonl"))
+    assert len(registros) == 1
+    dados = json.loads(registros[0].read_text(encoding="utf-8").strip())
+    assert dados["arquivo"] == "arte_nova.pdf"
+    assert dados["maquina"] == "UJV100"
+
+    assert not antigo.exists(), "o de 40 dias devia ter sido apagado"
+    assert (enviados / "arte_nova.pdf").exists(), "o recem-enviado fica"
+
+
+def test_registro_anota_quando_o_arquivo_foi_girado(tmp_path, monkeypatch):
+    fila, hot_folder = _fila_com_pdf(tmp_path, monkeypatch, largura_cm=100, altura_cm=300)
+    rel = tmp_path / "rel"
+
+    vigiar_fila_uma_vez(
+        pasta_fila=str(fila), maquinas=_maquinas(hot_folder, largura_util_m=3.20),
+        logger=lambda n, m: None, pasta_relatorios=rel,
+    )
+
+    registro = next((rel / "_registro").glob("*.jsonl"))
+    assert json.loads(registro.read_text(encoding="utf-8").strip())["girado"] is True
 
 
 def test_trava_impede_dois_vigias_ao_mesmo_tempo(tmp_path):

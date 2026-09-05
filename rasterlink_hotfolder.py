@@ -38,6 +38,7 @@ entradas (nome do Favorito -> caminho da hot folder) conforme as outras
 impressoras forem configuradas no RasterLink7.
 """
 import datetime
+import json
 import pathlib
 import shutil
 import time
@@ -72,6 +73,88 @@ _EXTENSOES_ACEITAS = (".pdf", ".ai", ".png", ".jpg", ".jpeg", ".eps", ".tif", ".
 
 # Folga de 1mm na comparação de largura — ver _copiar_para_hot_folder.
 _TOLERANCIA_LARGURA_M = 0.001
+
+# Onde mora o registro permanente do que passou pelas máquinas, e mais
+# tarde os PDFs diários gerados a partir dele. Fica FORA da fila de
+# propósito: a fila se auto-limpa (ver DIAS_RETENCAO_ENVIADOS) e é
+# pasta técnica; isto aqui é documento de comprovação, irmão da
+# "Ordem de Serviço" (decidido com o usuário, 2026-09-05).
+PASTA_RELATORIOS = pathlib.Path.home() / "OneDrive" / "UNYCOMUNICACAO" / "Relatório de Impressão Diária"
+NOME_SUBPASTA_REGISTRO = "_registro"
+
+# Por quantos dias o arquivo enviado fica guardado em "Enviados" antes
+# de ser apagado. Apagar direto é seguro porque o original nunca sai da
+# pasta do cliente em EVENTOS — pra fila sempre vai uma CÓPIA (regra do
+# usuário, 2026-09-05). O registro do envio, esse, é permanente.
+DIAS_RETENCAO_ENVIADOS = 15
+
+
+def registrar_envio(maquina, arquivo, girado, pasta_relatorios=None, quando=None):
+    """
+    Anota uma linha no registro permanente do mês: uma linha JSON por
+    arquivo entregue à máquina. É de propósito que grave só FATO BRUTO
+    (quando, qual máquina, qual arquivo, tamanho, se girou) e nenhuma
+    interpretação: a máquina do RIP só tem este módulo instalado, não o
+    projeto inteiro — quem lê medida/material/m² do nome do arquivo é o
+    gerador de relatório, lá no PC principal, que tem config.json e
+    dimensoes.py.
+
+    Nunca levanta exceção: falha de registro não pode impedir a arte de
+    chegar na impressora.
+    """
+    quando = quando or datetime.datetime.now()
+    try:
+        pasta = pathlib.Path(pasta_relatorios or PASTA_RELATORIOS) / NOME_SUBPASTA_REGISTRO
+        pasta.mkdir(parents=True, exist_ok=True)
+        try:
+            tamanho = arquivo.stat().st_size
+        except OSError:
+            tamanho = None
+        linha = json.dumps({
+            "quando": quando.strftime("%Y-%m-%dT%H:%M:%S"),
+            "maquina": maquina,
+            "arquivo": arquivo.name,
+            "bytes": tamanho,
+            "girado": bool(girado),
+        }, ensure_ascii=False)
+        with open(pasta / f"{quando:%Y-%m}.jsonl", "a", encoding="utf-8") as f:
+            f.write(linha + "\n")
+        return True
+    except (OSError, TypeError, ValueError):
+        return False
+
+
+def limpar_enviados_antigos(pasta_enviados, dias=None, logger=print, agora=None):
+    """
+    Apaga de "Enviados" o que passou do prazo de retenção. Só olha
+    ARQUIVO dentro dessa pasta — nunca toca na fila em si, nem em
+    subpasta. Devolve a lista de nomes apagados.
+    """
+    dias = DIAS_RETENCAO_ENVIADOS if dias is None else dias
+    pasta_enviados = pathlib.Path(pasta_enviados)
+    if not pasta_enviados.is_dir():
+        return []
+
+    agora = agora or datetime.datetime.now()
+    limite = agora - datetime.timedelta(days=dias)
+    apagados = []
+    for arquivo in [f for f in pasta_enviados.iterdir() if f.is_file()]:
+        try:
+            modificado = datetime.datetime.fromtimestamp(arquivo.stat().st_mtime)
+        except OSError:
+            continue
+        if modificado >= limite:
+            continue
+        try:
+            arquivo.unlink()
+        except OSError as e:
+            logger("warn", f"Não consegui apagar '{arquivo.name}' de Enviados: {e}")
+            continue
+        apagados.append(arquivo.name)
+
+    if apagados:
+        logger("ok", f"{len(apagados)} arquivo(s) com mais de {dias} dias apagados de '{pasta_enviados.parent.name}/Enviados'.")
+    return apagados
 
 
 def enviar_para_fila(caminho_arquivo, nome_maquina, pasta_fila=None, maquinas=None):
@@ -174,19 +257,19 @@ def _copiar_para_hot_folder(arquivo, destino, largura_util_m, logger):
     """
     if not largura_util_m or arquivo.suffix.lower() != ".pdf":
         shutil.copy2(arquivo, destino)
-        return
+        return False
 
     pymupdf = _importar_pymupdf()
     if pymupdf is None:
         logger("warn", f"pymupdf não instalado nesta máquina — '{arquivo.name}' enviado sem conferir a largura.")
         shutil.copy2(arquivo, destino)
-        return
+        return False
 
     tamanho = _largura_altura_m(arquivo, pymupdf)
     if tamanho is None:
         logger("warn", f"Não consegui ler o tamanho de '{arquivo.name}' — enviado sem conferir a largura.")
         shutil.copy2(arquivo, destino)
-        return
+        return False
 
     largura_m, altura_m = tamanho
     # Tolerância de 1mm: uma arte fechada exatamente na largura da
@@ -203,7 +286,7 @@ def _copiar_para_hot_folder(arquivo, destino, largura_util_m, logger):
             f"máquina ({largura_util_m:.2f}m úteis) — enviado assim mesmo, confira no RasterLink.",
         )
         shutil.copy2(arquivo, destino)
-        return
+        return False
 
     # O que gasta bobina é o lado que corre no comprimento: em pé
     # gasta 'altura_m', deitado gasta 'largura_m'. Então deitar só
@@ -212,7 +295,7 @@ def _copiar_para_hot_folder(arquivo, destino, largura_util_m, logger):
     # 2026-09-05: "a ideia é reaproveitar o máximo de material").
     if not cabe_deitado or (cabe_em_pe and largura_m >= altura_m):
         shutil.copy2(arquivo, destino)
-        return
+        return False
 
     economia_m = altura_m - largura_m
 
@@ -227,16 +310,17 @@ def _copiar_para_hot_folder(arquivo, destino, largura_util_m, logger):
     except Exception as e:
         logger("warn", f"Falhei ao girar '{arquivo.name}' ({e}) — enviado sem girar.")
         shutil.copy2(arquivo, destino)
-        return
+        return False
 
     if cabe_em_pe:
         motivo = f"economiza {economia_m:.2f}m de bobina ({altura_m:.2f}m em pé contra {largura_m:.2f}m deitado)"
     else:
         motivo = f"tinha {largura_m:.2f}m de largura, mais que os {largura_util_m:.2f}m úteis da máquina"
     logger("ok", f"'{arquivo.name}' girado 90° automaticamente: {motivo}.")
+    return True
 
 
-def _vigiar_uma_maquina(pasta_maquina, config_maquina, logger):
+def _vigiar_uma_maquina(pasta_maquina, config_maquina, logger, pasta_relatorios=None, dias_retencao=None):
     """Um ciclo, só pra UMA máquina/hot folder — ver vigiar_fila_uma_vez."""
     hot_folder_str, largura_util_m = _config_maquina(config_maquina)
     hot_folder = pathlib.Path(hot_folder_str)
@@ -259,7 +343,11 @@ def _vigiar_uma_maquina(pasta_maquina, config_maquina, logger):
             continue
 
         destino_hot_folder = hot_folder / arquivo.name
-        _copiar_para_hot_folder(arquivo, destino_hot_folder, largura_util_m, logger)
+        girado = _copiar_para_hot_folder(arquivo, destino_hot_folder, largura_util_m, logger)
+
+        # registra ANTES de mover: depois do rename o caminho muda, e o
+        # que interessa guardar é o nome com que o arquivo entrou na fila
+        registrar_envio(pasta_maquina.name, arquivo, girado, pasta_relatorios=pasta_relatorios)
 
         destino_enviados = pasta_enviados / arquivo.name
         if destino_enviados.exists():
@@ -269,10 +357,11 @@ def _vigiar_uma_maquina(pasta_maquina, config_maquina, logger):
         logger("ok", f"'{arquivo.name}' enviado pra hot folder do RasterLink7 ({pasta_maquina.name}).")
         resultado["enviados"].append(arquivo.name)
 
+    limpar_enviados_antigos(pasta_enviados, dias=dias_retencao, logger=logger)
     return resultado
 
 
-def vigiar_fila_uma_vez(pasta_fila=None, maquinas=None, logger=print):
+def vigiar_fila_uma_vez(pasta_fila=None, maquinas=None, logger=print, pasta_relatorios=None, dias_retencao=None):
     """
     Um ciclo só: pra cada máquina configurada, olha a subpasta dela
     dentro da fila, manda pra hot folder local o que já estiver
@@ -298,7 +387,10 @@ def vigiar_fila_uma_vez(pasta_fila=None, maquinas=None, logger=print):
     resultado_por_maquina = {}
     for nome_maquina, config_maquina in maquinas.items():
         pasta_maquina = pasta_raiz / nome_maquina
-        resultado_por_maquina[nome_maquina] = _vigiar_uma_maquina(pasta_maquina, config_maquina, logger)
+        resultado_por_maquina[nome_maquina] = _vigiar_uma_maquina(
+            pasta_maquina, config_maquina, logger,
+            pasta_relatorios=pasta_relatorios, dias_retencao=dias_retencao,
+        )
 
     if pasta_raiz.is_dir():
         for item in pasta_raiz.iterdir():
@@ -312,7 +404,8 @@ def vigiar_fila_uma_vez(pasta_fila=None, maquinas=None, logger=print):
     return resultado_por_maquina
 
 
-def vigiar_fila(pasta_fila=None, maquinas=None, intervalo_segundos=15, logger=print):
+def vigiar_fila(pasta_fila=None, maquinas=None, intervalo_segundos=15, logger=print,
+                pasta_relatorios=None, dias_retencao=None):
     """
     Loop contínuo — pensado pra rodar em segundo plano SÓ na máquina
     do RIP (nunca nas outras, que só usam enviar_para_fila). Nunca
@@ -324,7 +417,7 @@ def vigiar_fila(pasta_fila=None, maquinas=None, intervalo_segundos=15, logger=pr
     logger("info", f"Vigiando fila do RasterLink7 em: {pasta_fila or PASTA_FILA_ONEDRIVE} (máquinas: {nomes})")
     while True:
         try:
-            vigiar_fila_uma_vez(pasta_fila, maquinas, logger)
+            vigiar_fila_uma_vez(pasta_fila, maquinas, logger, pasta_relatorios, dias_retencao)
         except Exception as e:
             logger("err", f"Erro inesperado no ciclo da fila do RasterLink7: {e}")
         time.sleep(intervalo_segundos)

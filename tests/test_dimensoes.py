@@ -145,6 +145,43 @@ def test_extrair_dimensoes_corrige_typo_configuravel():
     assert d["unidade_corrigida"] is True
 
 
+def test_extrair_dimensoes_entende_metro_escrito_como_mts():
+    """
+    Regressão de bug real achado em arquivo de produção (2026-09-05):
+    "MTS" não estava na lista de unidades, então o parser não achava
+    unidade nenhuma e caía no padrão CM — um banner de 3,20x10,00m
+    virava 0,03x0,10m, errando por 100x. Isso contamina m² da OS e a
+    baixa de estoque, sem nenhum aviso.
+    """
+    from config import carregar_config
+    typos = carregar_config()["typos_unidade"]
+
+    for escrita in ["3,20x10,00MTS", "3,20x10,00MT", "3,20x10,00METROS", "3,20x10,00MTR"]:
+        d = extrair_dimensoes(f"banner_{escrita}.pdf", typos)
+        assert d is not None, f"nao leu '{escrita}'"
+        assert d["unidade_usada"] == "M", f"'{escrita}' devia ser metro, veio {d['unidade_usada']}"
+        assert round(d["largura_m"], 2) == 3.20
+        assert round(d["altura_m"], 2) == 10.00
+
+
+def test_extrair_dimensoes_nao_confunde_mts_com_as_unidades_que_ja_funcionavam():
+    """A adição de MTS/MT/METROS não pode mudar nada do que já lia certo."""
+    from config import carregar_config
+    typos = carregar_config()["typos_unidade"]
+
+    casos = [
+        ("banner_1000x220.pdf", "CM", 10.00, 2.20),
+        ("banner_3.16X8.48M.pdf", "M", 3.16, 8.48),
+        ("banner_50x70cm.pdf", "CM", 0.50, 0.70),
+        ("banner_900x1350mm.pdf", "MM", 0.90, 1.35),
+    ]
+    for nome, unidade, largura, altura in casos:
+        d = extrair_dimensoes(nome, typos)
+        assert d["unidade_usada"] == unidade, nome
+        assert round(d["largura_m"], 2) == largura, nome
+        assert round(d["altura_m"], 2) == altura, nome
+
+
 def test_extrair_dimensoes_novo_typo_configurado_funciona():
     # simula um erro de digitação novo, cadastrado só no config,
     # sem precisar mexer no código

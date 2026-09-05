@@ -175,7 +175,12 @@
     "ACRÍLICO": "ACRILICO"
   },
   "typos_unidade": {
-    "XM": "CM"
+    "XM": "CM",
+    "MTS": "M",
+    "MT": "M",
+    "MTR": "M",
+    "METRO": "M",
+    "METROS": "M"
   },
   "ordem_unificado": [
     "LONA",
