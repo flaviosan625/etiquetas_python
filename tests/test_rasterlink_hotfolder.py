@@ -123,7 +123,7 @@ def test_vigiar_fila_uma_vez_pasta_da_maquina_inexistente_retorna_vazio_sem_erro
         pasta_fila=str(tmp_path / "fila_que_nao_existe"), maquinas=_maquinas(hot_folder),
     )
 
-    assert resultado == {"UJV100": {"enviados": [], "ignorados": []}}
+    assert resultado == {"UJV100": {"enviados": [], "ignorados": [], "falharam": []}}
 
 
 def test_vigiar_fila_uma_vez_envia_arquivo_estavel_e_move_pra_enviados_da_maquina(tmp_path, monkeypatch):
@@ -701,3 +701,100 @@ def test_maquina_que_volta_a_funcionar_avisa(tmp_path):
 
     assert any(nivel == "err" for nivel, _ in linhas)
     assert any(nivel == "ok" and "voltou a funcionar" in msg for nivel, msg in linhas)
+
+
+def test_um_arquivo_com_problema_nao_prende_a_fila_atras_dele(tmp_path, monkeypatch):
+    """
+    Aconteceu de verdade (2026-09-05): 6 arquivos passaram, o setimo
+    falhou na copia, e os 5 seguintes ficaram parados PARA SEMPRE —
+    todo ciclo novo recomecava pelo mesmo arquivo ruim e morria no mesmo
+    ponto. Um arquivo com problema so pode prender a si mesmo.
+    """
+    import shutil as shutil_real
+    import rasterlink_hotfolder as modulo
+    modulo._ultimo_erro_por_arquivo.clear()
+
+    fila = tmp_path / "fila"
+    hot = tmp_path / "hot"
+    hot.mkdir()
+    (fila / "UJV100").mkdir(parents=True)
+    for nome in ("a_boa.pdf", "b_ruim.pdf", "c_boa.pdf"):
+        (fila / "UJV100" / nome).write_bytes(b"conteudo")
+
+    copia_real = modulo.shutil.copy2
+
+    def falha_na_ruim(origem, destino, *args, **kwargs):
+        if "ruim" in str(origem):
+            raise OSError("nao consegui baixar o arquivo do OneDrive")
+        return copia_real(origem, destino, *args, **kwargs)
+
+    monkeypatch.setattr(modulo.shutil, "copy2", falha_na_ruim)
+
+    linhas = []
+    resultado = vigiar_fila_uma_vez(
+        pasta_fila=str(fila), maquinas={"UJV100": str(hot)},
+        logger=lambda n, m: linhas.append((n, m)),
+    )
+
+    assert sorted(resultado["UJV100"]["enviados"]) == ["a_boa.pdf", "c_boa.pdf"]
+    assert resultado["UJV100"]["falharam"] == ["b_ruim.pdf"]
+    assert (hot / "a_boa.pdf").exists() and (hot / "c_boa.pdf").exists()
+    # o que falhou continua na fila, pra tentar de novo
+    assert (fila / "UJV100" / "b_ruim.pdf").exists()
+    assert any(nivel == "err" and "b_ruim.pdf" in msg for nivel, msg in linhas)
+
+
+def test_erro_de_arquivo_nao_repete_no_log_a_cada_ciclo(tmp_path, monkeypatch):
+    import rasterlink_hotfolder as modulo
+    modulo._ultimo_erro_por_arquivo.clear()
+
+    fila = tmp_path / "fila"
+    hot = tmp_path / "hot"
+    hot.mkdir()
+    (fila / "UJV100").mkdir(parents=True)
+    (fila / "UJV100" / "ruim.pdf").write_bytes(b"conteudo")
+
+    def sempre_falha(origem, destino, *args, **kwargs):
+        raise OSError("OneDrive indisponivel")
+
+    monkeypatch.setattr(modulo.shutil, "copy2", sempre_falha)
+
+    linhas = []
+    for _ in range(3):
+        vigiar_fila_uma_vez(pasta_fila=str(fila), maquinas={"UJV100": str(hot)},
+                            logger=lambda n, m: linhas.append((n, m)))
+
+    assert sum(1 for nivel, _ in linhas if nivel == "err") == 1
+
+
+def test_arquivo_que_volta_a_funcionar_avisa_e_e_enviado(tmp_path, monkeypatch):
+    """Falha de download do OneDrive passa sozinha — o vigia nunca desiste do arquivo."""
+    import rasterlink_hotfolder as modulo
+    modulo._ultimo_erro_por_arquivo.clear()
+
+    fila = tmp_path / "fila"
+    hot = tmp_path / "hot"
+    hot.mkdir()
+    (fila / "UJV100").mkdir(parents=True)
+    (fila / "UJV100" / "arte.pdf").write_bytes(b"conteudo")
+
+    copia_real = modulo.shutil.copy2
+    tentativas = {"n": 0}
+
+    def falha_so_na_primeira(origem, destino, *args, **kwargs):
+        tentativas["n"] += 1
+        if tentativas["n"] == 1:
+            raise OSError("OneDrive ainda baixando")
+        return copia_real(origem, destino, *args, **kwargs)
+
+    monkeypatch.setattr(modulo.shutil, "copy2", falha_so_na_primeira)
+
+    linhas = []
+    vigiar_fila_uma_vez(pasta_fila=str(fila), maquinas={"UJV100": str(hot)},
+                        logger=lambda n, m: linhas.append((n, m)))
+    resultado = vigiar_fila_uma_vez(pasta_fila=str(fila), maquinas={"UJV100": str(hot)},
+                                    logger=lambda n, m: linhas.append((n, m)))
+
+    assert resultado["UJV100"]["enviados"] == ["arte.pdf"]
+    assert (hot / "arte.pdf").exists()
+    assert any(nivel == "ok" and "passou depois de falhar" in msg for nivel, msg in linhas)

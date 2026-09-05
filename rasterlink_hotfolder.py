@@ -343,12 +343,12 @@ def _vigiar_uma_maquina(pasta_maquina, config_maquina, logger, pasta_relatorios=
         raise FileNotFoundError(f"Hot folder do RasterLink7 não encontrada: {hot_folder}")
 
     if not pasta_maquina.is_dir():
-        return {"enviados": [], "ignorados": []}
+        return {"enviados": [], "ignorados": [], "falharam": []}
 
     pasta_enviados = pasta_maquina / NOME_SUBPASTA_ENVIADOS
     pasta_enviados.mkdir(parents=True, exist_ok=True)
 
-    resultado = {"enviados": [], "ignorados": []}
+    resultado = {"enviados": [], "ignorados": [], "falharam": []}
     for arquivo in [f for f in pasta_maquina.iterdir() if f.is_file()]:
         if arquivo.suffix.lower() not in _EXTENSOES_ACEITAS:
             resultado["ignorados"].append(arquivo.name)
@@ -357,29 +357,77 @@ def _vigiar_uma_maquina(pasta_maquina, config_maquina, logger, pasta_relatorios=
             logger("info", f"'{arquivo.name}' ainda mudando de tamanho (upload/download em andamento) — aguardando próximo ciclo.")
             continue
 
-        destino_hot_folder = hot_folder / arquivo.name
-        girado = _copiar_para_hot_folder(arquivo, destino_hot_folder, largura_util_m, logger)
+        # UM arquivo com problema não pode prender a fila inteira atrás
+        # dele. Aconteceu de verdade (2026-09-05): 6 arquivos passaram,
+        # o sétimo falhou na cópia, e os 5 seguintes ficaram parados —
+        # pra sempre, porque todo ciclo novo recomeçava pelo mesmo
+        # arquivo ruim e morria no mesmo ponto. A causa provável é o
+        # OneDrive desta máquina não conseguir baixar o placeholder, que
+        # é justamente um erro que passa sozinho no ciclo seguinte; por
+        # isso aqui só pula e continua tentando, nunca desiste do arquivo.
+        try:
+            _processar_arquivo_da_fila(
+                arquivo, hot_folder, pasta_enviados, pasta_maquina.name,
+                largura_util_m, logger, pasta_relatorios,
+            )
+        except Exception as e:
+            resultado["falharam"].append(arquivo.name)
+            _avisar_erro_de_arquivo(arquivo.name, str(e), logger)
+            continue
 
-        # registra ANTES de mover: depois do rename o caminho muda, e o
-        # que interessa guardar é o nome com que o arquivo entrou na fila
-        registrar_envio(pasta_maquina.name, arquivo, girado, pasta_relatorios=pasta_relatorios, logger=logger)
-
-        destino_enviados = pasta_enviados / arquivo.name
-        if destino_enviados.exists():
-            destino_enviados = pasta_enviados / f"{arquivo.stem}_{int(time.time())}{arquivo.suffix}"
-        arquivo.rename(destino_enviados)
-
-        logger("ok", f"'{arquivo.name}' enviado pra hot folder do RasterLink7 ({pasta_maquina.name}).")
+        _avisar_erro_de_arquivo(arquivo.name, None, logger)
         resultado["enviados"].append(arquivo.name)
 
     limpar_enviados_antigos(pasta_enviados, dias=dias_retencao, logger=logger)
     return resultado
 
 
-# Último erro já avisado de cada máquina, pra não repetir a mesma linha
-# a cada 15 segundos: uma hot folder faltando por um fim de semana
-# encheria o log com milhares de linhas iguais e esconderia o resto.
+def _processar_arquivo_da_fila(arquivo, hot_folder, pasta_enviados, nome_maquina,
+                               largura_util_m, logger, pasta_relatorios):
+    """Um arquivo: copia pra hot folder, registra e tira da fila."""
+    destino_hot_folder = hot_folder / arquivo.name
+    girado = _copiar_para_hot_folder(arquivo, destino_hot_folder, largura_util_m, logger)
+
+    # registra ANTES de mover: depois do rename o caminho muda, e o
+    # que interessa guardar é o nome com que o arquivo entrou na fila
+    registrar_envio(nome_maquina, arquivo, girado, pasta_relatorios=pasta_relatorios, logger=logger)
+
+    destino_enviados = pasta_enviados / arquivo.name
+    if destino_enviados.exists():
+        destino_enviados = pasta_enviados / f"{arquivo.stem}_{int(time.time())}{arquivo.suffix}"
+    arquivo.rename(destino_enviados)
+
+    logger("ok", f"'{arquivo.name}' enviado pra hot folder do RasterLink7 ({nome_maquina}).")
+
+
+# Último erro já avisado de cada máquina e de cada arquivo, pra não
+# repetir a mesma linha a cada 15 segundos: uma hot folder faltando por
+# um fim de semana encheria o log com milhares de linhas iguais e
+# esconderia o resto.
 _ultimo_erro_por_maquina = {}
+_ultimo_erro_por_arquivo = {}
+
+
+def _avisar_erro_de_arquivo(nome_arquivo, erro, logger):
+    """
+    Avisa quando um arquivo passa a falhar, ou quando finalmente passa.
+    O vigia continua tentando a cada ciclo — falha de download do
+    OneDrive costuma resolver sozinha — mas o log registra uma linha
+    só, não uma a cada 15 segundos.
+    """
+    anterior = _ultimo_erro_por_arquivo.get(nome_arquivo)
+    if erro == anterior:
+        return
+    if erro:
+        _ultimo_erro_por_arquivo[nome_arquivo] = erro
+        logger(
+            "err",
+            f"Não consegui enviar '{nome_arquivo}': {erro}. Ele continua na fila e vou tentar "
+            f"de novo no próximo ciclo; os outros arquivos seguem normalmente.",
+        )
+    elif anterior:
+        _ultimo_erro_por_arquivo.pop(nome_arquivo, None)
+        logger("ok", f"'{nome_arquivo}' passou depois de falhar antes.")
 
 
 def _avisar_erro_de_maquina(nome_maquina, erro, logger):
