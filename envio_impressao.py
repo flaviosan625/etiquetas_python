@@ -35,6 +35,7 @@ from dimensoes import extrair_dimensoes, extrair_quantidade, identificar_categor
 from producao import NOME_PASTA_PRODUCAO, NOME_SUBPASTA_PRONTOS, PASTA_CORTE, _pasta_de_trabalho_para
 from rasterlink_hotfolder import (
     EXTENSOES_ACEITAS, MAQUINAS, PASTA_FILA_ONEDRIVE, _config_maquina, enviar_para_fila,
+    ler_sinal_de_vida,
 )
 
 # Nome da máquina de cada destino. Tem que bater EXATO com uma chave de
@@ -451,6 +452,69 @@ def fila_parada(pasta_fila=None, maquinas=None, minutos=20, agora=None):
         if idades and max(idades) >= minutos:
             parados[nome_maquina] = (len(idades), int(max(idades)))
     return parados
+
+
+# Faixas de idade do sinal de vida do RIP, em minutos.
+#
+# Não são chutes: medimos em 2026-09-05 que a ida e volta pelo OneDrive
+# daquela máquina varia de 30 segundos a quase 11 minutos, e que ele já
+# ficou 40 minutos só recebendo (o vigia trabalhando o tempo todo). Ou
+# seja, um sinal de 20 minutos atrás NÃO prova que o RIP parou — prova
+# que o OneDrive está lento. Alarmar cedo demais ensinaria a ignorar o
+# alarme, que é o pior resultado possível.
+_SINAL_OK_MINUTOS = 15
+_SINAL_ATENCAO_MINUTOS = 40
+
+
+def _quanto_faz(minutos):
+    if minutos < 1:
+        return "menos de 1 min"
+    if minutos < 60:
+        return f"{int(minutos)} min"
+    horas = minutos / 60
+    if horas < 24:
+        return f"{horas:.0f} h" if horas >= 2 else "1 h"
+    return f"{horas / 24:.0f} dias"
+
+
+def estado_do_rip(pasta_fila=None, agora=None):
+    """
+    Traduz o sinal de vida da máquina do RIP em algo que dá pra pôr na
+    tela antes de mandar qualquer coisa.
+
+    Devolve {'nivel', 'texto', 'erros'}, com nível em:
+      ok        — o RIP passou por aqui agora há pouco
+      atencao   — faz um tempo, mas ainda cabe na lentidão normal do OneDrive
+      parado    — passou de qualquer lentidão explicável
+      sem_sinal — nunca houve sinal (vigia velho lá, ou nunca rodou)
+
+    'erros' é {máquina: motivo} do que o vigia reclamou na última
+    passada — hot folder faltando, por exemplo.
+    """
+    sinal = ler_sinal_de_vida(pasta_fila, agora=agora)
+    if sinal is None:
+        return {
+            "nivel": "sem_sinal",
+            "texto": "RIP: sem informação — a máquina do RIP ainda não deixou sinal de vida.",
+            "erros": {},
+        }
+
+    erros = {nome: motivo for nome, motivo in sinal["maquinas"].items() if motivo}
+    minutos = sinal["idade_minutos"]
+
+    # relógio adiantado do outro lado não pode virar "parado há -3 min"
+    if minutos < 0:
+        minutos = 0
+
+    faz = _quanto_faz(minutos)
+    if minutos < _SINAL_OK_MINUTOS:
+        nivel, texto = "ok", f"RIP ativo — visto há {faz}."
+    elif minutos < _SINAL_ATENCAO_MINUTOS:
+        nivel, texto = "atencao", f"RIP sem dar sinal há {faz} — ainda cabe em atraso do OneDrive."
+    else:
+        nivel, texto = "parado", f"RIP sem dar sinal há {faz} — a fila não vai andar."
+
+    return {"nivel": nivel, "texto": texto, "erros": erros}
 
 
 def _data_curta(quando_iso):

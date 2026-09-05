@@ -41,6 +41,7 @@ import datetime
 import json
 import os
 import pathlib
+import platform
 import shutil
 import sys
 import time
@@ -95,6 +96,100 @@ NOME_SUBPASTA_REGISTRO = "_registro"
 # pasta do cliente em EVENTOS — pra fila sempre vai uma CÓPIA (regra do
 # usuário, 2026-09-05). O registro do envio, esse, é permanente.
 DIAS_RETENCAO_ENVIADOS = 15
+
+
+# --- sinal de vida -------------------------------------------------
+#
+# Um arquivinho na raiz da fila, escrito pela máquina do RIP a cada
+# passada, pra que a máquina PRINCIPAL consiga responder "o RIP está
+# vivo?" sem ninguém atravessar a sala.
+#
+# O problema real que isso resolve: quando o OneDrive daquela máquina
+# engasga (já ficou 40 min só recebendo) a tela fica IDÊNTICA à de um
+# vigia morto. Sem o sinal, "está demorando" e "está parado" são a
+# mesma coisa aos olhos de quem espera — e o jeito de saber era ir até
+# a outra máquina olhar "Última execução" no Agendador.
+NOME_ARQUIVO_SINAL = "_sinal_de_vida.json"
+
+# De quanto em quanto tempo o sinal é reescrito. NÃO é a cada passada
+# de propósito: seriam 1.440 gravações por dia numa pasta sincronizada,
+# na máquina cujo OneDrive é justamente o ponto fraco. A cada 5 min dá
+# resolução de sobra pra regra prática ("não conclua que parou antes de
+# uns 12 minutos") com 5x menos tráfego. Mudança de ERRO de máquina
+# fura a espera e grava na hora — isso é notícia.
+_INTERVALO_SINAL_MINUTOS = 5
+
+
+def caminho_do_sinal(pasta_fila=None):
+    return pathlib.Path(pasta_fila or PASTA_FILA_ONEDRIVE) / NOME_ARQUIVO_SINAL
+
+
+def ler_sinal_de_vida(pasta_fila=None, agora=None):
+    """
+    O que a máquina do RIP deixou dito por último, ou None se não houver
+    sinal nenhum. Nunca levanta: sinal ilegível é o mesmo que sem sinal,
+    e nenhuma tela pode quebrar por causa disso.
+
+    Devolve {'quando': datetime, 'idade_minutos': float, 'maquina': str,
+    'maquinas': {nome: erro ou None}}.
+    """
+    caminho = caminho_do_sinal(pasta_fila)
+    try:
+        with open(caminho, "r", encoding="utf-8") as f:
+            dados = json.load(f)
+        quando = datetime.datetime.fromisoformat(dados["quando"])
+    except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):
+        return None
+
+    agora = agora or datetime.datetime.now()
+    maquinas = dados.get("maquinas")
+    return {
+        "quando": quando,
+        "idade_minutos": (agora - quando).total_seconds() / 60,
+        "maquina": dados.get("maquina") or "?",
+        "maquinas": maquinas if isinstance(maquinas, dict) else {},
+    }
+
+
+def registrar_sinal_de_vida(pasta_fila=None, resultado_por_maquina=None, agora=None):
+    """
+    Deixa (ou atualiza) o sinal de vida. Devolve o caminho quando
+    gravou, None quando decidiu não gravar ainda.
+
+    Nunca levanta: falhar em avisar que está vivo não pode impedir de
+    trabalhar — é a mesma regra de registrar_envio.
+    """
+    agora = agora or datetime.datetime.now()
+    estado = {
+        nome: (r.get("erro") or None)
+        for nome, r in (resultado_por_maquina or {}).items()
+    }
+
+    anterior = ler_sinal_de_vida(pasta_fila, agora=agora)
+    if anterior is not None and anterior["maquinas"] == estado:
+        if 0 <= anterior["idade_minutos"] < _INTERVALO_SINAL_MINUTOS:
+            return None
+
+    caminho = caminho_do_sinal(pasta_fila)
+    conteudo = {
+        "quando": agora.strftime("%Y-%m-%dT%H:%M:%S"),
+        "maquina": platform.node(),
+        "maquinas": estado,
+    }
+    # grava atômico: quem lê do outro lado nunca pode pegar meio arquivo
+    temporario = caminho.with_suffix(".json.tmp")
+    try:
+        caminho.parent.mkdir(parents=True, exist_ok=True)
+        with open(temporario, "w", encoding="utf-8") as f:
+            json.dump(conteudo, f, ensure_ascii=False, indent=2)
+        os.replace(temporario, caminho)
+    except OSError:
+        try:
+            temporario.unlink()
+        except OSError:
+            pass
+        return None
+    return caminho
 
 
 def registrar_envio(maquina, arquivo, girado, pasta_relatorios=None, quando=None, logger=None):
@@ -623,6 +718,8 @@ def vigiar_fila_uma_vez(pasta_fila=None, maquinas=None, logger=print, pasta_rela
             _avisar_erro_de_maquina(nome_maquina, str(e), logger)
         else:
             _avisar_erro_de_maquina(nome_maquina, None, logger)
+
+    registrar_sinal_de_vida(pasta_raiz, resultado_por_maquina)
 
     if pasta_raiz.is_dir():
         for item in pasta_raiz.iterdir():

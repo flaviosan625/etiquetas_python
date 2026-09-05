@@ -1104,3 +1104,107 @@ def test_faxina_apaga_montagem_abandonada_antiga_e_poupa_a_recente(tmp_path):
     assert apagados == [antiga.name]
     assert recente.exists(), "montagem recente pode ser de uma copia acontecendo AGORA"
     assert alheio.exists(), "so mexe no que tem a nossa marca"
+
+
+# --- sinal de vida gravado pela maquina do RIP ---
+
+
+def test_passada_deixa_sinal_de_vida_na_raiz_da_fila(tmp_path):
+    from rasterlink_hotfolder import ler_sinal_de_vida
+
+    fila = tmp_path / "fila"
+    hot = tmp_path / "hot"
+    hot.mkdir()
+    (fila / "UJV100").mkdir(parents=True)
+
+    vigiar_fila_uma_vez(pasta_fila=str(fila), maquinas={"UJV100": str(hot)}, logger=lambda n, m: None)
+
+    sinal = ler_sinal_de_vida(str(fila))
+    assert sinal is not None
+    assert sinal["idade_minutos"] < 1
+    assert sinal["maquinas"] == {"UJV100": None}
+
+
+def test_sinal_guarda_a_maquina_que_o_vigia_nao_conseguiu_atender(tmp_path):
+    from rasterlink_hotfolder import ler_sinal_de_vida
+
+    fila = tmp_path / "fila"
+    vigiar_fila_uma_vez(pasta_fila=str(fila), maquinas={"UJV100": str(tmp_path / "nao_existe")},
+                        logger=lambda n, m: None)
+
+    sinal = ler_sinal_de_vida(str(fila))
+    assert "Hot folder" in sinal["maquinas"]["UJV100"]
+
+
+def test_sinal_nao_e_reescrito_a_cada_passada(tmp_path):
+    """
+    Seriam 1.440 gravacoes por dia numa pasta sincronizada, na maquina
+    cujo OneDrive e justamente o ponto fraco.
+    """
+    import rasterlink_hotfolder as modulo
+
+    fila = tmp_path / "fila"
+    hot = tmp_path / "hot"
+    hot.mkdir()
+    maquinas = {"UJV100": str(hot)}
+
+    vigiar_fila_uma_vez(pasta_fila=str(fila), maquinas=maquinas, logger=lambda n, m: None)
+    caminho = modulo.caminho_do_sinal(str(fila))
+    primeiro = caminho.read_text(encoding="utf-8")
+
+    vigiar_fila_uma_vez(pasta_fila=str(fila), maquinas=maquinas, logger=lambda n, m: None)
+    assert caminho.read_text(encoding="utf-8") == primeiro, "passada logo em seguida nao regrava"
+
+
+def test_maquina_que_quebrou_fura_a_espera_e_grava_na_hora(tmp_path):
+    """Hot folder sumindo e noticia — nao pode esperar 5 minutos pra aparecer na tela."""
+    import rasterlink_hotfolder as modulo
+
+    fila = tmp_path / "fila"
+    hot = tmp_path / "hot"
+    hot.mkdir()
+
+    vigiar_fila_uma_vez(pasta_fila=str(fila), maquinas={"UJV100": str(hot)}, logger=lambda n, m: None)
+    hot.rmdir()
+    vigiar_fila_uma_vez(pasta_fila=str(fila), maquinas={"UJV100": str(hot)}, logger=lambda n, m: None)
+
+    sinal = modulo.ler_sinal_de_vida(str(fila))
+    assert "Hot folder" in sinal["maquinas"]["UJV100"]
+
+
+def test_sinal_nao_atrapalha_a_varredura_da_fila(tmp_path):
+    """O arquivo de sinal mora na RAIZ da fila — nao pode virar 'pasta desconhecida' nem arquivo pra enviar."""
+    fila = tmp_path / "fila"
+    hot = tmp_path / "hot"
+    hot.mkdir()
+    (fila / "UJV100").mkdir(parents=True)
+
+    linhas = []
+    vigiar_fila_uma_vez(pasta_fila=str(fila), maquinas={"UJV100": str(hot)},
+                        logger=lambda n, m: linhas.append((n, m)))
+    resultado = vigiar_fila_uma_vez(pasta_fila=str(fila), maquinas={"UJV100": str(hot)},
+                                    logger=lambda n, m: linhas.append((n, m)))
+
+    assert resultado["UJV100"]["enviados"] == []
+    assert not any("_sinal_de_vida" in msg for _, msg in linhas)
+
+
+def test_falha_ao_gravar_o_sinal_nao_derruba_a_passada(tmp_path, monkeypatch):
+    import rasterlink_hotfolder as modulo
+
+    fila = tmp_path / "fila"
+    hot = tmp_path / "hot"
+    hot.mkdir()
+    (fila / "UJV100").mkdir(parents=True)
+    (fila / "UJV100" / "arte.pdf").write_bytes(b"conteudo")
+    monkeypatch.setattr(modulo.time, "sleep", lambda s: None)
+
+    def sem_gravar(*a, **kw):
+        raise OSError("disco cheio")
+
+    monkeypatch.setattr(modulo.os, "replace", sem_gravar)
+
+    resultado = vigiar_fila_uma_vez(pasta_fila=str(fila), maquinas={"UJV100": str(hot)},
+                                    logger=lambda n, m: None)
+    assert resultado["UJV100"]["falharam"] == ["arte.pdf"] or resultado["UJV100"]["enviados"] == ["arte.pdf"]
+    assert modulo.ler_sinal_de_vida(str(fila)) is None

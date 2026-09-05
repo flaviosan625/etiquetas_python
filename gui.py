@@ -35,7 +35,8 @@ from documento_enviados import (
 )
 from envio_impressao import (
     cabe_na_maquina, conferir as conferir_envio, enviar as enviar_para_maquinas,
-    fila_parada, listar as listar_para_envio, prever_giro, raiz_do_cliente, subtotais_por_material,
+    estado_do_rip, fila_parada, listar as listar_para_envio, prever_giro, raiz_do_cliente,
+    subtotais_por_material,
 )
 from estado_pedido import estado_existe, localizar_pastas_cliente
 from estoque import (
@@ -2049,6 +2050,19 @@ class JanelaEnviarImpressao(tk.Toplevel):
         tk.Label(barra, textvariable=self.var_contagem, bg=COR_FUNDO_JANELA, fg=COR_TEXTO_SECUNDARIO).grid(
             row=0, column=3, padx=(10, 0))
 
+        # Estado do RIP, SEMPRE visível — inclusive quando está tudo
+        # bem. É de propósito que não seja só mais um alerta: a pergunta
+        # que essa linha responde é "posso confiar que vai andar?", e
+        # ela precisa ser respondida ANTES de mandar, não depois de dar
+        # errado. Antes disso, a única forma de saber era atravessar a
+        # sala e olhar "Última execução" no Agendador da outra máquina.
+        self.var_rip = tk.StringVar(value="")
+        self.rotulo_rip = tk.Label(
+            barra, textvariable=self.var_rip, bg=COR_FUNDO_JANELA,
+            fg=COR_TEXTO_SECUNDARIO, anchor="w", font=("Segoe UI", 9),
+        )
+        self.rotulo_rip.grid(row=1, column=0, columnspan=4, sticky="w", pady=(6, 0))
+
         # Faixa de alerta da fila: some quando está tudo bem. Ver
         # envio_impressao.fila_parada — "enviado" aqui significa que o
         # arquivo saiu daqui, não que chegou na máquina, e sem este
@@ -2132,12 +2146,69 @@ class JanelaEnviarImpressao(tk.Toplevel):
         self._avisar_fila_parada()
         self._preencher_lista()
 
+    def _mostrar_estado_do_rip(self, avisos):
+        """
+        Pinta a linha do RIP e, se o vigia reclamou de alguma máquina,
+        acrescenta isso à faixa de alerta.
+        """
+        try:
+            estado = estado_do_rip()
+        except Exception:
+            # Nenhuma falha aqui pode impedir de enviar: isto é
+            # informação sobre o envio, não o envio.
+            self.var_rip.set("")
+            return
+
+        cores = {
+            "ok": ("🟢", COR_TEXTO_SECUNDARIO),
+            "atencao": ("🟡", COR_TEXTO),
+            "parado": ("🔴", COR_ALERTA),
+            "sem_sinal": ("⚪", COR_TEXTO_SECUNDARIO),
+        }
+        bolinha, cor = cores.get(estado["nivel"], ("⚪", COR_TEXTO_SECUNDARIO))
+        self.var_rip.set(f"{bolinha}  {estado['texto']}")
+        self.rotulo_rip.configure(fg=cor)
+        self._reagendar_estado_do_rip()
+
+    def _reagendar_estado_do_rip(self):
+        """
+        Reescreve a linha sozinha de minuto em minuto.
+
+        Sem isso, uma tela deixada aberta continuaria dizendo "visto há
+        40 s" duas horas depois — uma mentira pior que não ter a linha,
+        porque é justamente nela que a pessoa vai confiar. Repinta só o
+        rótulo: recarregar a lista inteira embaixo do usuário seria
+        insuportável.
+        """
+        anterior = getattr(self, "_agendamento_rip", None)
+        if anterior is not None:
+            try:
+                self.after_cancel(anterior)
+            except Exception:
+                pass
+        self._agendamento_rip = self.after(60_000, self._repintar_estado_do_rip)
+
+    def _repintar_estado_do_rip(self):
+        self._agendamento_rip = None
+        if not self.winfo_exists():
+            return
+        self._mostrar_estado_do_rip([])  # avisos de máquina só na hora de recarregar
+
+        if estado["erros"]:
+            partes = [f"{maquina}: {motivo}" for maquina, motivo in sorted(estado["erros"].items())]
+            avisos.append(
+                "⚠  O vigia do RIP está reclamando de máquina:\n" + "\n".join(partes) + "\n"
+                "Os arquivos dessa máquina ficam esperando na fila até isso ser resolvido; "
+                "as outras seguem normalmente."
+            )
+
     def _avisar_fila_parada(self):
         """
         Mostra a faixa de alerta quando tem arquivo esperando na fila há
         tempo demais — em condição normal ela esvazia em segundos.
         """
         avisos = []
+        self._mostrar_estado_do_rip(avisos)
 
         if getattr(self, "historico_ilegivel", None):
             avisos.append(

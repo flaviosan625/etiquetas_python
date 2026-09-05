@@ -459,3 +459,93 @@ def test_fila_vazia_nao_dispara_alerta(tmp_path):
     (fila / MAQUINA_LONA).mkdir(parents=True)
 
     assert env.fila_parada(pasta_fila=fila, maquinas=MAQUINAS_TESTE, minutos=20) == {}
+
+
+# --- sinal de vida do RIP ---
+
+
+def _sinal(tmp_path, quando, maquinas=None):
+    import json
+    from rasterlink_hotfolder import NOME_ARQUIVO_SINAL
+    (tmp_path / NOME_ARQUIVO_SINAL).write_text(json.dumps({
+        "quando": quando.strftime("%Y-%m-%dT%H:%M:%S"),
+        "maquina": "PC-DO-RIP",
+        "maquinas": maquinas if maquinas is not None else {"SWJ320A": None},
+    }), encoding="utf-8")
+
+
+def test_estado_do_rip_sem_sinal_nenhum(tmp_path):
+    from envio_impressao import estado_do_rip
+    assert estado_do_rip(pasta_fila=str(tmp_path))["nivel"] == "sem_sinal"
+
+
+def test_estado_do_rip_recente_e_ok(tmp_path):
+    import datetime as dt
+    from envio_impressao import estado_do_rip
+
+    agora = dt.datetime(2026, 9, 5, 20, 0, 0)
+    _sinal(tmp_path, agora - dt.timedelta(seconds=40))
+    estado = estado_do_rip(pasta_fila=str(tmp_path), agora=agora)
+
+    assert estado["nivel"] == "ok"
+    assert "menos de 1 min" in estado["texto"]
+
+
+def test_estado_do_rip_20min_ainda_e_atraso_de_onedrive_e_nao_alarme(tmp_path):
+    """
+    Medido em 2026-09-05: a ida e volta pelo OneDrive daquela maquina
+    variou de 30s a quase 11 min, e ele ja ficou 40 min so recebendo com
+    o vigia trabalhando o tempo todo. Alarmar aos 20 min ensinaria a
+    ignorar o alarme.
+    """
+    import datetime as dt
+    from envio_impressao import estado_do_rip
+
+    agora = dt.datetime(2026, 9, 5, 20, 0, 0)
+    _sinal(tmp_path, agora - dt.timedelta(minutes=20))
+    assert estado_do_rip(pasta_fila=str(tmp_path), agora=agora)["nivel"] == "atencao"
+
+
+def test_estado_do_rip_duas_horas_e_parado(tmp_path):
+    import datetime as dt
+    from envio_impressao import estado_do_rip
+
+    agora = dt.datetime(2026, 9, 5, 20, 0, 0)
+    _sinal(tmp_path, agora - dt.timedelta(hours=2))
+    estado = estado_do_rip(pasta_fila=str(tmp_path), agora=agora)
+
+    assert estado["nivel"] == "parado"
+    assert "2 h" in estado["texto"]
+
+
+def test_estado_do_rip_mostra_maquina_que_o_vigia_reclamou(tmp_path):
+    import datetime as dt
+    from envio_impressao import estado_do_rip
+
+    agora = dt.datetime(2026, 9, 5, 20, 0, 0)
+    _sinal(tmp_path, agora - dt.timedelta(minutes=1),
+           maquinas={"SWJ320A": None, "UJV 100 UNY CV": "Hot folder nao encontrada"})
+    estado = estado_do_rip(pasta_fila=str(tmp_path), agora=agora)
+
+    assert estado["nivel"] == "ok", "o vigia esta vivo — o problema e de UMA maquina"
+    assert estado["erros"] == {"UJV 100 UNY CV": "Hot folder nao encontrada"}
+
+
+def test_relogio_adiantado_do_outro_lado_nao_vira_tempo_negativo(tmp_path):
+    import datetime as dt
+    from envio_impressao import estado_do_rip
+
+    agora = dt.datetime(2026, 9, 5, 20, 0, 0)
+    _sinal(tmp_path, agora + dt.timedelta(minutes=3))
+    estado = estado_do_rip(pasta_fila=str(tmp_path), agora=agora)
+
+    assert estado["nivel"] == "ok"
+    assert "-" not in estado["texto"]
+
+
+def test_sinal_corrompido_e_o_mesmo_que_sem_sinal(tmp_path):
+    from envio_impressao import estado_do_rip
+    from rasterlink_hotfolder import NOME_ARQUIVO_SINAL
+
+    (tmp_path / NOME_ARQUIVO_SINAL).write_text("{ isso nao e json", encoding="utf-8")
+    assert estado_do_rip(pasta_fila=str(tmp_path))["nivel"] == "sem_sinal"
