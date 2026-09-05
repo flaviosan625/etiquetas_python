@@ -345,6 +345,28 @@ try {
 }
 Write-Host "  Tarefa criada." -ForegroundColor Green
 
+# Atalho pra rodar uma passada na mão e VER acontecendo. Nesta máquina
+# o 'python' solto no prompt cai no atalho da Microsoft Store ("Python
+# não foi encontrado"), então o caminho tem que vir inteiro — e ninguém
+# vai decorar 'C:\Users\PC\AppData\Local\Python\pythoncore-3.14-64\'.
+# Usa python.exe (com console) e não pythonw.exe: o ponto aqui é
+# justamente ver a saída.
+$PYTHON_COM_CONSOLE = $PYTHONW -replace 'pythonw\.exe$', 'python.exe'
+if (-not (Test-Path $PYTHON_COM_CONSOLE)) { $PYTHON_COM_CONSOLE = $PYTHONW }
+
+$atalho = Join-Path $PASTA "rodar_uma_vez.bat"
+@"
+@echo off
+REM Uma passada na fila, com a saida na tela. Criado pelo instalar_tarefa.
+REM E exatamente o que a tarefa agendada faz de minuto em minuto.
+chcp 65001 >nul
+cd /d "$PASTA"
+"$PYTHON_COM_CONSOLE" $ARGUMENTOS
+echo.
+pause
+"@ | Out-File $atalho -Encoding ascii
+Write-Host "  Atalho pra testar na mão: $atalho" -ForegroundColor Green
+
 # ---------------------------------------------------------------- 7/7
 Titulo "7/7  Conferindo que ela roda de verdade"
 
