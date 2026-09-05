@@ -2059,7 +2059,8 @@ class JanelaEnviarImpressao(tk.Toplevel):
         self.var_rip = tk.StringVar(value="")
         self.rotulo_rip = tk.Label(
             barra, textvariable=self.var_rip, bg=COR_FUNDO_JANELA,
-            fg=COR_TEXTO_SECUNDARIO, anchor="w", font=("Segoe UI", 9),
+            fg=COR_TEXTO_SECUNDARIO, anchor="w", justify="left", font=("Segoe UI", 9),
+            wraplength=1000,  # o texto explica o que o estado significa; sem isso ele alargaria a janela
         )
         self.rotulo_rip.grid(row=1, column=0, columnspan=4, sticky="w", pady=(6, 0))
 

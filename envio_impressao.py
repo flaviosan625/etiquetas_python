@@ -495,7 +495,8 @@ def estado_do_rip(pasta_fila=None, agora=None):
     if sinal is None:
         return {
             "nivel": "sem_sinal",
-            "texto": "RIP: sem informação — a máquina do RIP ainda não deixou sinal de vida.",
+            "texto": 'RIP: sem informação — não é "parado", é "não sei". '
+                     "A máquina do RIP ainda não deixou sinal de vida.",
             "erros": {},
         }
 
@@ -506,13 +507,23 @@ def estado_do_rip(pasta_fila=None, agora=None):
     if minutos < 0:
         minutos = 0
 
+    # Cada linha diz o que MEDIU e o que aquilo SIGNIFICA. Só a leitura
+    # ("visto há 22 min") obriga quem lê a lembrar da regra de cabeça,
+    # e na hora da pressa ninguém lembra — aí um amarelo perfeitamente
+    # normal vira susto, e o vermelho de verdade vira "ah, deve ser o
+    # OneDrive de novo" (pedido do usuário, 2026-09-05).
     faz = _quanto_faz(minutos)
     if minutos < _SINAL_OK_MINUTOS:
-        nivel, texto = "ok", f"RIP ativo — visto há {faz}."
+        nivel = "ok"
+        texto = f"RIP ativo — visto há {faz}. Pode mandar: a fila é puxada em até 1 min."
     elif minutos < _SINAL_ATENCAO_MINUTOS:
-        nivel, texto = "atencao", f"RIP sem dar sinal há {faz} — ainda cabe em atraso do OneDrive."
+        nivel = "atencao"
+        texto = (f"RIP sem dar sinal há {faz}. Pode mandar — nesse tempo ainda é "
+                 f"atraso do OneDrive, não defeito.")
     else:
-        nivel, texto = "parado", f"RIP sem dar sinal há {faz} — a fila não vai andar."
+        nivel = "parado"
+        texto = (f"RIP sem dar sinal há {faz}. A fila NÃO vai andar — vá até a máquina "
+                 f'do RIP e veja "Última execução" no Agendador.')
 
     return {"nivel": nivel, "texto": texto, "erros": erros}
 

@@ -1,3 +1,4 @@
+import re
 import datetime
 
 import pytest
@@ -540,7 +541,7 @@ def test_relogio_adiantado_do_outro_lado_nao_vira_tempo_negativo(tmp_path):
     estado = estado_do_rip(pasta_fila=str(tmp_path), agora=agora)
 
     assert estado["nivel"] == "ok"
-    assert "-" not in estado["texto"]
+    assert not re.search(r"-\s*\d", estado["texto"]), estado["texto"]
 
 
 def test_sinal_corrompido_e_o_mesmo_que_sem_sinal(tmp_path):
@@ -549,3 +550,27 @@ def test_sinal_corrompido_e_o_mesmo_que_sem_sinal(tmp_path):
 
     (tmp_path / NOME_ARQUIVO_SINAL).write_text("{ isso nao e json", encoding="utf-8")
     assert estado_do_rip(pasta_fila=str(tmp_path))["nivel"] == "sem_sinal"
+
+
+def test_cada_estado_diz_o_que_significa_e_nao_so_a_leitura(tmp_path):
+    """
+    So "visto ha 22 min" obriga quem le a lembrar da regra de cabeca — e
+    na hora da pressa ninguem lembra. Ai um amarelo normal vira susto e o
+    vermelho de verdade vira "deve ser o OneDrive de novo".
+    """
+    import datetime as dt
+    from envio_impressao import estado_do_rip
+
+    agora = dt.datetime(2026, 9, 5, 20, 0, 0)
+    esperado = {
+        0: "Pode mandar",
+        20: "Pode mandar",
+        120: "NÃO vai andar",
+    }
+    for minutos, trecho in esperado.items():
+        _sinal(tmp_path, agora - dt.timedelta(minutes=minutos))
+        texto = estado_do_rip(pasta_fila=str(tmp_path), agora=agora)["texto"]
+        assert trecho in texto, (minutos, texto)
+
+    (tmp_path / "_sinal_de_vida.json").unlink()
+    assert "não sei" in estado_do_rip(pasta_fila=str(tmp_path), agora=agora)["texto"]
