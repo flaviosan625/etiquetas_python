@@ -32,6 +32,51 @@ function Titulo($texto) {
     Write-Host ("=" * 70) -ForegroundColor DarkGray
 }
 
+function TraduzirResultado($codigo) {
+    # O número cru não diz nada, e foi justamente ele que explicou tudo
+    # em 2026-09-05: 3221225786 = 0xC000013A = o processo foi MORTO por
+    # evento de console, não morreu sozinho.
+    switch ([int64]$codigo) {
+        0          { return "0 - deu certo" }
+        1          { return "1 - o programa saiu com erro" }
+        267008     { return "0x41300 - tarefa pronta, nunca rodou" }
+        267009     { return "0x41301 - rodando agora" }
+        267011     { return "0x41303 - nunca rodou ainda" }
+        267014     { return "0x41306 - a tarefa foi ENCERRADA por alguém/algo" }
+        2147942402 { return "0x80070002 - arquivo não encontrado (caminho errado na ação)" }
+        2147942405 { return "0x80070005 - acesso negado" }
+        3221225786 { return "0xC000013A - o processo foi MORTO (Ctrl+C, janela do console fechada ou logoff)" }
+        default    { return "$codigo" }
+    }
+}
+
+# Conferido ANTES de qualquer coisa, e não lá no passo de criar a
+# tarefa: o passo 3 derruba o vigia antigo. Falhar depois disso deixaria
+# a fila garantidamente morta — o antigo derrubado e o novo não criado.
+$souAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
+            ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if (-not $souAdmin) {
+    Write-Host ""
+    Write-Host "  PAREI ANTES DE MEXER EM QUALQUER COISA." -ForegroundColor Red
+    Write-Host ""
+    Write-Host "  Criar tarefa no Agendador precisa de administrador nesta máquina." -ForegroundColor Yellow
+    Write-Host "  Feche esta janela, clique com o BOTÃO DIREITO no instalar_tarefa.bat" -ForegroundColor Yellow
+    Write-Host "  e escolha 'Executar como administrador'." -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "  Nada foi alterado. A fila continua exatamente como estava." -ForegroundColor Green
+    exit 1
+}
+
+# Com UAC, o processo elevado pode não ser o mesmo usuário que está de
+# fato logado na máquina. A tarefa tem que ser criada PARA quem está
+# logado — é a sessão dele que o LogonTrigger acompanha, e é o token
+# dela que o InteractiveToken usa.
+$USUARIO = $env:USERNAME
+try {
+    $daSessao = (Get-CimInstance Win32_ComputerSystem -ErrorAction Stop).UserName
+    if ($daSessao) { $USUARIO = $daSessao }
+} catch { }
+
 # ---------------------------------------------------------------- 1/7
 Titulo "1/7  Trazendo a versão nova do script"
 
@@ -72,7 +117,7 @@ if ($null -eq $tarefaAntiga) {
     $infoAntiga = Get-ScheduledTaskInfo -TaskName $NOME_TAREFA
     Write-Host "  Estado...............: $($tarefaAntiga.State)"
     Write-Host "  Última execução......: $($infoAntiga.LastRunTime)"
-    Write-Host "  Resultado da última..: $($infoAntiga.LastTaskResult)"
+    Write-Host "  Resultado da última..: $(TraduzirResultado $infoAntiga.LastTaskResult)"
     Write-Host "  Próxima execução.....: $($infoAntiga.NextRunTime)"
     Write-Host "  Gatilhos:"
     foreach ($g in $tarefaAntiga.Triggers) {
@@ -206,7 +251,7 @@ Write-Host ""
 Write-Host "  Vou agendar assim: $ARGUMENTOS" -ForegroundColor Green
 
 # ---------------------------------------------------------------- 6/7
-Titulo "6/7  Recriando a tarefa"
+Titulo "6/7  Recriando a tarefa (para o usuário $USUARIO)"
 
 # Escapa o que for texto meu dentro do XML — o argumento do -c tem
 # aspas e sinais que quebrariam o XML se entrassem crus.
@@ -255,7 +300,7 @@ $xml = @"
   </Triggers>
   <Principals>
     <Principal id="Author">
-      <UserId>$env:USERNAME</UserId>
+      <UserId>$USUARIO</UserId>
       <LogonType>InteractiveToken</LogonType>
       <RunLevel>LeastPrivilege</RunLevel>
     </Principal>
@@ -310,7 +355,7 @@ $tarefa = Get-ScheduledTask -TaskName $NOME_TAREFA
 $info   = Get-ScheduledTaskInfo -TaskName $NOME_TAREFA
 Write-Host "  Estado...............: $($tarefa.State)"
 Write-Host "  Última execução......: $($info.LastRunTime)"
-Write-Host "  Resultado da última..: $($info.LastTaskResult)   (0 = deu certo)"
+Write-Host "  Resultado da última..: $(TraduzirResultado $info.LastTaskResult)"
 Write-Host "  Próxima execução.....: $($info.NextRunTime)"
 foreach ($g in $tarefa.Triggers) {
     Write-Host "  Gatilho..............: $($g.CimClass.CimClassName) repetindo a cada $($g.Repetition.Interval)"
