@@ -105,32 +105,45 @@ def caminho_pdf(raiz_cliente):
     return pasta_documento(raiz) / f"ENVIADOS - {raiz.name}.pdf"
 
 
+class HistoricoIlegivel(Exception):
+    """
+    O arquivo de histórico existe mas não pôde ser lido. NUNCA vira
+    "histórico vazio".
+
+    estoque.py e config.py, nessa situação, guardam um .bak e começam do
+    zero — e pra eles isso é aceitável, porque são reconstruíveis. Aqui
+    não é: este é o documento que prova o que foi mandado pra máquina.
+    Tratar arquivo ilegível como vazio faria a gravação seguinte
+    sobrescrever o histórico inteiro com só os envios da vez, sem erro
+    nenhum. E se o .bak também falhasse (pasta do OneDrive travada), não
+    sobraria nem cópia.
+    """
+
+
 def carregar(raiz_cliente):
     """
-    Lê os envios já registrados desse cliente. Devolve a estrutura
-    vazia quando ainda não existe nenhum — a pasta só nasce no primeiro
-    envio, nunca antes (senão toda pasta de cliente ganharia uma
-    'Enviados' vazia).
+    Lê os envios já registrados desse cliente. Devolve a estrutura vazia
+    quando ainda não existe nenhum — a pasta só nasce no primeiro envio,
+    nunca antes (senão toda pasta de cliente ganharia uma 'Enviados'
+    vazia).
 
-    Arquivo corrompido não estoura erro nem some com o histórico: guarda
-    uma cópia .bak e começa de novo, mesmo padrão de estoque.py e
-    config.py.
+    Levanta HistoricoIlegivel quando o arquivo EXISTE mas não abre ou
+    não é JSON válido. Quem chama decide o que fazer; o que não pode
+    acontecer é seguir em frente achando que nunca houve envio nenhum.
     """
     raiz = pathlib.Path(raiz_cliente)
     caminho = caminho_dados(raiz)
-    vazio = {"cliente": raiz.name, "envios": []}
     if not caminho.exists():
-        return vazio
+        return {"cliente": raiz.name, "envios": []}
 
     try:
         with open(caminho, "r", encoding="utf-8") as f:
             dados = json.load(f)
-    except (json.JSONDecodeError, OSError):
-        try:
-            caminho.replace(caminho.with_suffix(".json.bak"))
-        except OSError:
-            pass
-        return vazio
+    except (json.JSONDecodeError, OSError) as e:
+        raise HistoricoIlegivel(f"{caminho}: {e}") from e
+
+    if not isinstance(dados, dict) or not isinstance(dados.get("envios", []), list):
+        raise HistoricoIlegivel(f"{caminho}: conteúdo não tem o formato esperado")
 
     dados.setdefault("cliente", raiz.name)
     dados.setdefault("envios", [])
@@ -182,6 +195,30 @@ def miniatura(caminho_arquivo):
         doc.close()
 
 
+def _salvar_para_recuperar(raiz_cliente, registros, miniaturas=None):
+    """
+    Guarda os envios desta rodada num arquivo à parte, quando o histórico
+    principal não pôde ser lido. Sem isso, a alternativa seria escolher
+    entre perder o histórico antigo ou perder o envio de agora — e
+    nenhuma das duas serve num documento de comprovação.
+    """
+    miniaturas = miniaturas or {}
+    pasta = pasta_documento(raiz_cliente)
+    pasta.mkdir(parents=True, exist_ok=True)
+    caminho = pasta / f"_envios_recuperar_{datetime.datetime.now():%Y%m%d_%H%M%S}.json"
+
+    linhas = []
+    for registro in registros:
+        linha = dict(registro)
+        bruto = miniaturas.get(linha["arquivo"])
+        linha["miniatura_b64"] = base64.b64encode(bruto).decode("ascii") if bruto else None
+        linhas.append(linha)
+
+    with open(caminho, "w", encoding="utf-8") as f:
+        json.dump({"cliente": pathlib.Path(raiz_cliente).name, "envios": linhas}, f, ensure_ascii=False, indent=2)
+    return caminho
+
+
 def registrar(raiz_cliente, registros, miniaturas=None):
     """
     Acrescenta os envios ao histórico e regrava o JSON. Nunca substitui
@@ -191,7 +228,18 @@ def registrar(raiz_cliente, registros, miniaturas=None):
     tem miniatura guardada. Arquivo já enviado antes reaproveita a
     miniatura do primeiro envio, então não precisa ser aberto de novo.
     """
-    dados = carregar(raiz_cliente)
+    try:
+        dados = carregar(raiz_cliente)
+    except HistoricoIlegivel as e:
+        # Nunca sobrescreve o que não conseguiu ler. Os envios acabaram de
+        # acontecer de verdade — então vão pra um arquivo de recuperação
+        # ao lado, com hora no nome, e o erro sobe pra tela avisar.
+        caminho_socorro = _salvar_para_recuperar(raiz_cliente, registros, miniaturas)
+        raise HistoricoIlegivel(
+            f"{e}. Os {len(registros)} envio(s) desta vez foram salvos em "
+            f"'{caminho_socorro.name}' e o histórico antigo NÃO foi tocado."
+        ) from e
+
     miniaturas = miniaturas or {}
     ja_tem = {e["arquivo"]: e.get("miniatura_b64") for e in dados["envios"] if e.get("miniatura_b64")}
 

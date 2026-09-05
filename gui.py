@@ -30,7 +30,7 @@ from branding import CAMINHO_LOGO_GUI
 from config import atualizar_ultimo_uso, atualizar_ultima_impressora, carregar_config, salvar_config
 from dimensoes import formatar_variante
 from documento_enviados import (
-    carregar as carregar_envios, caminho_pdf as caminho_documento_pdf,
+    HistoricoIlegivel, carregar as carregar_envios, caminho_pdf as caminho_documento_pdf,
     miniatura as gerar_miniatura, registrar as registrar_envios, regravar_pdf as regravar_documento,
 )
 from envio_impressao import (
@@ -2117,7 +2117,16 @@ class JanelaEnviarImpressao(tk.Toplevel):
         if self.pasta is None:
             return
         raiz = raiz_do_cliente(self.pasta)
-        self.envios_anteriores = carregar_envios(raiz)["envios"]
+        try:
+            self.envios_anteriores = carregar_envios(raiz)["envios"]
+            self.historico_ilegivel = None
+        except HistoricoIlegivel as e:
+            # Não pode virar "nunca foi enviado": sem histórico, TODO
+            # arquivo pareceria inédito e o aviso de reimpressão sumiria
+            # justo quando é mais necessário.
+            self.envios_anteriores = []
+            self.historico_ilegivel = str(e)
+
         self.itens = listar_para_envio(self.pasta, self.config_dados, self.envios_anteriores)
         self.var_pasta.set(str(self.pasta))
         self._avisar_fila_parada()
@@ -2128,24 +2137,36 @@ class JanelaEnviarImpressao(tk.Toplevel):
         Mostra a faixa de alerta quando tem arquivo esperando na fila há
         tempo demais — em condição normal ela esvazia em segundos.
         """
+        avisos = []
+
+        if getattr(self, "historico_ilegivel", None):
+            avisos.append(
+                "⚠  Não consegui LER o histórico de envios deste cliente: "
+                f"{self.historico_ilegivel}\n"
+                "Enquanto isso, nenhum arquivo aparece como 'já enviado' — o aviso de reimpressão "
+                "está cego. O histórico antigo não foi apagado; se você enviar agora, os envios "
+                "vão pra um arquivo de recuperação ao lado, sem sobrescrever nada."
+            )
+
         try:
             paradas = fila_parada()
         except Exception:
             paradas = {}
+        if paradas:
+            partes = [
+                f"{maquina}: {quantos} arquivo(s) parado(s) há {minutos} min"
+                for maquina, (quantos, minutos) in sorted(paradas.items())
+            ]
+            avisos.append(
+                "⚠  A fila não está sendo consumida — " + "; ".join(partes) + ".\n"
+                "O envio daqui funciona, mas o PC do RIP não está puxando: confira se o vigia está "
+                "rodando lá e se o OneDrive daquela máquina está sincronizando."
+            )
 
-        if not paradas:
+        if not avisos:
             self.faixa_fila.grid_forget()
             return
-
-        partes = [
-            f"{maquina}: {quantos} arquivo(s) parado(s) há {minutos} min"
-            for maquina, (quantos, minutos) in sorted(paradas.items())
-        ]
-        self.var_fila.set(
-            "⚠  A fila não está sendo consumida — " + "; ".join(partes) + ".\n"
-            "O envio daqui funciona, mas o PC do RIP não está puxando: confira se o vigia está "
-            "rodando lá e se o OneDrive daquela máquina está sincronizando."
-        )
+        self.var_fila.set("\n\n".join(avisos))
         self.faixa_fila.grid(row=4, column=0, sticky="ew", padx=20, pady=(0, 8))
 
     def _preencher_lista(self):
@@ -2330,6 +2351,18 @@ class JanelaEnviarImpressao(tk.Toplevel):
             if resultado["enviados"]:
                 registrar_envios(raiz, resultado["enviados"], miniaturas)
                 caminho_documento, erro_pdf = regravar_documento(raiz, list(self.config_dados["materiais"]))
+        except HistoricoIlegivel as e:
+            # Os arquivos JÁ foram pra fila neste ponto — o que falhou foi
+            # só anotar no documento. Nunca some com o histórico antigo.
+            messagebox.showwarning(
+                "Envio feito, documento não atualizado",
+                f"Os arquivos foram copiados pra fila normalmente.\n\n{e}\n\n"
+                f"O histórico antigo continua intacto. Depois de resolver o arquivo ilegível, "
+                f"junte o de recuperação ao histórico.",
+                parent=self,
+            )
+            self._recarregar()
+            return
         except Exception as e:
             messagebox.showerror("Erro no envio", str(e), parent=self)
             self._atualizar_rodape()

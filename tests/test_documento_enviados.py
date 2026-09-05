@@ -79,13 +79,48 @@ def test_reenvio_reaproveita_a_miniatura_do_primeiro_envio(tmp_path):
     assert envios[1]["miniatura_b64"] is not None
 
 
-def test_json_corrompido_nao_derruba_nem_some_em_silencio(tmp_path):
+def test_json_ilegivel_nunca_vira_historico_vazio(tmp_path):
+    """
+    O pior defeito possivel num documento de comprovacao: ler mal e
+    achar que nunca houve envio. A gravacao seguinte sobrescreveria
+    tudo. Aqui isso levanta erro em vez de devolver vazio.
+    """
     cliente = _cliente(tmp_path)
     registrar(cliente, [_registro()])
     caminho_dados(cliente).write_text("{ isso nao e json", encoding="utf-8")
 
-    assert carregar(cliente)["envios"] == []
-    assert caminho_dados(cliente).with_suffix(".json.bak").exists()
+    with pytest.raises(doc.HistoricoIlegivel):
+        carregar(cliente)
+
+
+def test_json_com_formato_estranho_tambem_e_recusado(tmp_path):
+    cliente = _cliente(tmp_path)
+    registrar(cliente, [_registro()])
+    caminho_dados(cliente).write_text('["isso e uma lista"]', encoding="utf-8")
+
+    with pytest.raises(doc.HistoricoIlegivel):
+        carregar(cliente)
+
+
+def test_historico_ilegivel_nao_sobrescreve_e_salva_o_envio_a_parte(tmp_path):
+    """
+    Nunca escolher entre perder o historico antigo e perder o envio de
+    agora: o antigo fica intacto e o novo vai pra um arquivo de
+    recuperacao com hora no nome.
+    """
+    cliente = _cliente(tmp_path)
+    registrar(cliente, [_registro(arquivo="antigo.pdf")])
+    quebrado = "{ isso nao e json"
+    caminho_dados(cliente).write_text(quebrado, encoding="utf-8")
+
+    with pytest.raises(doc.HistoricoIlegivel, match="recuperar"):
+        registrar(cliente, [_registro(arquivo="novo.pdf")])
+
+    assert caminho_dados(cliente).read_text(encoding="utf-8") == quebrado
+    socorro = list(pasta_documento(cliente).glob("_envios_recuperar_*.json"))
+    assert len(socorro) == 1
+    salvos = json.loads(socorro[0].read_text(encoding="utf-8"))["envios"]
+    assert [e["arquivo"] for e in salvos] == ["novo.pdf"]
 
 
 def test_gravacao_e_atomica(tmp_path):
