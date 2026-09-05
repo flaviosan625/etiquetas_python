@@ -32,8 +32,8 @@ function Titulo($texto) {
     Write-Host ("=" * 70) -ForegroundColor DarkGray
 }
 
-# ---------------------------------------------------------------- 1/6
-Titulo "1/6  Trazendo a versão nova do script"
+# ---------------------------------------------------------------- 1/7
+Titulo "1/7  Trazendo a versão nova do script"
 
 $origem = Get-ChildItem "$env:USERPROFILE\OneDrive\UNYCOMUNICACAO" -Directory -ErrorAction SilentlyContinue |
           Where-Object { $_.Name -like "IMPRESS*UJV*" } |
@@ -62,8 +62,8 @@ if (-not (Test-Path $SCRIPT)) {
     exit 1
 }
 
-# ---------------------------------------------------------------- 2/6
-Titulo "2/6  Como a tarefa está HOJE (antes de eu mexer)"
+# ---------------------------------------------------------------- 2/7
+Titulo "2/7  Como a tarefa está HOJE (antes de eu mexer)"
 
 $tarefaAntiga = Get-ScheduledTask -TaskName $NOME_TAREFA -ErrorAction SilentlyContinue
 if ($null -eq $tarefaAntiga) {
@@ -95,8 +95,42 @@ Write-Host ""
 Write-Host "  >>> Se 'repete a cada' aparecer vazio acima, ACHAMOS o motivo:" -ForegroundColor Yellow
 Write-Host "      a tarefa só disparava no logon, e nunca mais." -ForegroundColor Yellow
 
-# ---------------------------------------------------------------- 3/6
-Titulo "3/6  Achando o Python desta máquina"
+# ---------------------------------------------------------------- 3/7
+Titulo "3/7  Derrubando o vigia antigo, se ainda tiver algum de pé"
+
+# ISTO AQUI NÃO É LIMPEZA, É PRÉ-REQUISITO. O modo antigo era um
+# processo eterno que segura a trava de instância única enquanto viver.
+# Se sobrar um de pé, TODA passada nova do modo novo vai achar que já
+# tem outro vigia rodando e sair sem fazer nada — e a fila continuaria
+# exatamente como está hoje, agora com a tarefa "certa" e ninguém
+# entendendo por quê. Trocar a tarefa não mata quem já está rodando.
+if ($null -ne $tarefaAntiga) {
+    Stop-ScheduledTask -TaskName $NOME_TAREFA -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 2
+}
+
+$vigias = Get-CimInstance Win32_Process -Filter "Name = 'python.exe' OR Name = 'pythonw.exe'" -ErrorAction SilentlyContinue |
+          Where-Object { $_.CommandLine -like "*rasterlink_hotfolder*" }
+
+if ($null -eq $vigias -or @($vigias).Count -eq 0) {
+    Write-Host "  Nenhum vigia rodando. Caminho livre." -ForegroundColor Green
+} else {
+    foreach ($v in @($vigias)) {
+        Write-Host "  Derrubando PID $($v.ProcessId): $($v.CommandLine)" -ForegroundColor Yellow
+        Stop-Process -Id $v.ProcessId -Force -ErrorAction SilentlyContinue
+    }
+    Start-Sleep -Seconds 2
+    $sobrou = Get-CimInstance Win32_Process -Filter "Name = 'python.exe' OR Name = 'pythonw.exe'" -ErrorAction SilentlyContinue |
+              Where-Object { $_.CommandLine -like "*rasterlink_hotfolder*" }
+    if ($sobrou) {
+        Write-Host "  PAREI: ainda sobrou vigia rodando. Reinicie a máquina e rode isto de novo." -ForegroundColor Red
+        exit 1
+    }
+    Write-Host "  Derrubado." -ForegroundColor Green
+}
+
+# ---------------------------------------------------------------- 4/7
+Titulo "4/7  Achando o Python desta máquina"
 
 $candidatos = @(
     "$env:LOCALAPPDATA\Python\pythoncore-3.14-64\pythonw.exe",
@@ -114,8 +148,8 @@ if ($null -eq $PYTHONW) {
 }
 Write-Host "  $PYTHONW" -ForegroundColor Green
 
-# ---------------------------------------------------------------- 4/6
-Titulo "4/6  Testando de que jeito este Python consegue iniciar o script"
+# ---------------------------------------------------------------- 5/7
+Titulo "5/7  Testando de que jeito este Python consegue iniciar o script"
 
 # Nesta máquina o pythonw.exe NÃO inicia script por caminho de arquivo,
 # e falha em silêncio absoluto — nem chega na linha 1. Por isso as duas
@@ -171,8 +205,8 @@ $ARGUMENTOS = ($escolhida.paraValer | ForEach-Object {
 Write-Host ""
 Write-Host "  Vou agendar assim: $ARGUMENTOS" -ForegroundColor Green
 
-# ---------------------------------------------------------------- 5/6
-Titulo "5/6  Recriando a tarefa"
+# ---------------------------------------------------------------- 6/7
+Titulo "6/7  Recriando a tarefa"
 
 # Escapa o que for texto meu dentro do XML — o argumento do -c tem
 # aspas e sinais que quebrariam o XML se entrassem crus.
@@ -266,8 +300,8 @@ try {
 }
 Write-Host "  Tarefa criada." -ForegroundColor Green
 
-# ---------------------------------------------------------------- 6/6
-Titulo "6/6  Conferindo que ela roda de verdade"
+# ---------------------------------------------------------------- 7/7
+Titulo "7/7  Conferindo que ela roda de verdade"
 
 Start-ScheduledTask -TaskName $NOME_TAREFA
 Start-Sleep -Seconds 8
