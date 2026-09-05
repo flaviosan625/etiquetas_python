@@ -174,11 +174,18 @@ def _num(valor, casas=2):
 
 
 def _tamanho_legivel(bytes_):
+    """Sempre cai numa unidade em que o número faça sentido — um arquivo
+    de 1 KB mostrado como '0 MB' parece dado faltando num documento que
+    serve de comprovação."""
     if not bytes_:
         return "—"
     if bytes_ >= 1024 ** 3:
         return f"{bytes_ / 1024 ** 3:.1f} GB".replace(".", ",")
-    return f"{bytes_ / 1024 ** 2:.0f} MB"
+    if bytes_ >= 1024 ** 2:
+        return f"{bytes_ / 1024 ** 2:.0f} MB"
+    if bytes_ >= 1024:
+        return f"{bytes_ / 1024:.0f} KB"
+    return f"{bytes_} B"
 
 
 class _Folha:

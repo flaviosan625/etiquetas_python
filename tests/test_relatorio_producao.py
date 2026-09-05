@@ -279,6 +279,15 @@ def test_regerar_o_mesmo_dia_inclui_envio_que_chegou_depois(tmp_path):
     assert "a.pdf" in texto_depois and "b.pdf" in texto_depois
 
 
+def test_tamanho_legivel_nunca_mostra_zero_para_arquivo_pequeno():
+    """'0 MB' num documento de comprovacao parece dado faltando."""
+    assert rp._tamanho_legivel(1120) == "1 KB"
+    assert rp._tamanho_legivel(500) == "500 B"
+    assert rp._tamanho_legivel(97562126) == "93 MB"
+    assert rp._tamanho_legivel(1830042484) == "1,7 GB"
+    assert rp._tamanho_legivel(None) == "—"
+
+
 def test_dias_com_registro_lista_os_dias_do_mes(tmp_path):
     _escrever_registro(tmp_path, [
         _envio("2026-09-02T10:00:00", "SWJ320A", "a.pdf"),
