@@ -929,3 +929,39 @@ def test_erro_na_passada_vira_arquivo_de_crash_em_vez_de_sumir(tmp_path, monkeyp
 
     crash = (tmp_path / "rasterlink_hotfolder_crash.log").read_text(encoding="utf-8")
     assert "quebrou bem no comeco" in crash
+
+
+def test_recusa_rodar_o_loop_de_dentro_do_onedrive(tmp_path, monkeypatch):
+    r"""
+    Aconteceu de verdade (2026-09-05, 18:59): dois cliques no .py dentro
+    da pasta de deploy do OneDrive, na maquina do RIP. A trava mora AO
+    LADO do script — de dentro do OneDrive ela cai numa pasta
+    sincronizada, e aí o loop e a tarefa agendada (que roda de
+    C:\RasterLink) travam em arquivos DIFERENTES, se acham sozinhos, e
+    o RIP recebe o mesmo arquivo duas vezes.
+    """
+    import rasterlink_hotfolder as modulo
+
+    falso = tmp_path / "OneDrive" / "UNYCOMUNICACAO" / "rasterlink_hotfolder.py"
+    falso.parent.mkdir(parents=True)
+    falso.write_text("", encoding="utf-8")
+    monkeypatch.setattr(modulo, "__file__", str(falso))
+    monkeypatch.setattr(modulo, "vigiar_fila", lambda **kw: pytest.fail("nao podia ter rodado"))
+
+    with pytest.raises(SystemExit):
+        modulo.principal()
+
+
+def test_de_uma_pasta_local_o_loop_roda_normal(tmp_path, monkeypatch):
+    import rasterlink_hotfolder as modulo
+
+    local = tmp_path / "RasterLink" / "rasterlink_hotfolder.py"
+    local.parent.mkdir(parents=True)
+    local.write_text("", encoding="utf-8")
+    monkeypatch.setattr(modulo, "__file__", str(local))
+
+    rodou = []
+    monkeypatch.setattr(modulo, "vigiar_fila", lambda **kw: rodou.append(True))
+    modulo.principal()
+
+    assert rodou == [True]

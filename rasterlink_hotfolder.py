@@ -688,8 +688,31 @@ def principal_uma_vez():
         salvar_estado_avisos()
 
 
+def rodando_de_dentro_do_onedrive(caminho=None):
+    """O script está morando numa pasta sincronizada em vez de local?"""
+    caminho = pathlib.Path(caminho or __file__).resolve()
+    return any(parte.upper().startswith("ONEDRIVE") for parte in caminho.parts)
+
+
 def principal():
     """O vigia como processo eterno — modo antigo, mantido pra rodar na mão e ver acontecendo."""
+    # Dois cliques no .py DENTRO da pasta do OneDrive é o jeito errado
+    # mais fácil de acontecer, e aconteceu (2026-09-05, 18:59): a pessoa
+    # abre a pasta de deploy pra rodar o instalador e clica no arquivo
+    # errado. O estrago não é o loop em si — é que a trava, o log e o
+    # estado de avisos moram AO LADO do script. Rodando de dentro do
+    # OneDrive, a trava vai parar numa pasta sincronizada, e aí o loop
+    # e a tarefa agendada (que roda de C:\RasterLink) travam em arquivos
+    # DIFERENTES: os dois se acham sozinhos, pegam o mesmo arquivo e o
+    # RIP cria job duplicado — material impresso duas vezes.
+    if rodando_de_dentro_do_onedrive():
+        logger_arquivo(
+            "err",
+            f"NÃO vou rodar de dentro do OneDrive ({pathlib.Path(__file__).resolve().parent}). "
+            f"Este é o script de instalação, não o lugar de rodar. Rode o 'instalar_tarefa.bat' "
+            f"desta mesma pasta — ele copia pra C:\\RasterLink e agenda direito.",
+        )
+        raise SystemExit(1)
     _rodar_protegido(lambda: vigiar_fila(logger=logger_arquivo))
 
 
