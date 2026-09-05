@@ -453,6 +453,42 @@ def test_registrar_envio_nunca_estoura_quando_nao_consegue_gravar(tmp_path):
     assert rl_hf.registrar_envio("SWJ320A", arquivo, False, pasta_relatorios=tmp_path / "in<>valido") is False
 
 
+def test_registrar_envio_avisa_no_log_quando_nao_consegue_gravar(tmp_path):
+    """
+    Falhar em silencio aqui seria a pior falha possivel: o arquivo vai
+    pra impressao, mas some do historico — e so se descobre no dia em
+    que a comprovacao fizer falta.
+    """
+    arquivo = tmp_path / "arte.pdf"
+    arquivo.write_bytes(b"x")
+    avisos = []
+
+    rl_hf.registrar_envio(
+        "SWJ320A", arquivo, False, pasta_relatorios=tmp_path / "in<>valido",
+        logger=lambda nivel, msg: avisos.append((nivel, msg)),
+    )
+
+    assert any(nivel == "warn" and "arte.pdf" in msg for nivel, msg in avisos)
+    assert any("relatório do dia" in msg for _, msg in avisos), "o aviso precisa dizer a consequencia"
+
+
+def test_falha_de_registro_nao_impede_o_envio_pra_impressora(tmp_path, monkeypatch):
+    monkeypatch.setattr(rl_hf.time, "sleep", lambda s: None)
+    fila = tmp_path / "fila"
+    (fila / "UJV100").mkdir(parents=True)
+    hot_folder = tmp_path / "hotfolder"
+    hot_folder.mkdir()
+    (fila / "UJV100" / "arte.pdf").write_bytes(b"conteudo")
+
+    resultado = vigiar_fila_uma_vez(
+        pasta_fila=str(fila), maquinas=_maquinas(hot_folder),
+        logger=lambda n, m: None, pasta_relatorios=tmp_path / "in<>valido",
+    )
+
+    assert resultado["UJV100"]["enviados"] == ["arte.pdf"]
+    assert (hot_folder / "arte.pdf").exists(), "a arte tem que chegar na impressora mesmo assim"
+
+
 def test_limpar_enviados_apaga_o_que_passou_do_prazo(tmp_path):
     enviados = tmp_path / "SWJ320A" / "Enviados"
     enviados.mkdir(parents=True)

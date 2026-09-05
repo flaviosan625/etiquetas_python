@@ -89,7 +89,7 @@ NOME_SUBPASTA_REGISTRO = "_registro"
 DIAS_RETENCAO_ENVIADOS = 15
 
 
-def registrar_envio(maquina, arquivo, girado, pasta_relatorios=None, quando=None):
+def registrar_envio(maquina, arquivo, girado, pasta_relatorios=None, quando=None, logger=None):
     """
     Anota uma linha no registro permanente do mês: uma linha JSON por
     arquivo entregue à máquina. É de propósito que grave só FATO BRUTO
@@ -100,11 +100,14 @@ def registrar_envio(maquina, arquivo, girado, pasta_relatorios=None, quando=None
     dimensoes.py.
 
     Nunca levanta exceção: falha de registro não pode impedir a arte de
-    chegar na impressora.
+    chegar na impressora. Mas AVISA no log quando falha — este arquivo é
+    a comprovação do que foi produzido, e falhar em silêncio significaria
+    descobrir o buraco só no dia em que o documento fizesse falta.
     """
     quando = quando or datetime.datetime.now()
+    destino = pathlib.Path(pasta_relatorios or PASTA_RELATORIOS) / NOME_SUBPASTA_REGISTRO
     try:
-        pasta = pathlib.Path(pasta_relatorios or PASTA_RELATORIOS) / NOME_SUBPASTA_REGISTRO
+        pasta = destino
         pasta.mkdir(parents=True, exist_ok=True)
         try:
             tamanho = arquivo.stat().st_size
@@ -120,7 +123,13 @@ def registrar_envio(maquina, arquivo, girado, pasta_relatorios=None, quando=None
         with open(pasta / f"{quando:%Y-%m}.jsonl", "a", encoding="utf-8") as f:
             f.write(linha + "\n")
         return True
-    except (OSError, TypeError, ValueError):
+    except (OSError, TypeError, ValueError) as e:
+        if logger:
+            logger(
+                "warn",
+                f"NÃO consegui registrar '{arquivo.name}' no histórico de produção ({destino}): {e}. "
+                f"O arquivo foi enviado pra impressão normalmente, mas não vai aparecer no relatório do dia.",
+            )
         return False
 
 
@@ -347,7 +356,7 @@ def _vigiar_uma_maquina(pasta_maquina, config_maquina, logger, pasta_relatorios=
 
         # registra ANTES de mover: depois do rename o caminho muda, e o
         # que interessa guardar é o nome com que o arquivo entrou na fila
-        registrar_envio(pasta_maquina.name, arquivo, girado, pasta_relatorios=pasta_relatorios)
+        registrar_envio(pasta_maquina.name, arquivo, girado, pasta_relatorios=pasta_relatorios, logger=logger)
 
         destino_enviados = pasta_enviados / arquivo.name
         if destino_enviados.exists():
