@@ -41,6 +41,7 @@ import datetime
 import json
 import pathlib
 import shutil
+import sys
 import time
 
 # Pasta comum dentro do OneDrive — existe em qualquer máquina que
@@ -682,10 +683,63 @@ def principal_uma_vez():
     passadas de se atropelarem se alguma demorar mais que o intervalo.
     """
     carregar_estado_avisos()
+    resultado = {}
     try:
-        _rodar_protegido(lambda: vigiar_fila_uma_vez(logger=logger_arquivo))
+        _rodar_protegido(lambda: resultado.update(vigiar_fila_uma_vez(logger=logger_arquivo)))
     finally:
         salvar_estado_avisos()
+
+    for linha in resumo_da_passada(resultado):
+        _falar(linha)
+
+
+def _tem_saida():
+    """
+    Tem pra onde escrever? Com pythonw.exe — que é como a tarefa roda —
+    sys.stdout é None (não é só fechado), e um print() sozinho quebra.
+
+    De propósito NÃO exige isatty(): redirecionar pra arquivo
+    ('... --uma-vez > saida.txt') é justamente o que alguém faz pra
+    guardar o resultado de uma passada, e nesse caso o resumo tem que ir
+    junto. É a mesma regra que logger_arquivo já segue.
+    """
+    try:
+        return sys.stdout is not None
+    except Exception:
+        return False
+
+
+def _falar(texto):
+    """
+    Escreve NA TELA e só na tela — nunca no log.
+
+    Rodando na mão, uma passada com a fila vazia não escrevia nada e a
+    pessoa ficava olhando pro prompt sem saber se tinha funcionado ou se
+    o comando nem chegou a rodar (aconteceu aqui, 2026-09-05 19:37).
+    Mas isso NÃO pode ir pro log: a tarefa roda 1.440 vezes por dia, e
+    uma linha "passada ok" por minuto soterraria o que interessa. Como a
+    tarefa roda por pythonw.exe (sem console), a distinção sai de graça.
+    """
+    if _tem_saida():
+        print(texto)
+
+
+def resumo_da_passada(resultado, agora=None):
+    """Uma linha por máquina, pra quem rodou na mão ver que aconteceu alguma coisa."""
+    agora = agora or datetime.datetime.now()
+    linhas = [f"Passada concluída às {agora:%H:%M:%S}."]
+    for maquina, r in resultado.items():
+        if r.get("erro"):
+            linhas.append(f"  {maquina}: PROBLEMA — {r['erro']}")
+            continue
+        partes = [f"{len(r.get('enviados') or [])} enviado(s)"]
+        for chave, rotulo in (("falharam", "falharam"), ("ignorados", "ignorados")):
+            if r.get(chave):
+                partes.append(f"{len(r[chave])} {rotulo}")
+        linhas.append(f"  {maquina}: {', '.join(partes)}")
+    if not resultado:
+        linhas.append("  (nenhuma máquina respondeu — veja o log)")
+    return linhas
 
 
 def rodando_de_dentro_do_onedrive(caminho=None):

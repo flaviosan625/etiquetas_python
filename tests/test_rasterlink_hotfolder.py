@@ -965,3 +965,56 @@ def test_de_uma_pasta_local_o_loop_roda_normal(tmp_path, monkeypatch):
     modulo.principal()
 
     assert rodou == [True]
+
+
+def test_resumo_da_passada_diz_o_que_aconteceu_em_cada_maquina():
+    """
+    Rodando na mao, uma passada com a fila vazia nao escrevia NADA e a
+    pessoa ficava olhando pro prompt sem saber se tinha funcionado
+    (aconteceu, 2026-09-05 19:37).
+    """
+    import datetime as dt
+    from rasterlink_hotfolder import resumo_da_passada
+
+    linhas = resumo_da_passada({
+        "SWJ320A": {"enviados": ["a.pdf", "b.pdf"], "ignorados": [], "falharam": []},
+        "UJV100": {"enviados": [], "ignorados": ["nota.zip"], "falharam": ["ruim.pdf"]},
+        "QUEBRADA": {"enviados": [], "ignorados": [], "erro": "Hot folder nao encontrada"},
+    }, agora=dt.datetime(2026, 9, 5, 19, 37, 0))
+
+    texto = "\n".join(linhas)
+    assert "19:37:00" in texto
+    assert "SWJ320A: 2 enviado(s)" in texto
+    assert "UJV100: 0 enviado(s), 1 falharam, 1 ignorados" in texto
+    assert "QUEBRADA: PROBLEMA" in texto
+
+
+def test_resumo_com_fila_vazia_ainda_diz_que_rodou():
+    from rasterlink_hotfolder import resumo_da_passada
+
+    linhas = resumo_da_passada({"SWJ320A": {"enviados": [], "ignorados": [], "falharam": []}})
+    assert any("Passada concluída" in l for l in linhas)
+    assert any("0 enviado(s)" in l for l in linhas)
+
+
+def test_resumo_nunca_vai_pro_log(tmp_path, monkeypatch):
+    """
+    A tarefa roda 1.440 vezes por dia. Uma linha "passada ok" por minuto
+    no log soterraria justamente o que a gente le quando a fila para.
+    """
+    import rasterlink_hotfolder as modulo
+
+    monkeypatch.setattr(modulo, "vigiar_fila_uma_vez", lambda **kw: {"UJV100": {"enviados": [], "ignorados": [], "falharam": []}})
+    monkeypatch.setattr(modulo, "_tem_saida", lambda: True)
+    modulo.principal_uma_vez()
+
+    assert not modulo.CAMINHO_LOG.exists(), "passada limpa nao pode escrever no log"
+
+
+def test_sem_console_nao_tenta_escrever_na_tela(monkeypatch):
+    """Com pythonw.exe sys.stdout e None — print() sozinho quebraria."""
+    import rasterlink_hotfolder as modulo
+
+    monkeypatch.setattr(modulo.sys, "stdout", None)
+    assert modulo._tem_saida() is False
+    modulo._falar("nao pode estourar")
