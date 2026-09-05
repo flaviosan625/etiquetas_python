@@ -414,6 +414,45 @@ def conferir(itens, pasta_fila=None, maquinas=None):
     return resultado
 
 
+def fila_parada(pasta_fila=None, maquinas=None, minutos=20, agora=None):
+    """
+    Diz quais filas têm arquivo esperando há mais de 'minutos' — sinal
+    de que o vigia no PC do RIP parou, ou de que o OneDrive daquela
+    máquina não está recebendo.
+
+    Existe por causa de um caso real (2026-09-05): dois arquivos foram
+    pra fila da UJV às 16:04 e continuaram lá, porque do outro lado
+    ninguém puxou. A tela de envio dizia "enviado" e estava certa — o
+    arquivo tinha saído daqui — mas ninguém percebeu que ele não tinha
+    chegado na máquina. Em condição normal a fila esvazia em segundos.
+
+    Devolve {nome_maquina: (quantos, minutos_do_mais_antigo)}.
+    """
+    maquinas = MAQUINAS if maquinas is None else maquinas
+    raiz = pathlib.Path(pasta_fila or PASTA_FILA_ONEDRIVE)
+    agora = agora or datetime.datetime.now()
+
+    parados = {}
+    for nome_maquina in maquinas:
+        pasta = raiz / nome_maquina
+        if not pasta.is_dir():
+            continue
+        idades = []
+        for arquivo in pasta.iterdir():
+            if not arquivo.is_file() or arquivo.suffix.lower() not in EXTENSOES_ACEITAS:
+                continue
+            try:
+                # ctime, não mtime: copy2 preserva a data do ORIGINAL, então
+                # mtime é a data da arte, não a hora em que ela entrou na fila
+                entrou = datetime.datetime.fromtimestamp(arquivo.stat().st_ctime)
+            except OSError:
+                continue
+            idades.append((agora - entrou).total_seconds() / 60)
+        if idades and max(idades) >= minutos:
+            parados[nome_maquina] = (len(idades), int(max(idades)))
+    return parados
+
+
 def _data_curta(quando_iso):
     """'2026-09-05T14:22:03' -> '05/09 14:22'. Devolve o original se não for uma data que a gente entenda."""
     try:

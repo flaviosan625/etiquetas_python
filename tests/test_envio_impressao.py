@@ -421,3 +421,41 @@ def test_falha_num_arquivo_nao_derruba_o_resto_do_lote(tmp_path, monkeypatch):
     assert len(resultado["enviados"]) == 1
     assert len(resultado["falhas"]) == 1
     assert "disco cheio" in resultado["falhas"][0][1]
+
+
+# ---------------------------------------------------------------- fila entupida
+
+def test_fila_parada_avisa_arquivo_esperando_ha_muito_tempo(tmp_path, monkeypatch):
+    """
+    Caso real (2026-09-05): dois arquivos foram pra fila da UJV às 16:04
+    e ficaram lá porque ninguém puxou do outro lado. A tela dizia
+    "enviado" e estava certa — mas ninguém percebeu que não chegou.
+    """
+    import os
+    fila = tmp_path / "fila"
+    (fila / MAQUINA_ADESIVO).mkdir(parents=True)
+    parado = fila / MAQUINA_ADESIVO / "39UN ADESIVO IMPRESSO_bmw.pdf"
+    parado.write_bytes(b"arte")
+    antigo = parado.stat().st_ctime - 45 * 60
+    os.utime(parado, (antigo, antigo))
+
+    agora = datetime.datetime.fromtimestamp(parado.stat().st_ctime) + datetime.timedelta(minutes=45)
+    paradas = env.fila_parada(pasta_fila=fila, maquinas=MAQUINAS_TESTE, minutos=20, agora=agora)
+
+    assert MAQUINA_ADESIVO in paradas
+    assert paradas[MAQUINA_ADESIVO][0] == 1
+
+
+def test_fila_recem_alimentada_nao_dispara_alerta(tmp_path):
+    fila = tmp_path / "fila"
+    (fila / MAQUINA_LONA).mkdir(parents=True)
+    (fila / MAQUINA_LONA / "1UN LONA IMPRESSA_faixa.pdf").write_bytes(b"arte")
+
+    assert env.fila_parada(pasta_fila=fila, maquinas=MAQUINAS_TESTE, minutos=20) == {}
+
+
+def test_fila_vazia_nao_dispara_alerta(tmp_path):
+    fila = tmp_path / "fila"
+    (fila / MAQUINA_LONA).mkdir(parents=True)
+
+    assert env.fila_parada(pasta_fila=fila, maquinas=MAQUINAS_TESTE, minutos=20) == {}

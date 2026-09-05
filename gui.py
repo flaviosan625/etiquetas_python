@@ -35,7 +35,7 @@ from documento_enviados import (
 )
 from envio_impressao import (
     cabe_na_maquina, conferir as conferir_envio, enviar as enviar_para_maquinas,
-    listar as listar_para_envio, prever_giro, raiz_do_cliente, subtotais_por_material,
+    fila_parada, listar as listar_para_envio, prever_giro, raiz_do_cliente, subtotais_por_material,
 )
 from estado_pedido import estado_existe, localizar_pastas_cliente
 from estoque import (
@@ -2049,6 +2049,16 @@ class JanelaEnviarImpressao(tk.Toplevel):
         tk.Label(barra, textvariable=self.var_contagem, bg=COR_FUNDO_JANELA, fg=COR_TEXTO_SECUNDARIO).grid(
             row=0, column=3, padx=(10, 0))
 
+        # Faixa de alerta da fila: some quando está tudo bem. Ver
+        # envio_impressao.fila_parada — "enviado" aqui significa que o
+        # arquivo saiu daqui, não que chegou na máquina, e sem este
+        # aviso ninguém percebe a diferença.
+        self.var_fila = tk.StringVar(value="")
+        self.faixa_fila = tk.Label(
+            self, textvariable=self.var_fila, bg=COR_ALERTA_FUNDO, fg=COR_ALERTA,
+            anchor="w", justify="left", padx=10, pady=6, wraplength=1000,
+        )
+
         frame_canvas = tk.Frame(self, bg=COR_FUNDO_JANELA)
         frame_canvas.grid(row=2, column=0, sticky="nsew", padx=20)
         frame_canvas.columnconfigure(0, weight=1)
@@ -2110,7 +2120,33 @@ class JanelaEnviarImpressao(tk.Toplevel):
         self.envios_anteriores = carregar_envios(raiz)["envios"]
         self.itens = listar_para_envio(self.pasta, self.config_dados, self.envios_anteriores)
         self.var_pasta.set(str(self.pasta))
+        self._avisar_fila_parada()
         self._preencher_lista()
+
+    def _avisar_fila_parada(self):
+        """
+        Mostra a faixa de alerta quando tem arquivo esperando na fila há
+        tempo demais — em condição normal ela esvazia em segundos.
+        """
+        try:
+            paradas = fila_parada()
+        except Exception:
+            paradas = {}
+
+        if not paradas:
+            self.faixa_fila.grid_forget()
+            return
+
+        partes = [
+            f"{maquina}: {quantos} arquivo(s) parado(s) há {minutos} min"
+            for maquina, (quantos, minutos) in sorted(paradas.items())
+        ]
+        self.var_fila.set(
+            "⚠  A fila não está sendo consumida — " + "; ".join(partes) + ".\n"
+            "O envio daqui funciona, mas o PC do RIP não está puxando: confira se o vigia está "
+            "rodando lá e se o OneDrive daquela máquina está sincronizando."
+        )
+        self.faixa_fila.grid(row=4, column=0, sticky="ew", padx=20, pady=(0, 8))
 
     def _preencher_lista(self):
         for widget in self.frame_lista.winfo_children():

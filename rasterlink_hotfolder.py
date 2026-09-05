@@ -376,6 +376,28 @@ def _vigiar_uma_maquina(pasta_maquina, config_maquina, logger, pasta_relatorios=
     return resultado
 
 
+# Último erro já avisado de cada máquina, pra não repetir a mesma linha
+# a cada 15 segundos: uma hot folder faltando por um fim de semana
+# encheria o log com milhares de linhas iguais e esconderia o resto.
+_ultimo_erro_por_maquina = {}
+
+
+def _avisar_erro_de_maquina(nome_maquina, erro, logger):
+    """Avisa quando o estado de uma máquina MUDA — quebrou agora, ou voltou a funcionar."""
+    anterior = _ultimo_erro_por_maquina.get(nome_maquina)
+    if erro == anterior:
+        return
+    _ultimo_erro_por_maquina[nome_maquina] = erro
+    if erro:
+        logger(
+            "err",
+            f"Máquina '{nome_maquina}' com problema: {erro}. As outras máquinas continuam "
+            f"funcionando normalmente; os arquivos desta ficam esperando na fila.",
+        )
+    elif anterior:
+        logger("ok", f"Máquina '{nome_maquina}' voltou a funcionar.")
+
+
 def vigiar_fila_uma_vez(pasta_fila=None, maquinas=None, logger=print, pasta_relatorios=None, dias_retencao=None):
     """
     Um ciclo só: pra cada máquina configurada, olha a subpasta dela
@@ -402,10 +424,21 @@ def vigiar_fila_uma_vez(pasta_fila=None, maquinas=None, logger=print, pasta_rela
     resultado_por_maquina = {}
     for nome_maquina, config_maquina in maquinas.items():
         pasta_maquina = pasta_raiz / nome_maquina
-        resultado_por_maquina[nome_maquina] = _vigiar_uma_maquina(
-            pasta_maquina, config_maquina, logger,
-            pasta_relatorios=pasta_relatorios, dias_retencao=dias_retencao,
-        )
+        try:
+            resultado_por_maquina[nome_maquina] = _vigiar_uma_maquina(
+                pasta_maquina, config_maquina, logger,
+                pasta_relatorios=pasta_relatorios, dias_retencao=dias_retencao,
+            )
+        except Exception as e:
+            # Uma máquina com problema NÃO pode parar as outras. Antes
+            # isso derrubava o ciclo inteiro: a hot folder da UJV sumindo
+            # (RasterLink reinstalado, Favorito renomeado) fazia a SWJ
+            # parar junto, sem ninguém entender por quê — e a UJV é a
+            # primeira do dicionário, então nem chegava na SWJ.
+            resultado_por_maquina[nome_maquina] = {"enviados": [], "ignorados": [], "erro": str(e)}
+            _avisar_erro_de_maquina(nome_maquina, str(e), logger)
+        else:
+            _avisar_erro_de_maquina(nome_maquina, None, logger)
 
     if pasta_raiz.is_dir():
         for item in pasta_raiz.iterdir():

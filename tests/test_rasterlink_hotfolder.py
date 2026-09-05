@@ -93,12 +93,26 @@ def test_vigiar_fila_uma_vez_sem_maquinas_configuradas_da_erro_claro(tmp_path):
         vigiar_fila_uma_vez(pasta_fila=str(tmp_path / "fila"), maquinas={})
 
 
-def test_vigiar_fila_uma_vez_hot_folder_inexistente_da_erro_claro(tmp_path):
-    with pytest.raises(FileNotFoundError):
-        vigiar_fila_uma_vez(
-            pasta_fila=str(tmp_path / "fila"),
-            maquinas=_maquinas(tmp_path / "nao_existe"),
-        )
+def test_vigiar_fila_uma_vez_hot_folder_inexistente_avisa_sem_derrubar_o_ciclo(tmp_path):
+    """
+    Antes isso levantava FileNotFoundError e derrubava o ciclo inteiro.
+    Mudou em 2026-09-05: com mais de uma máquina configurada, a que
+    quebra não pode parar as outras (ver
+    test_maquina_com_hot_folder_faltando_nao_derruba_as_outras). O erro
+    continua aparecendo, agora no log e nomeando a máquina.
+    """
+    import rasterlink_hotfolder as modulo
+    modulo._ultimo_erro_por_maquina.clear()
+
+    linhas = []
+    resultado = vigiar_fila_uma_vez(
+        pasta_fila=str(tmp_path / "fila"),
+        maquinas=_maquinas(tmp_path / "nao_existe"),
+        logger=lambda nivel, msg: linhas.append((nivel, msg)),
+    )
+
+    assert "Hot folder" in resultado["UJV100"]["erro"]
+    assert any(nivel == "err" and "UJV100" in msg for nivel, msg in linhas)
 
 
 def test_vigiar_fila_uma_vez_pasta_da_maquina_inexistente_retorna_vazio_sem_erro(tmp_path):
@@ -627,3 +641,63 @@ def test_logger_arquivo_nunca_estoura_erro_se_nao_conseguir_escrever_arquivo(tmp
     caminho_log_invalido = tmp_path / "pasta_que_nao_existe" / "log.txt"
 
     logger_arquivo("ok", "mensagem", caminho_log=caminho_log_invalido)  # nao deve levantar exececao
+
+
+def test_maquina_com_hot_folder_faltando_nao_derruba_as_outras(tmp_path, capsys):
+    """
+    Achado ao vivo (2026-09-05): a hot folder da UJV sumindo derrubava o
+    ciclo inteiro, e como a UJV é a PRIMEIRA do dicionário, a SWJ nunca
+    chegava a ser processada — as duas máquinas paravam por causa de uma.
+    """
+    fila = tmp_path / "fila"
+    hot_boa = tmp_path / "hot_boa"
+    hot_boa.mkdir()
+    maquinas = {
+        "QUEBRADA": str(tmp_path / "nao_existe"),
+        "BOA": str(hot_boa),
+    }
+    (fila / "BOA").mkdir(parents=True)
+    (fila / "BOA" / "arte.pdf").write_bytes(b"conteudo")
+
+    linhas = []
+    resultado = vigiar_fila_uma_vez(
+        pasta_fila=str(fila), maquinas=maquinas, logger=lambda n, m: linhas.append((n, m)),
+    )
+
+    assert resultado["BOA"]["enviados"] == ["arte.pdf"]
+    assert (hot_boa / "arte.pdf").exists()
+    assert "erro" in resultado["QUEBRADA"]
+    assert any(nivel == "err" and "QUEBRADA" in msg for nivel, msg in linhas)
+
+
+def test_erro_de_maquina_nao_repete_no_log_a_cada_ciclo(tmp_path):
+    """Uma hot folder faltando por um fim de semana encheria o log com milhares de linhas iguais."""
+    import rasterlink_hotfolder as modulo
+    modulo._ultimo_erro_por_maquina.clear()
+
+    fila = tmp_path / "fila"
+    maquinas = {"QUEBRADA": str(tmp_path / "nao_existe")}
+
+    linhas = []
+    for _ in range(3):
+        vigiar_fila_uma_vez(pasta_fila=str(fila), maquinas=maquinas,
+                            logger=lambda n, m: linhas.append((n, m)))
+
+    assert sum(1 for nivel, _ in linhas if nivel == "err") == 1
+
+
+def test_maquina_que_volta_a_funcionar_avisa(tmp_path):
+    import rasterlink_hotfolder as modulo
+    modulo._ultimo_erro_por_maquina.clear()
+
+    fila = tmp_path / "fila"
+    hot = tmp_path / "hot"
+    maquinas = {"UJV100": str(hot)}
+
+    linhas = []
+    vigiar_fila_uma_vez(pasta_fila=str(fila), maquinas=maquinas, logger=lambda n, m: linhas.append((n, m)))
+    hot.mkdir()
+    vigiar_fila_uma_vez(pasta_fila=str(fila), maquinas=maquinas, logger=lambda n, m: linhas.append((n, m)))
+
+    assert any(nivel == "err" for nivel, _ in linhas)
+    assert any(nivel == "ok" and "voltou a funcionar" in msg for nivel, msg in linhas)
