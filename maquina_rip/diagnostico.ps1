@@ -151,9 +151,21 @@ if (Test-Path $LOG) {
 
 $crash = Join-Path $PASTA "rasterlink_hotfolder_crash.log"
 if (Test-Path $crash) {
+    # O arquivo de crash NUNCA e apagado sozinho — ele e historico. Mas
+    # gritar "ATENCAO" por causa de uma quebra de semanas atras ensina
+    # a pessoa a ignorar o aviso, e ai o dia em que ele for de verdade
+    # passa batido. Por isso o alarme depende da IDADE.
+    $idade = (Get-Date) - (Get-Item $crash).LastWriteTime
     Write-Host ""
-    Write-Host "  ARQUIVO DE CRASH (fim dele):" -ForegroundColor Yellow
-    Get-Content $crash -Encoding UTF8 -Tail 20 | ForEach-Object { Write-Host "    $_" -ForegroundColor Yellow }
+    if ($idade.TotalHours -lt 24) {
+        Write-Host ("  ATENCAO: houve crash nas ultimas 24h (ha {0:N0}h). Fim do arquivo:" -f $idade.TotalHours) -ForegroundColor Red
+        $cor = "Red"
+    } else {
+        Write-Host ("  Existe arquivo de crash, mas o ultimo e ANTIGO: {0:dd/MM HH:mm} (ha {1:N0} dias). Nao e novidade." -f (Get-Item $crash).LastWriteTime, $idade.TotalDays) -ForegroundColor DarkGray
+        Write-Host "  (pode apagar C:\RasterLinkasterlink_hotfolder_crash.log pra limpar o aviso)" -ForegroundColor DarkGray
+        $cor = "DarkGray"
+    }
+    Get-Content $crash -Encoding UTF8 -Tail 12 | ForEach-Object { Write-Host "    $_" -ForegroundColor $cor }
 }
 
 # --------------------------------------------------------------------
