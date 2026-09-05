@@ -151,10 +151,15 @@ class JanelaPrincipal(tk.Tk):
             fg=COR_ACENTO, cursor="hand2", command=self._abrir_impressao_manual,
         ).pack(anchor="w", padx=16, pady=(0, 2))
 
-        tk.Button(
-            self, text="🔀 Cruzar pasta com lista do RIP...", relief="flat",
-            fg=COR_ACENTO, cursor="hand2", command=self._abrir_cruzamento_rip,
-        ).pack(anchor="w", padx=16, pady=(0, 2))
+        # DESATIVADO a pedido do usuário (2026-09-05): "ficou muito
+        # complicado de operar, vou pensar em alguma coisa melhor pra
+        # essa função". O botão saiu da tela, mas JanelaCruzarRIP e
+        # rasterlink.py continuam inteiros (e testados) — pra religar,
+        # é só devolver este tk.Button:
+        #     tk.Button(
+        #         self, text="🔀 Cruzar pasta com lista do RIP...", relief="flat",
+        #         fg=COR_ACENTO, cursor="hand2", command=self._abrir_cruzamento_rip,
+        #     ).pack(anchor="w", padx=16, pady=(0, 2))
 
         ttk.Separator(self).pack(fill="x", padx=16, pady=(0, 10))
 
@@ -246,6 +251,8 @@ class JanelaPrincipal(tk.Tk):
         JanelaImprimirPedido(self, self.var_impressora.get())
 
     def _abrir_cruzamento_rip(self):
+        # sem botão que chame isso hoje — ver comentário do botão
+        # desativado no __init__ (2026-09-05)
         JanelaCruzarRIP(self)
 
     def _config_atualizada(self, nova_config):
