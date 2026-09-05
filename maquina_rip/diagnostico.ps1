@@ -131,7 +131,7 @@ if (Test-Path $LOG) {
     $i = Get-Item $LOG
     Write-Host "  $LOG (mexido pela ultima vez em $($i.LastWriteTime))"
     Write-Host ""
-    Get-Content $LOG -Tail 25 | ForEach-Object { Write-Host "    $_" }
+    Get-Content $LOG -Encoding UTF8 -Tail 25 | ForEach-Object { Write-Host "    $_" }
 } else {
     Write-Host "  NAO EXISTE $LOG — o vigia nunca conseguiu nem escrever uma linha." -ForegroundColor Red
 }
@@ -140,7 +140,7 @@ $crash = Join-Path $PASTA "rasterlink_hotfolder_crash.log"
 if (Test-Path $crash) {
     Write-Host ""
     Write-Host "  ARQUIVO DE CRASH (fim dele):" -ForegroundColor Yellow
-    Get-Content $crash -Tail 20 | ForEach-Object { Write-Host "    $_" -ForegroundColor Yellow }
+    Get-Content $crash -Encoding UTF8 -Tail 20 | ForEach-Object { Write-Host "    $_" -ForegroundColor Yellow }
 }
 
 # --------------------------------------------------------------------

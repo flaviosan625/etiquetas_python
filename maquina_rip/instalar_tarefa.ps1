@@ -364,14 +364,14 @@ foreach ($g in $tarefa.Triggers) {
 if (Test-Path $LOG) {
     Write-Host ""
     Write-Host "  Fim do log ($LOG):" -ForegroundColor DarkGray
-    Get-Content $LOG -Tail 12 | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
+    Get-Content $LOG -Encoding UTF8 -Tail 12 | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
 }
 
 $crash = Join-Path $PASTA "rasterlink_hotfolder_crash.log"
 if (Test-Path $crash) {
     Write-Host ""
     Write-Host "  ATENÇÃO: existe arquivo de crash. Fim dele:" -ForegroundColor Yellow
-    Get-Content $crash -Tail 15 | ForEach-Object { Write-Host "    $_" -ForegroundColor Yellow }
+    Get-Content $crash -Encoding UTF8 -Tail 15 | ForEach-Object { Write-Host "    $_" -ForegroundColor Yellow }
 }
 
 Write-Host ""
