@@ -399,6 +399,33 @@ def _escapar(texto):
     return texto.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
+def gerar_pendentes(dias_para_tras=3, hoje=None, pasta_relatorios=None, config=None, maquinas=None):
+    """
+    Gera (ou regera) o relatório dos últimos dias que têm envio
+    registrado. É o que a tarefa agendada chama todo dia.
+
+    Olha pra trás alguns dias em vez de só pro dia anterior por dois
+    motivos: se o PC ficou desligado, a rodada perdida se recupera
+    sozinha na próxima; e um envio que entrou depois do relatório ter
+    saído aparece na regeração. Regerar é seguro e determinístico — o
+    registro só cresce por acréscimo, então o documento novo tem tudo
+    que o antigo tinha, mais o que faltava.
+
+    Devolve a lista de caminhos gerados.
+    """
+    hoje = hoje or datetime.date.today()
+    if isinstance(hoje, datetime.datetime):
+        hoje = hoje.date()
+
+    gerados = []
+    for recuo in range(dias_para_tras + 1):
+        dia = hoje - datetime.timedelta(days=recuo)
+        caminho = gerar_pdf(dia, pasta_relatorios=pasta_relatorios, config=config, maquinas=maquinas)
+        if caminho:
+            gerados.append(caminho)
+    return gerados
+
+
 def dias_com_registro(ano_mes, pasta_relatorios=None):
     """Lista as datas que têm envio registrado no mês (pra oferecer na tela)."""
     caminho = caminho_registro(ano_mes, pasta_relatorios)
@@ -413,3 +440,56 @@ def dias_com_registro(ano_mes, pasta_relatorios=None):
             except (json.JSONDecodeError, KeyError, TypeError, ValueError):
                 continue
     return sorted(dias)
+
+
+if __name__ == "__main__":
+    # Chamado pela tarefa agendada do Windows, todo dia de manhã (pega o
+    # movimento do dia anterior inteiro, inclusive envio de madrugada —
+    # tem envio real registrado às 23:51). Sem argumento, gera os últimos
+    # dias; com uma data (AAAA-MM-DD), gera só aquele dia.
+    import sys
+
+    # Rodando pela tarefa agendada com pythonw.exe (sem console),
+    # sys.stdout/stderr são None — não um stream fechado. Qualquer
+    # print() abaixo levantaria AttributeError e a tarefa falharia sem
+    # gerar nada. Mesma proteção já usada em main.py.
+    class _SemSaida:
+        def write(self, *a, **k):
+            pass
+
+        def flush(self):
+            pass
+
+    if sys.stdout is None:
+        sys.stdout = _SemSaida()
+    if sys.stderr is None:
+        sys.stderr = _SemSaida()
+
+    for _stream in (sys.stdout, sys.stderr):
+        if hasattr(_stream, "reconfigure"):
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+
+    try:
+        if len(sys.argv) > 1:
+            dia = datetime.datetime.strptime(sys.argv[1], "%Y-%m-%d").date()
+            caminho = gerar_pdf(dia)
+            gerados = [caminho] if caminho else []
+        else:
+            gerados = gerar_pendentes()
+
+        if gerados:
+            for caminho in gerados:
+                print(f"Relatório gerado: {caminho}")
+        else:
+            print("Nenhum envio registrado nesses dias — nada a gerar.")
+    except Exception as e:
+        registro_erro = PASTA_RELATORIOS / "_registro" / "erros_relatorio.log"
+        try:
+            registro_erro.parent.mkdir(parents=True, exist_ok=True)
+            import traceback
+            with open(registro_erro, "a", encoding="utf-8") as f:
+                f.write(f"{datetime.datetime.now():%Y-%m-%d %H:%M:%S}\n{traceback.format_exc()}\n")
+        except OSError:
+            pass
+        print(f"Falha ao gerar relatório: {e}")
+        raise

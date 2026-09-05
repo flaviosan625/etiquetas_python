@@ -220,6 +220,65 @@ def test_gerar_pdf_fica_leve(tmp_path):
     assert tamanho_kb < 300, f"30 envios geraram {tamanho_kb:.0f}KB — fonte duplicando?"
 
 
+def test_gerar_pendentes_cobre_os_dias_recentes_com_envio(tmp_path):
+    _escrever_registro(tmp_path, [
+        _envio("2026-09-03T10:00:00", "SWJ320A", "1UN LONA 2.00X3.00M a.pdf"),
+        _envio("2026-09-05T10:00:00", "SWJ320A", "1UN LONA 2.00X3.00M b.pdf"),
+    ])
+
+    gerados = rp.gerar_pendentes(
+        dias_para_tras=3, hoje=datetime.date(2026, 9, 5),
+        pasta_relatorios=tmp_path, maquinas=MAQUINAS_TESTE,
+    )
+
+    assert sorted(c.name for c in gerados) == ["2026-09-03.pdf", "2026-09-05.pdf"]
+
+
+def test_gerar_pendentes_recupera_dia_perdido_com_pc_desligado(tmp_path):
+    """Se ninguém rodou ontem, a rodada de hoje precisa emitir o de ontem também."""
+    _escrever_registro(tmp_path, [_envio("2026-09-04T10:00:00", "SWJ320A", "1UN LONA 2.00X3.00M a.pdf")])
+
+    gerados = rp.gerar_pendentes(
+        dias_para_tras=3, hoje=datetime.date(2026, 9, 5),
+        pasta_relatorios=tmp_path, maquinas=MAQUINAS_TESTE,
+    )
+
+    assert [c.name for c in gerados] == ["2026-09-04.pdf"]
+
+
+def test_gerar_pendentes_sem_envio_nenhum_nao_cria_nada(tmp_path):
+    gerados = rp.gerar_pendentes(
+        hoje=datetime.date(2026, 9, 5), pasta_relatorios=tmp_path, maquinas=MAQUINAS_TESTE,
+    )
+
+    assert gerados == []
+    assert not (tmp_path / "2026").exists()
+
+
+def test_regerar_o_mesmo_dia_inclui_envio_que_chegou_depois(tmp_path):
+    """
+    Regerar precisa ser seguro: o registro só cresce por acréscimo, então
+    o documento novo tem tudo do antigo mais o que faltava.
+    """
+    _escrever_registro(tmp_path, [_envio("2026-09-03T10:00:00", "SWJ320A", "1UN LONA 2.00X3.00M a.pdf")])
+    primeiro = rp.gerar_pdf(datetime.date(2026, 9, 3), pasta_relatorios=tmp_path, maquinas=MAQUINAS_TESTE)
+    doc = pymupdf.open(str(primeiro))
+    texto_antes = "\n".join(p.get_text() for p in doc)
+    doc.close()
+    assert "b.pdf" not in texto_antes
+
+    with open(tmp_path / rp.NOME_SUBPASTA_REGISTRO / "2026-09.jsonl", "a", encoding="utf-8") as f:
+        f.write(json.dumps(_envio("2026-09-03T18:00:00", "SWJ320A", "1UN LONA 2.00X3.00M b.pdf")) + "\n")
+
+    segundo = rp.gerar_pdf(datetime.date(2026, 9, 3), pasta_relatorios=tmp_path, maquinas=MAQUINAS_TESTE)
+    doc = pymupdf.open(str(segundo))
+    texto_depois = "\n".join(p.get_text() for p in doc)
+    doc.close()
+
+    assert segundo == primeiro, "regera no mesmo arquivo, nao cria um segundo"
+    assert "a.pdf" in texto_depois and "b.pdf" in texto_depois
+
+
 def test_dias_com_registro_lista_os_dias_do_mes(tmp_path):
     _escrever_registro(tmp_path, [
         _envio("2026-09-02T10:00:00", "SWJ320A", "a.pdf"),
