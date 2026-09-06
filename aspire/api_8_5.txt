@@ -1,0 +1,41 @@
+SONDA DA API — Aspire 8.5 (v5: numeros por tras das opcoes da tela)
+
+=== RampingData (recem criado) ===
+  DoRamping                  boolean = false
+  RampType                   number = 0
+  RampDistance               number = 100
+  RampAngle                  number = 20
+
+=== LeadInOutData (recem criado) ===
+  OvercutDistance            number = 0
+  DoLeadIn                   boolean = false
+  DoLeadOut                  boolean = false
+
+=== ToolpathPosData (recem criado) ===
+  SafeZ                      number = 15
+  HomeX                      number = 0
+  HomeY                      number = 0
+  HomeZ                      number = 20
+  StartZGap                  number = 15
+
+=== PERCURSOS NO TRABALHO: 1 ===
+
+=== percurso #1 ===
+  Name                       string = Corte 1
+  Notes                      string = 
+  Tool                       userdata = Tool:End Mill - Imperial Tools | Fresa 4 mm | Topo Raso (4 mm) -(Created)
+  ActiveSheetIndex           number = 0
+  MachiningTime              funcao: No matching overload found, candidates: | int MachiningTime(Toolpath const&,bool)
+
+=== percurso #1 . Tool ===
+  Name                       string = Topo Raso (4 mm)
+  ToolNumber                 number = 0
+  ToolDia                    number = 4
+  Stepdown                   number = 11
+  Stepover                   number = 2
+  ToolTypeText               string = End Mill
+  Notes                      string = PVC 10 mm
+  FeedRate                   number = 2000
+  PlungeRate                 number = 1000
+  SpindleSpeed               number = 18000
+  InMM                       boolean = true

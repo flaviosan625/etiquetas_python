@@ -1,46 +1,59 @@
 -- VECTRIC LUA SCRIPT
 --
--- Primeiro gerador de percurso — versão de prova.
+-- Gera os percursos de corte a partir das camadas do desenho.
 --
--- Responde duas perguntas de uma vez:
+-- O QUE ELE FAZ
+--   1. acha a camada CORTE INTERNO e cria um percurso por DENTRO da linha
+--   2. acha a camada CORTE EXTERNO e cria um percurso por FORA
+--   3. nessa ordem, sempre
 --
--- 1) COMO SE PEGA A FERRAMENTA. O GetTool devolveu vazio em todas as
---    formas de grupo tentadas — inclusive com uma ferramenta de nome
---    exato solta na raiz de "Imperial Tools". Suspeita: ToolDatabase()
---    nasce vazio e precisa ser carregado do arquivo; existe um
---    GetToolDatabaseLocation() solto na API, que só faz sentido pra
---    isso. Se nada funcionar, pega de um percurso que já exista no
---    trabalho — vem pronta e correta do próprio programa.
+-- POR QUE NESSA ORDEM (regra do Flávio, 06/09/2026): assim que o
+-- contorno externo fecha, a peça solta da chapa e começa a se mexer.
+-- Furo feito depois disso sai torto, quando não arranca a peça. A ordem
+-- dos percursos na lista é a ordem de usinagem, então criar o interno
+-- primeiro é o que garante isso — e garantia aqui vale mais que
+-- elegância, porque o preço do erro é a chapa.
 --
--- 2) QUE NÚMERO É CADA OPÇÃO. A API guarda ProfileSide e CutDirection
---    como número, e o Toolpath pronto não devolve esses campos de
---    volta. Então cria com 0 e 0 e o usuário abre o percurso pra ver o
---    que acendeu. Errar aqui não é peça torta: a fresa passa do lado
---    errado da linha, a letra sai menor que o pedido e a chapa vai
---    junto.
+-- POR QUE DOIS PERCURSOS, SE O ASPIRE JÁ SABE FAZER O DENTRO/FORA
+-- SOZINHO: sabe mesmo — com ProfileSide = 0 ele detecta o aninhamento e
+-- inverte o lado no contorno interno (conferido na tela em 06/09/2026).
+-- Mas num percurso só não há como mandar o interno vir primeiro: a API
+-- não expõe a aba "Ordem". Dois percursos custam nada e tornam a ordem
+-- explícita.
 --
--- Parâmetros de PVC 10 mm (de corte_parametros.py): fresa Topo Raso
--- (4 mm), profundidade 11 mm (10 da chapa + 1 pra cortar passante),
--- rampa suave de 10 mm.
+-- Se não houver camada nomeada, cai no modo antigo: um percurso só, com
+-- os vetores selecionados. Funciona, mas sem garantia de ordem — e o
+-- relatório avisa.
 --
--- Rode num trabalho de TESTE, com vetores fechados selecionados, e de
--- preferência no mesmo que tem o percurso "Corte 1".
+-- Os valores vêm de corte_parametros.py. Números da API confirmados na
+-- tela: ProfileSide 0 = Fora/Direita, 1 = Dentro/Esquerda;
+-- CutDirection 0 = Convencional; RampType 0 = Suave; Tool tipo 1 = topo
+-- raso.
 --
 -- Rode em: Gadgets -> Corte Automatico
 
 local DESTINO = "C:\\Users\\flavi\\Desktop\\etiquetas_python\\aspire\\corte_resultado.txt"
 
-local GRUPO = "Fresa 4 mm"
+-- PVC 10 mm. Vai virar tabela por material quando a tela mandar qual é.
 local FERRAMENTA = "Topo Raso (4 mm)"
-local PROFUNDIDADE = 11.0
+local TIPO_TOPO_RASO = 1
+local DIAMETRO = 4.0
+local PASSADA = 11.0
+local PASSO_LATERAL = 2.0
+local AVANCO = 2000.0
+local ATAQUE = 1000.0
+local ROTACAO = 18000.0
+local PROFUNDIDADE = 11.0        -- 10 da chapa + 1 pra cortar passante
 local RAMPA_MM = 10.0
-local LIXO = "___nao_existe___"
+
+local LADO_FORA = 0
+local LADO_DENTRO = 1
+local DIRECAO_CONVENCIONAL = 0
+local RAMPA_SUAVE = 0
 
 local saida = {}
 local function anotar(t) saida[#saida + 1] = t end
 
--- Mensagem de erro do luabind vem com quebra de linha no meio; no
--- relatório atrapalha mais do que ajuda.
 local function numa_linha(valor)
    return (string.gsub(tostring(valor), "%s+", " "))
 end
@@ -53,246 +66,171 @@ local function gravar()
    end
 end
 
-local function tentar_grupos(banco)
-   local grupos = {
-      GRUPO, "fresa 4mm", "Imperial Tools | " .. GRUPO, "Imperial Tools|" .. GRUPO,
-      "Imperial Tools\\" .. GRUPO, "Imperial Tools/" .. GRUPO, "Imperial Tools", "",
-   }
-   for _, grupo in ipairs(grupos) do
-      local ok, ferramenta = pcall(function() return banco:GetTool(grupo, FERRAMENTA) end)
-      anotar("  GetTool('" .. grupo .. "') -> " .. numa_linha(ferramenta))
-      if ok and ferramenta ~= nil then return ferramenta end
+local function sem_acento(texto)
+   local t = tostring(texto):upper()
+   for de, para in pairs({["Á"]="A", ["À"]="A", ["Ã"]="A", ["Â"]="A", ["É"]="E",
+                          ["Ê"]="E", ["Í"]="I", ["Ó"]="O", ["Ô"]="O", ["Õ"]="O",
+                          ["Ú"]="U", ["Ç"]="C"}) do
+      t = t:gsub(de, para)
    end
-   return nil
+   return t
 end
 
-local function investigar_banco(banco)
-   anotar("")
-   anotar("=== investigando o banco ===")
-   anotar("  ToolDatabase() = " .. numa_linha(banco))
-
-   local ok, caminho = pcall(GetToolDatabaseLocation)
-   anotar("  GetToolDatabaseLocation() = " .. numa_linha(caminho))
-
-   for _, nome in ipairs({"Load", "LoadDatabase", "LoadFromFile", "LoadToolDatabase",
-                          "Open", "Read", "ReadFrom", "Init", "Refresh", "Reload",
-                          "SetLocation", "Count", "GetCount", "GetHeadPosition",
-                          "GetNext", "GetFirstTool", "GetGroup", "GetToolGroup"}) do
-      local certo, valor = pcall(function() return banco[nome] end)
-      if certo and valor ~= nil then
-         if type(valor) == "function" then
-            local passou, erro = pcall(valor, banco, LIXO, -1)
-            anotar("  ." .. nome .. "() -> " ..
-                   (passou and "aceitou lixo" or numa_linha(erro)))
-         else
-            anotar("  ." .. nome .. " = " .. type(valor) .. " " .. numa_linha(valor))
-         end
-      end
-   end
-
-   if ok and caminho ~= nil then
-      for _, metodo in ipairs({"Load", "LoadDatabase", "LoadFromFile", "Open", "Read"}) do
-         local certo, r = pcall(function() return banco[metodo](banco, caminho) end)
-         if certo then
-            anotar("  " .. metodo .. "(caminho) -> " .. numa_linha(r))
-            local achou = tentar_grupos(banco)
-            if achou ~= nil then
-               anotar("  ACHOU depois de " .. metodo)
-               return achou
-            end
-         end
-      end
-   end
-
-   -- O banco se percorre, como se faz com os percursos?
-   local certo, posicao = pcall(function() return banco:GetHeadPosition() end)
-   if certo and posicao ~= nil then
-      anotar("  -- percorrendo o banco --")
-      local n = 0
-      while posicao ~= nil and n < 80 do
-         local item
-         local passou = pcall(function()
-            local a, b = banco:GetNext(posicao)
-            item = a
-            posicao = b
-         end)
-         if not passou or item == nil then break end
-         n = n + 1
-         local temNome, nome = pcall(function() return item.Name end)
-         nome = temNome and tostring(nome) or "?"
-         anotar("     " .. n .. ": " .. nome)
-         if nome == FERRAMENTA then
-            anotar("     ^ essa serve")
-            return item
-         end
-      end
-   else
-      anotar("  (o banco nao se percorre com GetHeadPosition)")
-   end
-   return nil
-end
-
--- Constroi a ferramenta do zero, com os valores do cadastro da casa.
--- O ToolDatabase() nasce vazio e nao ha como carrega-lo pelo Lua (06/09
--- /2026), mas o construtor de Tool aceita (nome, numero) — e preencher
--- os campos na mao e ate melhor: o banco tem DUAS ferramentas chamadas
--- "Topo Raso (4 mm)" dentro do mesmo grupo, entao pedir pelo nome seria
--- torcer pra vir a certa.
 local function construir_ferramenta()
-   anotar("")
-   anotar("=== construindo a ferramenta ===")
-   -- O segundo argumento e o TIPO. Descoberto que 0 = Ball Nose (ponta
-   -- esferica), que nao serve: a casa corta com topo raso. Varre todos e
-   -- fica com o End Mill — e so encerra quando achar, sem atalho.
-   local reserva = nil
-   for tipo = 0, 9 do
-      local ok, ferramenta = pcall(function() return Tool(FERRAMENTA, tipo) end)
-      if ok and ferramenta ~= nil then
-         local descricao = numa_linha(ferramenta)
-         anotar("  Tool(nome, " .. tipo .. ") -> " .. descricao)
-         -- preenche com os valores da casa e confere se pegaram
-         local campos = {
-            ToolDia = 4.0, Stepdown = 11.0, Stepover = 2.0,
-            FeedRate = 2000.0, PlungeRate = 1000.0, SpindleSpeed = 18000.0,
-            ToolNumber = 1,
-         }
-         for campo, valor in pairs(campos) do
-            pcall(function() ferramenta[campo] = valor end)
-         end
-         local conferencia = {}
-         for campo, esperado in pairs(campos) do
-            local certo, lido = pcall(function() return ferramenta[campo] end)
-            conferencia[#conferencia + 1] = campo .. "=" ..
-               (certo and tostring(lido) or "?") ..
-               ((certo and lido == esperado) and "" or " (NAO PEGOU)")
-         end
-         table.sort(conferencia)
-         anotar("     " .. table.concat(conferencia, "  "))
-         if descricao:find("End Mill") then
-            anotar("     ^ TOPO RASO: tipo " .. tipo .. " e o que a casa usa")
-            return ferramenta
-         end
-         reserva = reserva or ferramenta
-      else
-         anotar("  Tool(nome, " .. tipo .. ") -> " .. numa_linha(ferramenta))
-      end
-   end
-   anotar("  nenhum tipo veio como End Mill — seguindo com o primeiro que deu")
-   return reserva
-end
-
--- Reserva: a ferramenta de um percurso que o usuário já montou.
-local function pegar_de_percurso_existente()
-   local gerenciador = ToolpathManager()
-   anotar("")
-   anotar("=== reserva: percursos existentes (" .. tostring(gerenciador.Count) .. ") ===")
-   local posicao = gerenciador:GetHeadPosition()
-   while posicao ~= nil do
-      local percurso
-      local ok = pcall(function()
-         local a, b = gerenciador:GetNext(posicao)
-         percurso = a
-         posicao = b
-      end)
-      if not ok or percurso == nil then break end
-      local temFerr, ferramenta = pcall(function() return percurso.Tool end)
-      if temFerr and ferramenta ~= nil then
-         anotar("  peguei de '" .. tostring(percurso.Name) .. "': " ..
-                tostring(ferramenta.Name) .. " (passada " ..
-                tostring(ferramenta.Stepdown) .. ")")
-         return ferramenta
-      end
-   end
-   anotar("  nenhum percurso com ferramenta neste trabalho")
-   return nil
-end
-
-function main(script_path)
-   saida = {}
-   anotar("CORTE AUTOMATICO — prova de criacao de percurso")
-
-   local trabalho = VectricJob()
-   if trabalho.Exists ~= true then
-      MessageBox("Abra um trabalho de teste com vetores fechados.")
-      return false
-   end
-
-   anotar("")
-   anotar("=== ferramenta ===")
-   local banco = ToolDatabase()
-   local ferramenta = tentar_grupos(banco)
-   if ferramenta == nil then ferramenta = investigar_banco(banco) end
-   if ferramenta == nil then ferramenta = pegar_de_percurso_existente() end
-   if ferramenta == nil then ferramenta = construir_ferramenta() end
-
-   if ferramenta == nil then
-      gravar()
-      MessageBox("Nao consegui obter a ferramenta, nem do banco nem de um\n" ..
-                 "percurso existente.\n\nRode no trabalho que tem o 'Corte 1'.\n\n" ..
-                 "Detalhes em:\n" .. DESTINO)
-      return false
-   end
-
-   anotar("  usando: " .. tostring(ferramenta.Name) ..
+   local ferramenta = Tool(FERRAMENTA, TIPO_TOPO_RASO)
+   ferramenta.ToolDia = DIAMETRO
+   ferramenta.Stepdown = PASSADA
+   ferramenta.Stepover = PASSO_LATERAL
+   ferramenta.FeedRate = AVANCO
+   ferramenta.PlungeRate = ATAQUE
+   ferramenta.SpindleSpeed = ROTACAO
+   ferramenta.ToolNumber = 1
+   anotar("  ferramenta: " .. numa_linha(ferramenta) ..
           " dia " .. tostring(ferramenta.ToolDia) ..
           " passada " .. tostring(ferramenta.Stepdown))
+   return ferramenta
+end
 
+-- Deixa selecionados só os vetores desta camada. Devolve quantos.
+local function selecionar_camada(trabalho, camada)
+   local selecao = trabalho.Selection
+   selecao:Clear()
+   local quantos = 0
+   local posicao = camada:GetHeadPosition()
+   while posicao ~= nil do
+      local objeto
+      local ok = pcall(function()
+         local a, b = camada:GetNext(posicao)
+         objeto = a
+         posicao = b
+      end)
+      if not ok or objeto == nil then break end
+      -- Os dois booleanos de Add nao estao documentados; tenta as
+      -- combinacoes e fica na primeira que aceitar.
+      local entrou = false
+      for _, par in ipairs({{true, true}, {true, false}, {false, false}}) do
+         local certo = pcall(function() selecao:Add(objeto, par[1], par[2]) end)
+         if certo then
+            entrou = true
+            break
+         end
+      end
+      if entrou then quantos = quantos + 1 end
+   end
+   return quantos
+end
+
+local function criar_percurso(nome, ferramenta, lado)
    local rampa = RampingData()
    rampa.DoRamping = true
-   rampa.RampType = 0            -- suposto "Suave", a primeira opcao da tela
+   rampa.RampType = RAMPA_SUAVE
    rampa.RampDistance = RAMPA_MM
 
-   local entrada = LeadInOutData()
-   local posicao = ToolpathPosData()
+   local parametros = ProfileParameterData()
+   parametros.Name = nome
+   parametros.CutDepth = PROFUNDIDADE
+   parametros.StartDepth = 0.0
+   parametros.ProfileSide = lado
+   parametros.CutDirection = DIRECAO_CONVENCIONAL
+   parametros.Allowance = 0.0
+   parametros.CreateSquareCorners = false
 
    local seletor = GeometrySelector()
    seletor.SelectClosed = true
    seletor.SelectOpen = false
    seletor.ToolDia = ferramenta.ToolDia
 
-   local parametros = ProfileParameterData()
-   parametros.Name = "TESTE lado=0 dir=0"
-   parametros.CutDepth = PROFUNDIDADE
-   parametros.StartDepth = 0.0
-   parametros.ProfileSide = 0
-   parametros.CutDirection = 0
-   parametros.Allowance = 0.0
-   parametros.CreateSquareCorners = false
+   local ok, resultado = pcall(function()
+      return ToolpathManager():CreateProfilingToolpath(
+         nome, ferramenta, parametros, rampa, LeadInOutData(),
+         ToolpathPosData(), seletor, true, true)
+   end)
+   anotar("  '" .. nome .. "' lado=" .. lado .. " -> " ..
+          (ok and ("criado " .. numa_linha(resultado)) or numa_linha(resultado)))
+   return ok and resultado ~= nil
+end
 
-   local gerenciador = ToolpathManager()
-   anotar("")
-   anotar("=== criacao ===")
-   anotar("  percursos antes: " .. tostring(gerenciador.Count))
-
-   -- Os dois booleanos finais nao estao documentados. Tenta as quatro
-   -- combinacoes e anota qual passou.
-   local criado = nil
-   for _, par in ipairs({{true, true}, {true, false}, {false, true}, {false, false}}) do
-      local ok, resultado = pcall(function()
-         return gerenciador:CreateProfilingToolpath(
-            parametros.Name, ferramenta, parametros, rampa, entrada,
-            posicao, seletor, par[1], par[2])
+local function achar_camada(trabalho, pedaco)
+   local gerente = trabalho.LayerManager
+   local posicao = gerente:GetHeadPosition()
+   while posicao ~= nil do
+      local camada
+      local ok = pcall(function()
+         local a, b = gerente:GetNext(posicao)
+         camada = a
+         posicao = b
       end)
-      anotar("  bools (" .. tostring(par[1]) .. ", " .. tostring(par[2]) .. ") -> " ..
-             (ok and ("OK " .. numa_linha(resultado)) or numa_linha(resultado)))
-      if ok and resultado ~= nil then
-         criado = par
-         break
+      if not ok or camada == nil then break end
+      local temNome, nome = pcall(function() return camada.Name end)
+      if temNome and sem_acento(nome):find(pedaco, 1, true) and camada.Count > 0 then
+         return camada, nome
       end
    end
+   return nil
+end
 
-   anotar("  percursos depois: " .. tostring(ToolpathManager().Count))
-   gravar()
+function main(script_path)
+   saida = {}
+   anotar("CORTE AUTOMATICO")
 
-   if criado == nil then
-      MessageBox("Nenhuma combinacao criou o percurso.\n\nVeja:\n" .. DESTINO)
+   local trabalho = VectricJob()
+   if trabalho.Exists ~= true then
+      MessageBox("Abra o trabalho com os vetores de corte.")
       return false
    end
 
-   MessageBox("Percurso criado.\n\n" ..
-              "ABRA o percurso 'TESTE lado=0 dir=0' e me diga:\n\n" ..
-              "1) em 'Usinar vetores': Fora/Direita, Dentro/Esquerda ou Sobre?\n" ..
-              "2) em 'Direcao': Subida ou Convencional?\n" ..
-              "3) na aba Rampas: o tipo esta em Suave?")
+   anotar("")
+   anotar("=== ferramenta ===")
+   local ferramenta = construir_ferramenta()
+
+   anotar("")
+   anotar("=== percursos ===")
+   local interna, nomeInterna = achar_camada(trabalho, "CORTE INTERNO")
+   local externa, nomeExterna = achar_camada(trabalho, "CORTE EXTERNO")
+   local feitos = 0
+
+   if interna ~= nil or externa ~= nil then
+      -- O INTERNO PRIMEIRO. A ordem na lista e a ordem de usinagem.
+      if interna ~= nil then
+         local n = selecionar_camada(trabalho, interna)
+         anotar("  camada '" .. nomeInterna .. "': " .. n .. " vetores")
+         if n > 0 and criar_percurso("CORTE INTERNO", ferramenta, LADO_DENTRO) then
+            feitos = feitos + 1
+         end
+      else
+         anotar("  (sem camada de corte interno — pode ser peca sem furo)")
+      end
+
+      if externa ~= nil then
+         local n = selecionar_camada(trabalho, externa)
+         anotar("  camada '" .. nomeExterna .. "': " .. n .. " vetores")
+         if n > 0 and criar_percurso("CORTE EXTERNO", ferramenta, LADO_FORA) then
+            feitos = feitos + 1
+         end
+      end
+   else
+      anotar("  SEM CAMADA NOMEADA — um percurso so, com o que esta selecionado.")
+      anotar("  O Aspire acerta o dentro/fora sozinho, mas a ORDEM nao fica garantida.")
+      if criar_percurso("CORTE", ferramenta, LADO_FORA) then feitos = 1 end
+   end
+
+   anotar("")
+   anotar("  total de percursos no trabalho: " .. tostring(ToolpathManager().Count))
+   gravar()
+
+   if feitos == 0 then
+      MessageBox("Nenhum percurso criado.\n\nVeja:\n" .. DESTINO)
+      return false
+   end
+
+   local recado = feitos .. " percurso(s) criado(s)."
+   if interna ~= nil and externa ~= nil then
+      recado = recado .. "\n\nCORTE INTERNO primeiro, CORTE EXTERNO depois —\n" ..
+               "a ordem da lista e a ordem de usinagem."
+   elseif interna == nil and externa == nil then
+      recado = recado .. "\n\nATENCAO: nao havia camada CORTE INTERNO / CORTE\n" ..
+               "EXTERNO, entao saiu um percurso so. A ordem nao esta garantida."
+   end
+   MessageBox(recado)
    return true
 end

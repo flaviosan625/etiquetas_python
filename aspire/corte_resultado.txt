@@ -1,5 +1,26 @@
 CORTE AUTOMATICO â€” prova de criacao de percurso
 
+=== da pra escolher os vetores por camada? ===
+  camadas no trabalho: 2
+   camada 'Previsão de percursos'
+      .Name = string Previsão de percursos
+      .Visible = boolean true
+      .Count = number 0
+      .GetHeadPosition = function
+      .GetNext = function
+   camada 'Camada 1'
+      .Name = string Camada 1
+      .Visible = boolean true
+      .Count = number 3
+      .GetHeadPosition = function
+      .GetNext = function
+  Selection = SelectionList: 3 selected objects
+      Selection.Count = 3
+      Selection.Clear() -> No matching overload found, candidates: void Clear(SelectionList&)
+      Selection.Add() -> No matching overload found, candidates: bool Add(SelectionList&,CadObject*,bool,bool)
+      Selection.GetHeadPosition() -> No matching overload found, candidates: POSITION* GetHeadPosition(CadObjectList const&)
+      Selection.GetNext() -> No matching overload found, candidates: CadObject* GetNext(CadObjectList const&,POSITION*&)
+
 === ferramenta ===
   GetTool('Fresa 4 mm') -> nil
   GetTool('fresa 4mm') -> nil
@@ -21,6 +42,9 @@ CORTE AUTOMATICO â€” prova de criacao de percurso
 === construindo a ferramenta ===
   Tool(nome, 0) -> Tool:Ball Nose - Not From Tool DB | -(Not Created)
      FeedRate=2000  PlungeRate=1000  SpindleSpeed=18000  Stepdown=11  Stepover=2  ToolDia=4  ToolNumber=1
+  Tool(nome, 1) -> Tool:End Mill - Not From Tool DB | -(Not Created)
+     FeedRate=2000  PlungeRate=1000  SpindleSpeed=18000  Stepdown=11  Stepover=2  ToolDia=4  ToolNumber=1
+     ^ TOPO RASO: tipo 1 e o que a casa usa
   usando: nil dia 4 passada 11
 
 === criacao ===
