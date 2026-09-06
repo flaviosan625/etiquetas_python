@@ -24,6 +24,7 @@ ferramentas do Aspire**, que é onde a Vectric espera que morem. Aqui só
 fica o que aponta pra lá: o grupo e o nome da ferramenta.
 """
 import math
+import pathlib
 
 # Como a peça é usinada em relação à linha do desenho. Confirmado na
 # tela do Flávio (06/09/2026): "Fora / Direita" no contorno.
@@ -91,8 +92,25 @@ FOLGA_PASSANTE_MM = 1.0
 # 'grupo' e 'ferramenta' têm que bater LETRA POR LETRA com o banco de
 # ferramentas do Aspire — é assim que GetTool(grupo, nome) acha. Lidos do
 # arquivo real do banco em 06/09/2026.
-_FRESA_4 = {"grupo": "Fresa 4 mm", "ferramenta": "Topo Raso (4 mm)"}
-_FRESA_6 = {"grupo": "Fresa 6 mm", "ferramenta": "Topo Raso (6 mm)"}
+# Avanço, ataque e rotação são os mesmos em todos os materiais — o
+# usuário foi direto: "deixar com mesmo parâmetro, só mudar a fresa"
+# (06/09/2026). O que muda de material pra material é a fresa e a
+# passada.
+AVANCO_MM_MIN = 2000.0        # Feed Rate
+ATAQUE_MM_MIN = 1000.0        # Velocidade de Ataque (descida)
+ROTACAO_RPM = 18000.0
+PASSO_LATERAL_MM = 2.0
+
+# TUDO AQUI É MILÍMETRO. Não é observação decorativa: o Tool do Aspire
+# nasce em POLEGADA, e num teste de 06/09/2026 o diâmetro 4 virou 4
+# polegadas — 101,6 mm, com raio de 50,8 marcado sobre o vetor. A passada
+# de 11 teria virado 279 mm de profundidade numa chapa de 10 mm. Quem
+# consumir estes valores TEM que declarar milímetro antes de escrevê-los
+# (no gadget: ferramenta.InMM = true, antes de qualquer número).
+UNIDADE = "mm"
+
+_FRESA_4 = {"grupo": "Fresa 4 mm", "ferramenta": "Topo Raso (4 mm)", "diametro_mm": 4.0}
+_FRESA_6 = {"grupo": "Fresa 6 mm", "ferramenta": "Topo Raso (6 mm)", "diametro_mm": 6.0}
 
 PARAMETROS = {
     ("PVC", 10): dict(_FRESA_4, passada_mm=11.0),
@@ -144,7 +162,13 @@ def buscar(material, espessura_mm):
         "espessura_mm": espessura,
         "grupo": base["grupo"],
         "ferramenta": base["ferramenta"],
+        "diametro_mm": base["diametro_mm"],
         "passada_mm": base["passada_mm"],
+        "passo_lateral_mm": PASSO_LATERAL_MM,
+        "avanco_mm_min": AVANCO_MM_MIN,
+        "ataque_mm_min": ATAQUE_MM_MIN,
+        "rotacao_rpm": ROTACAO_RPM,
+        "unidade": UNIDADE,
         "profundidade_mm": profundidade_de_corte(espessura),
         "passes": quantidade_de_passes(espessura, base["passada_mm"]),
         "direcao": DIRECAO_CONVENCIONAL,
@@ -156,3 +180,44 @@ def buscar(material, espessura_mm):
 def combinacoes_cadastradas():
     """Lista o que já está definido — pra tela mostrar o que falta."""
     return sorted(PARAMETROS)
+
+
+def exportar_para_lua(destino=None):
+    """
+    Escreve a tabela num arquivo Lua que o gadget do Aspire lê.
+
+    Existe pra não haver dois lugares com os mesmos números. Antes disso
+    o gadget tinha o PVC 10 mm escrito na mão, e a tabela daqui era
+    enfeite — bastava alguém corrigir uma passada aqui pra máquina
+    continuar cortando com a antiga.
+
+    Grava 'unidade = "mm"' junto de propósito: quem lê tem que declarar
+    milímetro antes de escrever os valores na ferramenta, senão o Aspire
+    entende polegada (ver UNIDADE).
+    """
+    destino = pathlib.Path(destino or pathlib.Path(__file__).parent / "aspire" / "parametros_corte.lua")
+    destino.parent.mkdir(parents=True, exist_ok=True)
+
+    linhas = [
+        # Sem acento de proposito: arquivo lido por um Lua de 2016.
+        "-- GERADO por corte_parametros.exportar_para_lua() - nao edite a mao.",
+        "-- Editar aqui nao muda o sistema: a proxima exportacao apaga.",
+        "-- A fonte e corte_parametros.py, no raiz do projeto.",
+        "",
+        "return {",
+        f'   unidade = "{UNIDADE}",',
+        f"   avanco = {AVANCO_MM_MIN}, ataque = {ATAQUE_MM_MIN}, rotacao = {ROTACAO_RPM},",
+        f"   passo_lateral = {PASSO_LATERAL_MM}, rampa = {RAMPA_SUAVE_MM},",
+        "   materiais = {",
+    ]
+    for material, espessura in combinacoes_cadastradas():
+        p = buscar(material, espessura)
+        linhas.append(
+            f'      ["{material} {espessura}"] = {{ '
+            f'ferramenta = "{p["ferramenta"]}", diametro = {p["diametro_mm"]}, '
+            f'passada = {p["passada_mm"]}, profundidade = {p["profundidade_mm"]}, '
+            f'passes = {p["passes"]} }},')
+    linhas += ["   },", "}", ""]
+
+    destino.write_text("\n".join(linhas), encoding="utf-8")
+    return destino

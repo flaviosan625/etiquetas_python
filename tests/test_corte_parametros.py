@@ -149,3 +149,60 @@ def test_o_corte_e_convencional_nao_subida():
 
     for material, espessura in (("PVC", 10), ("MDF", 15), ("ACRILICO", 6)):
         assert buscar(material, espessura)["direcao"] == DIRECAO_CONVENCIONAL
+
+
+def test_todo_material_tem_fresa_avanco_e_rotacao():
+    """
+    "Deixar com mesmo parametro, so mudar a fresa" — entao avanco, ataque
+    e rotacao sao iguais em tudo, e o que muda e o diametro.
+    """
+    from corte_parametros import AVANCO_MM_MIN, ATAQUE_MM_MIN, ROTACAO_RPM
+
+    for material, espessura in combinacoes_cadastradas():
+        p = buscar(material, espessura)
+        assert p["avanco_mm_min"] == AVANCO_MM_MIN
+        assert p["ataque_mm_min"] == ATAQUE_MM_MIN
+        assert p["rotacao_rpm"] == ROTACAO_RPM
+        assert p["diametro_mm"] in (4.0, 6.0)
+
+
+def test_pvc_usa_fresa_de_4_o_resto_usa_a_de_6():
+    """"Normalmente vai ser usada a de 6mm" — a de 4 e so do PVC."""
+    assert buscar("PVC", 10)["diametro_mm"] == 4.0
+    assert buscar("PVC", 20)["diametro_mm"] == 4.0
+    for material, espessura in combinacoes_cadastradas():
+        if material != "PVC":
+            assert buscar(material, espessura)["diametro_mm"] == 6.0
+
+
+def test_tudo_declarado_em_milimetro():
+    """
+    O Tool do Aspire nasce em POLEGADA. Em 06/09/2026 o diametro 4 virou
+    4 polegadas: raio de 50,8mm marcado sobre o vetor, e a passada de 11
+    teria virado 279mm de profundidade numa chapa de 10.
+
+    Por isso a unidade viaja junto do valor: quem consome tem como
+    conferir antes de escrever na ferramenta.
+    """
+    from corte_parametros import UNIDADE
+    assert UNIDADE == "mm"
+    assert buscar("PVC", 10)["unidade"] == "mm"
+
+
+def test_a_tabela_exportada_pro_lua_bate_com_o_cadastro(tmp_path):
+    """
+    O gadget le essa tabela. Se ela divergir do cadastro, a maquina corta
+    com numero que ninguem revisou.
+    """
+    from corte_parametros import exportar_para_lua
+
+    destino = exportar_para_lua(tmp_path / "p.lua")
+    texto = destino.read_text(encoding="utf-8")
+
+    assert 'unidade = "mm"' in texto, "sem isso o gadget nao tem como conferir a unidade"
+    assert "nao edite" in texto, "arquivo gerado tem que avisar que e gerado"
+    for material, espessura in combinacoes_cadastradas():
+        p = buscar(material, espessura)
+        assert f'["{material} {espessura}"]' in texto
+        assert f'passada = {p["passada_mm"]}' in texto
+        assert f'profundidade = {p["profundidade_mm"]}' in texto

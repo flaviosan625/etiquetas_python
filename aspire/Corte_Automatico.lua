@@ -34,17 +34,16 @@
 
 local DESTINO = "C:\\Users\\flavi\\Desktop\\etiquetas_python\\aspire\\corte_resultado.txt"
 
--- PVC 10 mm. Vai virar tabela por material quando a tela mandar qual é.
-local FERRAMENTA = "Topo Raso (4 mm)"
+-- ======================= O QUE VOCE ESCOLHE =======================
+-- Material e espessura da chapa desta producao. O resto — fresa,
+-- passada, profundidade, avanco — sai da tabela, nao se mexe aqui.
+local MATERIAL = "PVC 10"
+-- Opcoes: PVC 10, PVC 20, MDF 6, MDF 9, MDF 15,
+--         ACRILICO 1 2 3 4 5 6 7 8 10
+-- ==================================================================
+
+local TABELA = "C:\Users\flavi\Desktop\etiquetas_python\aspire\parametros_corte.lua"
 local TIPO_TOPO_RASO = 1
-local DIAMETRO = 4.0
-local PASSADA = 11.0
-local PASSO_LATERAL = 2.0
-local AVANCO = 2000.0
-local ATAQUE = 1000.0
-local ROTACAO = 18000.0
-local PROFUNDIDADE = 11.0        -- 10 da chapa + 1 pra cortar passante
-local RAMPA_MM = 10.0
 
 local LADO_FORA = 0
 local LADO_DENTRO = 1
@@ -76,20 +75,47 @@ local function sem_acento(texto)
    return t
 end
 
-local function construir_ferramenta()
-   local ferramenta = Tool(FERRAMENTA, TIPO_TOPO_RASO)
+-- Le a tabela gerada pelo corte_parametros.py. Se ela nao existir ou o
+-- material nao estiver cadastrado, PARA — chutar parametro de corte
+-- quebra fresa.
+local function carregar_parametros()
+   local carregar = loadfile(TABELA)
+   if carregar == nil then
+      return nil, "nao achei a tabela em " .. TABELA
+   end
+   local ok, dados = pcall(carregar)
+   if not ok or type(dados) ~= "table" then
+      return nil, "tabela ilegivel: " .. tostring(dados)
+   end
+   local material = dados.materiais and dados.materiais[MATERIAL]
+   if material == nil then
+      return nil, "'" .. MATERIAL .. "' nao esta cadastrado no corte_parametros.py"
+   end
+   if dados.unidade ~= "mm" then
+      return nil, "a tabela nao esta em mm, esta em " .. tostring(dados.unidade)
+   end
+   material.avanco = dados.avanco
+   material.ataque = dados.ataque
+   material.rotacao = dados.rotacao
+   material.passo_lateral = dados.passo_lateral
+   material.rampa = dados.rampa
+   return material
+end
+
+local function construir_ferramenta(p)
+   local ferramenta = Tool(p.ferramenta, TIPO_TOPO_RASO)
    -- ANTES de qualquer numero: sem isto a ferramenta nasce em POLEGADA
    -- (o grupo do banco se chama "Imperial Tools", nao por acaso) e o
    -- diametro 4 vira 4 polegadas = 101,6 mm, com raio de 50,8 — que foi
    -- exatamente a marcacao que o Flavio viu sobre o vetor (06/09/2026).
    -- Pior: a passada 11 viraria 279 mm de profundidade numa chapa de 10.
    ferramenta.InMM = true
-   ferramenta.ToolDia = DIAMETRO
-   ferramenta.Stepdown = PASSADA
-   ferramenta.Stepover = PASSO_LATERAL
-   ferramenta.FeedRate = AVANCO
-   ferramenta.PlungeRate = ATAQUE
-   ferramenta.SpindleSpeed = ROTACAO
+   ferramenta.ToolDia = p.diametro
+   ferramenta.Stepdown = p.passada
+   ferramenta.Stepover = p.passo_lateral
+   ferramenta.FeedRate = p.avanco
+   ferramenta.PlungeRate = p.ataque
+   ferramenta.SpindleSpeed = p.rotacao
    ferramenta.ToolNumber = 1
    anotar("  ferramenta: " .. numa_linha(ferramenta) ..
           " dia " .. tostring(ferramenta.ToolDia) ..
@@ -127,15 +153,15 @@ local function selecionar_camada(trabalho, camada)
    return quantos
 end
 
-local function criar_percurso(nome, ferramenta, lado)
+local function criar_percurso(nome, ferramenta, lado, p)
    local rampa = RampingData()
    rampa.DoRamping = true
    rampa.RampType = RAMPA_SUAVE
-   rampa.RampDistance = RAMPA_MM
+   rampa.RampDistance = p.rampa
 
    local parametros = ProfileParameterData()
    parametros.Name = nome
-   parametros.CutDepth = PROFUNDIDADE
+   parametros.CutDepth = p.profundidade
    parametros.StartDepth = 0.0
    parametros.ProfileSide = lado
    parametros.CutDirection = DIRECAO_CONVENCIONAL
@@ -187,8 +213,43 @@ function main(script_path)
    end
 
    anotar("")
-   anotar("=== ferramenta ===")
-   local ferramenta = construir_ferramenta()
+   anotar("=== parametros ===")
+   local p, erro = carregar_parametros()
+   if p == nil then
+      anotar("  PAREI: " .. erro)
+      gravar()
+      MessageBox("Nao consegui os parametros de corte:
+
+" .. erro)
+      return false
+   end
+   anotar("  " .. MATERIAL .. ": " .. p.ferramenta .. " dia " .. p.diametro ..
+          " passada " .. p.passada .. " profundidade " .. p.profundidade ..
+          " (" .. p.passes .. " passe(s))")
+   local ferramenta = construir_ferramenta(p)
+
+   -- O ProfileParameterData tem campo de ORDEM de usinagem? A aba
+   -- "Ordem" existe na tela e oferece "de dentro para fora"; se a API
+   -- expuser isso, um percurso so resolveria — mas na sondagem de 81
+   -- nomes eu nao testei nenhum nome de ordenacao. Testando agora.
+   anotar("")
+   anotar("=== o percurso tem campo de ordem? ===")
+   local amostra = ProfileParameterData()
+   local achou = false
+   for _, nome in ipairs({"Order", "Ordering", "OrderingMethod", "SortOrder",
+                          "VectorOrder", "InsideOut", "DoInsideOut", "CutOrder",
+                          "MachineOrder", "SortMethod", "Sequence", "Optimise",
+                          "Optimize", "OptimiseOrder", "UseVectorStartPoints",
+                          "InsideFirst", "DoInsideFirst"}) do
+      local ok, valor = pcall(function() return amostra[nome] end)
+      if ok and valor ~= nil then
+         achou = true
+         anotar("  ." .. nome .. " = " .. type(valor) .. " " .. tostring(valor))
+      end
+   end
+   if not achou then
+      anotar("  nenhum — a ordem so da pra garantir com percursos separados")
+   end
 
    anotar("")
    anotar("=== percursos ===")
@@ -201,7 +262,7 @@ function main(script_path)
       if interna ~= nil then
          local n = selecionar_camada(trabalho, interna)
          anotar("  camada '" .. nomeInterna .. "': " .. n .. " vetores")
-         if n > 0 and criar_percurso("CORTE INTERNO", ferramenta, LADO_DENTRO) then
+         if n > 0 and criar_percurso("CORTE INTERNO", ferramenta, LADO_DENTRO, p) then
             feitos = feitos + 1
          end
       else
@@ -211,14 +272,14 @@ function main(script_path)
       if externa ~= nil then
          local n = selecionar_camada(trabalho, externa)
          anotar("  camada '" .. nomeExterna .. "': " .. n .. " vetores")
-         if n > 0 and criar_percurso("CORTE EXTERNO", ferramenta, LADO_FORA) then
+         if n > 0 and criar_percurso("CORTE EXTERNO", ferramenta, LADO_FORA, p) then
             feitos = feitos + 1
          end
       end
    else
       anotar("  SEM CAMADA NOMEADA — um percurso so, com o que esta selecionado.")
       anotar("  O Aspire acerta o dentro/fora sozinho, mas a ORDEM nao fica garantida.")
-      if criar_percurso("CORTE", ferramenta, LADO_FORA) then feitos = 1 end
+      if criar_percurso("CORTE", ferramenta, LADO_FORA, p) then feitos = 1 end
    end
 
    anotar("")
