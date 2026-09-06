@@ -1,0 +1,779 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>:root{color-scheme:dark light}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>Controle Gera Resultado</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap">
+
+<style>
+  /* ---------------------------------------------------------------
+     Documento de tela ESCURA por decisão: é como o Flávio quis ver.
+     O papel é o contrário — o bloco de impressão no fim do arquivo
+     devolve tudo para tinta sobre branco, porque fundo escuro em
+     folha impressa gasta tinta e fica ilegível.
+     Cores: as tintas do processo, que é a linguagem da própria casa.
+  ---------------------------------------------------------------- */
+  :root{
+    --fundo:#0A1017;
+    --fundo-2:#0E1621;
+    --carta:#141E2A;
+    --carta-alta:#1A2634;
+    --linha:#243342;
+    --linha-forte:#33475A;
+    --texto:#EDF3F9;
+    --texto-2:#A2B4C4;
+    --texto-3:#6D8296;
+    --ciano:#42B8F2;
+    --ciano-fundo:#0F2839;
+    --magenta:#F5709F;
+    --magenta-fundo:#2E1523;
+    --amarelo:#F5B942;
+    --amarelo-fundo:#2C2210;
+    --brilho:0 0 0 1px rgba(66,184,242,.14), 0 20px 50px -30px rgba(66,184,242,.45);
+  }
+
+  *{box-sizing:border-box}
+  body{
+    background:var(--fundo);
+    background-image:
+      radial-gradient(1100px 520px at 50% -220px, rgba(66,184,242,.13), transparent 62%),
+      radial-gradient(760px 420px at 88% 8%, rgba(245,112,159,.07), transparent 60%);
+    background-repeat:no-repeat;
+    color:var(--texto);
+    font-family:"Source Serif 4",Georgia,"Times New Roman",serif;
+    font-size:16.5px; line-height:1.64; margin:0;
+    -webkit-font-smoothing:antialiased;
+  }
+  .folha{max-width:900px; margin:0 auto; padding:0 24px 100px}
+
+  h1,h2,h3,.grot{font-family:Archivo,"Helvetica Neue",Arial,sans-serif}
+  .num{font-family:"IBM Plex Mono",ui-monospace,Consolas,monospace; font-variant-numeric:tabular-nums}
+  strong{color:var(--texto)}
+
+  /* ---------- marcas de registro: o alvo que a gráfica imprime na borda ---------- */
+  .capa{position:relative; padding:78px 0 34px}
+  .marca{position:absolute; width:26px; height:26px; opacity:.5; pointer-events:none}
+  .marca svg{display:block; width:100%; height:100%}
+  .marca.tl{top:34px; left:-34px}
+  .marca.tr{top:34px; right:-34px}
+  @media (max-width:1010px){ .marca{display:none} }
+
+  .selo{
+    display:inline-flex; align-items:center; gap:10px;
+    font-family:Archivo,sans-serif; font-size:11px; font-weight:700; letter-spacing:.18em;
+    text-transform:uppercase; color:var(--ciano); margin:0 0 22px;
+    border:1px solid var(--linha-forte); border-radius:999px; padding:7px 15px;
+    background:var(--carta);
+  }
+  .selo .pt{width:7px; height:7px; border-radius:50%; background:var(--ciano)}
+
+  h1{
+    font-size:clamp(42px,8.4vw,84px); font-weight:900; line-height:.96;
+    letter-spacing:-.035em; margin:0 0 22px; text-wrap:balance;
+  }
+  h1 em{font-style:normal; color:var(--ciano)}
+  .tese{font-size:20px; color:var(--texto-2); margin:0; max-width:56ch}
+  .tese b{color:var(--texto); font-weight:600}
+  .credito{
+    display:flex; flex-wrap:wrap; gap:8px 30px; margin-top:30px;
+    font-family:Archivo,sans-serif; font-size:12.5px; color:var(--texto-3);
+  }
+  .credito b{color:var(--texto-2); font-weight:600}
+
+  /* ---------- faixa de destaque do topo ---------- */
+  .destaque{
+    display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:1px;
+    background:var(--linha); border:1px solid var(--linha);
+    border-radius:12px; overflow:hidden; margin:36px 0 0; box-shadow:var(--brilho);
+  }
+  .destaque > div{background:var(--carta); padding:20px 18px}
+  .destaque .v{
+    font-family:"IBM Plex Mono",monospace; font-variant-numeric:tabular-nums;
+    font-size:30px; font-weight:600; line-height:1; letter-spacing:-.025em;
+    display:block; color:var(--ciano);
+  }
+  .destaque .v .un{font-size:14px; color:var(--texto-3); margin-left:2px}
+  .destaque .r{
+    font-family:Archivo,sans-serif; font-size:10.5px; font-weight:700; letter-spacing:.1em;
+    text-transform:uppercase; color:var(--texto-3); margin-top:10px; display:block; line-height:1.35;
+  }
+
+  /* ---------- legenda das tintas ---------- */
+  .tintas{
+    display:grid; grid-template-columns:repeat(auto-fit,minmax(215px,1fr)); gap:1px;
+    background:var(--linha); border:1px solid var(--linha);
+    margin:14px 0 0; border-radius:12px; overflow:hidden;
+  }
+  .tinta-item{background:var(--fundo-2); padding:15px 17px}
+  .tinta-nome{
+    display:flex; align-items:center; gap:9px;
+    font-family:Archivo,sans-serif; font-size:11px; font-weight:700;
+    letter-spacing:.11em; text-transform:uppercase; margin-bottom:6px;
+  }
+  .bolota{width:11px; height:11px; border-radius:50%; flex:none}
+  .tinta-item p{margin:0; font-size:13.5px; line-height:1.46; color:var(--texto-2)}
+  .c-med{color:var(--ciano)} .b-med{background:var(--ciano)}
+  .c-proj{color:var(--magenta)} .b-proj{background:var(--magenta)}
+  .c-prem{color:var(--amarelo)} .b-prem{background:var(--amarelo)}
+
+  /* ---------- seções ---------- */
+  section{margin-top:72px}
+  .cabeca{display:flex; align-items:baseline; gap:15px; margin-bottom:6px}
+  .cabeca .n{
+    font-family:"IBM Plex Mono",monospace; font-size:12.5px; font-weight:500;
+    color:var(--texto-3); padding-top:5px; letter-spacing:.02em;
+  }
+  h2{font-size:clamp(25px,3.7vw,35px); font-weight:800; letter-spacing:-.02em; margin:0; text-wrap:balance}
+  .sub{color:var(--texto-2); margin:8px 0 28px 34px; max-width:60ch; font-size:16.5px}
+  @media (max-width:560px){ .sub{margin-left:0} }
+  p{margin:0 0 17px}
+  section p{max-width:66ch}
+  h3.mini-titulo{
+    font-family:Archivo,sans-serif; font-size:12px; font-weight:700; letter-spacing:.13em;
+    text-transform:uppercase; color:var(--texto-3); margin:40px 0 6px;
+  }
+
+  /* ---------- antes / agora ---------- */
+  .virada{border:1px solid var(--linha); border-radius:12px; overflow:hidden; margin:28px 0; background:var(--carta)}
+  .virada-cab{
+    display:grid; grid-template-columns:1fr 1fr; gap:1px; background:var(--linha);
+    font-family:Archivo,sans-serif; font-size:10.5px; font-weight:700;
+    letter-spacing:.13em; text-transform:uppercase;
+  }
+  .virada-cab > div{background:var(--fundo-2); padding:11px 18px}
+  .virada-cab .antes{color:var(--texto-3)}
+  .virada-cab .agora{color:var(--ciano)}
+  .virada-linha{border-top:1px solid var(--linha)}
+  .virada-tema{
+    font-family:Archivo,sans-serif; font-size:11px; font-weight:700; letter-spacing:.1em;
+    text-transform:uppercase; color:var(--texto-3); padding:15px 18px 0;
+  }
+  .virada-par{display:grid; grid-template-columns:1fr 1fr; gap:1px; background:var(--linha); margin-top:11px}
+  .virada-par > div{background:var(--carta); padding:13px 18px 16px; font-size:14.5px; line-height:1.5}
+  .virada-par .antes{color:var(--texto-3)}
+  .virada-par .agora{color:var(--texto)}
+  .virada-par .agora b{color:var(--ciano); font-weight:600}
+  @media (max-width:620px){
+    .virada-cab{grid-template-columns:1fr}
+    .virada-par{grid-template-columns:1fr}
+    .virada-par .antes::before{content:"Antes · "; color:var(--texto-3); font-weight:600}
+    .virada-par .agora::before{content:"Agora · "; color:var(--ciano); font-weight:600}
+  }
+
+  /* ---------- cartões ---------- */
+  .grade{display:grid; gap:14px; margin:26px 0}
+  .g4{grid-template-columns:repeat(auto-fit,minmax(160px,1fr))}
+  .g3{grid-template-columns:repeat(auto-fit,minmax(215px,1fr))}
+  .g2{grid-template-columns:repeat(auto-fit,minmax(290px,1fr))}
+  .cartao{background:var(--carta); border:1px solid var(--linha); border-radius:11px; padding:19px}
+  .cartao.med{border-top:3px solid var(--ciano)}
+  .cartao.proj{border-top:3px solid var(--magenta)}
+  .cartao .valor{
+    font-family:"IBM Plex Mono",monospace; font-variant-numeric:tabular-nums;
+    font-size:32px; font-weight:600; line-height:1.05; letter-spacing:-.025em; display:block;
+  }
+  .cartao .valor .un{font-size:15px; font-weight:500; color:var(--texto-3); margin-left:3px}
+  .cartao .rot{
+    font-family:Archivo,sans-serif; font-size:10.5px; font-weight:700; letter-spacing:.1em;
+    text-transform:uppercase; color:var(--texto-3); margin-top:10px; display:block; line-height:1.4;
+  }
+  .cartao .obs{font-size:13px; color:var(--texto-2); margin:9px 0 0; line-height:1.45}
+
+  /* ---------- barras ---------- */
+  .barras{margin:24px 0}
+  .barra-linha{display:grid; grid-template-columns:100px 1fr auto; gap:13px; align-items:center; margin-bottom:11px}
+  .barra-nome{
+    font-family:Archivo,sans-serif; font-size:11.5px; font-weight:700; letter-spacing:.06em;
+    text-transform:uppercase; color:var(--texto-2); text-align:right;
+  }
+  .trilho{background:var(--fundo-2); border:1px solid var(--linha); border-radius:4px; height:24px; overflow:hidden}
+  .preenche{height:100%; display:block; min-width:3px}
+  .barra-val{font-family:"IBM Plex Mono",monospace; font-variant-numeric:tabular-nums; font-size:13.5px; font-weight:600; white-space:nowrap}
+  @media (max-width:560px){
+    .barra-linha{grid-template-columns:1fr auto; gap:4px 10px}
+    .barra-nome{text-align:left; grid-column:1/-1}
+    .trilho{grid-column:1}
+  }
+
+  /* ---------- painel do tempo ---------- */
+  .painel{
+    background:var(--carta); border:1px solid var(--linha-forte); border-radius:14px;
+    padding:28px; margin:28px 0; box-shadow:var(--brilho);
+  }
+  .premissa{background:var(--amarelo-fundo); border:1px solid var(--amarelo); border-radius:10px; padding:17px 19px; margin-bottom:26px}
+  .premissa .rot{
+    font-family:Archivo,sans-serif; font-size:10.5px; font-weight:700; letter-spacing:.12em;
+    text-transform:uppercase; color:var(--amarelo); display:block; margin-bottom:8px;
+  }
+  .premissa p{font-size:14.5px; margin:0 0 15px; color:var(--texto); max-width:none}
+  .controle{display:flex; align-items:center; gap:15px; flex-wrap:wrap}
+  input[type=range]{flex:1; min-width:190px; accent-color:var(--amarelo); height:24px; cursor:pointer}
+  input[type=range]:focus-visible{outline:2px solid var(--amarelo); outline-offset:4px}
+  .leitura{font-family:"IBM Plex Mono",monospace; font-variant-numeric:tabular-nums; font-size:19px; font-weight:600; white-space:nowrap}
+  .so-impresso{display:none}
+
+  .duelo{display:grid; gap:18px}
+  .duelo-item .topo{display:flex; justify-content:space-between; align-items:baseline; gap:12px; margin-bottom:8px}
+  .duelo-nome{font-family:Archivo,sans-serif; font-size:13.5px; font-weight:700; letter-spacing:.03em}
+  .duelo-tempo{font-family:"IBM Plex Mono",monospace; font-variant-numeric:tabular-nums; font-size:17px; font-weight:600}
+  .duelo-trilho{background:var(--fundo-2); border:1px solid var(--linha); border-radius:5px; height:34px; overflow:hidden}
+  .duelo-fill{height:100%; min-width:4px; transition:width .18s ease-out}
+  .rodape-painel{
+    display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:16px;
+    border-top:1px solid var(--linha); margin-top:26px; padding-top:22px;
+  }
+  .mini .v{font-family:"IBM Plex Mono",monospace; font-variant-numeric:tabular-nums; font-size:26px; font-weight:600; display:block; line-height:1.1}
+  .mini .r{font-family:Archivo,sans-serif; font-size:10px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--texto-3); margin-top:8px; display:block; line-height:1.4}
+
+  /* ---------- faixa dos arquivos conferidos ---------- */
+  .faixa{display:flex; height:36px; border-radius:7px; overflow:hidden; border:1px solid var(--linha); margin:24px 0 13px}
+  .faixa div{display:flex; align-items:center; justify-content:center; font-family:"IBM Plex Mono",monospace; font-size:12px; font-weight:600; color:#08111A}
+  .faixa-leg{display:flex; flex-wrap:wrap; gap:9px 22px; font-size:13.5px; color:var(--texto-2)}
+  .faixa-leg span{display:flex; align-items:center; gap:8px}
+
+  /* ---------- tabelas ---------- */
+  .rolagem{overflow-x:auto; margin:24px 0; border:1px solid var(--linha); border-radius:11px; background:var(--carta)}
+  table{border-collapse:collapse; width:100%; font-size:14.5px}
+  th,td{padding:12px 15px; text-align:left; border-bottom:1px solid var(--linha); vertical-align:top}
+  th{font-family:Archivo,sans-serif; font-size:10.5px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--texto-3); background:var(--fundo-2); white-space:nowrap}
+  tbody tr:last-child td{border-bottom:none}
+  td.n{font-family:"IBM Plex Mono",monospace; font-variant-numeric:tabular-nums; white-space:nowrap; text-align:right}
+  td strong{color:var(--texto)}
+
+  /* ---------- notas ---------- */
+  .nota{border-left:3px solid var(--ciano); background:var(--ciano-fundo); padding:17px 20px; border-radius:0 10px 10px 0; margin:24px 0; font-size:15px}
+  .nota.proj{border-left-color:var(--magenta); background:var(--magenta-fundo)}
+  .nota.prem{border-left-color:var(--amarelo); background:var(--amarelo-fundo)}
+  .nota p{max-width:none} .nota p:last-child{margin-bottom:0}
+  .nota strong{font-family:Archivo,sans-serif; font-weight:700}
+
+  ul{margin:0 0 17px; padding-left:23px; max-width:66ch}
+  li{margin-bottom:10px}
+  li::marker{color:var(--ciano)}
+
+  footer{margin-top:80px; padding-top:28px; border-top:2px solid var(--linha-forte); font-size:13.5px; color:var(--texto-3)}
+  footer p{max-width:none}
+
+  /* =============== PAPEL: tinta sobre branco =============== */
+  @page{ size:A4; margin:14mm 13mm }
+  @media print{
+    :root{
+      --fundo:#fff; --fundo-2:#F3F6F8; --carta:#fff; --carta-alta:#fff;
+      --linha:#C8D2DA; --linha-forte:#9DAEBB;
+      --texto:#0E1720; --texto-2:#3C4C5B; --texto-3:#5E7183;
+      --ciano:#0A6E9E; --ciano-fundo:#EEF7FC;
+      --magenta:#A81856; --magenta-fundo:#FCEDF3;
+      --amarelo:#8A5D04; --amarelo-fundo:#FCF4E2;
+      --brilho:none;
+    }
+    body{background:#fff; background-image:none; font-size:10.6pt; line-height:1.5}
+    .folha{max-width:none; padding:0}
+    .capa{padding:0 0 18px; page-break-after:avoid}
+    .marca{display:none}
+    .selo{background:none; border-color:var(--linha-forte)}
+    h1{font-size:30pt} h2{font-size:15.5pt} .tese{font-size:11.5pt}
+    .destaque .v{font-size:17pt} .cartao .valor{font-size:18pt} .mini .v{font-size:15pt}
+    /* Quebra de página: só o que fica ILEGÍVEL cortado é que não pode
+       ser cortado. Proibir a seção inteira de quebrar empurrava cada uma
+       para uma folha nova — o documento virava 14 páginas com metade em
+       branco. Agora o texto flui e só os blocos fechados ficam inteiros. */
+    section{margin-top:24px}
+    .cabeca,h2,h3,.mini-titulo{page-break-after:avoid}
+    .capa .tese,.sub{page-break-after:avoid}
+    .cartao,.nota,.faixa,.tinta-item,.virada-linha,.destaque > div,.mini,.premissa,.duelo-item,tr,.sub{page-break-inside:avoid}
+    .painel{page-break-inside:avoid}
+    p,li{orphans:2; widows:2}
+    footer{margin-top:30px; padding-top:16px}
+    .faixa div{color:#fff}
+    .controle{display:none}
+    .so-impresso{display:block}
+    a{text-decoration:none; color:inherit}
+  }
+</style>
+
+</head>
+<body>
+<div class="folha">
+
+<div class="capa">
+  <span class="marca tl" aria-hidden="true"><svg viewBox="0 0 26 26"><circle cx="13" cy="13" r="7.5" fill="none" stroke="#42B8F2" stroke-width="1"/><path d="M13 0v26M0 13h26" stroke="#42B8F2" stroke-width="1"/></svg></span>
+  <span class="marca tr" aria-hidden="true"><svg viewBox="0 0 26 26"><circle cx="13" cy="13" r="7.5" fill="none" stroke="#42B8F2" stroke-width="1"/><path d="M13 0v26M0 13h26" stroke="#42B8F2" stroke-width="1"/></svg></span>
+
+  <p class="selo"><span class="pt"></span>Uny CV &middot; Comunicação Visual</p>
+  <h1>Controle gera<br><em>resultado.</em></h1>
+  <p class="tese">
+    Até agosto, o que passava pela gráfica existia na memória de quem estava lá.
+    Hoje existe em registro. <b>E registro vira número, número vira decisão, decisão vira dinheiro
+    que fica na casa.</b> Este documento mostra o quanto disso já aconteceu — apurado dos
+    arquivos que o próprio sistema grava, sem uma linha de estimativa não declarada.
+  </p>
+
+  <div class="credito">
+    <span><b>Desenvolvido por</b> Flávio Santos</span>
+    <span><b>Período apurado</b> 17/08 a 05/09/2026 &middot; 20 dias</span>
+    <span><b>Emitido em</b> 05/09/2026</span>
+  </div>
+
+  <div class="destaque">
+    <div><span class="v num">19</span><span class="r">ordens de serviço emitidas</span></div>
+    <div><span class="v num">524</span><span class="r">peças catalogadas</span></div>
+    <div><span class="v num">R$ 18,2<span class="un"> mil</span></span><span class="r">material rastreado</span></div>
+    <div><span class="v num">159</span><span class="r">erros e repetições barrados</span></div>
+  </div>
+
+  <div class="tintas">
+    <div class="tinta-item">
+      <div class="tinta-nome c-med"><span class="bolota b-med"></span>Ciano · medido</div>
+      <p>Sai de um arquivo que o sistema gravou sozinho. Dá pra abrir e conferir.</p>
+    </div>
+    <div class="tinta-item">
+      <div class="tinta-nome c-prem"><span class="bolota b-prem"></span>Amarelo · premissa</div>
+      <p>Depende do seu julgamento. Fica exposto, nunca escondido dentro da conta.</p>
+    </div>
+    <div class="tinta-item">
+      <div class="tinta-nome c-proj"><span class="bolota b-proj"></span>Magenta · projetado</div>
+      <p>Ainda não aconteceu. É o que a estrutura já pronta permite alcançar.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<section>
+  <div class="cabeca"><span class="n">1</span><h2>Onde o controle já mudou o resultado</h2></div>
+  <p class="sub">Seis perguntas que antes se respondiam de cabeça, ou não se respondiam. Hoje todas têm arquivo.</p>
+
+  <div class="virada">
+    <div class="virada-cab">
+      <div class="antes">Antes</div>
+      <div class="agora">Agora</div>
+    </div>
+
+    <div class="virada-linha">
+      <div class="virada-tema">O que foi impresso de verdade</div>
+      <div class="virada-par">
+        <div class="antes">Ficava na lembrança de quem estava na máquina. Discussão sem prova.</div>
+        <div class="agora">Cada trabalho anotado com <b>data, hora, máquina e tamanho</b>. Já são 25 registrados.</div>
+      </div>
+    </div>
+
+    <div class="virada-linha">
+      <div class="virada-tema">Quanto material o trabalho consumiu</div>
+      <div class="virada-par">
+        <div class="antes">Estimado depois do fato, no olho, quando alguém perguntava.</div>
+        <div class="agora">Calculado na hora, <b>separado por material</b>, e lançado no documento do cliente.</div>
+      </div>
+    </div>
+
+    <div class="virada-linha">
+      <div class="virada-tema">Se foi reimpressão ou pedido novo</div>
+      <div class="virada-par">
+        <div class="antes">Discussão sem fim, e quase sempre a gráfica engolia o custo.</div>
+        <div class="agora">Reenvio vira <b>linha própria, com hora</b>, e soma no material — não substitui a linha antiga.</div>
+      </div>
+    </div>
+
+    <div class="virada-linha">
+      <div class="virada-tema">A medida da peça</div>
+      <div class="virada-par">
+        <div class="antes">Lida no olho, item por item, e digitada à mão na ordem de serviço.</div>
+        <div class="agora">Lida do nome do arquivo, <b>conferida contra a arte</b> e recusada quando é impossível.</div>
+      </div>
+    </div>
+
+    <div class="virada-linha">
+      <div class="virada-tema">O que tem na prateleira</div>
+      <div class="virada-par">
+        <div class="antes">Ir lá olhar. Descobrir que acabou geralmente na hora de usar.</div>
+        <div class="agora"><b>51 produtos</b> catalogados, com mínimo definido e ligados ao material que sai na produção.</div>
+      </div>
+    </div>
+
+    <div class="virada-linha">
+      <div class="virada-tema">O arquivo chegar na máquina</div>
+      <div class="virada-par">
+        <div class="antes">Levar na mão até o outro computador e abrir um por um.</div>
+        <div class="agora">Fila <b>conferida a cada 1 minuto</b>, com a arte girada sozinha quando isso economiza material.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="nota">
+    <p><strong>É essa a tese, e ela vem antes de qualquer número.</strong> Nada aqui foi conquistado comprando equipamento ou contratando gente. Foi conquistado passando a <em>anotar</em>. O que não se mede não se cobra do cliente, não se compra na hora certa e não se descobre errado antes de virar material perdido. As páginas seguintes só colocam preço nisso.</p>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section>
+  <div class="cabeca"><span class="n">2</span><h2>O que o sistema faz sozinho</h2></div>
+  <p class="sub">Não é um atalho para uma tarefa. É o caminho inteiro coberto, da arte que chega ao arquivo que entra na máquina.</p>
+
+  <div class="grade g4">
+    <div class="cartao med"><span class="valor num">22</span><span class="rot">rotinas de trabalho</span><p class="obs">cobrindo a operação de ponta a ponta</p></div>
+    <div class="cartao med"><span class="valor num">363</span><span class="rot">conferências automáticas</span><p class="obs">travam as regras da casa</p></div>
+    <div class="cartao med"><span class="valor num">87</span><span class="rot">melhorias registradas</span><p class="obs">com data, hora e o que mudou</p></div>
+    <div class="cartao med"><span class="valor num">51</span><span class="rot">produtos catalogados</span><p class="obs">12 já com custo</p></div>
+  </div>
+
+  <ul>
+    <li><strong>Lê o nome do arquivo</strong> e tira dele a quantidade, o material, a medida e a unidade — corrigindo erros de digitação conhecidos e a armadilha da medida dupla (quando há dois tamanhos no nome, vale o primeiro, que é o do cliente).</li>
+    <li><strong>Converte</strong> arquivos .AI, .EPS e .TIF sem precisar abrir o Illustrator.</li>
+    <li><strong>Emite a etiqueta, a ordem de serviço e o checklist</strong>, já com o m² separado por material.</li>
+    <li><strong>Organiza a pasta de produção</strong> do cliente e arquiva tudo no OneDrive.</li>
+    <li><strong>Manda para a máquina certa</strong> pelo material — lona na SWJ320A, adesivo na UJV 100 — conferindo a fila a cada 1 minuto e girando a arte 90° quando isso poupa material.</li>
+    <li><strong>Anota tudo</strong>: quem mandou o quê, quando, para qual máquina e quantos m².</li>
+  </ul>
+
+  <div class="nota">
+    <p><strong>As 363 conferências automáticas não são enfeite.</strong> Cada regra desta casa que custou caro para descobrir — a medida dupla no nome, lona nunca na UJV, m² sempre separado por material — está travada por uma conferência que roda a cada mudança. Se alguém mexer e quebrar uma delas, o sistema avisa antes de virar material perdido. É o que separa "funciona hoje" de "dá para confiar amanhã".</p>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section>
+  <div class="cabeca"><span class="n">3</span><h2>O que já passou por ele</h2></div>
+  <p class="sub">Produção real de 8 clientes em 20 dias, contada a partir das ordens de serviço que o próprio sistema emitiu.</p>
+
+  <div class="grade g4">
+    <div class="cartao med"><span class="valor num">19</span><span class="rot">ordens de serviço</span></div>
+    <div class="cartao med"><span class="valor num">8</span><span class="rot">clientes</span></div>
+    <div class="cartao med"><span class="valor num">258</span><span class="rot">itens catalogados</span></div>
+    <div class="cartao med"><span class="valor num">524</span><span class="rot">peças</span></div>
+  </div>
+
+  <h3 class="mini-titulo">Área por material</h3>
+  <div class="barras" id="barras-material"></div>
+
+  <div class="nota">
+    <p><strong>Não existe um total somando os materiais, e isso é de propósito.</strong> 1 m² de lona e 1 m² de acrílico não são a mesma coisa: não custam igual, não saem da mesma máquina e não se compra um no lugar do outro. Um total único ficaria bonito no relatório e não serviria para decidir nada. O sistema separa por material em todo lugar — na ordem de serviço, no checklist e no documento do cliente.</p>
+  </div>
+
+  <div class="grade g2">
+    <div class="cartao med">
+      <span class="valor num">R$ 18.234<span class="un">,50</span></span>
+      <span class="rot">material com custo cadastrado</span>
+      <p class="obs">Só lona (R$&nbsp;7,8125/m²) e adesivo (R$&nbsp;7,0866/m²), calculados pelo preço do rolo no estoque. Acrílico, MDF, PVC e PS ainda não têm custo cadastrado — o valor real que passou pela casa é maior que este.</p>
+    </div>
+    <div class="cartao med">
+      <span class="valor num">2,15<span class="un"> GB</span></span>
+      <span class="rot">arquivos acompanhados até a máquina</span>
+      <p class="obs">25 trabalhos anotados desde 03/09, e 11 envios com 659,37 m² já lançados no documento dos clientes.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section>
+  <div class="cabeca"><span class="n">4</span><h2>Tempo: a conta</h2></div>
+  <p class="sub">O lado da máquina foi cronometrado. O lado manual é premissa — e por isso ela fica aqui, aberta, para ser puxada para baixo ou para cima.</p>
+
+  <p>
+    O sistema levou <strong class="num">15 min 59 s</strong> para tratar <strong class="num">280</strong> arquivos
+    em <strong class="num">10</strong> rodadas — média de <strong class="num">3,4 s</strong> por arquivo.
+    Isso não é estimativa: são as marcas de hora que ele grava ao abrir a pasta do pedido e ao fechar a conferência.
+    A rodada mais lenta (11 arquivos em 8 min 38 s) puxou a média para cima sozinha, e está incluída assim mesmo.
+  </p>
+
+  <div class="painel">
+    <div class="premissa">
+      <span class="rot">Premissa a confirmar</span>
+      <p>Quanto tempo leva, na mão, para medir um item, calcular o m², digitar na ordem de serviço e produzir a etiqueta? Ajuste abaixo — a conta inteira se refaz.</p>
+      <div class="controle">
+        <input type="range" id="min-item" min="1" max="8" step="0.5" value="3"
+               aria-label="Minutos por item no método manual">
+        <span class="leitura"><span id="lbl-min">3,0</span> min por item</span>
+      </div>
+      <p class="so-impresso" style="margin:0"><strong>Premissa usada nesta via: <span class="num" id="lbl-min-print">3,0</span> minutos por item.</strong></p>
+    </div>
+
+    <div class="duelo">
+      <div class="duelo-item">
+        <div class="topo">
+          <span class="duelo-nome c-prem">Na mão &middot; 258 itens</span>
+          <span class="duelo-tempo num" id="t-manual">12 h 54 min</span>
+        </div>
+        <div class="duelo-trilho"><div class="duelo-fill" style="background:var(--amarelo);width:100%"></div></div>
+      </div>
+      <div class="duelo-item">
+        <div class="topo">
+          <span class="duelo-nome c-med">Pelo sistema &middot; cronometrado</span>
+          <span class="duelo-tempo num">15 min 59 s</span>
+        </div>
+        <div class="duelo-trilho"><div class="duelo-fill" id="f-maquina" style="background:var(--ciano)"></div></div>
+      </div>
+    </div>
+
+    <div class="rodape-painel">
+      <div class="mini"><span class="v num c-med" id="v-fator">48×</span><span class="r">mais rápido</span></div>
+      <div class="mini"><span class="v num" id="v-pedido">40 min</span><span class="r">devolvidos por pedido</span></div>
+      <div class="mini"><span class="v num" id="v-mes">18,9 h</span><span class="r">por mês, no ritmo medido</span></div>
+      <div class="mini"><span class="v num c-proj" id="v-ano">28 dias</span><span class="r">úteis por ano</span></div>
+    </div>
+  </div>
+
+  <p>
+    O ritmo medido foi de <strong class="num">19</strong> pedidos em <strong class="num">20</strong> dias.
+    A projeção mensal e anual mantém esse ritmo — e se a casa crescer, o número cresce junto,
+    porque o custo da máquina por item praticamente não muda.
+  </p>
+
+  <div class="nota">
+    <p><strong>Este é o ponto mais importante do documento.</strong> O tempo que volta não é tempo ocioso: é o tempo de quem conhece o cliente, negocia o prazo e confere a arte, sendo gasto medindo retângulo e digitando planilha. A automação não substitui ninguém — devolve para a produção as horas que estavam sendo consumidas por um trabalho que a máquina faz em 3,4 segundos.</p>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section>
+  <div class="cabeca"><span class="n">5</span><h2>O erro que não virou material perdido</h2></div>
+  <p class="sub">478 arquivos passaram pela conferência. O sistema não apenas produziu — ele barrou.</p>
+
+  <div class="faixa" id="faixa-log"></div>
+  <div class="faixa-leg" id="leg-log"></div>
+
+  <div class="grade g3" style="margin-top:28px">
+    <div class="cartao med">
+      <span class="valor num">151</span><span class="rot">repetições barradas</span>
+      <p class="obs">Arquivos reenviados para o mesmo pedido. Cada um seria um item duplicado na ordem de serviço — e, no pior caso, uma peça impressa duas vezes.</p>
+    </div>
+    <div class="cartao med">
+      <span class="valor num">23</span><span class="rot">avisos levantados</span>
+      <p class="obs">16 materiais ambíguos, 4 medidas impossíveis no nome (corrigidas pela arte) e 3 imagens fora de escala.</p>
+    </div>
+    <div class="cartao med">
+      <span class="valor num">8</span><span class="rot">erros interceptados</span>
+      <p class="obs">Entre eles, conversões de .TIF e .EPS que falharam e teriam ido para a máquina como arquivo vazio.</p>
+    </div>
+  </div>
+
+  <p>
+    Foram <strong class="num">133</strong> itens de lona, com média de <strong class="num">15,95 m²</strong>
+    cada — <strong class="num">R$ 124,60</strong> de material por item refeito, antes de tinta,
+    de mão de obra e do prazo do cliente. As <strong>4 medidas impossíveis</strong> pegas no nome
+    do arquivo são quatro peças que sairiam no tamanho errado e voltariam para a fila.
+  </p>
+
+  <h3 class="mini-titulo">Por que anotar muda o jogo</h3>
+  <div class="rolagem">
+    <table>
+      <thead><tr><th>O que fica anotado</th><th>O que isso prova</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Registro de produção</strong></td><td>O que realmente entrou em cada máquina, com data, hora e tamanho do arquivo</td></tr>
+        <tr><td><strong>Documento do cliente</strong></td><td>O que cada cliente recebeu, com m² por material, e reimpressão somando em vez de substituir</td></tr>
+        <tr><td><strong>Folha de conferência do pedido</strong></td><td>Todo arquivo que entrou e o que aconteceu com ele — inclusive o que foi barrado e por quê</td></tr>
+        <tr><td><strong>Ordem de serviço</strong></td><td>O pedido fechado, item a item, com medida e área</td></tr>
+        <tr><td><strong>Movimentação do estoque</strong></td><td>Toda entrada e saída, com data, motivo e origem, sem apagar nada</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>
+    Três discussões que não tinham resposta agora têm: <strong>o que foi impresso mesmo</strong>,
+    <strong>quanto material aquele trabalho consumiu</strong> e <strong>se foi reimpressão ou pedido novo</strong>.
+    Hoje as três se respondem abrindo um arquivo, na frente do cliente se preciso.
+  </p>
+</section>
+
+<!-- ============================================================ -->
+<section>
+  <div class="cabeca"><span class="n">6</span><h2>Estoque: o retorno de curto prazo</h2></div>
+  <p class="sub">A parte difícil já está pronta. O que falta é a contagem física e ligar a chave.</p>
+
+  <div class="grade g3">
+    <div class="cartao med"><span class="valor num">51</span><span class="rot">produtos catalogados</span><p class="obs">com mínimo, unidade e tipo definidos</p></div>
+    <div class="cartao med"><span class="valor num">12</span><span class="rot">já com custo</span><p class="obs">lona, adesivo, PVC, PS e MDF</p></div>
+    <div class="cartao med"><span class="valor num">2.121<span class="un"> m²</span></span><span class="rot">de lona já acompanhados</span><p class="obs">consumo real pronto para prever a reposição</p></div>
+  </div>
+
+  <p>
+    Cada material já está amarrado ao produto do estoque. Isso quer dizer que o caminho
+    <strong>m² da ordem de serviço → metros do rolo → rolos a repor</strong> não precisa ser
+    inventado: a ligação existe, e há 20 dias de consumo real para calibrá-la. O que falta
+    é a contagem física inicial — as 54 movimentações que existem hoje são de teste.
+  </p>
+
+  <div class="nota proj">
+    <p><strong>O que está em jogo, em números da casa.</strong> Um rolo de lona custa <span class="num">R$&nbsp;1.250</span> e rende <span class="num">160 m²</span>. O mínimo definido é de 6 rolos — <span class="num">R$&nbsp;7.500</span> parados na prateleira só em lona. E, no ritmo medido, passam pela produção cerca de <span class="num">R$&nbsp;27&nbsp;mil</span> por mês em material, contando apenas lona e adesivo.</p>
+  </div>
+
+  <div class="rolagem">
+    <table>
+      <thead><tr><th>O que o controle de estoque evita</th><th class="n">Quanto custa</th><th>Efeito</th></tr></thead>
+      <tbody>
+        <tr><td>Máquina parada por material que acabou sem ninguém ver</td><td class="n">—</td><td>Perde-se o prazo do evento, não só o material</td></tr>
+        <tr><td>Comprar um rolo de lona que já estava na prateleira</td><td class="n">R$ 1.250</td><td>Dinheiro parado, e risco de estragar antes de usar</td></tr>
+        <tr><td>Compra às pressas no lugar de compra planejada</td><td class="n">R$ 1.250 + urgência</td><td>Frete e preço de urgência sobre cada rolo</td></tr>
+        <tr><td>Peça refeita por erro de medida ou de material</td><td class="n">R$ 124,60 <span style="color:var(--texto-3)">/ item de lona</span></td><td>Só o material; fora tinta, mão de obra e prazo</td></tr>
+        <tr><td>1% de perda evitada sobre o material que circula</td><td class="n">R$ 274 / mês</td><td>R$ 3.282 por ano, com um único ponto percentual</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>
+    A conta que interessa é simples: o controle de estoque não precisa acertar muito para se pagar.
+    <strong>Um único rolo de lona não comprado em duplicidade cobre mais de quatro meses da meta de 1%.</strong>
+    E, diferente das outras frentes, essa não depende de desenvolver nada novo — depende de contar
+    o que tem na prateleira uma vez.
+  </p>
+</section>
+
+<!-- ============================================================ -->
+<section>
+  <div class="cabeca"><span class="n">7</span><h2>Como isso foi construído</h2></div>
+  <p class="sub">Cada melhoria ficou registrada com a hora em que foi feita. Isso conta uma coisa que nenhum relatório de horas conta.</p>
+
+  <div class="grade g4">
+    <div class="cartao med"><span class="valor num">87</span><span class="rot">melhorias registradas</span></div>
+    <div class="cartao med"><span class="valor num">55</span><span class="rot">fora do horário comercial</span><p class="obs">63% — antes das 8h ou depois das 18h</p></div>
+    <div class="cartao med"><span class="valor num">47</span><span class="rot">em sábado ou domingo</span><p class="obs">54% do total</p></div>
+    <div class="cartao med"><span class="valor num">20</span><span class="rot">dias, do zero até aqui</span><p class="obs">17/08 a 05/09/2026</p></div>
+  </div>
+
+  <p>
+    Doze delas foram feitas entre meia-noite e uma da manhã — o horário mais frequente de todo
+    o período. O sistema que hoje corta cerca de 40 minutos de cada pedido e acompanha
+    R$&nbsp;18&nbsp;mil de material foi construído, em maioria, fora do expediente, enquanto a
+    operação normal seguia acontecendo.
+  </p>
+
+  <div class="nota">
+    <p><strong>E ele não parou de pé sozinho.</strong> A última correção — de 05/09 — nasceu de uma falha real: a fila ficou 1h05 sem andar porque o OneDrive de uma das máquinas travou em silêncio, e o aviso da tela apontava para o lugar errado. A causa foi rastreada e provada, o conserto levou 77 segundos, e o aviso foi reescrito para não induzir ao erro de novo. É esse ciclo — quebrou, entendeu, corrigiu, travou para não repetir — que transforma automação em algo em que se pode confiar.</p>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section>
+  <div class="cabeca"><span class="n">8</span><h2>Como conferir cada número</h2></div>
+  <p class="sub">Nada aqui precisa ser aceito por confiança.</p>
+  <div class="rolagem">
+    <table>
+      <thead><tr><th>Número</th><th class="n">Valor</th><th>De onde sai</th></tr></thead>
+      <tbody>
+        <tr><td>Ordens, itens, peças e m² por material</td><td class="n">19 / 258 / 524</td><td>Os 19 pedidos fechados, um arquivo por pedido</td></tr>
+        <tr><td>Tempo de máquina</td><td class="n">15 min 59 s</td><td>A hora que o sistema anota ao abrir o pedido e ao fechar a conferência</td></tr>
+        <tr><td>Arquivos conferidos e barrados</td><td class="n">478</td><td>As 22 folhas de conferência gravadas dentro dos pedidos</td></tr>
+        <tr><td>Custo do metro quadrado</td><td class="n">R$ 7,8125</td><td>R$ 1.250 ÷ (3,20 m × 50 m), direto do cadastro do estoque</td></tr>
+        <tr><td>Trabalhos que entraram nas máquinas</td><td class="n">25</td><td>Registro de produção do mês, uma linha por trabalho</td></tr>
+        <tr><td>Envios com m² lançado</td><td class="n">11 / 659,37 m²</td><td>Documento de enviados na pasta de cada cliente</td></tr>
+        <tr><td>Conferências automáticas</td><td class="n">363</td><td>Execução da bateria completa, que roda em 40 segundos</td></tr>
+        <tr><td>Horário das melhorias</td><td class="n">87</td><td>Histórico do sistema, com data e hora de cada uma</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="nota prem">
+    <p><strong>O que ainda não foi medido, e está dito.</strong> O tempo do método manual é premissa, não medição — é o único número deste documento que depende de julgamento, e está exposto no painel da seção 4 justamente para poder ser contestado. O retorno do estoque é projeção: a estrutura está pronta e o consumo já é acompanhado, mas a contagem física ainda não foi feita. E acrílico, MDF, PVC e PS não têm custo cadastrado — então o material que circula pela casa vale mais do que os R$ 18.234,50 apurados aqui.</p>
+  </div>
+</section>
+
+<footer>
+  <p>
+    Apurado dos arquivos do sistema em 05/09/2026 &middot; período de 17/08 a 05/09/2026 &middot; Uny CV Comunicação Visual.
+    Marcações: <span class="c-med"><strong>ciano</strong> medido</span> &middot;
+    <span class="c-prem"><strong>amarelo</strong> premissa</span> &middot;
+    <span class="c-proj"><strong>magenta</strong> projetado</span>.
+  </p>
+</footer>
+
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  var D = {
+    itens: 258, os: 19, dias: 20, maqSeg: 959,
+    m2: [["Lona", 2121.11], ["Acrílico", 290.66], ["Adesivo", 234.71],
+         ["MDF", 88.81], ["PVC", 42.80], ["PS", 19.90]],
+    conferencia: [["Tratados", 293, "var(--ciano)"],
+                  ["Repetições barradas", 151, "var(--amarelo)"],
+                  ["Avisos", 23, "var(--magenta)"],
+                  ["Erros interceptados", 8, "var(--texto-2)"],
+                  ["Ignorados", 3, "var(--texto-3)"]]
+  };
+
+  function br(n, casas){
+    return n.toLocaleString("pt-BR", {minimumFractionDigits: casas, maximumFractionDigits: casas});
+  }
+  function duracao(seg){
+    var h = Math.floor(seg / 3600), m = Math.round((seg % 3600) / 60);
+    if (m === 60){ h += 1; m = 0; }
+    if (h === 0) return m + " min";
+    return h + " h " + (m > 0 ? m + " min" : "");
+  }
+
+  /* barras de material: escala própria, sem total somando materiais */
+  (function(){
+    var alvo = document.getElementById("barras-material");
+    if (!alvo) return;
+    var maior = D.m2[0][1];
+    D.m2.forEach(function(par){
+      var linha = document.createElement("div");
+      linha.className = "barra-linha";
+      linha.innerHTML =
+        '<span class="barra-nome">' + par[0] + '</span>' +
+        '<span class="trilho"><span class="preenche" style="width:' +
+        Math.max((par[1] / maior) * 100, 0.7).toFixed(2) + '%;background:var(--ciano)"></span></span>' +
+        '<span class="barra-val">' + br(par[1], 2) + ' m²</span>';
+      alvo.appendChild(linha);
+    });
+  })();
+
+  /* faixa dos 478 arquivos conferidos */
+  (function(){
+    var faixa = document.getElementById("faixa-log"), leg = document.getElementById("leg-log");
+    if (!faixa) return;
+    var total = D.conferencia.reduce(function(s, l){ return s + l[1]; }, 0);
+    D.conferencia.forEach(function(l){
+      var pct = (l[1] / total) * 100;
+      var d = document.createElement("div");
+      d.style.cssText = "width:" + pct.toFixed(2) + "%;background:" + l[2];
+      d.textContent = pct > 6 ? l[1] : "";
+      d.title = l[0] + ": " + l[1];
+      faixa.appendChild(d);
+
+      var s = document.createElement("span");
+      s.innerHTML = '<span class="bolota" style="background:' + l[2] + '"></span>' +
+                    l[0] + ' <strong class="num">' + l[1] + '</strong>';
+      leg.appendChild(s);
+    });
+  })();
+
+  /* painel do tempo */
+  var controle = document.getElementById("min-item");
+  var alvo = {
+    lbl: document.getElementById("lbl-min"),
+    lblPrint: document.getElementById("lbl-min-print"),
+    manual: document.getElementById("t-manual"),
+    fMaquina: document.getElementById("f-maquina"),
+    fator: document.getElementById("v-fator"),
+    pedido: document.getElementById("v-pedido"),
+    mes: document.getElementById("v-mes"),
+    ano: document.getElementById("v-ano")
+  };
+
+  function recalcular(){
+    var min = parseFloat(controle.value);
+    var manualSeg = D.itens * min * 60;
+    var economiaSeg = manualSeg - D.maqSeg;
+
+    alvo.lbl.textContent = br(min, 1);
+    alvo.lblPrint.textContent = br(min, 1);
+    alvo.manual.textContent = duracao(manualSeg);
+    alvo.fMaquina.style.width = Math.max((D.maqSeg / manualSeg) * 100, 0.5).toFixed(2) + "%";
+    alvo.fator.textContent = Math.round(manualSeg / D.maqSeg) + "×";
+    alvo.pedido.textContent = duracao(economiaSeg / D.os);
+
+    var mesSeg = economiaSeg * (30 / D.dias);
+    alvo.mes.textContent = br(mesSeg / 3600, 1) + " h";
+    alvo.ano.textContent = Math.round((mesSeg * 12 / 3600) / 8) + " dias";
+  }
+
+  controle.addEventListener("input", recalcular);
+  recalcular();
+})();
+</script>
+
+</body>
+</html>
