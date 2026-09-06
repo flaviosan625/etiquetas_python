@@ -31,6 +31,18 @@ LADO_FORA = "fora"
 LADO_DENTRO = "dentro"
 DIRECAO_SUBIDA = "subida"       # climb
 
+# Os números que a API do Aspire 8.5 espera. Não estão documentados em
+# lugar nenhum — foram confirmados criando um percurso por script e o
+# Flávio olhando o resultado na tela (06/09/2026).
+#
+# O achado que simplificou tudo: com ProfileSide = 0 o Aspire **já
+# resolve sozinho** o dentro/fora. Num círculo dentro de outro ele passou
+# por fora do externo e por dentro do interno, sem ninguém mandar. Eu ia
+# montar dois percursos separados pra isso — não precisa.
+API_PROFILE_SIDE = 0        # confirmado na tela: externo por fora, interno por dentro
+API_CUT_DIRECTION = 0       # o Flávio aprovou: "o corte pode ser padrão convencional"
+API_RAMP_TYPE = 0           # "Suave", e ele confirmou: suave de 10mm pra todos os cortes
+
 # A ordem de usinagem, e ela não é detalhe: é o que impede a peça de se
 # soltar antes da hora.
 #

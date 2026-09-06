@@ -1,0 +1,29 @@
+CORTE AUTOMATICO — prova de criacao de percurso
+
+=== ferramenta ===
+  GetTool('Fresa 4 mm') -> nil
+  GetTool('fresa 4mm') -> nil
+  GetTool('Imperial Tools | Fresa 4 mm') -> nil
+  GetTool('Imperial Tools|Fresa 4 mm') -> nil
+  GetTool('Imperial Tools\Fresa 4 mm') -> nil
+  GetTool('Imperial Tools/Fresa 4 mm') -> nil
+  GetTool('Imperial Tools') -> nil
+  GetTool('') -> nil
+
+=== investigando o banco ===
+  ToolDatabase() = ToolDatabase:
+  GetToolDatabaseLocation() = C:\ProgramData\Vectric\Aspire\V8.5\ToolDatabase
+  (o banco nao se percorre com GetHeadPosition)
+
+=== reserva: percursos existentes (0) ===
+  nenhum percurso com ferramenta neste trabalho
+
+=== construindo a ferramenta ===
+  Tool(nome, 0) -> Tool:Ball Nose - Not From Tool DB | -(Not Created)
+     FeedRate=2000  PlungeRate=1000  SpindleSpeed=18000  Stepdown=11  Stepover=2  ToolDia=4  ToolNumber=1
+  usando: nil dia 4 passada 11
+
+=== criacao ===
+  percursos antes: 0
+  bools (true, true) -> OK luaUUID:
+  percursos depois: 1
