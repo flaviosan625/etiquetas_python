@@ -12,4 +12,4 @@ CORTE AUTOMATICO
   O Aspire acerta o dentro/fora sozinho, mas a ORDEM nao fica garantida.
   'CORTE' lado=0 -> criado luaUUID:
 
-  total de percursos no trabalho: 1
+  total de percursos no trabalho: 2

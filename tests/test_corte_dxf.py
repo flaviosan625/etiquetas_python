@@ -352,3 +352,29 @@ def test_dxf_sai_com_as_duas_camadas_separadas(tmp_path):
     texto = destino.read_text(encoding="ascii")
 
     assert CAMADA_EXTERNO in texto and CAMADA_INTERNO in texto
+
+
+def test_as_camadas_sao_declaradas_na_tabela_do_dxf(tmp_path):
+    """
+    Nao basta escrever o nome da camada em cada entidade: importador que
+    nao acha a DECLARACAO joga tudo numa camada so. Foi o que o Aspire fez
+    em 06/09/2026 — o painel mostrou uma unica "Importar - ...", e sem as
+    duas camadas nao ha como fazer o furo antes do contorno.
+    """
+    from corte_dxf import CAMADA_EXTERNO, CAMADA_INTERNO, classificar_aninhamento
+
+    polis = [_quadrado(0, 0, 100), _quadrado(30, 30, 40)]
+    destino = escrever_dxf(polis, tmp_path / "letra.dxf", classificar_aninhamento(polis))
+    texto = destino.read_text(encoding="ascii")
+
+    tabela = texto[texto.index("TABLES"):texto.index("ENTITIES")]
+    assert "LAYER" in tabela
+    assert CAMADA_EXTERNO in tabela, "a camada externa tem que ser DECLARADA"
+    assert CAMADA_INTERNO in tabela, "a camada interna tem que ser DECLARADA"
+    assert texto.index("TABLES") < texto.index("ENTITIES"), "tabela vem antes das entidades"
+
+
+def test_dxf_sem_camadas_declara_a_padrao(tmp_path):
+    destino = escrever_dxf([[(0, 0), (10, 0), (10, 10), (0, 0)]], tmp_path / "s.dxf")
+    tabela = destino.read_text(encoding="ascii")
+    assert tabela[tabela.index("TABLES"):tabela.index("ENTITIES")].count("CORTE") >= 1

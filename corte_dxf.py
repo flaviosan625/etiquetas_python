@@ -331,10 +331,32 @@ def escrever_dxf(polilinhas, caminho_dxf, camadas=None):
     mais verboso e entra em qualquer lugar.
     """
     caminho_dxf = pathlib.Path(caminho_dxf)
+    # As camadas TÊM que ser declaradas na tabela, não basta escrever o
+    # nome em cada entidade. Importador que não acha a declaração joga
+    # tudo numa camada só — foi o que o Aspire fez em 06/09/2026, e sem
+    # as duas camadas separadas não há como fazer o furo antes do
+    # contorno.
+    usadas = []
+    for nome in (camadas or [NOME_CAMADA]):
+        if nome not in usadas:
+            usadas.append(nome)
+
     partes = [
         _par(0, "SECTION"), _par(2, "HEADER"),
         _par(9, "$INSUNITS"), _par(70, 4),          # 4 = milímetros
         _par(0, "ENDSEC"),
+        _par(0, "SECTION"), _par(2, "TABLES"),
+        _par(0, "TABLE"), _par(2, "LAYER"), _par(70, len(usadas)),
+    ]
+    for indice, nome in enumerate(usadas):
+        partes += [
+            _par(0, "LAYER"), _par(2, nome),
+            _par(70, 0),                    # sem trava, sem congelar
+            _par(62, indice + 1),           # cor, só pra ficarem distintas na tela
+            _par(6, "CONTINUOUS"),
+        ]
+    partes += [
+        _par(0, "ENDTAB"), _par(0, "ENDSEC"),
         _par(0, "SECTION"), _par(2, "ENTITIES"),
     ]
     for indice, poli in enumerate(polilinhas):
