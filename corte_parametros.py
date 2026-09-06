@@ -62,6 +62,19 @@ API_RAMP_TYPE = 0           # "Suave", e ele confirmou: suave de 10mm pra todos 
 # E o INTERNO vem PRIMEIRO. Assim que o contorno externo fecha, a peça
 # solta da chapa e passa a se mexer — furo feito depois disso sai torto,
 # quando não arranca a peça.
+#
+# DOIS PERCURSOS É A ÚNICA FORMA, e isso foi verificado (06/09/2026).
+# Circulou a sugestão de usar a aba "Ordem" do formulário de perfil, que
+# supostamente teria "De Dentro para Fora". A aba foi aberta e não tem:
+# oferece só ordem da seleção, esquerda→direita, baixo→cima, grelha e
+# percurso mais curto — e o próprio texto da aba diz que escolhe "a
+# opção que resultar num movimento rápido mais curto". É otimização de
+# DESLOCAMENTO, não de hierarquia. Nenhuma delas sabe o que é furo e o
+# que é contorno.
+#
+# Ou seja: não existe atalho. Um percurso por família, o interno acima
+# na lista — que ainda tem a vantagem de a ordem ficar visível pra quem
+# operar a máquina.
 ORDEM_DE_USINAGEM = (
     {"camada": "CORTE INTERNO", "lado": LADO_DENTRO},
     {"camada": "CORTE EXTERNO", "lado": LADO_FORA},
