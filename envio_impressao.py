@@ -522,8 +522,18 @@ def estado_do_rip(pasta_fila=None, agora=None):
                  f"atraso do OneDrive, não defeito.")
     else:
         nivel = "parado"
-        texto = (f"RIP sem dar sinal há {faz}. A fila NÃO vai andar — vá até a máquina "
-                 f'do RIP e veja "Última execução" no Agendador.')
+        # O vermelho mandava direto pra máquina do RIP, e isso já apontou
+        # pro lugar errado: em 2026-09-05 o RIP rodou a hora inteira,
+        # escrevendo sinal a cada 5 min, e quem tinha travado era o
+        # OneDrive DESTE PC — vivo, logado, sem erro nenhum na cara, e
+        # simplesmente não trazendo nada. 1h05 assim; fechar e abrir o
+        # OneDrive resolveu em 77 segundos. Daqui a tela não tem como
+        # separar os dois casos (os dois são "não chegou nada"), então
+        # ela oferece os dois — começando pelo que custa 1 minuto.
+        texto = (f"RIP sem dar sinal há {faz}. A fila NÃO vai andar. Comece pelo barato: "
+                 f"feche e abra o OneDrive daqui e espere 2 min — ele já travou sem dar "
+                 f'erro nenhum. Se não voltar, aí sim vá até a máquina do RIP e veja '
+                 f'"Última execução" no Agendador.')
 
     return {"nivel": nivel, "texto": texto, "erros": erros}
 

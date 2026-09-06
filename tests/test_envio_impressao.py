@@ -574,3 +574,24 @@ def test_cada_estado_diz_o_que_significa_e_nao_so_a_leitura(tmp_path):
 
     (tmp_path / "_sinal_de_vida.json").unlink()
     assert "não sei" in estado_do_rip(pasta_fila=str(tmp_path), agora=agora)["texto"]
+
+
+def test_o_vermelho_manda_reiniciar_o_onedrive_antes_de_ir_ate_o_rip(tmp_path):
+    """
+    Em 05/09/2026 o vermelho apontou pro lugar errado: mandou ir ate a
+    maquina do RIP quando o RIP estava perfeito (rodou a hora inteira,
+    escrevendo sinal a cada 5 min) e quem tinha travado era o OneDrive
+    deste PC. Daqui os dois casos sao identicos — "nao chegou nada" —
+    entao o texto tem que oferecer os dois, e na ordem do que custa
+    menos: reiniciar o OneDrive levou 77 segundos.
+    """
+    import datetime as dt
+    from envio_impressao import estado_do_rip
+
+    agora = dt.datetime(2026, 9, 5, 22, 0, 0)
+    _sinal(tmp_path, agora - dt.timedelta(minutes=65))
+    texto = estado_do_rip(pasta_fila=str(tmp_path), agora=agora)["texto"]
+
+    assert "OneDrive" in texto
+    assert "Agendador" in texto
+    assert texto.index("OneDrive") < texto.index("Agendador"), texto
