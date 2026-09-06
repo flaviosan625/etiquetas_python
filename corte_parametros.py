@@ -282,6 +282,10 @@ def gerar_gadgets(pasta=None, instalar=False, apenas=None):
         chave = f"{material} {espessura}"
         nome = f"Corte_Automatico_{material}_{espessura}.lua"
         conteudo = "\n".join([
+            # O Aspire recusa o arquivo inteiro se a PRIMEIRA linha nao for
+            # esta: "Error: Script does not start with -- VECTRIC LUA SCRIPT".
+            "-- VECTRIC LUA SCRIPT",
+            "--",
             "-- GERADO por corte_parametros.gerar_gadgets() - nao edite a mao.",
             "-- Editar aqui nao muda nada: a proxima geracao apaga.",
             f"-- Aparece no menu como: Corte Automatico {material} {espessura}",

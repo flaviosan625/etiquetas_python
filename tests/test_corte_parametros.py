@@ -310,3 +310,17 @@ def test_atalho_so_existe_pro_que_esta_no_menu():
 
     assert atalho_do_menu("1UN ACRILICO 6MM RECORTE.pdf") == "Corte Automatico ACRILICO 6"
     assert atalho_do_menu("1UN ACRILICO 5MM RECORTE.pdf") is None
+
+
+def test_atalho_comeca_com_a_linha_que_o_aspire_exige():
+    """
+    O Aspire recusa o arquivo inteiro se a primeira linha nao for
+    "-- VECTRIC LUA SCRIPT": "Error: Script does not start with...".
+    Aconteceu em 06/09/2026 com os oito atalhos de uma vez.
+    """
+    from corte_parametros import gerar_gadgets
+
+    gerados, _ = gerar_gadgets()
+    assert gerados, "sem atalho nenhum o teste nao verifica nada"
+    for _, _, conteudo in gerados:
+        assert conteudo.splitlines()[0] == "-- VECTRIC LUA SCRIPT"
