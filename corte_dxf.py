@@ -27,6 +27,7 @@ a página do PDF.
 import colorsys
 import math
 import pathlib
+import unicodedata
 
 import pymupdf
 
@@ -146,6 +147,26 @@ def _polilinhas_do_desenho(desenho, tolerancia_pt):
     return polilinhas
 
 
+def e_camada_de_corte(nome):
+    """
+    True se o nome desta camada do Illustrator marca a linha de corte.
+
+    As camadas do Illustrator sobrevivem no PDF (conferido nos arquivos
+    reais em 06/09/2026) e cada desenho carrega o nome da sua. Isso é
+    MUITO melhor que a cor: no arquivo da EUTELSAT a peça, a sanca e o
+    gabarito são todos magenta, e nenhum programa consegue escolher
+    entre eles — o Flávio escolhia abrindo o arquivo e apagando o resto.
+    A camada guarda essa escolha dentro do arquivo.
+
+    'RECORTE' casa de propósito: é a palavra que a casa já usa nos nomes
+    de arquivo pra dizer a mesma coisa.
+    """
+    if not nome:
+        return False
+    limpo = unicodedata.normalize("NFKD", str(nome)).encode("ascii", "ignore").decode().upper()
+    return "CORTE" in limpo
+
+
 def _mascaras_suspeitas(pagina):
     """
     Máscaras de recorte com forma complexa — candidatas a serem contorno
@@ -181,27 +202,47 @@ def extrair_contornos(caminho_pdf, tolerancia_mm=TOLERANCIA_MM):
     caminho_pdf = pathlib.Path(caminho_pdf)
     tolerancia_pt = tolerancia_mm / _PT_PARA_MM
     relatorio = {
-        "paginas": 0, "desenhos": 0, "de_corte": 0,
-        "descartados": 0, "imagens": 0, "contornos": 0, "mascaras": [],
+        "paginas": 0, "desenhos": 0, "de_corte": 0, "descartados": 0,
+        "imagens": 0, "contornos": 0, "mascaras": [],
+        "criterio": None, "camadas": [],
     }
     saida = []
 
     with pymupdf.open(caminho_pdf) as doc:
         relatorio["paginas"] = doc.page_count
-        for pagina in doc:
+
+        # Camada primeiro, cor só como reserva. Quem nomeia a camada
+        # está dizendo QUAL contorno é o corte; quem pinta de magenta
+        # está dizendo apenas "isto é magenta" — e a sanca e o gabarito
+        # também são.
+        paginas = list(doc)
+        todos = [(pg, d) for pg in paginas for d in pg.get_drawings(extended=True)
+                 if d.get("type") != "clip"]
+        nomes = {str(d.get("layer")) for _, d in todos if d.get("layer")}
+        relatorio["camadas"] = sorted(n for n in nomes if n != "None")
+        por_camada = any(e_camada_de_corte(n) for n in nomes)
+        relatorio["criterio"] = "camada" if por_camada else "cor"
+
+        def e_de_corte(d):
+            if por_camada:
+                return e_camada_de_corte(d.get("layer"))
+            return e_cor_de_corte(d.get("color")) or e_cor_de_corte(d.get("fill"))
+
+        for pagina in paginas:
             altura = pagina.rect.height
             relatorio["imagens"] += len(pagina.get_images())
             relatorio["mascaras"].extend(_mascaras_suspeitas(pagina))
-            for desenho in pagina.get_drawings():
-                relatorio["desenhos"] += 1
-                if not (e_cor_de_corte(desenho.get("color"))
-                        or e_cor_de_corte(desenho.get("fill"))):
-                    relatorio["descartados"] += 1
-                    continue
-                relatorio["de_corte"] += 1
-                for poli in _polilinhas_do_desenho(desenho, tolerancia_pt):
-                    saida.append([((x * _PT_PARA_MM), ((altura - y) * _PT_PARA_MM))
-                                  for x, y in poli])
+
+        for pagina, desenho in todos:
+            altura = pagina.rect.height
+            relatorio["desenhos"] += 1
+            if not e_de_corte(desenho):
+                relatorio["descartados"] += 1
+                continue
+            relatorio["de_corte"] += 1
+            for poli in _polilinhas_do_desenho(desenho, tolerancia_pt):
+                saida.append([((x * _PT_PARA_MM), ((altura - y) * _PT_PARA_MM))
+                              for x, y in poli])
 
     relatorio["contornos"] = len(saida)
     return saida, relatorio
@@ -283,3 +324,57 @@ def converter(caminho_pdf, caminho_dxf=None, tolerancia_mm=TOLERANCIA_MM):
     escrever_dxf(polilinhas, destino)
     relatorio["dxf"] = str(destino)
     return relatorio
+
+
+# Como o arquivo chegou, na ordem de quanto exige do usuário.
+PRONTO = "pronto"          # camada nomeada: o arquivo diz qual é o corte
+CONFERIR = "conferir"      # sem camada, achou magenta: provavelmente certo
+PARADO = "parado"          # não dá pra converter, e o motivo está dito
+
+
+def conferir_pasta(pasta, converter_prontos=False):
+    """
+    Passa o olho numa pasta de cortes e diz, arquivo por arquivo, o que
+    está pronto e o que precisa de você.
+
+    Existe por causa de uma frase do Flávio (06/09/2026): "eu peço para
+    a pessoa já nomear, mas ele vai esquecer muita coisa, por isso eu me
+    comprometo em verificar". Se verificar significa ABRIR vinte
+    arquivos, não se ganhou nada — a conferência tem que caber numa
+    lista. Ler camada e cor não abre programa nenhum e leva
+    milissegundos por arquivo.
+
+    Nunca escreve nada com converter_prontos=False (o padrão): olhar
+    tem que ser sempre seguro.
+    """
+    pasta = pathlib.Path(pasta)
+    resultado = []
+    if not pasta.is_dir():
+        return resultado
+
+    for pdf in sorted(pasta.rglob("*.pdf")):
+        if pdf.parent.name.upper() in ("PRONTOS", "ENVIADOS"):
+            continue
+        try:
+            polilinhas, relatorio = extrair_contornos(pdf)
+        except Exception as e:                    # PDF corrompido não pode derrubar a lista
+            resultado.append({"arquivo": pdf, "estado": PARADO, "contornos": 0,
+                              "motivo": f"não consegui ler: {e}", "dxf": None})
+            continue
+
+        relatorio["arquivo"] = pdf
+        relatorio["dxf"] = None
+        if not polilinhas:
+            relatorio["estado"] = PARADO
+            relatorio["motivo"] = converter(pdf)["motivo"]
+        elif relatorio["criterio"] == "camada":
+            relatorio["estado"] = PRONTO
+            relatorio["motivo"] = None
+            if converter_prontos:
+                relatorio["dxf"] = str(escrever_dxf(polilinhas, pdf.with_suffix(".dxf")))
+        else:
+            relatorio["estado"] = CONFERIR
+            relatorio["motivo"] = ("saiu pela cor magenta, não por camada nomeada — "
+                                   "se o arquivo tiver sanca ou gabarito, eles vêm junto")
+        resultado.append(relatorio)
+    return resultado

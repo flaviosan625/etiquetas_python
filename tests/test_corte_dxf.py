@@ -12,7 +12,9 @@ import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-from corte_dxf import converter, e_cor_de_corte, escrever_dxf, extrair_contornos
+from corte_dxf import (
+    converter, e_camada_de_corte, e_cor_de_corte, escrever_dxf, extrair_contornos,
+)
 
 # Cores tiradas dos arquivos reais em 06/09/2026 (ver corte_dxf).
 MAGENTA_LOGO = (0.922, 0.229, 0.506)      # 336° — contorno de recorte
@@ -202,3 +204,85 @@ def test_mascara_de_recorte_complexa_vira_pista_em_vez_de_recusa_seca(tmp_path):
     assert relatorio["mascaras"], "a máscara complexa tem que ser notada"
     assert "máscara de recorte" in relatorio["motivo"]
     assert "Illustrator" in relatorio["motivo"], "o recado tem que dizer o que fazer"
+
+
+# ---------- camada nomeada ----------
+
+def _pdf_com_camada(caminho, nome_camada, desenhos, largura=200, altura=200):
+    """PDF com camada (OCG) nomeada, como o Illustrator grava."""
+    doc = pymupdf.open()
+    pagina = doc.new_page(width=largura, height=altura)
+    ocg = doc.add_ocg(nome_camada)
+    for rect, cor in desenhos:
+        pagina.draw_rect(pymupdf.Rect(*rect), color=cor, width=1, oc=ocg)
+    doc.save(caminho)
+    doc.close()
+    return pathlib.Path(caminho)
+
+
+def test_reconhece_o_nome_da_camada_de_corte():
+    assert e_camada_de_corte("corte")
+    assert e_camada_de_corte("CORTE")
+    assert e_camada_de_corte("Contorno de Corte")
+    assert e_camada_de_corte("RECORTE"), "'recorte' e a palavra que a casa ja usa"
+    assert not e_camada_de_corte("Layer 1")
+    assert not e_camada_de_corte(None)
+
+
+def test_camada_nomeada_ganha_da_cor(tmp_path):
+    """
+    O caso da EUTELSAT: peca, sanca e gabarito TODOS em magenta. A cor
+    nao distingue; a camada sim. Quando ha camada de corte, so ela vale
+    — mesmo que haja magenta fora dela.
+    """
+    pdf = _pdf_com_camada(tmp_path / "com camada.pdf", "corte",
+                          [((10, 10, 90, 90), (0, 0, 0))])
+    polilinhas, relatorio = extrair_contornos(pdf)
+
+    assert relatorio["criterio"] == "camada"
+    assert "corte" in [c.lower() for c in relatorio["camadas"]]
+    assert polilinhas, "o desenho da camada corte entra mesmo sendo preto"
+
+
+def test_sem_camada_nomeada_cai_no_magenta(tmp_path):
+    pdf = _pdf(tmp_path / "sem camada.pdf", [((10, 10, 90, 90), MAGENTA_LOGO)])
+    _, relatorio = extrair_contornos(pdf)
+    assert relatorio["criterio"] == "cor"
+
+
+# ---------- conferencia da pasta ----------
+
+def test_confere_a_pasta_sem_escrever_nada(tmp_path):
+    """
+    'Eu me comprometo em verificar' — mas verificar nao pode ser abrir
+    vinte arquivos. E olhar nunca pode escrever.
+    """
+    from corte_dxf import CONFERIR, PARADO, PRONTO, conferir_pasta
+
+    _pdf_com_camada(tmp_path / "a.pdf", "corte", [((10, 10, 90, 90), (0, 0, 0))])
+    _pdf(tmp_path / "b.pdf", [((10, 10, 90, 90), MAGENTA_LOGO)])
+    _pdf(tmp_path / "c.pdf", [((10, 10, 90, 90), VERMELHO_LETRA)])
+
+    lista = conferir_pasta(tmp_path)
+    por_nome = {r["arquivo"].name: r["estado"] for r in lista}
+
+    assert por_nome == {"a.pdf": PRONTO, "b.pdf": CONFERIR, "c.pdf": PARADO}
+    assert not list(tmp_path.glob("*.dxf")), "conferir nao pode gerar arquivo"
+
+
+def test_conferir_pode_converter_so_os_prontos_quando_pedido(tmp_path):
+    from corte_dxf import PRONTO, conferir_pasta
+
+    _pdf_com_camada(tmp_path / "a.pdf", "corte", [((10, 10, 90, 90), (0, 0, 0))])
+    _pdf(tmp_path / "b.pdf", [((10, 10, 90, 90), MAGENTA_LOGO)])
+
+    lista = conferir_pasta(tmp_path, converter_prontos=True)
+
+    assert (tmp_path / "a.dxf").exists(), "o pronto vira DXF"
+    assert not (tmp_path / "b.dxf").exists(), "o que precisa de conferencia NAO vira"
+    assert next(r for r in lista if r["estado"] == PRONTO)["dxf"]
+
+
+def test_pasta_que_nao_existe_devolve_lista_vazia(tmp_path):
+    from corte_dxf import conferir_pasta
+    assert conferir_pasta(tmp_path / "nao existe") == []
