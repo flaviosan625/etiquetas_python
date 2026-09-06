@@ -216,8 +216,9 @@ def test_gera_um_atalho_de_menu_por_material(tmp_path):
     """
     from corte_parametros import gerar_gadgets
 
-    gerados = gerar_gadgets(tmp_path, instalar=True)
-    assert len(gerados) == len(combinacoes_cadastradas())
+    gerados, faltando = gerar_gadgets(tmp_path, instalar=True)
+    assert len(gerados) == 8, "as 9 do foco menos o PVC 3mm, que ainda nao tem passada"
+    assert faltando == [("PVC", 3)], "o que falta tem que ser DITO, nao sumir calado"
 
     nomes = {d.name for _, d, _ in gerados}
     assert "Corte_Automatico_PVC_10.lua" in nomes
@@ -238,6 +239,23 @@ def test_atalho_nao_carrega_logica_nenhuma(tmp_path):
     """
     from corte_parametros import gerar_gadgets
 
-    _, _, conteudo = gerar_gadgets(tmp_path)[0]
+    gerados, _ = gerar_gadgets(tmp_path)
+    _, _, conteudo = gerados[0]
     codigo = [l for l in conteudo.splitlines() if l.strip() and not l.startswith("--")]
     assert len(codigo) == 2, f"esperava 2 linhas de codigo, achei {codigo}"
+
+
+def test_menu_e_menor_que_o_cadastro_de_proposito():
+    """
+    O Flavio apontou as combinacoes que a casa realmente corta. Menu com
+    material que ninguem usa atrapalha — mas o cadastro segue completo,
+    porque o acrilico de 1, 2, 3, 5, 7 e 10 segue a mesma regra e guardar
+    nao custa nada.
+    """
+    from corte_parametros import MENU_FOCO
+
+    assert len(MENU_FOCO) < len(combinacoes_cadastradas())
+    for material, espessura in MENU_FOCO:
+        if (material, espessura) != ("PVC", 3):
+            assert buscar(material, espessura) is not None
+    assert buscar("ACRILICO", 5) is not None, "fora do menu, mas o cadastro sabe"

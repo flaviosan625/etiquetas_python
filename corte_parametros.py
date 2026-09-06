@@ -228,8 +228,22 @@ def exportar_para_lua(destino=None):
 PASTA_GADGETS = pathlib.Path(r"C:\ProgramData\Vectric\Aspire\V8.5\Gadgets")
 NUCLEO = "C:/Users/flavi/Desktop/etiquetas_python/aspire/corte_nucleo.lua"
 
+# O que vira atalho no menu do Aspire. É menor que PARAMETROS de
+# propósito: o Flávio apontou as combinações que a casa realmente corta
+# (06/09/2026), e menu com material que ninguém usa é menu que atrapalha.
+#
+# O cadastro continua completo — acrílico de 1, 2, 3, 5, 7 e 10 mm segue a
+# mesma regra e não custa nada guardar. O que polui é o menu, não o
+# cadastro: quando aparecer um trabalho nessas espessuras, é só acrescentar
+# aqui e regerar, sem precisar descobrir parâmetro de novo.
+MENU_FOCO = (
+    ("PVC", 3), ("PVC", 10), ("PVC", 20),
+    ("MDF", 6), ("MDF", 9), ("MDF", 15),
+    ("ACRILICO", 4), ("ACRILICO", 6), ("ACRILICO", 8),
+)
 
-def gerar_gadgets(pasta=None, instalar=False):
+
+def gerar_gadgets(pasta=None, instalar=False, apenas=None):
     """
     Gera um atalho por material, pra cada um virar uma entrada no menu
     Gadgets do Aspire: "Corte Automatico PVC 10", "Corte Automatico MDF 9"...
@@ -252,8 +266,12 @@ def gerar_gadgets(pasta=None, instalar=False):
     if instalar:
         pasta.mkdir(parents=True, exist_ok=True)
 
-    gerados = []
-    for material, espessura in combinacoes_cadastradas():
+    escolhidas = list(apenas) if apenas is not None else list(MENU_FOCO)
+    gerados, faltando = [], []
+    for material, espessura in escolhidas:
+        if buscar(material, espessura) is None:
+            faltando.append((material, espessura))
+            continue
         chave = f"{material} {espessura}"
         nome = f"Corte_Automatico_{material}_{espessura}.lua"
         conteudo = "\n".join([
@@ -271,4 +289,4 @@ def gerar_gadgets(pasta=None, instalar=False):
         if instalar:
             destino.write_text(conteudo, encoding="ascii")
         gerados.append((chave, destino, conteudo))
-    return gerados
+    return gerados, faltando
