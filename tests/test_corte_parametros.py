@@ -133,3 +133,19 @@ def test_acrilico_de_6_desce_ate_7():
     p = buscar("ACRILICO", 6)
     assert p["profundidade_mm"] == 7.0
     assert p["passes"] == 3          # 7 / 3 arredondado pra cima
+
+
+def test_o_corte_e_convencional_nao_subida():
+    """
+    Dito pelo usuario duas vezes: "o corte pode ser padrao convencional" e
+    "corte precisa ser convencional". E confirmado na tela do Aspire:
+    CutDirection = 0 acende "Convencional".
+
+    A primeira versao deste cadastro dizia "subida". So nao virou peca
+    torta porque o gadget ja usava o valor certo — mas cadastro que
+    contradiz a maquina e pior que cadastro nenhum.
+    """
+    from corte_parametros import DIRECAO_CONVENCIONAL
+
+    for material, espessura in (("PVC", 10), ("MDF", 15), ("ACRILICO", 6)):
+        assert buscar(material, espessura)["direcao"] == DIRECAO_CONVENCIONAL

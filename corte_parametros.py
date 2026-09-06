@@ -25,11 +25,17 @@ fica o que aponta pra lá: o grupo e o nome da ferramenta.
 """
 import math
 
-# Como a peça é usinada em relação à linha do desenho. Confirmado no
-# print da tela do Flávio (06/09/2026): "Fora / Direita", "Subida".
+# Como a peça é usinada em relação à linha do desenho. Confirmado na
+# tela do Flávio (06/09/2026): "Fora / Direita" no contorno.
 LADO_FORA = "fora"
 LADO_DENTRO = "dentro"
-DIRECAO_SUBIDA = "subida"       # climb
+# Convencional, nao subida. O Flavio foi explicito duas vezes ("o corte
+# pode ser padrao convencional", "corte precisa ser convencional"), e a
+# tela do Aspire confirmou: mandando CutDirection = 0 acendeu
+# "Convencional". A primeira versao daqui dizia "subida" — estava
+# errado, e so nao virou peca torta porque o gadget ja usava o valor
+# certo. Cadastro que contradiz a maquina e pior que cadastro nenhum.
+DIRECAO_CONVENCIONAL = "convencional"
 
 # Os números que a API do Aspire 8.5 espera. Não estão documentados em
 # lugar nenhum — foram confirmados criando um percurso por script e o
@@ -40,7 +46,7 @@ DIRECAO_SUBIDA = "subida"       # climb
 # por fora do externo e por dentro do interno, sem ninguém mandar. Eu ia
 # montar dois percursos separados pra isso — não precisa.
 API_PROFILE_SIDE = 0        # confirmado na tela: externo por fora, interno por dentro
-API_CUT_DIRECTION = 0       # o Flávio aprovou: "o corte pode ser padrão convencional"
+API_CUT_DIRECTION = 0       # = "Convencional" na tela. Exigido: "corte precisa ser convencional"
 API_RAMP_TYPE = 0           # "Suave", e ele confirmou: suave de 10mm pra todos os cortes
 
 # A ordem de usinagem, e ela não é detalhe: é o que impede a peça de se
@@ -128,7 +134,7 @@ def buscar(material, espessura_mm):
         "passada_mm": base["passada_mm"],
         "profundidade_mm": profundidade_de_corte(espessura),
         "passes": quantidade_de_passes(espessura, base["passada_mm"]),
-        "direcao": DIRECAO_SUBIDA,
+        "direcao": DIRECAO_CONVENCIONAL,
         "ordem": ORDEM_DE_USINAGEM,
         "rampa_mm": RAMPA_SUAVE_MM,
     }
