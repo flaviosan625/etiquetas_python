@@ -1,6 +1,7 @@
 CORTE AUTOMATICO
 
-=== ferramenta ===
+=== parametros ===
+  PVC 10: Topo Raso (4 mm) dia 4 passada 11 profundidade 11 (1 passe(s))
   ferramenta: Tool:End Mill - Not From Tool DB | -(Not Created) dia 4 passada 11 InMM true
 
 === o percurso tem campo de ordem? ===
@@ -9,6 +10,6 @@ CORTE AUTOMATICO
 === percursos ===
   SEM CAMADA NOMEADA — um percurso so, com o que esta selecionado.
   O Aspire acerta o dentro/fora sozinho, mas a ORDEM nao fica garantida.
-  'CORTE' lado=0 -> criado nil
+  'CORTE' lado=0 -> criado luaUUID:
 
   total de percursos no trabalho: 1

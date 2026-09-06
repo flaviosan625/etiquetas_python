@@ -206,3 +206,38 @@ def test_a_tabela_exportada_pro_lua_bate_com_o_cadastro(tmp_path):
         assert f'["{material} {espessura}"]' in texto
         assert f'passada = {p["passada_mm"]}' in texto
         assert f'profundidade = {p["profundidade_mm"]}' in texto
+
+
+def test_gera_um_atalho_de_menu_por_material(tmp_path):
+    """
+    Pedido do usuario: escolher pelo menu do Aspire em vez de editar uma
+    linha do script. Um arquivo por material, e o nome do arquivo vira o
+    nome no menu com '_' virando espaco.
+    """
+    from corte_parametros import gerar_gadgets
+
+    gerados = gerar_gadgets(tmp_path, instalar=True)
+    assert len(gerados) == len(combinacoes_cadastradas())
+
+    nomes = {d.name for _, d, _ in gerados}
+    assert "Corte_Automatico_PVC_10.lua" in nomes
+    assert "Corte_Automatico_MDF_9.lua" in nomes
+    assert "Corte_Automatico_ACRILICO_6.lua" in nomes
+
+    for chave, destino, _ in gerados:
+        texto = destino.read_text(encoding="ascii")
+        assert f'MATERIAL_DO_GADGET = "{chave}"' in texto
+        assert "corte_nucleo.lua" in texto, "o atalho tem que chamar o nucleo"
+        assert "nao edite" in texto, "arquivo gerado avisa que e gerado"
+
+
+def test_atalho_nao_carrega_logica_nenhuma(tmp_path):
+    """
+    Se o atalho tivesse logica, seriam 14 copias pra manter em dia e uma
+    correcao esqueceria treze. Ele diz o material e chama o nucleo.
+    """
+    from corte_parametros import gerar_gadgets
+
+    _, _, conteudo = gerar_gadgets(tmp_path)[0]
+    codigo = [l for l in conteudo.splitlines() if l.strip() and not l.startswith("--")]
+    assert len(codigo) == 2, f"esperava 2 linhas de codigo, achei {codigo}"

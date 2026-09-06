@@ -221,3 +221,54 @@ def exportar_para_lua(destino=None):
 
     destino.write_text("\n".join(linhas), encoding="utf-8")
     return destino
+
+
+# Onde o Aspire 8.5 procura gadgets nesta maquina. Nao e a pasta que a
+# documentacao da Vectric cita — aquela aqui tem so um readme.
+PASTA_GADGETS = pathlib.Path(r"C:\ProgramData\Vectric\Aspire\V8.5\Gadgets")
+NUCLEO = "C:/Users/flavi/Desktop/etiquetas_python/aspire/corte_nucleo.lua"
+
+
+def gerar_gadgets(pasta=None, instalar=False):
+    """
+    Gera um atalho por material, pra cada um virar uma entrada no menu
+    Gadgets do Aspire: "Corte Automatico PVC 10", "Corte Automatico MDF 9"...
+
+    Pedido do usuário (06/09/2026): escolher pelo menu em vez de editar
+    uma linha do script. A alternativa seria o gadget ler o material do
+    nome do arquivo — mais elegante e bem mais demorado, e ele foi direto
+    ao ponto: "se for esperar desenho é mais complexo de resolver e vamos
+    ficar travado".
+
+    Cada atalho tem três linhas e nenhuma lógica: diz o material e chama
+    o núcleo. A lógica mora num arquivo só (corte_nucleo.lua), fora da
+    pasta de gadgets — se morasse dentro, viraria uma entrada de menu
+    inútil, porque o Aspire lista todo .lua que encontra lá.
+
+    O nome do arquivo vira o nome no menu, com os '_' virando espaço — é
+    assim que 'DXF_Batch_Processor.lua' aparece como 'DXF Batch Processor'.
+    """
+    pasta = pathlib.Path(pasta) if pasta else PASTA_GADGETS
+    if instalar:
+        pasta.mkdir(parents=True, exist_ok=True)
+
+    gerados = []
+    for material, espessura in combinacoes_cadastradas():
+        chave = f"{material} {espessura}"
+        nome = f"Corte_Automatico_{material}_{espessura}.lua"
+        conteudo = "\n".join([
+            "-- GERADO por corte_parametros.gerar_gadgets() - nao edite a mao.",
+            "-- Editar aqui nao muda nada: a proxima geracao apaga.",
+            f"-- Aparece no menu como: Corte Automatico {material} {espessura}",
+            "--",
+            "-- Tres linhas e nenhuma logica: diz o material e chama o nucleo.",
+            "",
+            f'MATERIAL_DO_GADGET = "{chave}"',
+            f'dofile("{NUCLEO}")',
+            "",
+        ])
+        destino = pasta / nome
+        if instalar:
+            destino.write_text(conteudo, encoding="ascii")
+        gerados.append((chave, destino, conteudo))
+    return gerados

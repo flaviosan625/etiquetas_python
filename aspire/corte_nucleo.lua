@@ -34,10 +34,12 @@
 
 local DESTINO = "C:/Users/flavi/Desktop/etiquetas_python/aspire/corte_resultado.txt"
 
--- ======================= O QUE VOCE ESCOLHE =======================
--- Material e espessura da chapa desta producao. O resto — fresa,
--- passada, profundidade, avanco — sai da tabela, nao se mexe aqui.
-local MATERIAL = "PVC 10"
+-- ================== NAO SE EDITA MATERIAL AQUI ====================
+-- O material vem do atalho no menu Gadgets: "Corte Automatico PVC 10",
+-- "Corte Automatico MDF 9", e assim por diante. Cada um e um arquivo
+-- Quem escolhe e o atalho que chamou este nucleo (ver gerar_gadgets no
+-- corte_parametros.py). O padrao so existe pra nunca rodar sem material.
+local MATERIAL = MATERIAL_DO_GADGET or "PVC 10"
 -- Opcoes: PVC 10, PVC 20, MDF 6, MDF 9, MDF 15,
 --         ACRILICO 1 2 3 4 5 6 7 8 10
 -- ==================================================================
