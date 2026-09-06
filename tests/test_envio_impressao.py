@@ -576,62 +576,34 @@ def test_cada_estado_diz_o_que_significa_e_nao_so_a_leitura(tmp_path):
     assert "não sei" in estado_do_rip(pasta_fila=str(tmp_path), agora=agora)["texto"]
 
 
-# --- previa da pasta, na hora de escolher ---
+def test_pasta_do_arquivo_escolhido_e_a_pasta_de_producao(tmp_path):
+    """
+    A tela pede um arquivo (o seletor de pasta do Windows nao mostra o
+    conteudo) e fica com a pasta dele.
+    """
+    from envio_impressao import pasta_de_producao_do_arquivo
+
+    producao = tmp_path / "PRODUCAO 05_09"
+    producao.mkdir()
+    arte = producao / "1UN LONA 2.00X1.00M_teste.pdf"
+    arte.touch()
+    assert pasta_de_producao_do_arquivo(arte) == producao
+    assert pasta_de_producao_do_arquivo(str(arte)) == producao
 
 
-def _pasta_com(tmp_path, *nomes):
-    pasta = tmp_path / "PRODUCAO 05_09"
-    pasta.mkdir(exist_ok=True)
-    for nome in nomes:
-        (pasta / nome).write_bytes(b"x")
-    return pasta
-
-
-def test_contar_artes_ve_subpasta_e_ignora_o_que_nao_e_arte(tmp_path):
-    from envio_impressao import contar_artes
-
-    pasta = _pasta_com(tmp_path, "1 UN LONA 1x1.pdf", "orcamento.xlsx", "leiame.txt")
-    sub = pasta / "enchanted_land"
-    sub.mkdir()
-    (sub / "2 UN ADESIVO 2x1.pdf").write_bytes(b"x")
-
-    assert contar_artes(pasta) == 2
-
-
-def test_contar_artes_nao_conta_prontos_nem_enviados(tmp_path):
-    from envio_impressao import contar_artes
+def test_clicar_num_arquivo_dentro_de_prontos_sobe_um_nivel(tmp_path):
+    """
+    'Prontos', 'Enviados' e 'CORTE' a varredura nunca abre. Se a escolha
+    caisse numa delas, a tela abriria vazia e pareceria que a pasta nao
+    tem nada — quando tem tudo, um andar acima.
+    """
+    from envio_impressao import NOME_PASTA_ENVIADOS, pasta_de_producao_do_arquivo
     from producao import NOME_SUBPASTA_PRONTOS
 
-    pasta = _pasta_com(tmp_path, "1 UN LONA 1x1.pdf")
-    for nome in (NOME_SUBPASTA_PRONTOS, "Enviados"):
-        guardada = pasta / nome
-        guardada.mkdir()
-        (guardada / "ja_foi.pdf").write_bytes(b"x")
-
-    assert contar_artes(pasta) == 1
-
-
-def test_outros_arquivos_mostra_o_que_nao_da_pra_enviar(tmp_path):
-    """
-    Some da lista de envio, mas quem confere a pasta precisa saber que
-    esta la — senao fica procurando um arquivo que esta bem ali.
-    """
-    from envio_impressao import outros_arquivos
-
-    pasta = _pasta_com(tmp_path, "1 UN LONA 1x1.pdf", "orcamento cliente.xlsx", "referencia.zip")
-    nomes = sorted(p.name for p in outros_arquivos(pasta))
-
-    assert nomes == ["orcamento cliente.xlsx", "referencia.zip"]
-
-
-def test_contar_artes_de_pasta_que_nao_existe_e_zero(tmp_path):
-    from envio_impressao import contar_artes, outros_arquivos
-    assert contar_artes(tmp_path / "nao_existe") == 0
-    assert outros_arquivos(tmp_path / "nao_existe") == []
-
-
-def test_data_curta_e_o_mesmo_helper_de_sempre():
-    """Exportado pra tela de escolha nao virar a quarta copia disto no projeto."""
-    from envio_impressao import data_curta, _data_curta
-    assert data_curta is _data_curta
-    assert data_curta("2026-09-05T16:27:05") == "05/09 16:27"
+    producao = tmp_path / "PRODUCAO 05_09"
+    for nome in (NOME_SUBPASTA_PRONTOS, NOME_PASTA_ENVIADOS):
+        sub = producao / nome
+        sub.mkdir(parents=True)
+        arquivo = sub / "algo.pdf"
+        arquivo.touch()
+        assert pasta_de_producao_do_arquivo(arquivo) == producao

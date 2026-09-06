@@ -266,42 +266,20 @@ def _arquivos_da_pasta(pasta):
     return achados
 
 
-def contar_artes(pasta):
+def pasta_de_producao_do_arquivo(caminho):
     """
-    Quantos arquivos de arte tem abaixo da pasta. Serve pra escolher a
-    pasta já sabendo se ela tem alguma coisa dentro — só conta nome e
-    extensão, nunca abre arquivo (abrir hidrata placeholder do OneDrive,
-    e tem TIF de 1,83 GB nessas pastas).
+    A pasta de produção a que este arquivo pertence.
+
+    A tela de envio pede um ARQUIVO em vez de uma pasta (o seletor de
+    pasta do Windows não mostra o conteúdo; o de arquivo mostra, com
+    miniatura). Normalmente é só a pasta do arquivo — mas se ele estiver
+    dentro de 'Prontos', 'Enviados' ou 'CORTE', essas a varredura ignora:
+    devolver uma delas daria lista vazia. Nesse caso sobe um nível.
     """
-    return len(_arquivos_da_pasta(pasta))
-
-
-def outros_arquivos(pasta):
-    """
-    O que está na pasta mas NÃO é arte — planilha, .txt, .zip.
-
-    A tela de escolha mostra esses apagados de propósito: some da lista
-    de envio, mas quem está conferindo a pasta precisa saber que eles
-    existem, senão fica procurando um arquivo que está bem ali.
-    """
-    pasta = pathlib.Path(pasta)
-    if not pasta.is_dir():
-        return []
-
-    achados = []
-    for item in sorted(pasta.iterdir(), key=lambda p: p.name.lower()):
-        if item.is_dir():
-            if item.name.upper() in _PASTAS_IGNORADAS:
-                continue
-            achados.extend(outros_arquivos(item))
-        elif item.suffix.lower() not in EXTENSOES_ACEITAS:
-            achados.append(item)
-    return achados
-
-
-def so_na_nuvem(caminho):
-    """Nome público de _so_na_nuvem — a tela de escolha precisa marcar o que ainda não baixou."""
-    return _so_na_nuvem(pathlib.Path(caminho))
+    pasta = pathlib.Path(caminho).parent
+    if pasta.name.upper() in _PASTAS_IGNORADAS and pasta.parent != pasta:
+        return pasta.parent
+    return pasta
 
 
 def listar(pasta_escolhida, config, envios_anteriores=None, maquinas=None):
@@ -572,11 +550,6 @@ def _data_curta(quando_iso):
         return datetime.datetime.fromisoformat(quando_iso).strftime("%d/%m %H:%M")
     except (TypeError, ValueError):
         return str(quando_iso)
-
-
-# Nome público do mesmo helper: a tela de escolha precisa datar o
-# "já enviado" e escrever uma quarta cópia disto no projeto seria pior.
-data_curta = _data_curta
 
 
 def _tamanho_legivel(bytes_):
