@@ -68,8 +68,9 @@ def test_material_nao_cadastrado_devolve_nada_em_vez_de_chutar():
     Chutar parametro de corte quebra fresa e estraga chapa. Quem chama
     tem que tratar a ausencia.
     """
-    assert buscar("ACRILICO", 4) is None
+    assert buscar("PS", 3) is None, "PS existe no estoque e ainda nao tem parametro"
     assert buscar("PVC", 3) is None, "PVC 3mm existe no estoque mas ainda nao tem parametro"
+    assert buscar("ACRILICO", 12) is None, "12mm nao existe no estoque"
     assert buscar("MDF", 15.0) is not None, "aceita float, arredonda pra espessura inteira"
 
 
@@ -87,7 +88,8 @@ def test_lista_o_que_esta_cadastrado():
     combos = combinacoes_cadastradas()
     assert ("MDF", 6) in combos
     assert ("PVC", 20) in combos
-    assert len(combos) == 5
+    assert ("ACRILICO", 10) in combos
+    assert len(combos) == 14
 
 
 def test_letra_corta_dentro_por_dentro_e_fora_por_fora():
@@ -111,3 +113,23 @@ def test_o_interno_vem_primeiro_e_isso_nao_e_detalhe():
     ordem = buscar("PVC", 10)["ordem"]
     assert ordem[0]["camada"] == "CORTE INTERNO"
     assert ordem[1]["camada"] == "CORTE EXTERNO"
+
+
+def test_acrilico_usa_passada_menor_porque_trinca():
+    """
+    Acrilico e o material mais delicado da casa: passada de 3 mm, menos
+    da metade das outras. Calor derrete a borda e corte forcado trinca a
+    chapa.
+    """
+    for espessura in (1, 2, 3, 4, 5, 6, 7, 8, 10):
+        p = buscar("ACRILICO", espessura)
+        assert p is not None, f"acrilico de {espessura}mm nao cadastrado"
+        assert p["passada_mm"] == 3.0
+        assert p["ferramenta"] == "Topo Raso (6 mm)"
+
+
+def test_acrilico_de_6_desce_ate_7():
+    """Dito pelo usuario: "de acrilico e 6mm a profundidade C: precisa ser de 7 mm"."""
+    p = buscar("ACRILICO", 6)
+    assert p["profundidade_mm"] == 7.0
+    assert p["passes"] == 3          # 7 / 3 arredondado pra cima

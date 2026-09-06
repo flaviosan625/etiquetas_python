@@ -60,12 +60,21 @@ FOLGA_PASSANTE_MM = 1.0
 # 'grupo' e 'ferramenta' têm que bater LETRA POR LETRA com o banco de
 # ferramentas do Aspire — é assim que GetTool(grupo, nome) acha. Lidos do
 # arquivo real do banco em 06/09/2026.
+_FRESA_4 = {"grupo": "Fresa 4 mm", "ferramenta": "Topo Raso (4 mm)"}
+_FRESA_6 = {"grupo": "Fresa 6 mm", "ferramenta": "Topo Raso (6 mm)"}
+
 PARAMETROS = {
-    ("PVC", 10): {"grupo": "Fresa 4 mm", "ferramenta": "Topo Raso (4 mm)", "passada_mm": 11.0},
-    ("PVC", 20): {"grupo": "Fresa 4 mm", "ferramenta": "Topo Raso (4 mm)", "passada_mm": 11.0},
-    ("MDF", 6):  {"grupo": "Fresa 6 mm", "ferramenta": "Topo Raso (6 mm)", "passada_mm": 7.0},
-    ("MDF", 9):  {"grupo": "Fresa 6 mm", "ferramenta": "Topo Raso (6 mm)", "passada_mm": 6.0},
-    ("MDF", 15): {"grupo": "Fresa 6 mm", "ferramenta": "Topo Raso (6 mm)", "passada_mm": 6.0},
+    ("PVC", 10): dict(_FRESA_4, passada_mm=11.0),
+    ("PVC", 20): dict(_FRESA_4, passada_mm=11.0),
+    ("MDF", 6):  dict(_FRESA_6, passada_mm=7.0),
+    ("MDF", 9):  dict(_FRESA_6, passada_mm=6.0),
+    ("MDF", 15): dict(_FRESA_6, passada_mm=6.0),
+    # Acrílico é o material mais delicado da casa: passada de 3 mm, menos
+    # da metade das outras, porque calor derrete a borda e o corte
+    # forçado trinca a chapa. Todas as espessuras do estoque, mesma fresa
+    # e mesma passada — aqui a espessura muda só o número de passes.
+    **{("ACRILICO", e): dict(_FRESA_6, passada_mm=3.0)
+       for e in (1, 2, 3, 4, 5, 6, 7, 8, 10)},
 }
 
 
