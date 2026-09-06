@@ -64,6 +64,12 @@ COR_TEXTO_SECUNDARIO = "#6b7280"
 COR_ALERTA = "#b45309"
 COR_ALERTA_FUNDO = "#fdf1e0"
 COR_POSITIVO = "#0f7a3d"
+# Vermelho de "parou de verdade". Separado do COR_ALERTA (âmbar), que
+# quer dizer "olhe isto": os dois aparecem lado a lado na linha do RIP,
+# e se fossem a mesma cor não daria pra distinguir "está devagar" de
+# "não vai andar" — que é justamente a distinção que a linha existe pra
+# fazer.
+COR_RIP_PARADO = "#b32d24"
 
 
 def _rotulo_variantes(variantes):
@@ -2056,13 +2062,26 @@ class JanelaEnviarImpressao(tk.Toplevel):
         # ela precisa ser respondida ANTES de mandar, não depois de dar
         # errado. Antes disso, a única forma de saber era atravessar a
         # sala e olhar "Última execução" no Agendador da outra máquina.
+        linha_rip = tk.Frame(barra, bg=COR_FUNDO_JANELA)
+        linha_rip.grid(row=1, column=0, columnspan=4, sticky="w", pady=(6, 0))
+
+        # A bolinha é "●" (U+25CF), NÃO emoji. O Tk do Windows não tem
+        # fonte colorida de emoji: 🟢🟡🔴⚪ saem todos como o mesmo
+        # circulozinho monocromático, e a cor — que é o único jeito de
+        # ler o estado de relance — simplesmente não chega na tela
+        # (visto pelo usuário, 2026-09-05: "ficou opaca branca"). Com um
+        # caractere comum, quem pinta é o fg do widget, e aí funciona.
+        # Por isso são DOIS rótulos: um Label só tem uma cor de frente.
+        self.ponto_rip = tk.Label(linha_rip, text="", bg=COR_FUNDO_JANELA, font=("Segoe UI", 11))
+        self.ponto_rip.grid(row=0, column=0, sticky="w")
+
         self.var_rip = tk.StringVar(value="")
         self.rotulo_rip = tk.Label(
-            barra, textvariable=self.var_rip, bg=COR_FUNDO_JANELA,
+            linha_rip, textvariable=self.var_rip, bg=COR_FUNDO_JANELA,
             fg=COR_TEXTO_SECUNDARIO, anchor="w", justify="left", font=("Segoe UI", 9),
             wraplength=1000,  # o texto explica o que o estado significa; sem isso ele alargaria a janela
         )
-        self.rotulo_rip.grid(row=1, column=0, columnspan=4, sticky="w", pady=(6, 0))
+        self.rotulo_rip.grid(row=0, column=1, sticky="w", padx=(6, 0))
 
         # Faixa de alerta da fila: some quando está tudo bem. Ver
         # envio_impressao.fila_parada — "enviado" aqui significa que o
@@ -2158,17 +2177,22 @@ class JanelaEnviarImpressao(tk.Toplevel):
             # Nenhuma falha aqui pode impedir de enviar: isto é
             # informação sobre o envio, não o envio.
             self.var_rip.set("")
+            self.ponto_rip.configure(text="")
             return
 
+        # (cor da bolinha, cor do texto). O cinza do "sem sinal" é
+        # deliberado: branco sobre fundo branco não se vê, e "não sei"
+        # não pode gritar mais alto que "está parado".
         cores = {
-            "ok": ("🟢", COR_TEXTO_SECUNDARIO),
-            "atencao": ("🟡", COR_TEXTO),
-            "parado": ("🔴", COR_ALERTA),
-            "sem_sinal": ("⚪", COR_TEXTO_SECUNDARIO),
+            "ok": (COR_POSITIVO, COR_TEXTO_SECUNDARIO),
+            "atencao": (COR_ALERTA, COR_TEXTO),
+            "parado": (COR_RIP_PARADO, COR_RIP_PARADO),
+            "sem_sinal": (COR_TEXTO_SECUNDARIO, COR_TEXTO_SECUNDARIO),
         }
-        bolinha, cor = cores.get(estado["nivel"], ("⚪", COR_TEXTO_SECUNDARIO))
-        self.var_rip.set(f"{bolinha}  {estado['texto']}")
-        self.rotulo_rip.configure(fg=cor)
+        cor_ponto, cor_texto = cores.get(estado["nivel"], (COR_TEXTO_SECUNDARIO, COR_TEXTO_SECUNDARIO))
+        self.ponto_rip.configure(text="●", fg=cor_ponto)
+        self.var_rip.set(estado["texto"])
+        self.rotulo_rip.configure(fg=cor_texto)
         self._reagendar_estado_do_rip()
 
     def _reagendar_estado_do_rip(self):
