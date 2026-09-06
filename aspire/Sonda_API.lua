@@ -1,129 +1,136 @@
 -- VECTRIC LUA SCRIPT
 --
--- Sonda da API do Aspire 8.5 — quarta versão: atrás dos MÉTODOS.
+-- Sonda da API do Aspire 8.5 — quinta versão: os números por trás das opções.
 --
--- O que já se sabe das anteriores:
---   v1 — a 8.5 tem as classes de criação de percurso (era a dúvida que
---        travava tudo)
---   v2 — a ligação é luabind, e ele responde com a assinatura C++ certa
---        quando a gente chama errado
---   v3 — os campos de ProfileParameterData: CutDepth, ProfileSide,
---        CutDirection, TabLength, TabThickness...
+-- Já se sabe criar percurso:
+--   CreateProfilingToolpath(ToolpathManager&, nome, Tool*, ProfileParameterData*,
+--       RampingData*, LeadInOutData*, ToolpathPosData_Base*, GeometrySelector*,
+--       bool, bool)
 --
--- Falta a chamada que CRIA o percurso. Ela deve estar no gerenciador do
--- trabalho, que na v3 veio vazio porque não havia projeto aberto.
+-- Falta traduzir o que está escrito na tela pro que a API espera:
+--   "Fora / Direita"  -> ProfileSide = ?
+--   "Subida" (climb)  -> CutDirection = ?
+--   rampa suave 10 mm -> quais campos de RampingData?
 --
--- ATENÇÃO: rode com um trabalho NOVO aberto, não com produção de
--- verdade. Esta sonda não escreve no projeto, mas chama métodos com
--- argumentos inválidos de propósito pra colher a assinatura — e em
--- trabalho de cliente não se faz esse tipo de experiência.
+-- Em vez de adivinhar, esta sonda LÊ DE VOLTA o percurso que o usuário
+-- já montou na mão. O que a tela mostra e o que o objeto guarda são a
+-- mesma coisa — então o percurso dele é a tabela de conversão.
+--
+-- PRECISA: um trabalho aberto com PELO MENOS UM percurso de perfil já
+-- criado (Fora/Direita, Subida, rampa suave 10 mm).
+--
+-- Não cria, não apaga e não altera percurso nenhum. Só lê.
 --
 -- Rode em: Gadgets -> Sonda API
 
 local DESTINO = "C:\\Users\\flavi\\Desktop\\etiquetas_python\\aspire\\api_8_5.txt"
 
-local NOMES = {
-   -- criar e calcular percurso: o que a gente está caçando
-   "CreateProfilingToolpath", "CreateProfileToolpath", "CreateToolpath",
-   "CreatePocketToolpath", "CreateDrillingToolpath", "CreateVCarveToolpath",
-   "CalculateToolpath", "CalculateProfileToolpath", "Calculate",
-   "AddToolpath", "AddNewToolpath", "InsertToolpath", "UpdateToolpath",
-   -- percorrer o que já existe
-   "Count", "GetHeadPosition", "GetNext", "GetToolpath", "GetFirstToolpath",
-   "GetToolpathList", "RemoveToolpath", "DeleteToolpath", "Refresh",
-   -- ferramentas
-   "GetTool", "FindTool", "GetToolByName", "GetToolList", "GetToolGroups",
-   "LoadToolDatabase", "GetToolDatabase", "Tool", "ToolDia",
-   -- salvar e pos-processar
-   "SaveToolpaths", "SaveToolpath", "PostProcess", "GetPostProcessor",
-   "SetPostProcessor", "AddToolpathToSave",
-   -- trabalho e desenho
-   "Exists", "Name", "JobParameters", "Selection", "LayerManager",
-   "ToolpathManager", "Refresh2DView", "AddContoursToJob",
-   "CreateJobBoundary", "GetLayerWithName", "SelectAll", "GetSelection",
-}
-
 local saida = {}
 local function anotar(t) saida[#saida + 1] = t end
 
--- Chama com lixo. O luabind recusa e, ao recusar, imprime as formas
--- certas de chamar — que é a documentação que a Vectric tirou do ar.
-local function assinatura(funcao, dono)
-   local ok, erro = pcall(funcao, dono, "\1lixo\1", -987654321, {})
-   if ok then return "(aceitou argumentos aleatorios — cuidado)" end
-   local texto = tostring(erro)
-   -- só interessa quando ele lista as candidatas
-   if texto:find("candidates") or texto:find("overload") then
-      return texto
-   end
-   return "erro: " .. texto
+local function tentar(objeto, nome)
+   local ok, valor = pcall(function() return objeto[nome] end)
+   if ok and valor ~= nil then return valor end
+   return nil
 end
 
-local function investigar(rotulo, objeto)
+local function listar(rotulo, objeto, nomes)
    anotar("")
    anotar("=== " .. rotulo .. " ===")
    if objeto == nil then
-      anotar("  nil — nao deu pra obter")
+      anotar("  nil")
       return
    end
-   local achados = 0
-   for _, nome in ipairs(NOMES) do
-      local ok, valor = pcall(function() return objeto[nome] end)
-      if ok and valor ~= nil then
-         achados = achados + 1
+   local achou = false
+   for _, nome in ipairs(nomes) do
+      local valor = tentar(objeto, nome)
+      if valor ~= nil then
+         achou = true
          local tipo = type(valor)
          if tipo == "function" then
-            anotar("  " .. nome .. "()")
-            for linha in assinatura(valor, objeto):gmatch("[^\r\n]+") do
-               anotar("        " .. linha)
-            end
+            local ok, erro = pcall(valor, objeto, "\1lixo\1", -987654321, {})
+            local texto = ok and "(aceitou lixo)" or tostring(erro):gsub("[\r\n]+", " | ")
+            anotar(string.format("  %-26s funcao: %s", nome, texto))
          else
             anotar(string.format("  %-26s %s = %s", nome, tipo, tostring(valor)))
          end
       end
    end
-   if achados == 0 then anotar("  (nenhum dos nomes testados existe aqui)") end
+   if not achou then anotar("  (nenhum dos nomes testados)") end
 end
+
+local CAMPOS_RAMPA = {
+   "Active", "Enabled", "DoRamping", "AddRamps", "RampType", "Type",
+   "RampLength", "Length", "Distance", "RampDistance",
+   "Angle", "MaxAngle", "RampAngle", "Smooth", "ZigZag", "Spiral",
+   "RampOnEntry", "RampInOnly", "DoRampIn", "UseDistance", "UseAngle",
+}
+local CAMPOS_ENTRADA = {
+   "Active", "Enabled", "DoLeadInOut", "Type", "LeadInLength", "LeadOutLength",
+   "Length", "Radius", "Angle", "Distance", "Overcut", "OvercutDistance",
+   "DoLeadIn", "DoLeadOut", "SpiralLeadIn",
+}
+local CAMPOS_POS = {
+   "SafeZ", "HomeX", "HomeY", "HomeZ", "StartZGap", "XYOrigin", "ZOrigin",
+}
+local CAMPOS_PERCURSO = {
+   "Name", "Notes", "Tool", "Visible", "Calculated", "SheetIndex",
+   "ActiveSheetIndex", "MachiningTime", "GetProfileParameterData",
+   "ProfileParameterData", "ParameterData", "Parameters", "GetParameters",
+   "CutDepth", "StartDepth", "ProfileSide", "CutDirection",
+}
 
 function main(script_path)
    saida = {}
-   anotar("SONDA DA API — Aspire 8.5 (v4: metodos)")
+   anotar("SONDA DA API — Aspire 8.5 (v5: numeros por tras das opcoes da tela)")
 
-   local ok, trabalho = pcall(VectricJob)
-   local existe = false
-   if ok and trabalho ~= nil then
-      local certo, valor = pcall(function() return trabalho.Exists end)
-      existe = certo and valor == true
-   end
-   anotar("trabalho aberto: " .. tostring(existe))
-   if not existe then
+   -- 1. os objetos novos, pra saber os campos e o padrao de fabrica
+   local ok, rampa = pcall(RampingData)
+   listar("RampingData (recem criado)", ok and rampa or nil, CAMPOS_RAMPA)
+
+   local ok2, entrada = pcall(LeadInOutData)
+   listar("LeadInOutData (recem criado)", ok2 and entrada or nil, CAMPOS_ENTRADA)
+
+   local ok3, pos = pcall(ToolpathPosData)
+   listar("ToolpathPosData (recem criado)", ok3 and pos or nil, CAMPOS_POS)
+
+   -- 2. o percurso que o usuario montou na mao: a tabela de conversao
+   local certo, trabalho = pcall(VectricJob)
+   if not certo or trabalho == nil or tentar(trabalho, "Exists") ~= true then
       anotar("")
-      anotar("!!! SEM TRABALHO ABERTO — o gerenciador de percursos nao existe sem projeto.")
-      anotar("!!! Abra um trabalho novo, desenhe um retangulo, e rode de novo.")
-      MessageBox("Abra um trabalho novo no Aspire (com um retangulo desenhado)\n" ..
-                 "e rode a sonda de novo.\n\nSem projeto aberto nao da pra ver\n" ..
-                 "o gerenciador de percursos.")
-      local arquivo = io.open(DESTINO, "w")
-      if arquivo then arquivo:write(table.concat(saida, "\n")); arquivo:close() end
-      return false
+      anotar("!!! SEM TRABALHO ABERTO.")
+      MessageBox("Abra o trabalho com o percurso de perfil ja criado\ne rode de novo.")
+   else
+      local gerenciador = ToolpathManager()
+      local quantos = tentar(gerenciador, "Count") or 0
+      anotar("")
+      anotar("=== PERCURSOS NO TRABALHO: " .. tostring(quantos) .. " ===")
+      if quantos == 0 then
+         anotar("  Nenhum. Crie um percurso de perfil na mao (Fora/Direita, Subida,")
+         anotar("  rampa suave 10 mm) e rode a sonda de novo — e dele que eu tiro")
+         anotar("  os numeros que a API usa.")
+         MessageBox("Nao ha percurso criado neste trabalho.\n\n" ..
+                    "Crie o percurso de perfil na mao, do jeito que voce faz,\n" ..
+                    "e rode a sonda de novo.")
+      else
+         local posicao = gerenciador:GetHeadPosition()
+         local indice = 0
+         while posicao ~= nil do
+            local percurso
+            percurso, posicao = gerenciador:GetNext(posicao)
+            if percurso == nil then break end
+            indice = indice + 1
+            listar("percurso #" .. indice, percurso, CAMPOS_PERCURSO)
+
+            local ferramenta = tentar(percurso, "Tool")
+            listar("percurso #" .. indice .. " . Tool", ferramenta, {
+               "Name", "ToolNumber", "ToolDia", "Stepdown", "Stepover",
+               "ToolTypeText", "Notes", "FeedRate", "PlungeRate", "SpindleSpeed",
+               "InMM", "Units",
+            })
+         end
+      end
    end
-
-   investigar("VectricJob (trabalho aberto)", trabalho)
-
-   local certo, gerenciador = pcall(function() return trabalho.ToolpathManager end)
-   investigar("job.ToolpathManager", certo and gerenciador or nil)
-
-   local ok2, gerenciador2 = pcall(ToolpathManager)
-   investigar("ToolpathManager() solto", ok2 and gerenciador2 or nil)
-
-   local ok3, banco = pcall(ToolDatabase)
-   investigar("ToolDatabase()", ok3 and banco or nil)
-
-   local ok4, salvador = pcall(ToolpathSaver)
-   investigar("ToolpathSaver()", ok4 and salvador or nil)
-
-   local ok5, camadas = pcall(function() return trabalho.LayerManager end)
-   investigar("job.LayerManager", ok5 and camadas or nil)
 
    local arquivo, erro = io.open(DESTINO, "w")
    if arquivo == nil then
@@ -132,7 +139,6 @@ function main(script_path)
    end
    arquivo:write(table.concat(saida, "\n"))
    arquivo:close()
-
-   MessageBox("Sonda v4 concluida.\n\n" .. #saida .. " linhas em:\n" .. DESTINO)
+   MessageBox("Sonda v5 concluida.\n\n" .. #saida .. " linhas em:\n" .. DESTINO)
    return true
 end
