@@ -32,7 +32,7 @@
 --
 -- Rode em: Gadgets -> Corte Automatico
 
-local DESTINO = "C:\\Users\\flavi\\Desktop\\etiquetas_python\\aspire\\corte_resultado.txt"
+local DESTINO = "C:/Users/flavi/Desktop/etiquetas_python/aspire/corte_resultado.txt"
 
 -- ======================= O QUE VOCE ESCOLHE =======================
 -- Material e espessura da chapa desta producao. O resto — fresa,
@@ -42,7 +42,7 @@ local MATERIAL = "PVC 10"
 --         ACRILICO 1 2 3 4 5 6 7 8 10
 -- ==================================================================
 
-local TABELA = "C:\Users\flavi\Desktop\etiquetas_python\aspire\parametros_corte.lua"
+local TABELA = "C:/Users/flavi/Desktop/etiquetas_python/aspire/parametros_corte.lua"
 local TIPO_TOPO_RASO = 1
 
 local LADO_FORA = 0
