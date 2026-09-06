@@ -85,9 +85,13 @@ ORDEM_DE_USINAGEM = (
 # do caminho. Poupa a ponta da ferramenta e o motor.
 RAMPA_SUAVE_MM = 10.0
 
-# Quanto passar além da chapa pra garantir corte passante. É 1 mm em
-# tudo, MENOS onde a linha do material disser outra coisa — ver
-# 'folga_mm' em PARAMETROS.
+# Quanto passar além da chapa pra garantir corte passante — 1 mm em tudo.
+#
+# Houve uma exceção por algumas horas em 06/09/2026: PVC de 3 mm com
+# folga de 0,5, porque 1 mm numa chapa de 3 é um terço da espessura. O
+# Flávio cancelou o material antes de usar, então o mecanismo saiu junto:
+# campo configurável sem ninguém configurando é peso morto. Se o PVC de
+# 3 mm voltar, a razão da folga menor está escrita aqui.
 FOLGA_PASSANTE_MM = 1.0
 
 # (material, espessura em mm) -> ferramenta e passada.
@@ -115,9 +119,6 @@ _FRESA_4 = {"grupo": "Fresa 4 mm", "ferramenta": "Topo Raso (4 mm)", "diametro_m
 _FRESA_6 = {"grupo": "Fresa 6 mm", "ferramenta": "Topo Raso (6 mm)", "diametro_mm": 6.0}
 
 PARAMETROS = {
-    # Única exceção à folga de 1 mm: chapa fina desce só 0,5 além, e a
-    # passada de 3,5 cobre os 3,5 de uma vez.
-    ("PVC", 3):  dict(_FRESA_4, passada_mm=3.5, folga_mm=0.5),
     ("PVC", 10): dict(_FRESA_4, passada_mm=11.0),
     ("PVC", 20): dict(_FRESA_4, passada_mm=11.0),
     ("MDF", 6):  dict(_FRESA_6, passada_mm=7.0),
@@ -132,27 +133,19 @@ PARAMETROS = {
 }
 
 
-def profundidade_de_corte(espessura_mm, folga_mm=None):
-    """
-    Até onde a fresa desce: a chapa mais a folga de corte passante.
-
-    A folga é 1 mm em quase tudo. A exceção é o PVC de 3 mm, que usa 0,5 —
-    decisão do Flávio (06/09/2026), e ela tem lógica: 1 mm numa chapa de 3
-    é um terço da espessura, e a fresa entraria fundo demais na mesa de
-    sacrifício proporcionalmente.
-    """
-    folga = FOLGA_PASSANTE_MM if folga_mm is None else float(folga_mm)
-    return float(espessura_mm) + folga
+def profundidade_de_corte(espessura_mm):
+    """Até onde a fresa desce: a chapa mais 1 mm, pra cortar passante."""
+    return float(espessura_mm) + FOLGA_PASSANTE_MM
 
 
-def quantidade_de_passes(espessura_mm, passada_mm, folga_mm=None):
+def quantidade_de_passes(espessura_mm, passada_mm):
     """
     Quantas descidas a fresa faz. Não se cadastra: se cadastrasse, um dia
     alguém mudaria a passada e esqueceria de mudar o número de passes.
     """
     if passada_mm <= 0:
         raise ValueError("passada tem que ser maior que zero")
-    return max(1, math.ceil(profundidade_de_corte(espessura_mm, folga_mm) / passada_mm))
+    return max(1, math.ceil(profundidade_de_corte(espessura_mm) / passada_mm))
 
 
 def buscar(material, espessura_mm):
@@ -182,8 +175,8 @@ def buscar(material, espessura_mm):
         "ataque_mm_min": ATAQUE_MM_MIN,
         "rotacao_rpm": ROTACAO_RPM,
         "unidade": UNIDADE,
-        "profundidade_mm": profundidade_de_corte(espessura, base.get("folga_mm")),
-        "passes": quantidade_de_passes(espessura, base["passada_mm"], base.get("folga_mm")),
+        "profundidade_mm": profundidade_de_corte(espessura),
+        "passes": quantidade_de_passes(espessura, base["passada_mm"]),
         "direcao": DIRECAO_CONVENCIONAL,
         "ordem": ORDEM_DE_USINAGEM,
         "rampa_mm": RAMPA_SUAVE_MM,
@@ -250,7 +243,7 @@ NUCLEO = "C:/Users/flavi/Desktop/etiquetas_python/aspire/corte_nucleo.lua"
 # cadastro: quando aparecer um trabalho nessas espessuras, é só acrescentar
 # aqui e regerar, sem precisar descobrir parâmetro de novo.
 MENU_FOCO = (
-    ("PVC", 3), ("PVC", 10), ("PVC", 20),
+    ("PVC", 10), ("PVC", 20),
     ("MDF", 6), ("MDF", 9), ("MDF", 15),
     ("ACRILICO", 4), ("ACRILICO", 6), ("ACRILICO", 8),
 )

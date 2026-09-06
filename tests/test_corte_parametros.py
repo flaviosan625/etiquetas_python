@@ -69,6 +69,7 @@ def test_material_nao_cadastrado_devolve_nada_em_vez_de_chutar():
     tem que tratar a ausencia.
     """
     assert buscar("PS", 3) is None, "PS existe no estoque e ainda nao tem parametro"
+    assert buscar("PVC", 3) is None, "cancelado pelo usuario em 06/09/2026"
     assert buscar("ACRILICO", 12) is None, "12mm nao existe no estoque"
     assert buscar("MDF", 15.0) is not None, "aceita float, arredonda pra espessura inteira"
 
@@ -88,7 +89,7 @@ def test_lista_o_que_esta_cadastrado():
     assert ("MDF", 6) in combos
     assert ("PVC", 20) in combos
     assert ("ACRILICO", 10) in combos
-    assert len(combos) == 15
+    assert len(combos) == 14
 
 
 def test_letra_corta_dentro_por_dentro_e_fora_por_fora():
@@ -216,7 +217,7 @@ def test_gera_um_atalho_de_menu_por_material(tmp_path):
     from corte_parametros import gerar_gadgets
 
     gerados, faltando = gerar_gadgets(tmp_path, instalar=True)
-    assert len(gerados) == 9, "as nove combinacoes que a casa corta"
+    assert len(gerados) == 8, "as oito combinacoes que a casa corta"
     assert faltando == [], "nao falta mais nenhuma do foco"
 
     nomes = {d.name for _, d, _ in gerados}
@@ -259,29 +260,10 @@ def test_menu_e_menor_que_o_cadastro_de_proposito():
     assert buscar("ACRILICO", 5) is not None, "fora do menu, mas o cadastro sabe"
 
 
-def test_pvc_de_3mm_e_a_unica_excecao_a_folga_de_1mm():
+def test_todo_material_desce_exatamente_1mm_alem_da_chapa():
     """
-    Decisao do Flavio (06/09/2026): "so nesse caso do pvc de 3mm, o resto
-    mesma regra". Ele desce 3,5 no total — meio milimetro alem da chapa,
-    nao um.
-
-    Faz sentido: 1 mm numa chapa de 3 e um terco da espessura, e a fresa
-    entraria fundo demais na mesa de sacrificio proporcionalmente. E com
-    passada de 3,5 sai de uma vez, seguindo o padrao das outras chapas
-    que ele quis em passe unico.
-    """
-    p = buscar("PVC", 3)
-    assert p["profundidade_mm"] == 3.5
-    assert p["passes"] == 1
-
-
-def test_a_excecao_nao_vazou_pros_outros_materiais():
-    """
-    Excecao que contamina a regra e pior que nao ter excecao. Todo o resto
-    continua descendo exatamente 1 mm alem da chapa.
+    Sem excecao. Houve uma por algumas horas (PVC 3mm com 0,5), cancelada
+    antes de ir pra maquina — ver o comentario de FOLGA_PASSANTE_MM.
     """
     for material, espessura in combinacoes_cadastradas():
-        if (material, espessura) == ("PVC", 3):
-            continue
-        p = buscar(material, espessura)
-        assert p["profundidade_mm"] == espessura + 1.0, f"{material} {espessura}mm"
+        assert buscar(material, espessura)["profundidade_mm"] == espessura + 1.0
