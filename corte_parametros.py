@@ -24,6 +24,7 @@ ferramentas do Aspire**, que é onde a Vectric espera que morem. Aqui só
 fica o que aponta pra lá: o grupo e o nome da ferramenta.
 """
 import math
+import re
 import pathlib
 
 # Como a peça é usinada em relação à linha do desenho. Confirmado na
@@ -296,3 +297,52 @@ def gerar_gadgets(pasta=None, instalar=False, apenas=None):
             destino.write_text(conteudo, encoding="ascii")
         gerados.append((chave, destino, conteudo))
     return gerados, faltando
+
+
+def material_e_espessura(nome_arquivo, config=None):
+    """
+    Descobre material e espessura pelo NOME do arquivo, do jeito que o
+    resto do sistema já faz.
+
+    Devolve (material, espessura) ou None. Nunca chuta: se o nome não
+    disser a espessura, ou se a combinação não estiver cadastrada, é None
+    e quem chamou decide o que fazer.
+
+    A espessura não sai de qualquer "NNmm" do nome, e sim do cruzamento
+    com o que está cadastrado pra aquele material. Sem isso, um nome como
+    "PVC 10MM ... 1500MM de largura" daria espessura 1500.
+    """
+    import json
+
+    import dimensoes
+
+    if config is None:
+        caminho = pathlib.Path(__file__).parent / "config.json"
+        config = json.loads(caminho.read_text(encoding="utf-8"))
+
+    nome = str(nome_arquivo).upper()
+    material, _ = dimensoes.identificar_categoria(
+        nome, config["materiais"], config.get("sinonimos_categoria", {}))
+    if material is None:
+        return None
+
+    conhecidas = {e for m, e in PARAMETROS if m == material}
+    achadas = [int(n) for n in re.findall(r"(\d{1,3})\s*MM", nome)]
+    candidatas = [e for e in achadas if e in conhecidas]
+    if not candidatas:
+        return None
+    return (material, candidatas[0])
+
+
+def atalho_do_menu(nome_arquivo, config=None):
+    """
+    Qual entrada do menu Gadgets usar pra este arquivo — ou None.
+
+    Existe pra tirar a escolha do material da cabeça de quem opera. Clicar
+    no atalho errado corta com a passada errada, e isso não dá erro: dá
+    peça estragada.
+    """
+    achado = material_e_espessura(nome_arquivo, config)
+    if achado is None or achado not in MENU_FOCO:
+        return None
+    return f"Corte Automatico {achado[0]} {achado[1]}"

@@ -397,6 +397,17 @@ def converter(caminho_pdf, caminho_dxf=None, tolerancia_mm=TOLERANCIA_MM):
     relatorio["dxf"] = str(destino)
     relatorio["internos"] = camadas.count(CAMADA_INTERNO)
     relatorio["externos"] = camadas.count(CAMADA_EXTERNO)
+
+    # Qual entrada do menu do Aspire usar. Sai do NOME do arquivo, que já
+    # diz o material e a espessura — mesma fonte que o resto do sistema
+    # usa. Vem None quando o nome não diz, e aí quem opera decide: melhor
+    # não saber do que clicar no atalho errado, que corta com a passada
+    # errada sem dar erro nenhum.
+    try:
+        from corte_parametros import atalho_do_menu
+        relatorio["atalho"] = atalho_do_menu(caminho_pdf.name)
+    except Exception:
+        relatorio["atalho"] = None
     return relatorio
 
 

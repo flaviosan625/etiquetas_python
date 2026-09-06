@@ -267,3 +267,46 @@ def test_todo_material_desce_exatamente_1mm_alem_da_chapa():
     """
     for material, espessura in combinacoes_cadastradas():
         assert buscar(material, espessura)["profundidade_mm"] == espessura + 1.0
+
+
+def test_le_material_e_espessura_do_nome_do_arquivo():
+    """
+    Tira a escolha do material da cabeca de quem opera. Clicar no atalho
+    errado corta com a passada errada, e isso NAO da erro: da peca
+    estragada.
+    """
+    from corte_parametros import material_e_espessura
+
+    assert material_e_espessura("1UN PVC 10MM BRANCO + SANCA 1,21x0,22M.pdf") == ("PVC", 10)
+    assert material_e_espessura("2UN MDF 15MM RECORTE CONTORNO 99X90CM.pdf") == ("MDF", 15)
+    assert material_e_espessura("4UN ACRILICO 4MM CRISTAL RECORTE.pdf") == ("ACRILICO", 4)
+
+
+def test_espessura_sai_do_cadastro_nao_de_qualquer_numero_com_mm():
+    """
+    Armadilha real: "PVC 20MM ... 1500MM de largura" tem dois numeros
+    seguidos de MM. So vale o que existe como espessura daquele material —
+    senao a peca sairia com 1500mm de profundidade programada.
+    """
+    from corte_parametros import material_e_espessura
+
+    assert material_e_espessura("1UN PVC 20MM RECORTE 1500MM de largura.pdf") == ("PVC", 20)
+
+
+def test_nome_sem_espessura_devolve_nada():
+    """
+    "ACRILICO CRISTAL" sem milimetro nao diz a espessura. Chutar aqui e
+    escolher a passada errada.
+    """
+    from corte_parametros import atalho_do_menu, material_e_espessura
+
+    assert material_e_espessura("2UN LOGO EM ACRILICO CRISTAL 0.95X0.17M.pdf") is None
+    assert atalho_do_menu("2UN LOGO EM ACRILICO CRISTAL 0.95X0.17M.pdf") is None
+
+
+def test_atalho_so_existe_pro_que_esta_no_menu():
+    """Acrilico de 5mm esta cadastrado mas fora do menu: nao ha o que clicar."""
+    from corte_parametros import atalho_do_menu
+
+    assert atalho_do_menu("1UN ACRILICO 6MM RECORTE.pdf") == "Corte Automatico ACRILICO 6"
+    assert atalho_do_menu("1UN ACRILICO 5MM RECORTE.pdf") is None
