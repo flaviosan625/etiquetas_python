@@ -88,3 +88,26 @@ def test_lista_o_que_esta_cadastrado():
     assert ("MDF", 6) in combos
     assert ("PVC", 20) in combos
     assert len(combos) == 5
+
+
+def test_letra_corta_dentro_por_dentro_e_fora_por_fora():
+    """
+    Regra do usuario, literal: "dentro por dentro e fora por fora".
+    O buraco do 'O' usinado por fora sai maior que o desenho; o contorno
+    da letra usinado por dentro sai menor.
+    """
+    from corte_parametros import LADO_DENTRO, LADO_FORA
+
+    ordem = buscar("MDF", 15)["ordem"]
+    assert [e["lado"] for e in ordem] == [LADO_DENTRO, LADO_FORA]
+
+
+def test_o_interno_vem_primeiro_e_isso_nao_e_detalhe():
+    """
+    Assim que o contorno externo fecha, a peca solta da chapa e comeca a
+    se mexer. Furo feito depois disso sai torto, quando nao arranca a
+    peca. A ordem e regra de producao, nao preferencia.
+    """
+    ordem = buscar("PVC", 10)["ordem"]
+    assert ordem[0]["camada"] == "CORTE INTERNO"
+    assert ordem[1]["camada"] == "CORTE EXTERNO"

@@ -28,7 +28,26 @@ import math
 # Como a peça é usinada em relação à linha do desenho. Confirmado no
 # print da tela do Flávio (06/09/2026): "Fora / Direita", "Subida".
 LADO_FORA = "fora"
+LADO_DENTRO = "dentro"
 DIRECAO_SUBIDA = "subida"       # climb
+
+# A ordem de usinagem, e ela não é detalhe: é o que impede a peça de se
+# soltar antes da hora.
+#
+# Regra do usuário (2026-09-06), literal: "dentro por dentro e fora por
+# fora". Corte de letra tem duas famílias de contorno e cada uma quer um
+# lado diferente:
+#   - o buraco do 'O' se usina POR DENTRO da linha, senão o furo sai
+#     maior que o desenho
+#   - o contorno da letra se usina POR FORA, senão a letra sai menor
+#
+# E o INTERNO vem PRIMEIRO. Assim que o contorno externo fecha, a peça
+# solta da chapa e passa a se mexer — furo feito depois disso sai torto,
+# quando não arranca a peça.
+ORDEM_DE_USINAGEM = (
+    {"camada": "CORTE INTERNO", "lado": LADO_DENTRO},
+    {"camada": "CORTE EXTERNO", "lado": LADO_FORA},
+)
 
 # Rampa de entrada: em vez de furar reto, a fresa entra descendo ao longo
 # do caminho. Poupa a ponta da ferramenta e o motor.
@@ -88,8 +107,8 @@ def buscar(material, espessura_mm):
         "passada_mm": base["passada_mm"],
         "profundidade_mm": profundidade_de_corte(espessura),
         "passes": quantidade_de_passes(espessura, base["passada_mm"]),
-        "lado": LADO_FORA,
         "direcao": DIRECAO_SUBIDA,
+        "ordem": ORDEM_DE_USINAGEM,
         "rampa_mm": RAMPA_SUAVE_MM,
     }
 

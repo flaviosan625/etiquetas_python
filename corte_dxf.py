@@ -248,13 +248,83 @@ def extrair_contornos(caminho_pdf, tolerancia_mm=TOLERANCIA_MM):
     return saida, relatorio
 
 
+CAMADA_EXTERNO = "CORTE EXTERNO"
+CAMADA_INTERNO = "CORTE INTERNO"
+
+
+def _ponto_dentro(ponto, poligono):
+    """
+    Lançamento de raio: conta quantas vezes um raio horizontal saindo do
+    ponto cruza o polígono. Ímpar = dentro.
+    """
+    x, y = ponto
+    dentro = False
+    n = len(poligono)
+    j = n - 1
+    for i in range(n):
+        xi, yi = poligono[i]
+        xj, yj = poligono[j]
+        if (yi > y) != (yj > y):
+            corte = (xj - xi) * (y - yi) / (yj - yi) + xi
+            if x < corte:
+                dentro = not dentro
+        j = i
+    return dentro
+
+
+def _caixa(poli):
+    xs = [p[0] for p in poli]
+    ys = [p[1] for p in poli]
+    return min(xs), min(ys), max(xs), max(ys)
+
+
+def classificar_aninhamento(polilinhas):
+    """
+    Diz, pra cada contorno, se ele é externo ou interno.
+
+    Regra do usuário (2026-09-06), que é como se corta letra: "dentro por
+    dentro e fora por fora". O buraco do 'O' tem que ser usinado POR
+    DENTRO da linha, senão o furo sai maior que o desenho; o contorno da
+    letra tem que ser usinado POR FORA, senão a letra sai menor.
+
+    A classificação é por aninhamento: um contorno dentro de um número
+    ÍMPAR de outros é interno. Cobre naturalmente o caso do 'B', que tem
+    dois furos, e o de uma ilha dentro do furo.
+
+    A caixa envolvente é conferida primeiro porque é comparação de quatro
+    números — só quando ela passa é que vale rodar o teste de ponto, que
+    é caro.
+    """
+    caixas = [_caixa(p) for p in polilinhas]
+    niveis = []
+    for i, poli in enumerate(polilinhas):
+        ponto = poli[0]
+        x0, y0, x1, y1 = caixas[i]
+        nivel = 0
+        for j, outro in enumerate(polilinhas):
+            if i == j or len(outro) < 3:
+                continue
+            ox0, oy0, ox1, oy1 = caixas[j]
+            if not (ox0 <= x0 and oy0 <= y0 and ox1 >= x1 and oy1 >= y1):
+                continue
+            if _ponto_dentro(ponto, outro):
+                nivel += 1
+        niveis.append(nivel)
+    return [CAMADA_INTERNO if n % 2 else CAMADA_EXTERNO for n in niveis]
+
+
 def _par(codigo, valor):
     return f"{codigo}\n{valor}\n"
 
 
-def escrever_dxf(polilinhas, caminho_dxf):
+def escrever_dxf(polilinhas, caminho_dxf, camadas=None):
     """
-    Grava as polilinhas como DXF R12 ASCII, camada CORTE, em milímetros.
+    Grava as polilinhas como DXF R12 ASCII, em milímetros.
+
+    'camadas' é uma lista paralela com o nome da camada de cada contorno.
+    Sem ela, tudo vai pra CORTE. Com ela, os internos e os externos ficam
+    separados — que é o que deixa o Aspire fazer dois percursos, um por
+    dentro e outro por fora (ver classificar_aninhamento).
 
     POLYLINE/VERTEX em vez de LWPOLYLINE de propósito: LWPOLYLINE é de
     1997 pra cá e o importador aqui é um Aspire 8.5. O formato antigo é
@@ -267,19 +337,20 @@ def escrever_dxf(polilinhas, caminho_dxf):
         _par(0, "ENDSEC"),
         _par(0, "SECTION"), _par(2, "ENTITIES"),
     ]
-    for poli in polilinhas:
+    for indice, poli in enumerate(polilinhas):
+        camada = camadas[indice] if camadas else NOME_CAMADA
         fechada = len(poli) > 2 and _mesmo_ponto(poli[0], poli[-1], folga=1e-4)
         pontos = poli[:-1] if fechada else poli
         partes += [
-            _par(0, "POLYLINE"), _par(8, NOME_CAMADA),
+            _par(0, "POLYLINE"), _par(8, camada),
             _par(66, 1), _par(70, 1 if fechada else 0),
         ]
         for x, y in pontos:
             partes += [
-                _par(0, "VERTEX"), _par(8, NOME_CAMADA),
+                _par(0, "VERTEX"), _par(8, camada),
                 _par(10, f"{x:.4f}"), _par(20, f"{y:.4f}"), _par(30, "0.0"),
             ]
-        partes += [_par(0, "SEQEND"), _par(8, NOME_CAMADA)]
+        partes += [_par(0, "SEQEND"), _par(8, camada)]
 
     partes += [_par(0, "ENDSEC"), _par(0, "EOF")]
     caminho_dxf.write_text("".join(partes), encoding="ascii")
@@ -321,8 +392,11 @@ def converter(caminho_pdf, caminho_dxf=None, tolerancia_mm=TOLERANCIA_MM):
         return relatorio
 
     destino = pathlib.Path(caminho_dxf) if caminho_dxf else caminho_pdf.with_suffix(".dxf")
-    escrever_dxf(polilinhas, destino)
+    camadas = classificar_aninhamento(polilinhas)
+    escrever_dxf(polilinhas, destino, camadas)
     relatorio["dxf"] = str(destino)
+    relatorio["internos"] = camadas.count(CAMADA_INTERNO)
+    relatorio["externos"] = camadas.count(CAMADA_EXTERNO)
     return relatorio
 
 

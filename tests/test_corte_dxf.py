@@ -286,3 +286,69 @@ def test_conferir_pode_converter_so_os_prontos_quando_pedido(tmp_path):
 def test_pasta_que_nao_existe_devolve_lista_vazia(tmp_path):
     from corte_dxf import conferir_pasta
     assert conferir_pasta(tmp_path / "nao existe") == []
+
+
+# ---------- dentro por dentro, fora por fora ----------
+
+def _quadrado(x0, y0, lado):
+    return [(x0, y0), (x0 + lado, y0), (x0 + lado, y0 + lado), (x0, y0 + lado), (x0, y0)]
+
+
+def test_letra_O_o_furo_e_interno_e_o_contorno_e_externo():
+    """
+    Regra do usuario: "dentro por dentro e fora por fora". O furo do 'O'
+    usinado por fora sai maior que o desenho.
+    """
+    from corte_dxf import CAMADA_EXTERNO, CAMADA_INTERNO, classificar_aninhamento
+
+    fora = _quadrado(0, 0, 100)
+    furo = _quadrado(30, 30, 40)
+    assert classificar_aninhamento([fora, furo]) == [CAMADA_EXTERNO, CAMADA_INTERNO]
+    # a ordem em que chegam nao pode mudar a resposta
+    assert classificar_aninhamento([furo, fora]) == [CAMADA_INTERNO, CAMADA_EXTERNO]
+
+
+def test_letra_B_com_dois_furos():
+    from corte_dxf import CAMADA_EXTERNO, CAMADA_INTERNO, classificar_aninhamento
+
+    camadas = classificar_aninhamento([
+        _quadrado(0, 0, 100), _quadrado(20, 10, 25), _quadrado(20, 60, 25),
+    ])
+    assert camadas == [CAMADA_EXTERNO, CAMADA_INTERNO, CAMADA_INTERNO]
+
+
+def test_ilha_dentro_do_furo_volta_a_ser_externa():
+    """
+    Tres niveis: contorno, furo, e uma ilha dentro do furo (o miolo do
+    'e', por exemplo). Nivel par volta a ser externo — por isso a conta e
+    por aninhamento e nao por "esta dentro de alguem".
+    """
+    from corte_dxf import CAMADA_EXTERNO, CAMADA_INTERNO, classificar_aninhamento
+
+    camadas = classificar_aninhamento([
+        _quadrado(0, 0, 100), _quadrado(20, 20, 60), _quadrado(40, 40, 20),
+    ])
+    assert camadas == [CAMADA_EXTERNO, CAMADA_INTERNO, CAMADA_EXTERNO]
+
+
+def test_pecas_lado_a_lado_sao_todas_externas():
+    """Duas letras separadas nao se contem — nenhuma vira interna."""
+    from corte_dxf import CAMADA_EXTERNO, classificar_aninhamento
+
+    camadas = classificar_aninhamento([_quadrado(0, 0, 50), _quadrado(200, 0, 50)])
+    assert camadas == [CAMADA_EXTERNO, CAMADA_EXTERNO]
+
+
+def test_dxf_sai_com_as_duas_camadas_separadas(tmp_path):
+    """
+    Sao as camadas que deixam o Aspire fazer DOIS percursos, um por
+    dentro e outro por fora. Tudo numa camada so obrigaria a separar na
+    mao do outro lado.
+    """
+    from corte_dxf import CAMADA_EXTERNO, CAMADA_INTERNO, classificar_aninhamento
+
+    polis = [_quadrado(0, 0, 100), _quadrado(30, 30, 40)]
+    destino = escrever_dxf(polis, tmp_path / "letra.dxf", classificar_aninhamento(polis))
+    texto = destino.read_text(encoding="ascii")
+
+    assert CAMADA_EXTERNO in texto and CAMADA_INTERNO in texto
