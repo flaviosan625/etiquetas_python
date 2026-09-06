@@ -1,0 +1,58 @@
+SONDA DA API — Aspire 8.5 (v4: metodos)
+trabalho aberto: true
+
+=== VectricJob (trabalho aberto) ===
+  Exists                     boolean = true
+  Name                       string = 
+  JobParameters              userdata = utParameterList:
+  Selection                  userdata = SelectionList: 0 selected objects
+  LayerManager               userdata = CadLayerManager: 2 layers)
+  Refresh2DView()
+        No matching overload found, candidates:
+        bool Refresh2DView(VectricJob&)
+
+=== job.ToolpathManager ===
+  nil — nao deu pra obter
+
+=== ToolpathManager() solto ===
+  CreateProfilingToolpath()
+        No matching overload found, candidates:
+        luaUUID* CreateProfilingToolpath(ToolpathManager&,char const*,Tool*,ProfileParameterData*,RampingData*,LeadInOutData*,ToolpathPosData_Base*,GeometrySelector*,bool,bool)
+  CreateDrillingToolpath()
+        No matching overload found, candidates:
+        luaUUID* CreateDrillingToolpath(ToolpathManager&,char const*,Tool*,DrillParameterData*,ToolpathPosData_Base*,GeometrySelector*,bool,bool)
+  Count                      number = 0
+  GetHeadPosition()
+        No matching overload found, candidates:
+        POSITION* GetHeadPosition(ToolpathManager const&)
+  GetNext()
+        No matching overload found, candidates:
+        Toolpath* GetNext(ToolpathManager const&,POSITION*&)
+  DeleteToolpath()
+        No matching overload found, candidates:
+        bool DeleteToolpath(ToolpathManager&,Toolpath*)
+
+=== ToolDatabase() ===
+  GetTool()
+        No matching overload found, candidates:
+        Tool* GetTool(ToolDatabase const&,char const*,char const*)
+
+=== ToolpathSaver() ===
+  AddToolpath()
+        No matching overload found, candidates:
+        bool AddToolpath(ToolpathSaver&,Toolpath const*)
+  SaveToolpaths()
+        No matching overload found, candidates:
+        bool SaveToolpaths(ToolpathSaver&,PostPInfo const*,char const*,bool)
+
+=== job.LayerManager ===
+  Count                      number = 2
+  GetHeadPosition()
+        No matching overload found, candidates:
+        POSITION* GetHeadPosition(CadLayerManager const&)
+  GetNext()
+        No matching overload found, candidates:
+        CadLayer* GetNext(CadLayerManager const&,POSITION*&)
+  GetLayerWithName()
+        No matching overload found, candidates:
+        CadLayer* GetLayerWithName(CadLayerManager&,char const*)
