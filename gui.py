@@ -35,8 +35,8 @@ from documento_enviados import (
 )
 from envio_impressao import (
     cabe_na_maquina, conferir as conferir_envio, enviar as enviar_para_maquinas,
-    estado_do_rip, fila_parada, listar as listar_para_envio, pasta_de_producao_do_arquivo,
-    prever_giro, raiz_do_cliente, subtotais_por_material,
+    estado_do_rip, fila_parada, listar as listar_para_envio, prever_giro, raiz_do_cliente,
+    subtotais_por_material,
 )
 from estado_pedido import estado_existe, localizar_pastas_cliente
 from estoque import (
@@ -2134,21 +2134,15 @@ class JanelaEnviarImpressao(tk.Toplevel):
 
     def _escolher_pasta(self):
         inicial = self.config_dados.get("ultima_pasta_envio") or str(PASTA_EVENTOS)
-        # Pede um ARQUIVO, não a pasta. O seletor de pasta do Windows só
-        # desenha a árvore de pastas — escolhe-se às cegas e só se
-        # descobre o conteúdo depois de abrir, voltar e tentar de novo. O
-        # seletor de arquivo é o próprio Explorer: miniatura, detalhes,
-        # painel de visualização, tudo o que o usuário já conhece. Basta
-        # clicar em qualquer arquivo — o que vale é a pasta dele.
-        escolhido = filedialog.askopenfilename(
-            title="Abra a pasta e clique em QUALQUER arquivo dela — vou usar a pasta inteira",
+        escolhida = filedialog.askdirectory(
+            title="Escolha a pasta de produção (ex: EVENTOS\\CLIENTE\\PRODUCAO 03_09)",
             initialdir=inicial, parent=self,
         )
-        if not escolhido:
+        if not escolhida:
             if self.pasta is None:
                 self.destroy()
             return
-        self.pasta = pasta_de_producao_do_arquivo(escolhido)
+        self.pasta = pathlib.Path(escolhida)
         self.config_dados["ultima_pasta_envio"] = str(self.pasta)
         salvar_config(self.config_dados)
         self._recarregar()

@@ -574,36 +574,3 @@ def test_cada_estado_diz_o_que_significa_e_nao_so_a_leitura(tmp_path):
 
     (tmp_path / "_sinal_de_vida.json").unlink()
     assert "não sei" in estado_do_rip(pasta_fila=str(tmp_path), agora=agora)["texto"]
-
-
-def test_pasta_do_arquivo_escolhido_e_a_pasta_de_producao(tmp_path):
-    """
-    A tela pede um arquivo (o seletor de pasta do Windows nao mostra o
-    conteudo) e fica com a pasta dele.
-    """
-    from envio_impressao import pasta_de_producao_do_arquivo
-
-    producao = tmp_path / "PRODUCAO 05_09"
-    producao.mkdir()
-    arte = producao / "1UN LONA 2.00X1.00M_teste.pdf"
-    arte.touch()
-    assert pasta_de_producao_do_arquivo(arte) == producao
-    assert pasta_de_producao_do_arquivo(str(arte)) == producao
-
-
-def test_clicar_num_arquivo_dentro_de_prontos_sobe_um_nivel(tmp_path):
-    """
-    'Prontos', 'Enviados' e 'CORTE' a varredura nunca abre. Se a escolha
-    caisse numa delas, a tela abriria vazia e pareceria que a pasta nao
-    tem nada — quando tem tudo, um andar acima.
-    """
-    from envio_impressao import NOME_PASTA_ENVIADOS, pasta_de_producao_do_arquivo
-    from producao import NOME_SUBPASTA_PRONTOS
-
-    producao = tmp_path / "PRODUCAO 05_09"
-    for nome in (NOME_SUBPASTA_PRONTOS, NOME_PASTA_ENVIADOS):
-        sub = producao / nome
-        sub.mkdir(parents=True)
-        arquivo = sub / "algo.pdf"
-        arquivo.touch()
-        assert pasta_de_producao_do_arquivo(arquivo) == producao

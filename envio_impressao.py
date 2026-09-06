@@ -266,22 +266,6 @@ def _arquivos_da_pasta(pasta):
     return achados
 
 
-def pasta_de_producao_do_arquivo(caminho):
-    """
-    A pasta de produção a que este arquivo pertence.
-
-    A tela de envio pede um ARQUIVO em vez de uma pasta (o seletor de
-    pasta do Windows não mostra o conteúdo; o de arquivo mostra, com
-    miniatura). Normalmente é só a pasta do arquivo — mas se ele estiver
-    dentro de 'Prontos', 'Enviados' ou 'CORTE', essas a varredura ignora:
-    devolver uma delas daria lista vazia. Nesse caso sobe um nível.
-    """
-    pasta = pathlib.Path(caminho).parent
-    if pasta.name.upper() in _PASTAS_IGNORADAS and pasta.parent != pasta:
-        return pasta.parent
-    return pasta
-
-
 def listar(pasta_escolhida, config, envios_anteriores=None, maquinas=None):
     """
     Lista o que dá pra mandar desta pasta, já com máquina sugerida,
