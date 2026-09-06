@@ -574,3 +574,64 @@ def test_cada_estado_diz_o_que_significa_e_nao_so_a_leitura(tmp_path):
 
     (tmp_path / "_sinal_de_vida.json").unlink()
     assert "não sei" in estado_do_rip(pasta_fila=str(tmp_path), agora=agora)["texto"]
+
+
+# --- previa da pasta, na hora de escolher ---
+
+
+def _pasta_com(tmp_path, *nomes):
+    pasta = tmp_path / "PRODUCAO 05_09"
+    pasta.mkdir(exist_ok=True)
+    for nome in nomes:
+        (pasta / nome).write_bytes(b"x")
+    return pasta
+
+
+def test_contar_artes_ve_subpasta_e_ignora_o_que_nao_e_arte(tmp_path):
+    from envio_impressao import contar_artes
+
+    pasta = _pasta_com(tmp_path, "1 UN LONA 1x1.pdf", "orcamento.xlsx", "leiame.txt")
+    sub = pasta / "enchanted_land"
+    sub.mkdir()
+    (sub / "2 UN ADESIVO 2x1.pdf").write_bytes(b"x")
+
+    assert contar_artes(pasta) == 2
+
+
+def test_contar_artes_nao_conta_prontos_nem_enviados(tmp_path):
+    from envio_impressao import contar_artes
+    from producao import NOME_SUBPASTA_PRONTOS
+
+    pasta = _pasta_com(tmp_path, "1 UN LONA 1x1.pdf")
+    for nome in (NOME_SUBPASTA_PRONTOS, "Enviados"):
+        guardada = pasta / nome
+        guardada.mkdir()
+        (guardada / "ja_foi.pdf").write_bytes(b"x")
+
+    assert contar_artes(pasta) == 1
+
+
+def test_outros_arquivos_mostra_o_que_nao_da_pra_enviar(tmp_path):
+    """
+    Some da lista de envio, mas quem confere a pasta precisa saber que
+    esta la — senao fica procurando um arquivo que esta bem ali.
+    """
+    from envio_impressao import outros_arquivos
+
+    pasta = _pasta_com(tmp_path, "1 UN LONA 1x1.pdf", "orcamento cliente.xlsx", "referencia.zip")
+    nomes = sorted(p.name for p in outros_arquivos(pasta))
+
+    assert nomes == ["orcamento cliente.xlsx", "referencia.zip"]
+
+
+def test_contar_artes_de_pasta_que_nao_existe_e_zero(tmp_path):
+    from envio_impressao import contar_artes, outros_arquivos
+    assert contar_artes(tmp_path / "nao_existe") == 0
+    assert outros_arquivos(tmp_path / "nao_existe") == []
+
+
+def test_data_curta_e_o_mesmo_helper_de_sempre():
+    """Exportado pra tela de escolha nao virar a quarta copia disto no projeto."""
+    from envio_impressao import data_curta, _data_curta
+    assert data_curta is _data_curta
+    assert data_curta("2026-09-05T16:27:05") == "05/09 16:27"

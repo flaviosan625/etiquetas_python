@@ -34,10 +34,11 @@ from documento_enviados import (
     miniatura as gerar_miniatura, registrar as registrar_envios, regravar_pdf as regravar_documento,
 )
 from envio_impressao import (
-    cabe_na_maquina, conferir as conferir_envio, enviar as enviar_para_maquinas,
-    estado_do_rip, fila_parada, listar as listar_para_envio, prever_giro, raiz_do_cliente,
-    subtotais_por_material,
+    cabe_na_maquina, conferir as conferir_envio, contar_artes, enviar as enviar_para_maquinas,
+    data_curta, estado_do_rip, fila_parada, listar as listar_para_envio, outros_arquivos,
+    prever_giro, raiz_do_cliente, so_na_nuvem, subtotais_por_material,
 )
+from rasterlink_hotfolder import NOME_SUBPASTA_ENVIADOS
 from estado_pedido import estado_existe, localizar_pastas_cliente
 from estoque import (
     carregar_estoque, saldo_produto, registrar_movimento, desfazer_movimento,
@@ -1994,6 +1995,331 @@ class JanelaDashboard(tk.Toplevel):
             tk.Frame(barra_fundo, bg=cor_barra, height=6, width=largura).place(x=0, y=0)
 
 
+class JanelaEscolherPasta(tk.Toplevel):
+    """
+    Escolhe a pasta de produção JÁ VENDO o que tem dentro.
+
+    Existe porque o seletor de pastas do Windows só mostra pastas
+    (pedido do usuário, 2026-09-05: "não aparece a prévia dos arquivos
+    que tenho na pasta... assim já vejo o que contém lá dentro antes de
+    tudo"). Escolher às cegas custava abrir, olhar, voltar e tentar de
+    novo.
+
+    A navegação é LIVRE, não em dois níveis fixos. Rodando contra as
+    pastas de verdade apareceu, lado a lado, 'EVENTOS\\INTERLAGOS\\
+    PRODUCAO 05_09' e 'EVENTOS\\2026\\VIBRA' — cliente na raiz e cliente
+    dentro do ano. Uma coluna "cliente" e outra "pasta" só funcionaria
+    numa das duas formas.
+
+    NÃO desenha miniatura, e isso é decisão, não falta: pra fazer a
+    miniatura é preciso ABRIR o arquivo, e abrir um placeholder do
+    OneDrive faz baixar o arquivo inteiro — tem TIF de 1,83 GB nessas
+    pastas. Só de passar o olho numa pasta, o programa começaria a puxar
+    tudo. A prévia é montada só com o que o NOME já diz: material,
+    quantidade, medida, m². É de graça, e por isso é instantânea.
+
+    Devolve o caminho em self.escolhida, ou None se cancelou.
+    """
+
+    SUBIR = ".."
+
+    # Acima disso a pasta não é uma produção — é uma pasta que CONTÉM
+    # produções. Rodando contra as pastas de verdade, clicar em
+    # 'EVENTOS\\2026' montava uma prévia de 5.872 linhas e somava
+    # 1.832.820 m² de lona: número que não quer dizer nada, tela
+    # travada, e 5.205 arquivos consultados um a um à toa. Nesse caso a
+    # prévia dá só o tamanho do buraco e manda entrar numa pasta.
+    #
+    # 400 é folgado de propósito: a maior pasta de produção real aqui
+    # tem 364 arquivos, e ela precisa continuar abrindo normalmente.
+    LIMITE_PREVIA = 400
+
+    def __init__(self, mestre, config_dados, inicial=None):
+        super().__init__(mestre)
+        self.title("Escolher pasta para enviar")
+        self.geometry("1120x620")
+        self.minsize(900, 500)
+        self.configure(bg=COR_FUNDO_JANELA)
+        self.transient(mestre)
+
+        self.config_dados = config_dados
+        self.escolhida = None
+        self.aqui = None          # pasta que está sendo navegada
+        self.subpastas = []       # o que aparece na lista, na mesma ordem
+        self.alvo = None          # pasta cuja prévia está na tela
+
+        self.columnconfigure(0, weight=1)
+        self.rowconfigure(2, weight=1)
+        self._montar()
+        self._ir_para(self._pasta_de_partida(inicial))
+        self.grab_set()
+
+    # ---------- montagem ----------
+
+    def _montar(self):
+        topo = tk.Frame(self, bg=COR_FUNDO_JANELA)
+        topo.grid(row=0, column=0, sticky="ew", padx=16, pady=(14, 2))
+        tk.Label(topo, text="Escolher pasta para enviar", font=("Segoe UI", 13, "bold"),
+                 bg=COR_FUNDO_JANELA, fg=COR_TEXTO).pack(side="left")
+
+        self.var_caminho = tk.StringVar(value="")
+        tk.Label(self, textvariable=self.var_caminho, bg=COR_FUNDO_JANELA, fg=COR_TEXTO_SECUNDARIO,
+                 font=("Consolas", 9), anchor="w").grid(row=1, column=0, sticky="ew",
+                                                       padx=16, pady=(0, 8))
+
+        corpo = tk.Frame(self, bg=COR_FUNDO_JANELA)
+        corpo.grid(row=2, column=0, sticky="nsew", padx=16)
+        corpo.columnconfigure(1, weight=1)
+        corpo.rowconfigure(0, weight=1)
+
+        # --- navegação ---
+        col_nav = tk.Frame(corpo, bg=COR_FUNDO_JANELA)
+        col_nav.grid(row=0, column=0, sticky="ns", padx=(0, 12))
+        col_nav.rowconfigure(3, weight=1)
+        tk.Label(col_nav, text="PASTAS", font=("Segoe UI", 8, "bold"), bg=COR_FUNDO_JANELA,
+                 fg=COR_TEXTO_SECUNDARIO).grid(row=0, column=0, sticky="w", pady=(0, 4))
+        self.var_busca = tk.StringVar()
+        self.var_busca.trace_add("write", lambda *_: self._listar_subpastas())
+        tk.Entry(col_nav, textvariable=self.var_busca, width=32, relief="solid", bd=1,
+                 font=("Segoe UI", 9)).grid(row=1, column=0, sticky="ew", pady=(0, 4))
+        tk.Label(col_nav, text="1 clique = ver o que tem dentro    ·    2 cliques = entrar",
+                 font=("Segoe UI", 7), bg=COR_FUNDO_JANELA, fg=COR_TEXTO_SECUNDARIO).grid(
+            row=2, column=0, sticky="w", pady=(0, 4))
+        self.lista = tk.Listbox(col_nav, width=34, exportselection=False, font=("Segoe UI", 9),
+                                activestyle="none", highlightthickness=1, relief="solid", bd=1)
+        self.lista.grid(row=3, column=0, sticky="ns")
+        self.lista.bind("<<ListboxSelect>>", lambda _e: self._selecionou())
+        self.lista.bind("<Double-Button-1>", lambda _e: self._entrar())
+        self.lista.bind("<Return>", lambda _e: self._entrar())
+
+        # --- prévia ---
+        col_pre = tk.Frame(corpo, bg=COR_FUNDO_JANELA)
+        col_pre.grid(row=0, column=1, sticky="nsew")
+        col_pre.columnconfigure(0, weight=1)
+        col_pre.rowconfigure(2, weight=1)
+        tk.Label(col_pre, text="O QUE TEM DENTRO", font=("Segoe UI", 8, "bold"),
+                 bg=COR_FUNDO_JANELA, fg=COR_TEXTO_SECUNDARIO).grid(row=0, column=0, sticky="w",
+                                                                    pady=(0, 4))
+
+        self.var_resumo = tk.StringVar(value="")
+        self.rotulo_resumo = tk.Label(
+            col_pre, textvariable=self.var_resumo, bg=COR_CARTAO, fg=COR_TEXTO, relief="solid",
+            bd=1, anchor="w", padx=8, pady=5, font=("Segoe UI", 9), justify="left")
+        self.rotulo_resumo.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(0, 6))
+
+        self.tabela = ttk.Treeview(col_pre, columns=("material", "arquivo", "medida", "marca"),
+                                   show="headings", selectmode="none")
+        # larguras fixas nas pontas e só o nome esticando: com todas as
+        # colunas esticando, o m² e a situação saíam pra fora da janela
+        for coluna, titulo, largura, ancora, estica in (
+            ("material", "Material", 105, "w", False),
+            ("arquivo", "Arquivo", 300, "w", True),
+            ("medida", "m²", 80, "e", False),
+            ("marca", "Situação", 120, "w", False),
+        ):
+            self.tabela.heading(coluna, text=titulo)
+            self.tabela.column(coluna, width=largura, minwidth=largura, anchor=ancora, stretch=estica)
+        self.tabela.grid(row=2, column=0, sticky="nsew")
+        barra = ttk.Scrollbar(col_pre, orient="vertical", command=self.tabela.yview)
+        barra.grid(row=2, column=1, sticky="ns")
+        self.tabela.configure(yscrollcommand=barra.set)
+
+        self.tabela.tag_configure("ja", foreground=COR_ALERTA)
+        self.tabela.tag_configure("fora", foreground="#a0a4ab")
+
+        self.var_subtotais = tk.StringVar(value="")
+        self.rotulo_subtotais = tk.Label(
+            col_pre, textvariable=self.var_subtotais, bg=COR_FUNDO_JANELA, fg=COR_TEXTO,
+            anchor="w", justify="left", font=("Segoe UI", 9))
+        self.rotulo_subtotais.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(6, 0))
+
+        # Sem wraplength, um Label pede a largura do texto INTEIRO e
+        # estica a coluna junto — foi o que empurrou as colunas de m² e
+        # Situação pra fora da janela quando o resumo virou uma frase
+        # longa. Amarrado ao tamanho real do painel, e não a um número
+        # fixo, pra continuar certo quando a janela é redimensionada.
+        col_pre.bind("<Configure>", self._ajustar_quebra)
+
+        rodape = tk.Frame(self, bg=COR_FUNDO_JANELA)
+        rodape.grid(row=3, column=0, sticky="ew", padx=16, pady=12)
+        tk.Button(rodape, text="Outra pasta...", relief="flat", cursor="hand2",
+                  command=self._procurar_fora).pack(side="left")
+        self.bt_usar = tk.Button(rodape, text="Usar esta pasta", relief="flat", cursor="hand2",
+                                 state="disabled", command=self._usar)
+        self.bt_usar.pack(side="right")
+        tk.Button(rodape, text="Cancelar", relief="flat", cursor="hand2",
+                  command=self._cancelar).pack(side="right", padx=(0, 8))
+
+        self.protocol("WM_DELETE_WINDOW", self._cancelar)
+        self.bind("<Escape>", lambda _e: self._cancelar())
+
+    def _ajustar_quebra(self, evento):
+        largura = max(200, evento.width - 24)
+        self.rotulo_resumo.configure(wraplength=largura)
+        self.rotulo_subtotais.configure(wraplength=largura)
+
+    # ---------- navegação ----------
+
+    def _pasta_de_partida(self, inicial):
+        """Abre onde parou da última vez, mas uma acima: quase sempre a próxima escolha é a pasta irmã."""
+        if inicial:
+            caminho = pathlib.Path(inicial)
+            if caminho.is_dir() and caminho.parent.is_dir():
+                return caminho.parent
+            if caminho.is_dir():
+                return caminho
+        return PASTA_EVENTOS
+
+    def _ir_para(self, pasta):
+        self.aqui = pathlib.Path(pasta)
+        self.var_busca.set("")
+        self._listar_subpastas()
+        self._mostrar_previa(self.aqui)
+
+    def _listar_subpastas(self):
+        self.lista.delete(0, "end")
+        self.subpastas = []
+        procurado = self.var_busca.get().strip().upper()
+        self.var_caminho.set(str(self.aqui))
+
+        if self.aqui.parent != self.aqui:
+            self.lista.insert("end", f"{self.SUBIR}   (subir)")
+            self.subpastas.append(self.aqui.parent)
+
+        try:
+            filhas = sorted((p for p in self.aqui.iterdir() if p.is_dir()),
+                            key=lambda p: p.name.lower())
+        except OSError as e:
+            self.var_resumo.set(f"Não consegui abrir esta pasta: {e}")
+            return
+
+        for pasta in filhas:
+            if procurado and procurado not in pasta.name.upper():
+                continue
+            try:
+                quantos = contar_artes(pasta)
+            except OSError:
+                quantos = 0
+            self.subpastas.append(pasta)
+            self.lista.insert("end", f"{pasta.name}   ({quantos})")
+
+    def _selecionada(self):
+        selecao = self.lista.curselection()
+        return self.subpastas[selecao[0]] if selecao else None
+
+    def _selecionou(self):
+        pasta = self._selecionada()
+        if pasta is None:
+            return
+        # ".." é navegação, não escolha: continua mostrando onde se está
+        self._mostrar_previa(self.aqui if pasta == self.aqui.parent else pasta)
+
+    def _entrar(self):
+        pasta = self._selecionada()
+        if pasta is not None and pasta.is_dir():
+            self._ir_para(pasta)
+
+    # ---------- prévia ----------
+
+    def _mostrar_previa(self, pasta):
+        self.alvo = pathlib.Path(pasta)
+        self.tabela.delete(*self.tabela.get_children())
+
+        # conta primeiro (só nome e extensão, sem ler nada) pra não
+        # começar a montar uma lista de milhares de linhas
+        try:
+            quantos = contar_artes(self.alvo)
+        except OSError as e:
+            self.var_resumo.set(f"Não consegui ler esta pasta: {e}")
+            self.var_subtotais.set("")
+            self.bt_usar.configure(state="disabled")
+            return
+
+        if quantos > self.LIMITE_PREVIA:
+            self.var_resumo.set(
+                f"{self.alvo.name}: {quantos} arquivos de arte espalhados em várias pastas — "
+                f"isto aqui guarda produções, não é uma. Entre numa pasta pra ver a lista."
+            )
+            self.var_subtotais.set("")
+            self.bt_usar.configure(state="disabled")
+            return
+
+        try:
+            raiz = raiz_do_cliente(self.alvo)
+            envios = carregar_envios(raiz)["envios"] if raiz else []
+        except Exception:
+            # histórico ilegível não pode impedir de escolher a pasta;
+            # só se perde a marca de "já enviado"
+            envios = []
+
+        try:
+            itens = listar_para_envio(self.alvo, self.config_dados, envios)
+            fora = outros_arquivos(self.alvo)
+        except OSError as e:
+            self.var_resumo.set(f"Não consegui ler esta pasta: {e}")
+            self.var_subtotais.set("")
+            self.bt_usar.configure(state="disabled")
+            return
+
+        ja_enviados = 0
+        for item in itens:
+            anteriores = item.get("envios_anteriores") or []
+            marca, etiquetas = "", ()
+            if anteriores:
+                ja_enviados += 1
+                marca = f"já enviado {data_curta(anteriores[-1]['quando'])}"
+                etiquetas = ("ja",)
+            elif so_na_nuvem(item["caminho"]):
+                marca = "só na nuvem"
+            area = (f'{item["area_total_m2"]:.2f}'.replace(".", ",")
+                    if item["area_total_m2"] is not None else "—")
+            self.tabela.insert("", "end", tags=etiquetas, values=(
+                item["categoria"] or "SEM MATERIAL", item["arquivo"], area, marca))
+
+        for caminho in fora:
+            self.tabela.insert("", "end", tags=("fora",),
+                               values=("—", caminho.name, "", "não é arte"))
+
+        if itens or fora:
+            partes = [f"{self.alvo.name}:", f"{len(itens)} arquivo(s) de arte"]
+            if ja_enviados:
+                partes.append(f"· {ja_enviados} já enviado(s)")
+            if fora:
+                partes.append(f"· {len(fora)} fora do padrão")
+            self.var_resumo.set(" ".join(partes))
+        else:
+            self.var_resumo.set(f"{self.alvo.name}: nenhum arquivo de arte aqui dentro.")
+
+        # {categoria: m²} — nunca um total somado entre materiais
+        # diferentes, que é regra fixa desta casa
+        subtotais = subtotais_por_material(itens)
+        self.var_subtotais.set(
+            "      ".join(f"{cat}: {m2:.2f} m²".replace(".", ",")
+                          for cat, m2 in sorted(subtotais.items())))
+        self.bt_usar.configure(state="normal" if itens else "disabled")
+
+    # ---------- saída ----------
+
+    def _usar(self):
+        if self.alvo is None:
+            return
+        self.escolhida = self.alvo
+        self.destroy()
+
+    def _procurar_fora(self):
+        """Escape pro caso da arte não estar em EVENTOS — o seletor do Windows de sempre."""
+        caminho = filedialog.askdirectory(
+            title="Escolha a pasta de produção",
+            initialdir=str(self.aqui or PASTA_EVENTOS), parent=self)
+        if caminho:
+            self.escolhida = pathlib.Path(caminho)
+            self.destroy()
+
+    def _cancelar(self):
+        self.escolhida = None
+        self.destroy()
+
+
 class JanelaEnviarImpressao(tk.Toplevel):
     """
     Manda pra fila das máquinas o que está numa pasta de produção.
@@ -2134,10 +2460,9 @@ class JanelaEnviarImpressao(tk.Toplevel):
 
     def _escolher_pasta(self):
         inicial = self.config_dados.get("ultima_pasta_envio") or str(PASTA_EVENTOS)
-        escolhida = filedialog.askdirectory(
-            title="Escolha a pasta de produção (ex: EVENTOS\\CLIENTE\\PRODUCAO 03_09)",
-            initialdir=inicial, parent=self,
-        )
+        janela = JanelaEscolherPasta(self, self.config_dados, inicial=inicial)
+        self.wait_window(janela)
+        escolhida = janela.escolhida
         if not escolhida:
             if self.pasta is None:
                 self.destroy()
