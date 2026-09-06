@@ -146,6 +146,31 @@ def _polilinhas_do_desenho(desenho, tolerancia_pt):
     return polilinhas
 
 
+def _mascaras_suspeitas(pagina):
+    """
+    Máscaras de recorte com forma complexa — candidatas a serem contorno
+    de corte que perdeu a cor.
+
+    No PDF, máscara de recorte não pinta nada, e por isso **não guarda
+    cor**. Se alguém no Illustrator usou o contorno magenta como máscara,
+    a geometria continua no arquivo mas o magenta some, e a busca por cor
+    nunca acha (hipótese do usuário, 2026-09-06 — conferida e descartada
+    nos arquivos daquele dia, mas é questão de tempo até acontecer).
+
+    O que separa uma da outra é o número de segmentos: borda de página e
+    recorte de imagem são retângulos, com 1 item de caminho. Contorno de
+    logo tem dezenas. Acima de 4 já não é retângulo.
+    """
+    achadas = []
+    for desenho in pagina.get_drawings(extended=True):
+        if desenho.get("type") != "clip":
+            continue
+        itens = len(desenho.get("items", []))
+        if itens > 4:
+            achadas.append(itens)
+    return achadas
+
+
 def extrair_contornos(caminho_pdf, tolerancia_mm=TOLERANCIA_MM):
     """
     Lê o PDF e devolve (polilinhas_em_mm, relatorio).
@@ -157,7 +182,7 @@ def extrair_contornos(caminho_pdf, tolerancia_mm=TOLERANCIA_MM):
     tolerancia_pt = tolerancia_mm / _PT_PARA_MM
     relatorio = {
         "paginas": 0, "desenhos": 0, "de_corte": 0,
-        "descartados": 0, "imagens": 0, "contornos": 0,
+        "descartados": 0, "imagens": 0, "contornos": 0, "mascaras": [],
     }
     saida = []
 
@@ -166,6 +191,7 @@ def extrair_contornos(caminho_pdf, tolerancia_mm=TOLERANCIA_MM):
         for pagina in doc:
             altura = pagina.rect.height
             relatorio["imagens"] += len(pagina.get_images())
+            relatorio["mascaras"].extend(_mascaras_suspeitas(pagina))
             for desenho in pagina.get_drawings():
                 relatorio["desenhos"] += 1
                 if not (e_cor_de_corte(desenho.get("color"))
@@ -240,6 +266,12 @@ def converter(caminho_pdf, caminho_dxf=None, tolerancia_mm=TOLERANCIA_MM):
         if relatorio["desenhos"] == 0:
             relatorio["motivo"] = ("não achei vetor nenhum neste PDF — se ele é imagem, "
                                    "não há o que cortar")
+        elif relatorio["mascaras"]:
+            relatorio["motivo"] = (
+                f"nenhum contorno magenta entre os {relatorio['desenhos']} vetores, MAS há "
+                f"máscara de recorte com forma complexa ({', '.join(str(m) for m in relatorio['mascaras'])} "
+                f"segmentos) — máscara não guarda cor, então pode ser o contorno de corte com o "
+                f"magenta perdido. Abra no Illustrator e libere a máscara de recorte")
         else:
             relatorio["motivo"] = (
                 f"nenhum contorno magenta entre os {relatorio['desenhos']} vetores — "

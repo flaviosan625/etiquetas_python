@@ -168,3 +168,37 @@ def test_conta_imagem_descartada_no_relatorio(tmp_path):
 
     assert relatorio["imagens"] == 1
     assert relatorio["dxf"] is not None, "a imagem sai, mas o contorno magenta continua valendo"
+
+
+def test_mascara_de_recorte_complexa_vira_pista_em_vez_de_recusa_seca(tmp_path):
+    """
+    Ideia do Flavio (06/09/2026): a linha de corte pode estar servindo de
+    mascara de recorte no Illustrator. No PDF, mascara NAO PINTA nada e
+    por isso nao guarda cor — a geometria fica, o magenta some, e a busca
+    por cor nunca acha.
+
+    Nos arquivos daquele dia a hipotese nao se confirmou (as mascaras
+    eram borda de pagina e recorte de imagem, 1 segmento cada), mas
+    quando acontecer o programa tem que APONTAR pra isso, e nao dizer
+    apenas "nao achei magenta".
+    """
+    doc = pymupdf.open()
+    pagina = doc.new_page(width=200, height=200)
+    pagina.draw_rect(pymupdf.Rect(1, 1, 2, 2))  # só pra existir fluxo de conteúdo pra trocar
+    # Máscara de recorte de verdade: caminho com 8 segmentos seguido de
+    # "W n" (recorta, não pinta) — é assim que o Illustrator grava uma
+    # máscara. Depois um retângulo preto pintado por dentro dela.
+    # Precisa ser escrito no fluxo bruto: draw_polyline pinta, não recorta.
+    conteudo = (b"30 30 m 60 25 l 90 40 l 120 25 l 150 40 l "
+                b"150 90 l 120 110 l 60 110 l 30 90 l h W n\n"
+                b"0 0 0 rg 40 40 100 60 re f\n")
+    doc.update_stream(pagina.get_contents()[0], conteudo)
+    doc.save(tmp_path / "mascarado.pdf")
+    doc.close()
+
+    relatorio = converter(tmp_path / "mascarado.pdf")
+
+    assert relatorio["dxf"] is None, "sem magenta continua recusando"
+    assert relatorio["mascaras"], "a máscara complexa tem que ser notada"
+    assert "máscara de recorte" in relatorio["motivo"]
+    assert "Illustrator" in relatorio["motivo"], "o recado tem que dizer o que fazer"
