@@ -218,9 +218,7 @@ function main(script_path)
    if p == nil then
       anotar("  PAREI: " .. erro)
       gravar()
-      MessageBox("Nao consegui os parametros de corte:
-
-" .. erro)
+      MessageBox("Nao consegui os parametros de corte: " .. erro)
       return false
    end
    anotar("  " .. MATERIAL .. ": " .. p.ferramenta .. " dia " .. p.diametro ..
