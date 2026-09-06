@@ -78,6 +78,12 @@ end
 
 local function construir_ferramenta()
    local ferramenta = Tool(FERRAMENTA, TIPO_TOPO_RASO)
+   -- ANTES de qualquer numero: sem isto a ferramenta nasce em POLEGADA
+   -- (o grupo do banco se chama "Imperial Tools", nao por acaso) e o
+   -- diametro 4 vira 4 polegadas = 101,6 mm, com raio de 50,8 — que foi
+   -- exatamente a marcacao que o Flavio viu sobre o vetor (06/09/2026).
+   -- Pior: a passada 11 viraria 279 mm de profundidade numa chapa de 10.
+   ferramenta.InMM = true
    ferramenta.ToolDia = DIAMETRO
    ferramenta.Stepdown = PASSADA
    ferramenta.Stepover = PASSO_LATERAL
@@ -87,7 +93,8 @@ local function construir_ferramenta()
    ferramenta.ToolNumber = 1
    anotar("  ferramenta: " .. numa_linha(ferramenta) ..
           " dia " .. tostring(ferramenta.ToolDia) ..
-          " passada " .. tostring(ferramenta.Stepdown))
+          " passada " .. tostring(ferramenta.Stepdown) ..
+          " InMM " .. tostring(ferramenta.InMM))
    return ferramenta
 end
 
