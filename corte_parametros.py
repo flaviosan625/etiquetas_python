@@ -116,6 +116,7 @@ PASSO_LATERAL_MM = 2.0
 # (no gadget: ferramenta.InMM = true, antes de qualquer número).
 UNIDADE = "mm"
 
+_FRESA_2 = {"grupo": "Fresa 2 mm", "ferramenta": "Topo Raso (2 mm)", "diametro_mm": 2.0}
 _FRESA_4 = {"grupo": "Fresa 4 mm", "ferramenta": "Topo Raso (4 mm)", "diametro_mm": 4.0}
 _FRESA_6 = {"grupo": "Fresa 6 mm", "ferramenta": "Topo Raso (6 mm)", "diametro_mm": 6.0}
 
@@ -125,6 +126,10 @@ PARAMETROS = {
     ("MDF", 6):  dict(_FRESA_6, passada_mm=7.0),
     ("MDF", 9):  dict(_FRESA_6, passada_mm=6.0),
     ("MDF", 15): dict(_FRESA_6, passada_mm=6.0),
+    # PS 2 mm com fresa de 2 mm (07/09/2026). É a chapa mais fina e a
+    # fresa mais fina da casa: passada de 3 mm cobre os 3 mm de
+    # profundidade (2 da chapa + 1 de folga) num passe só, sem sobra.
+    ("PS", 2): dict(_FRESA_2, passada_mm=3.0),
     # Acrílico é o material mais delicado da casa: passada de 3 mm, menos
     # da metade das outras, porque calor derrete a borda e o corte
     # forçado trinca a chapa. Todas as espessuras do estoque, mesma fresa
@@ -247,6 +252,7 @@ MENU_FOCO = (
     ("PVC", 10), ("PVC", 20),
     ("MDF", 6), ("MDF", 9), ("MDF", 15),
     ("ACRILICO", 4), ("ACRILICO", 6), ("ACRILICO", 8),
+    ("PS", 2),
 )
 
 

@@ -89,7 +89,8 @@ def test_lista_o_que_esta_cadastrado():
     assert ("MDF", 6) in combos
     assert ("PVC", 20) in combos
     assert ("ACRILICO", 10) in combos
-    assert len(combos) == 14
+    assert ("PS", 2) in combos
+    assert len(combos) == 15
 
 
 def test_letra_corta_dentro_por_dentro_e_fora_por_fora():
@@ -163,16 +164,18 @@ def test_todo_material_tem_fresa_avanco_e_rotacao():
         assert p["avanco_mm_min"] == AVANCO_MM_MIN
         assert p["ataque_mm_min"] == ATAQUE_MM_MIN
         assert p["rotacao_rpm"] == ROTACAO_RPM
-        assert p["diametro_mm"] in (4.0, 6.0)
+        assert p["diametro_mm"] in (2.0, 4.0, 6.0)
 
 
-def test_pvc_usa_fresa_de_4_o_resto_usa_a_de_6():
-    """"Normalmente vai ser usada a de 6mm" — a de 4 e so do PVC."""
-    assert buscar("PVC", 10)["diametro_mm"] == 4.0
-    assert buscar("PVC", 20)["diametro_mm"] == 4.0
+def test_cada_material_tem_a_sua_fresa():
+    """
+    "Normalmente vai ser usada a de 6mm" — a de 6 e o padrao. A de 4 e so
+    do PVC, e a de 2 so do PS, que e a chapa mais fina da casa (2 mm).
+    """
+    fresa_do_material = {"PVC": 4.0, "PS": 2.0}
     for material, espessura in combinacoes_cadastradas():
-        if material != "PVC":
-            assert buscar(material, espessura)["diametro_mm"] == 6.0
+        esperada = fresa_do_material.get(material, 6.0)
+        assert buscar(material, espessura)["diametro_mm"] == esperada, material
 
 
 def test_tudo_declarado_em_milimetro():
@@ -217,13 +220,14 @@ def test_gera_um_atalho_de_menu_por_material(tmp_path):
     from corte_parametros import gerar_gadgets
 
     gerados, faltando = gerar_gadgets(tmp_path, instalar=True)
-    assert len(gerados) == 8, "as oito combinacoes que a casa corta"
+    assert len(gerados) == 9, "as nove combinacoes que a casa corta"
     assert faltando == [], "nao falta mais nenhuma do foco"
 
     nomes = {d.name for _, d, _ in gerados}
     assert "Corte_Automatico_PVC_10.lua" in nomes
     assert "Corte_Automatico_MDF_9.lua" in nomes
     assert "Corte_Automatico_ACRILICO_6.lua" in nomes
+    assert "Corte_Automatico_PS_2.lua" in nomes
 
     for chave, destino, _ in gerados:
         texto = destino.read_text(encoding="ascii")
