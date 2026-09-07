@@ -368,3 +368,33 @@ Traceback (most recent call last):
                              ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 TypeError: 'NoneType' object is not iterable
 
+2026-09-07 16:49:12
+Traceback (most recent call last):
+  File "C:\Users\flavi\Desktop\etiquetas_python\rasterlink_hotfolder.py", line 841, in _rodar_protegido
+    alvo()
+    ~~~~^^
+  File "C:\Users\flavi\Desktop\etiquetas_python\rasterlink_hotfolder.py", line 875, in <lambda>
+    _rodar_protegido(lambda: resultado.update(vigiar_fila_uma_vez(logger=logger_arquivo)))
+                             ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: 'NoneType' object is not iterable
+
+2026-09-07 16:57:10
+Traceback (most recent call last):
+  File "C:\Users\flavi\Desktop\etiquetas_python\rasterlink_hotfolder.py", line 841, in _rodar_protegido
+    alvo()
+    ~~~~^^
+  File "C:\Users\flavi\Desktop\etiquetas_python\rasterlink_hotfolder.py", line 875, in <lambda>
+    _rodar_protegido(lambda: resultado.update(vigiar_fila_uma_vez(logger=logger_arquivo)))
+                             ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: 'NoneType' object is not iterable
+
+2026-09-07 16:58:34
+Traceback (most recent call last):
+  File "C:\Users\flavi\Desktop\etiquetas_python\rasterlink_hotfolder.py", line 841, in _rodar_protegido
+    alvo()
+    ~~~~^^
+  File "C:\Users\flavi\Desktop\etiquetas_python\rasterlink_hotfolder.py", line 875, in <lambda>
+    _rodar_protegido(lambda: resultado.update(vigiar_fila_uma_vez(logger=logger_arquivo)))
+                             ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: 'NoneType' object is not iterable
+
