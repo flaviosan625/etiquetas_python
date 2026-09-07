@@ -6,3 +6,6 @@ entrada/
 config.json.bak
 estoque.json.bak
 aspire/dxf_teste/
+
+# Lote gerado: 9 MB por arquivo e se refaz em segundos a partir dos PDFs.
+aspire/teste_ponta_a_ponta/LOTE *.dxf
