@@ -336,21 +336,61 @@ function main(script_path)
          "GetPolyline", "ToPolyline", "GetContour", "Contours",
          "GetHeadPosition", "GetNext", "Clone", "Type", "ObjectType",
       }
-      for _, nome in ipairs(nomes) do
-         local ok, valor = pcall(function() return amostra[nome] end)
-         if ok and valor ~= nil then
-            local tipo = type(valor)
-            if tipo == "function" then
-               -- luabind cospe a assinatura C++ de verdade quando se
-               -- chama errado. Chamar com lixo e como arrancar a
-               -- documentacao de dentro do programa.
-               local certo, erro = pcall(valor, amostra, "\1lixo\1", -987654321)
-               local texto = certo and "(aceitou lixo)" or tostring(erro):gsub("[\r\n]+", " | ")
-               anotar(string.format("  %-18s funcao: %s", nome, texto:sub(1, 150)))
-            else
-               anotar(string.format("  %-18s %s = %s", nome, tipo, tostring(valor):sub(1, 60)))
+      local function sondar(rotulo, alvo, lista)
+         anotar("  --- " .. rotulo .. " ---")
+         local viu = false
+         for _, nome in ipairs(lista) do
+            local ok, valor = pcall(function() return alvo[nome] end)
+            if ok and valor ~= nil then
+               viu = true
+               local tipo = type(valor)
+               if tipo == "function" then
+                  -- luabind cospe a assinatura C++ de verdade quando se
+                  -- chama errado. Chamar com lixo e como arrancar a
+                  -- documentacao de dentro do programa.
+                  local certo, erro = pcall(valor, alvo, "\1lixo\1", -987654321)
+                  local texto = certo and "(aceitou lixo)" or tostring(erro):gsub("[\r\n]+", " | ")
+                  anotar(string.format("    %-18s funcao: %s", nome, texto:sub(1, 160)))
+               else
+                  anotar(string.format("    %-18s %s = %s", nome, tipo, tostring(valor):sub(1, 70)))
+               end
             end
          end
+         if not viu then anotar("    (nenhum dos nomes testados respondeu)") end
+      end
+
+      sondar("CadObject", amostra, nomes)
+
+      -- O CadObject tem GetContour() -> Contour*. E ai que mora a
+      -- geometria de verdade. Se o Contour souber dizer se um ponto
+      -- esta dentro dele, ou entregar os pontos, a classificacao pode
+      -- acontecer aqui dentro e o PDF continua sendo o arquivo.
+      local contorno = nil
+      pcall(function() contorno = amostra:GetContour() end)
+      if contorno == nil then
+         anotar("  --- Contour: nao consegui obter ---")
+      else
+         sondar("Contour", contorno, {
+            "Area", "GetArea", "Length", "GetLength", "Perimeter",
+            "IsClosed", "Closed", "IsOpen", "IsPointInside", "PointInside",
+            "Contains", "ContainsPoint", "Inside", "IsInside",
+            "Count", "SpanCount", "GetSpanCount", "NumberOfSpans",
+            "GetSpan", "Span", "GetPoint", "GetPoints", "Points",
+            "GetStartPoint", "GetEndPoint", "StartPoint", "EndPoint",
+            "GetBoundingBox", "BoundingBox", "GetHeadPosition", "GetNext",
+            "IsClockwise", "Direction", "Reverse", "Clone",
+        })
+      end
+
+      -- Box2D: a caixa que o proprio objeto entrega, sem passar pela
+      -- selecao. Se der, some a gambiarra de selecionar-um-por-vez.
+      local caixa = nil
+      pcall(function() caixa = amostra:GetBoundingBox() end)
+      if caixa ~= nil then
+         sondar("Box2D (do proprio objeto)", caixa, {
+            "BLC", "TRC", "BRC", "TLC", "Width", "Height", "XMin", "XMax",
+            "YMin", "YMax", "Centre", "Center", "IsValid", "Contains", "Merge",
+         })
       end
    end)
 
