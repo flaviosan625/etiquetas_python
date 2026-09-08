@@ -18,20 +18,18 @@ Três regras que vieram do usuário e que o código respeita literalmente:
     quem sabe o que já foi é o documento de Enviados, não a posição do
     arquivo na pasta.
   - **A máquina é decidida pelo material no nome, não pela largura**
-    (2026-09-05): adesivo/vinil/adesivado sempre na UJV — "na SWJ não
-    colocamos adesivos". A sugestão vem preenchida mas NUNCA fica
-    travada: "não sabemos o que pode acontecer no meio de uma produção".
+    (2026-09-05): lona sempre na SWJ320A, adesivo/vinil/adesivado
+    sempre na UJV — "na SWJ não colocamos adesivos". A largura útil
+    virou só alerta. A sugestão vem preenchida mas NUNCA fica travada:
+    "não sabemos o que pode acontecer no meio de uma produção".
 
-    Com a DOCAN (2026-09-07) abriu-se UMA exceção, e só uma: existindo
-    duas máquinas de lona, é a largura que desempata entre elas — "até
-    três e vinte, indicar a SWJ, adesivo manter sempre na UJV, e as
-    demais acima de três e vinte, indicar a Docan". O material continua
-    decidindo primeiro; a largura só escolhe qual das duas de lona, e
-    nunca tira adesivo da UJV.
-
-    A DOCAN roda mais de um rolo, mas a tela NÃO pergunta qual: chegou a
-    existir essa escolha e o usuário cortou — "não colocar medidas
-    somente as máquinas". A lista mostra máquinas e nada mais.
+    A DOCAN entrou na lista em 2026-09-07 e NÃO é sugerida por nada —
+    é escolha na mão. Chegaram a existir aqui um desempate por largura
+    entre as duas máquinas de lona e um seletor de rolo por arquivo;
+    os dois foram retirados pelo usuário no mesmo dia: "não colocar
+    medidas somente as máquinas" e "deixe que eu sugira as máquinas,
+    só peço que deixe as sugestões se baseando nas regras antigas".
+    Não reconstrua nenhum dos dois sem ele pedir.
   - **Reenvio soma, não substitui**: mandar o mesmo arquivo de novo é
     caso real (peça danificada na instalação, arte corrigida salva por
     cima) — vira uma linha nova, com a hora dela, e conta no subtotal,
@@ -98,29 +96,22 @@ _ATTR_RECALL_ON_DATA_ACCESS = 0x400000
 _ATTRS_SO_NA_NUVEM = _ATTR_OFFLINE | _ATTR_RECALL_ON_OPEN | _ATTR_RECALL_ON_DATA_ACCESS
 
 
-def sugerir_maquina(nome_arquivo, config, dimensao=None, maquinas=None):
+def sugerir_maquina(nome_arquivo, config):
     """
-    Máquina sugerida. O MATERIAL do nome decide primeiro, como sempre
-    (2026-09-05); a largura só entra depois, e só pra desempatar entre
-    as duas máquinas de lona (2026-09-07).
+    Máquina sugerida pelo material que aparece no NOME do arquivo —
+    nunca pela largura (regra do usuário, 2026-09-05).
 
     Adesivo é conferido ANTES de lona de propósito: "PVC ADESIVADO"
     tem categoria PVC e categoria_extra ADESIVO, e o que manda é a
-    palavra adesivo. **Adesivo fica SEMPRE na UJV**, de qualquer
-    largura — "na SWJ não colocamos adesivos", e a largura não muda
-    isso. Nome sem lona nem adesivo (ex: "PS IMPRESSO REFILE") também
-    vai pra UJV.
+    palavra adesivo. Nome sem lona nem adesivo (ex: "PS IMPRESSO
+    REFILE") também vai pra UJV.
 
-    Sendo lona: "até três e vinte, indicar a SWJ (...) e as demais
-    acima de três e vinte, indicar a Docan" (usuário, 2026-09-07).
-
-    "Até 3,20" é caber DE ALGUM JEITO, inclusive girada: uma lona de
-    3,90x0,95 entra na SWJ deitada, com 0,95 de largura, e o giro
-    automático já a deita sozinho. Mandá-la pra DOCAN por causa do 3,90
-    que aparece no nome ocuparia a máquina grande à toa.
-
-    Isto INDICA, não decide — o combo da linha continua trocável, e
-    quem sabe do rolo montado e da máquina livre é quem está lá.
+    A DOCAN NÃO é sugerida por nada, e isso é decisão do usuário, não
+    lacuna: "deixe que eu sugira as máquinas, só peço que deixe as
+    sugestões se baseando nas regras antigas" (2026-09-07). Chegou a
+    existir aqui um desempate por largura entre a SWJ e a DOCAN, e foi
+    retirado. Ela está na lista pra ser escolhida na mão, e é assim que
+    fica até ele pedir outra coisa.
     """
     nome_upper = nome_arquivo.upper()
     materiais = config["materiais"]
@@ -130,8 +121,6 @@ def sugerir_maquina(nome_arquivo, config, dimensao=None, maquinas=None):
     if _CATEGORIA_ADESIVO in (categoria, categoria_extra):
         return MAQUINA_ADESIVO
     if categoria == _CATEGORIA_LONA:
-        if dimensao and not cabe_na_maquina(dimensao, MAQUINA_LONA, maquinas):
-            return MAQUINA_DOCAN
         return MAQUINA_LONA
     return MAQUINA_ADESIVO
 
@@ -190,20 +179,11 @@ def _largura_util(nome_maquina, maquinas=None):
     return _config_maquina(maquinas.get(nome_maquina))[1]
 
 
-def onde_cabe(dimensao, maquina_atual, maquinas=None):
-    """
-    Em qual OUTRA máquina esta peça caberia. Nome da máquina, ou None se
-    não cabe em nenhuma.
-
-    Só aparece quando a peça já não cabe onde está — não é a máquina
-    sendo escolhida por medida, é o aviso de "não cabe" dizendo pra onde
-    olhar, no momento exato em que o usuário precisa trocar o combo.
-    """
-    maquinas = MAQUINAS if maquinas is None else maquinas
-    for nome in maquinas:
-        if nome != maquina_atual and cabe_na_maquina(dimensao, nome, maquinas):
-            return nome
-    return None
+# Já existiu aqui um onde_cabe(), que no aviso de "não cabe" dizia em
+# qual outra máquina a peça caberia. Saiu junto com o desempate por
+# largura (2026-09-07): mesmo sendo só um aviso, ele nomeava uma máquina
+# a partir de uma medida, e quem sugere máquina aqui é o usuário. O
+# aviso continua — apenas diz que não cabe, e para por aí.
 
 
 def _so_na_nuvem(caminho):
@@ -350,7 +330,7 @@ def listar(pasta_escolhida, config, envios_anteriores=None, maquinas=None):
         categoria, _ = identificar_categoria(nome_upper, materiais, sinonimos)
         quantidade, _ = extrair_quantidade(nome_upper)
         dimensao = extrair_dimensoes(nome_upper, config)
-        maquina = sugerir_maquina(caminho.name, config, dimensao, maquinas)
+        maquina = sugerir_maquina(caminho.name, config)
 
         itens.append({
             "caminho": caminho,
@@ -459,16 +439,10 @@ def conferir(itens, pasta_fila=None, maquinas=None):
 
         if not item["cabe"]:
             d = item["dimensao"]
-            aviso = (
+            avisos.append(
                 f"Tem {d['largura_m']:.2f}x{d['altura_m']:.2f}m e não cabe nem girado na "
                 f"{item['maquina']} — vai assim mesmo, confira no RasterLink."
             )
-            # Quem troca o combo é o usuário, então este é o momento
-            # exato em que ele precisa saber pra onde olhar.
-            onde = onde_cabe(d, item["maquina"], maquinas)
-            if onde:
-                aviso += f" Cabe na {onde}."
-            avisos.append(aviso)
 
         if avisos:
             resultado["atencao"].append((item, avisos))

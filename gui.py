@@ -35,8 +35,8 @@ from documento_enviados import (
 )
 from envio_impressao import (
     cabe_na_maquina, conferir as conferir_envio, enviar as enviar_para_maquinas,
-    estado_do_rip, fila_parada, listar as listar_para_envio, onde_cabe, prever_giro,
-    raiz_do_cliente, subtotais_por_material,
+    estado_do_rip, fila_parada, listar as listar_para_envio, prever_giro, raiz_do_cliente,
+    subtotais_por_material,
 )
 from estado_pedido import estado_existe, localizar_pastas_cliente
 from estoque import (
@@ -2357,12 +2357,7 @@ class JanelaEnviarImpressao(tk.Toplevel):
             quantas = len(item["envios_anteriores"])
             partes.append(f"já enviado {quantas}x · último {quando[8:10]}/{quando[5:7]} {quando[11:16]}")
         if not item["cabe"]:
-            # Quem indica a máquina é o usuário, então dizer ONDE cabe é
-            # o que ele precisa saber exatamente agora.
-            onde = onde_cabe(item["dimensao"], item["maquina"])
             partes.append("não cabe nem girado — vai assim mesmo")
-            if onde:
-                partes.append(f"cabe {onde}")
         elif item["giro"]:
             if item["giro"]["motivo"] == "nao_cabe":
                 partes.append("deve girar · não cabe em pé")

@@ -8,7 +8,7 @@ import rasterlink_hotfolder as rl_hf
 from config import carregar_config
 from envio_impressao import (
     MAQUINA_ADESIVO, MAQUINA_DOCAN, MAQUINA_LONA, cabe_na_maquina, conferir, enviar, listar,
-    onde_cabe, prever_giro, raiz_do_cliente, subtotais_por_material, sugerir_maquina,
+    prever_giro, raiz_do_cliente, subtotais_por_material, sugerir_maquina,
 )
 
 
@@ -602,68 +602,59 @@ def test_o_vermelho_manda_reiniciar_o_onedrive_antes_de_ir_ate_o_rip(tmp_path):
     assert "Agendador" in texto
     assert texto.index("OneDrive") < texto.index("Agendador"), texto
 
-
-# ---------- as duas maquinas de lona ----------
+# ---------- a DOCAN existe, mas nao e sugerida ----------
 #
-# Regra do usuario (2026-09-07): "a SWJ recebe porem a regra para ela e
-# lonas ate 320 na largura, no caso da docan pode chegar ate 500cm
-# largura". E a UNICA excecao a "a maquina e decidida pelo material, nao
-# pela largura" (2026-09-05): o material continua decidindo primeiro, a
-# largura so desempata entre as duas maquinas de lona.
+# Ela entrou na lista em 2026-09-07. No mesmo dia chegaram a existir um
+# desempate por largura entre a SWJ e a DOCAN e um seletor de rolo por
+# arquivo, e o usuario retirou os dois: "nao colocar medidas somente as
+# maquinas" e "deixe que eu sugira as maquinas, so peco que deixe as
+# sugestoes se baseando nas regras antigas". Nao reconstrua sem ele
+# pedir — estes testes existem pra isso nao voltar sem querer.
 
-def test_lona_que_passa_de_320_vai_pra_docan():
-    nome = "1UN LONA IMPRESSA_fachada_4,60x3,50M.pdf"
-    dimensao = {"largura_m": 4.60, "altura_m": 3.50, "area_m2": 16.1}
-    assert sugerir_maquina(nome, CONFIG, dimensao, MAQUINAS_TESTE) == MAQUINA_DOCAN
+def test_lona_larga_continua_sendo_sugerida_na_swj():
+    """A largura nao escolhe maquina. Quem manda a lona de 4,60 pra DOCAN e o usuario, no combo."""
+    assert sugerir_maquina("1UN LONA IMPRESSA_fachada_4,60x3,50M.pdf", CONFIG) == MAQUINA_LONA
 
 
-def test_lona_larga_que_cabe_girada_fica_na_swj():
+def test_adesivo_largo_continua_sendo_sugerido_na_ujv():
+    assert sugerir_maquina("1UN VINIL IMPRESSO_painel_4,00x3,80M.pdf", CONFIG) == MAQUINA_ADESIVO
+
+
+def test_nenhum_material_sugere_a_docan():
     """
-    3,90x0,95 entra na SWJ deitada, com 0,95 de largura. Mandar pra
-    DOCAN por causa do 3,90 que aparece no nome ocuparia a maquina
-    grande a toa.
+    Ela e escolha na mao. Se algum dia algum nome comecar a cair nela
+    sozinho, foi regra nova entrando sem o usuario pedir.
     """
-    nome = "2UN LONA IMPRESSA_testeira_3,90x0,95M.pdf"
-    dimensao = {"largura_m": 3.90, "altura_m": 0.95, "area_m2": 3.705}
-    assert sugerir_maquina(nome, CONFIG, dimensao, MAQUINAS_TESTE) == MAQUINA_LONA
+    nomes = [
+        "1UN LONA IMPRESSA_fachada_4,60x3,50M.pdf",
+        "1UN LONA IMPRESSA_faixa_0,30x0,40M.pdf",
+        "1UN LONA IMPRESSA_sem_medida.pdf",
+        "1UN VINIL IMPRESSO_painel_4,00x3,80M.pdf",
+        "2UN PS IMPRESSO REFILE 1.50X0.33M_Brasao.pdf",
+    ]
+    assert [n for n in nomes if sugerir_maquina(n, CONFIG) == MAQUINA_DOCAN] == []
 
 
-def test_lona_sem_medida_no_nome_continua_na_swj():
-    """Sem medida nao da pra desempatar — fica a maquina de sempre, e o usuario troca se precisar."""
-    assert sugerir_maquina("1UN LONA IMPRESSA_faixa.pdf", CONFIG, None, MAQUINAS_TESTE) == MAQUINA_LONA
+def test_a_docan_esta_na_lista_pra_ser_escolhida():
+    assert MAQUINA_DOCAN in rl_hf.MAQUINAS
 
 
-def test_adesivo_largo_nao_vai_pra_docan_porque_o_material_decide_primeiro():
-    """A excecao da largura vale SO entre as duas maquinas de lona."""
-    nome = "1UN VINIL IMPRESSO_painel_4,00x3,80M.pdf"
-    dimensao = {"largura_m": 4.00, "altura_m": 3.80, "area_m2": 15.2}
-    assert sugerir_maquina(nome, CONFIG, dimensao, MAQUINAS_TESTE) == MAQUINA_ADESIVO
-
-
-def test_a_lista_ja_traz_a_lona_larga_na_docan(tmp_path):
+def test_a_lista_traz_a_lona_larga_na_swj_com_o_aviso_de_que_nao_cabe(tmp_path):
+    """
+    Sugerida na SWJ como sempre, e o aviso de largura continua sendo so
+    aviso: diz que nao cabe e para por ai, sem nomear outra maquina.
+    """
     pasta = _producao(tmp_path)
     _arte(pasta / "LONAS", "1UN LONA IMPRESSA_fachada_4,60x3,50M.pdf")
 
     item, = _itens_de(pasta)
-    assert item["maquina"] == MAQUINA_DOCAN
-    assert item["cabe"] is True
+    assert item["maquina"] == MAQUINA_LONA
+    assert item["cabe"] is False
 
-
-# ---------- onde mais cabe ----------
-
-def test_diz_em_qual_maquina_a_peca_caberia():
-    """
-    So aparece quando a peca ja NAO cabe onde esta: nao e a maquina
-    sendo escolhida por medida, e o aviso de "nao cabe" dizendo pra onde
-    olhar, no momento em que o usuario vai trocar o combo.
-    """
-    dimensao = {"largura_m": 4.60, "altura_m": 3.50, "area_m2": 16.1}
-    assert onde_cabe(dimensao, MAQUINA_LONA, MAQUINAS_TESTE) == MAQUINA_DOCAN
-
-
-def test_peca_que_nao_cabe_em_lugar_nenhum_nao_inventa_destino():
-    dimensao = {"largura_m": 6.00, "altura_m": 5.50, "area_m2": 33.0}
-    assert onde_cabe(dimensao, MAQUINA_LONA, MAQUINAS_TESTE) is None
+    resultado = conferir([item], pasta_fila=tmp_path / "fila", maquinas=MAQUINAS_TESTE)
+    (_, avisos), = resultado["atencao"]
+    aviso, = [a for a in avisos if "nao cabe" in a.lower() or "não cabe" in a.lower()]
+    assert MAQUINA_DOCAN not in aviso, "o aviso nao pode sugerir maquina"
 
 
 def test_o_envio_registra_a_maquina_e_nada_de_medida_junto(tmp_path):
@@ -674,5 +665,5 @@ def test_o_envio_registra_a_maquina_e_nada_de_medida_junto(tmp_path):
     resultado = enviar(_itens_de(pasta), pasta, pasta_fila=tmp_path / "fila", maquinas=MAQUINAS_TESTE)
 
     registro, = resultado["enviados"]
-    assert registro["maquina"] == MAQUINA_DOCAN
+    assert registro["maquina"] == MAQUINA_LONA
     assert "rolo_m" not in registro

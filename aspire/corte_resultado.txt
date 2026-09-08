@@ -8,9 +8,8 @@ CORTE AUTOMATICO
   nenhum — a ordem so da pra garantir com percursos separados
 
 === percursos ===
-  camada 'CORTE INTERNO': 9 vetores
-  'CORTE INTERNO' lado=1 -> criado luaUUID:
-  camada 'CORTE EXTERNO': 28 vetores
-  'CORTE EXTERNO' lado=0 -> criado luaUUID:
+  SEM CAMADA NOMEADA — um percurso so, com o que esta selecionado.
+  O Aspire acerta o dentro/fora sozinho, mas a ORDEM nao fica garantida.
+  'CORTE' lado=0 -> criado luaUUID:
 
-  total de percursos no trabalho: 2
+  total de percursos no trabalho: 1
