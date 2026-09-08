@@ -160,35 +160,163 @@ local function selecionar_camada(trabalho, camada)
    return quantos
 end
 
--- ================== SO O QUE ESTA SELECIONADO ======================
+-- ============ CLASSIFICAR DENTRO DO ASPIRE, COM GEOMETRIA =========
 --
--- Por que NAO ha classificacao de aninhamento aqui dentro (08/09/2026):
--- foi tentada, pela caixa envolvente de cada vetor, e ERROU num arquivo
--- de producao. No "Mova Belo Horizonte" as 13 letras do texto caem
--- dentro da CAIXA do logo — que e uma forma varrida, com as letras no
--- vazio embaixo da curva — sem estarem dentro do logo. Resultado: 11
--- letras classificadas como furo e cortadas por dentro, 4 mm menores.
--- No "Rio de Janeiro" o mesmo codigo acertou, mas por sorte: o logo de
--- la e mais baixo e a caixa dele nao alcanca o texto.
+-- Descoberto sondando o programa em 08/09/2026 (nao ha documentacao):
 --
--- A API do Aspire 8.5 nao expoe os pontos do vetor, so a caixa
--- (selection:GetBoundingBox). Sem os pontos nao da pra fazer o teste de
--- ponto-dentro-do-poligono, que e o unico que distingue "dentro do
--- desenho" de "dentro do retangulo do desenho".
+--   CadObject:GetContour()      -> Contour*
+--   CadObject:GetBoundingBox()  -> Box2D  (.BLC .TRC .BRC .TLC .Centre)
+--   Contour.Area                -> number
+--   Contour.IsClosed            -> boolean
+--   Contour:IsPointInside(Point2D, tolerancia) -> boolean
 --
--- Quem tem os pontos e o corte_dxf.py, lendo o PDF. Entao a
--- classificacao mora la, e chega aqui pronta, nas camadas do DXF. O
--- caminho da camada nomeada — o de cima, no main — e o unico que
--- garante a ordem furo-antes-do-contorno.
+-- O IsPointInside e o teste de ponto-dentro-do-poligono feito pelo
+-- PROPRIO Aspire. E ele que faltava.
 --
--- Sem camada nomeada, este gadget faz UM percurso com ProfileSide=0 e
--- avisa: o Aspire acerta o dentro/fora sozinho (confirmado 06/09/2026),
--- so a ORDEM e que fica por conta do acaso.
+-- A tentativa anterior usava so a caixa envolvente e ERROU num arquivo
+-- de producao: no "Mova Belo Horizonte" as 13 letras do texto caem
+-- dentro da CAIXA do logo — uma forma varrida, com as letras no vazio
+-- embaixo da curva — sem estarem dentro do logo. Onze letras viraram
+-- "furo" e sairiam cortadas por dentro, 4 mm menores. No "Rio de
+-- Janeiro" o mesmo calculo acertou, mas por sorte: o logo de la e mais
+-- baixo e a caixa nao alcanca o texto.
+--
+-- Agora a pergunta e a certa: o CENTRO de A esta dentro do CONTORNO de
+-- B? Nao dentro do retangulo de B.
 
-local function tem_selecao(trabalho)
+local TOLERANCIA_PONTO = 0.001
+
+-- So conta como "por dentro" quem esta dentro de alguem MAIOR. Sem
+-- isso, a letra 'O' e o furo dela se conteriam mutuamente: o centro da
+-- caixa do 'O' cai no proprio furo, e o centro do furo cai dentro do
+-- 'O'. Comparar area desempata na direcao certa — o furo e sempre
+-- menor que a letra.
+local function medir_vetores(vetores)
+   local dados = {}
+   for i, obj in ipairs(vetores) do
+      local d = {obj = obj, area = 0}
+      pcall(function() d.contorno = obj:GetContour() end)
+      pcall(function()
+         local b = obj:GetBoundingBox()
+         d.centro = b.Centre
+         d.x0, d.y0 = b.BLC.x, b.BLC.y
+         d.x1, d.y1 = b.TRC.x, b.TRC.y
+      end)
+      if d.contorno ~= nil then
+         pcall(function() d.area = d.contorno.Area or 0 end)
+         pcall(function() d.fechado = d.contorno.IsClosed end)
+      end
+      dados[i] = d
+   end
+   return dados
+end
+
+local function centro_na_caixa(b, a)
+   -- Filtro barato antes do teste caro: se o centro de A nem cai no
+   -- retangulo de B, nao ha como estar dentro do contorno de B. Com
+   -- 461 vetores num arquivo, isso e a diferenca entre segundos e
+   -- minutos.
+   if b.x0 == nil or a.centro == nil then return false end
+   return a.centro.x >= b.x0 and a.centro.x <= b.x1
+      and a.centro.y >= b.y0 and a.centro.y <= b.y1
+end
+
+-- Devolve duas listas de CadObject: os que cortam por dentro e os que
+-- cortam por fora. Regra de paridade, a mesma do corte_dxf.py: quem
+-- esta dentro de um numero IMPAR de outros e interno. Cobre o 'B' de
+-- dois furos e a ilha dentro do furo.
+local function classificar(vetores)
+   local dados = medir_vetores(vetores)
+   local dentro, fora, semGeometria = {}, {}, 0
+
+   for i, a in ipairs(dados) do
+      if a.contorno == nil or a.centro == nil then
+         semGeometria = semGeometria + 1
+         fora[#fora + 1] = a.obj          -- sem medida: vai por fora
+      else
+         local nivel = 0
+         for j, b in ipairs(dados) do
+            if i ~= j and b.contorno ~= nil and b.area > a.area
+                     and centro_na_caixa(b, a) then
+               local ok, r = pcall(function()
+                  return b.contorno:IsPointInside(a.centro, TOLERANCIA_PONTO)
+               end)
+               if ok and r then nivel = nivel + 1 end
+            end
+         end
+         if nivel % 2 == 1 then
+            dentro[#dentro + 1] = a.obj
+         else
+            fora[#fora + 1] = a.obj
+         end
+      end
+   end
+   return dentro, fora, semGeometria
+end
+
+local function selecionar_objetos(trabalho, objetos)
+   local selecao = trabalho.Selection
+   selecao:Clear()
+   local quantos = 0
+   for _, objeto in ipairs(objetos) do
+      for _, par in ipairs({{true, true}, {true, false}, {false, false}}) do
+         if pcall(function() selecao:Add(objeto, par[1], par[2]) end) then
+            quantos = quantos + 1
+            break
+         end
+      end
+   end
+   return quantos
+end
+
+-- A selecao copiada pra uma tabela ANTES de qualquer medicao: medir
+-- exige mexer na selecao, e o primeiro objeto medido destruiria a
+-- original. Devolve {} quando nao ha nada selecionado.
+local function selecao_atual(trabalho)
+   local selecao = trabalho.Selection
    local vazia = true
-   pcall(function() vazia = trabalho.Selection.IsEmpty end)
-   return not vazia
+   pcall(function() vazia = selecao.IsEmpty end)
+   if vazia then return {} end
+
+   local objetos = {}
+   local ok = pcall(function()
+      local pos = selecao:GetHeadPosition()
+      while pos ~= nil do
+         local a, b = selecao:GetNext(pos)
+         if a == nil then break end
+         objetos[#objetos + 1] = a
+         pos = b
+      end
+   end)
+   if not ok then return nil end
+   return objetos
+end
+
+local function todos_os_vetores(trabalho)
+   local objetos = {}
+   local gerente = trabalho.LayerManager
+   local posC = gerente:GetHeadPosition()
+   while posC ~= nil do
+      local camada
+      local okC = pcall(function()
+         local a, b = gerente:GetNext(posC)
+         camada = a
+         posC = b
+      end)
+      if not okC or camada == nil then break end
+      local pos = camada:GetHeadPosition()
+      while pos ~= nil do
+         local objeto
+         local okO = pcall(function()
+            local a, b = camada:GetNext(pos)
+            objeto = a
+            pos = b
+         end)
+         if not okO or objeto == nil then break end
+         objetos[#objetos + 1] = objeto
+      end
+   end
+   return objetos
 end
 
 
@@ -288,189 +416,60 @@ function main(script_path)
       anotar("  nenhum — a ordem so da pra garantir com percursos separados")
    end
 
-   -- ============ SONDA: o que um VETOR sabe dizer de si? ============
-   --
-   -- Eu afirmei que a API so da a caixa envolvente e que por isso a
-   -- classificacao teria que sair do Aspire. Mas eu nunca sondei o
-   -- CadObject — a afirmacao veio de uma nota antiga, nao de teste.
-   --
-   -- Se aqui aparecer acesso aos PONTOS do vetor, ou uma pergunta do
-   -- tipo "este ponto esta dentro de voce?", da pra classificar dentro
-   -- do Aspire com a geometria de verdade, sem converter arquivo
-   -- nenhum. E o que o Flavio pediu desde o comeco.
-   --
-   -- Nao cria, nao altera e nao apaga nada. So le, e nunca derruba a
-   -- passada: tudo dentro de pcall.
-   anotar("")
-   anotar("=== sonda: o que um vetor sabe dizer de si ===")
-   pcall(function()
-      -- Junta TODOS os vetores, de todas as camadas: o primeiro objeto
-      -- da primeira camada pode nao ser um vetor comum.
-      local vetores = {}
-      local gerente = trabalho.LayerManager
-      local posC = gerente:GetHeadPosition()
-      while posC ~= nil do
-         local camada
-         local okC = pcall(function()
-            local a, b = gerente:GetNext(posC)
-            camada = a
-            posC = b
-         end)
-         if not okC or camada == nil then break end
-         local pos = camada:GetHeadPosition()
-         while pos ~= nil do
-            local objeto
-            local okO = pcall(function()
-               local a, b = camada:GetNext(pos)
-               objeto = a
-               pos = b
-            end)
-            if not okO or objeto == nil then break end
-            vetores[#vetores + 1] = objeto
-         end
-      end
-      anotar("  vetores encontrados no trabalho: " .. #vetores)
-      local amostra = vetores[1]
-
-      if amostra == nil then
-         anotar("  (nenhum vetor no trabalho pra sondar)")
-         return
-      end
-
-      local nomes = {
-         "Area", "Length", "Perimeter", "IsClosed", "Closed", "IsOpen",
-         "NumberOfPoints", "PointCount", "NumPoints", "Count", "SpanCount",
-         "NumSpans", "BoundingBox", "Bounds", "Name", "LayerName",
-         "GetPoint", "GetPoints", "Points", "GetSpan", "Span", "Spans",
-         "GetBoundingBox", "GetArea", "GetLength", "IsPointInside",
-         "PointInside", "Contains", "ContainsPoint", "Inside",
-         "GetPolyline", "ToPolyline", "GetContour", "Contours",
-         "GetHeadPosition", "GetNext", "Clone", "Type", "ObjectType",
-      }
-      local function sondar(rotulo, alvo, lista)
-         anotar("  --- " .. rotulo .. " ---")
-         local viu = false
-         for _, nome in ipairs(lista) do
-            local ok, valor = pcall(function() return alvo[nome] end)
-            if ok and valor ~= nil then
-               viu = true
-               local tipo = type(valor)
-               if tipo == "function" then
-                  -- luabind cospe a assinatura C++ de verdade quando se
-                  -- chama errado. Chamar com lixo e como arrancar a
-                  -- documentacao de dentro do programa.
-                  local certo, erro = pcall(valor, alvo, "\1lixo\1", -987654321)
-                  local texto = certo and "(aceitou lixo)" or tostring(erro):gsub("[\r\n]+", " | ")
-                  anotar(string.format("    %-18s funcao: %s", nome, texto:sub(1, 160)))
-               else
-                  anotar(string.format("    %-18s %s = %s", nome, tipo, tostring(valor):sub(1, 70)))
-               end
-            end
-         end
-         if not viu then anotar("    (nenhum dos nomes testados respondeu)") end
-      end
-
-      sondar("CadObject", amostra, nomes)
-
-      -- O CadObject tem GetContour() -> Contour*. E ai que mora a
-      -- geometria de verdade. Se o Contour souber dizer se um ponto
-      -- esta dentro dele, ou entregar os pontos, a classificacao pode
-      -- acontecer aqui dentro e o PDF continua sendo o arquivo.
-      --
-      -- Tenta em VARIOS objetos, nao so no primeiro: o primeiro da
-      -- primeira camada pode nao ser um vetor comum (grupo, bitmap,
-      -- texto), e foi nil na sonda de 08/09/2026.
-      local contorno, deQual, tentados, erroContour = nil, 0, 0, nil
-      for i, obj in ipairs(vetores) do
-         tentados = i
-         local ok, r = pcall(function() return obj:GetContour() end)
-         if ok and r ~= nil then
-            contorno = r
-            deQual = i
-            break
-         end
-         if not ok and erroContour == nil then
-            erroContour = tostring(r):gsub("[\r\n]+", " | "):sub(1, 160)
-         end
-         if i >= 20 then break end
-      end
-      anotar(string.format("  (GetContour testado em %d objeto(s); respondeu no #%d)",
-                           tentados, deQual))
-      if erroContour ~= nil then
-         anotar("  erro tipico: " .. erroContour)
-      end
-
-      if contorno == nil then
-         anotar("  --- Contour: nenhum objeto devolveu contorno ---")
-      else
-         sondar("Contour", contorno, {
-            "Area", "GetArea", "Length", "GetLength", "Perimeter",
-            "IsClosed", "Closed", "IsOpen", "IsPointInside", "PointInside",
-            "Contains", "ContainsPoint", "Inside", "IsInside",
-            "Count", "SpanCount", "GetSpanCount", "NumberOfSpans",
-            "GetSpan", "Span", "GetPoint", "GetPoints", "Points",
-            "GetStartPoint", "GetEndPoint", "StartPoint", "EndPoint",
-            "GetBoundingBox", "BoundingBox", "GetHeadPosition", "GetNext",
-            "IsClockwise", "Direction", "Reverse", "Clone",
-        })
-      end
-
-      -- Box2D: a caixa que o proprio objeto entrega, sem passar pela
-      -- selecao. Se der, some a gambiarra de selecionar-um-por-vez.
-      local caixa = nil
-      pcall(function() caixa = amostra:GetBoundingBox() end)
-      if caixa ~= nil then
-         sondar("Box2D (do proprio objeto)", caixa, {
-            "BLC", "TRC", "BRC", "TLC", "Width", "Height", "XMin", "XMax",
-            "YMin", "YMax", "Centre", "Center", "IsValid", "Contains", "Merge",
-         })
-      end
-   end)
-
    anotar("")
    anotar("=== percursos ===")
 
-   local interna, nomeInterna = achar_camada(trabalho, "CORTE INTERNO")
-   local externa, nomeExterna = achar_camada(trabalho, "CORTE EXTERNO")
+   -- A SELECAO MANDA: havendo objeto selecionado, o percurso sai so pra
+   -- ele. E assim que a moldura de acrilico e o gabarito ficam de fora
+   -- sem ninguem apagar nada da chapa.
+   local selecionados = selecao_atual(trabalho)
+   if selecionados == nil then
+      anotar("  PAREI: havia selecao e nao consegui ler quais objetos eram.")
+      gravar()
+      MessageBox("Voce tem objeto selecionado, mas eu nao consegui ler QUAIS sao.\n\n" ..
+                 "Nao criei percurso nenhum - seguir pegaria a chapa inteira.\n\n" ..
+                 "Tire a selecao e rode de novo pra cortar tudo.")
+      return false
+   end
+
+   local alvos = selecionados
+   if #alvos > 0 then
+      anotar("  " .. #alvos .. " objeto(s) selecionado(s) — so eles viram percurso")
+   else
+      alvos = todos_os_vetores(trabalho)
+      anotar("  nada selecionado — pegando os " .. #alvos .. " vetores do trabalho")
+   end
+
    local feitos = 0
 
-   if interna ~= nil or externa ~= nil then
-      -- O CAMINHO BOM. As camadas vieram do corte_dxf.py, que leu o PDF
-      -- e classificou com os pontos do vetor na mao. Dois percursos, e o
-      -- INTERNO PRIMEIRO: a ordem na lista e a ordem de usinagem.
-      if interna ~= nil then
-         local n = selecionar_camada(trabalho, interna)
-         anotar("  camada '" .. nomeInterna .. "': " .. n .. " vetores")
-         if n > 0 and criar_percurso("CORTE INTERNO", ferramenta, LADO_DENTRO, p) then
-            feitos = feitos + 1
-         end
-      else
-         anotar("  (sem camada de corte interno — pode ser peca sem furo)")
-      end
-
-      if externa ~= nil then
-         local n = selecionar_camada(trabalho, externa)
-         anotar("  camada '" .. nomeExterna .. "': " .. n .. " vetores")
-         if n > 0 and criar_percurso("CORTE EXTERNO", ferramenta, LADO_FORA, p) then
-            feitos = feitos + 1
-         end
-      end
-
+   if #alvos == 0 then
+      anotar("  (nao ha vetor nenhum pra cortar)")
    else
-      -- SEM camada nomeada. UM percurso, com ProfileSide=0: o Aspire
-      -- detecta o aninhamento sozinho e corta o furo por dentro
-      -- (confirmado na tela em 06/09/2026). O que ele NAO garante e a
-      -- ORDEM — e nao ha como pedir isso pela API.
-      --
-      -- Se houver selecao, ela manda: o percurso sai so no que esta
-      -- selecionado. E assim que a moldura de acrilico fica de fora.
-      if tem_selecao(trabalho) then
-         anotar("  sem camada nomeada — um percurso so, no que esta SELECIONADO")
-      else
-         anotar("  sem camada nomeada e nada selecionado — um percurso so, na chapa toda")
+      -- Classifica com a geometria do proprio Aspire (IsPointInside),
+      -- nao pela caixa envolvente — ver o bloco la em cima.
+      local dentro, fora, semGeo = classificar(alvos)
+      anotar("  por dentro: " .. #dentro .. "   por fora: " .. #fora)
+      if semGeo > 0 then
+         anotar("  " .. semGeo .. " sem geometria legivel foram por fora")
       end
-      anotar("  o Aspire acerta dentro/fora sozinho; a ORDEM e que nao fica garantida")
-      if criar_percurso("CORTE", ferramenta, LADO_FORA, p) then feitos = 1 end
+
+      -- O INTERNO PRIMEIRO. A ordem na lista e a ordem de usinagem:
+      -- depois que o contorno externo fecha, a peca solta e se mexe.
+      if #dentro > 0 then
+         selecionar_objetos(trabalho, dentro)
+         if criar_percurso("CORTE INTERNO", ferramenta, LADO_DENTRO, p) then
+            feitos = feitos + 1
+         end
+      else
+         anotar("  (nada por dentro — nenhuma peca com furo)")
+      end
+
+      if #fora > 0 then
+         selecionar_objetos(trabalho, fora)
+         if criar_percurso("CORTE EXTERNO", ferramenta, LADO_FORA, p) then
+            feitos = feitos + 1
+         end
+      end
    end
 
    anotar("  total de percursos no trabalho: " .. tostring(ToolpathManager().Count))
@@ -482,17 +481,18 @@ function main(script_path)
    end
 
    local recado = feitos .. " percurso(s) criado(s)."
+   -- SO ASCII daqui pra baixo. O MessageBox do Aspire le a string como
+   -- ANSI, entao um travessao aparece como "a-EUR-aspas" na tela — foi
+   -- o que o Flavio viu em 08/09/2026. Mesma regra dos .bat do projeto.
    if feitos >= 2 then
-      recado = recado .. "\n\nCORTE INTERNO primeiro, CORTE EXTERNO depois —\n" ..
+      recado = recado .. "\n\nCORTE INTERNO primeiro, CORTE EXTERNO depois:\n" ..
                "a ordem da lista e a ordem de usinagem."
    end
    if interna == nil and externa == nil then
-      recado = recado .. "\n\nSaiu UM percurso so. O Aspire acerta o dentro/fora\n" ..
-               "sozinho, mas a ORDEM (furo antes do contorno) nao esta\n" ..
-               "garantida.\n\n" ..
-               "Se quiser a ordem agora: selecione so os furos e clique,\n" ..
-               "depois selecione so os contornos e clique de novo — sao\n" ..
-               "dois percursos, na ordem em que voce criar."
+      recado = recado .. "\n\nO arquivo nao trazia camada nomeada, entao classifiquei\n" ..
+               "pela geometria: o centro de cada vetor foi testado dentro\n" ..
+               "do contorno dos outros, pelo proprio Aspire.\n\n" ..
+               "Confira na tela antes de mandar pra maquina."
    end
    MessageBox(recado)
    return true
