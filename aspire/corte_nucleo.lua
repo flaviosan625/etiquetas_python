@@ -416,6 +416,66 @@ function main(script_path)
       anotar("  nenhum — a ordem so da pra garantir com percursos separados")
    end
 
+   -- ============ ONDE ESTA O ZERO, E ONDE ESTAO OS VETORES =========
+   --
+   -- A maquina cortou deslocada (08/09/2026): "nao esta reconhecendo o
+   -- zero que fica no canto inferior esquerdo da folha".
+   --
+   -- O gadget NAO define o zero do trabalho — isso e o Job Setup do
+   -- Aspire (posicao do datum XY). O que ele passa e o ToolpathPosData,
+   -- que so diz pra onde a ferramenta VOLTA (Home) e a altura segura.
+   --
+   -- Entao, antes de mexer em qualquer coisa, este bloco so MOSTRA: o
+   -- tamanho do material, onde esta a origem dele, e em que coordenadas
+   -- os vetores realmente estao. Um PDF arrastado chega com as
+   -- coordenadas da PAGINA — ja vimos vetor em X:6891mm porque a pagina
+   -- tinha 4,2 metros. Se os vetores estiverem longe da origem, a
+   -- maquina corta deslocado mesmo com o zero certo na mesa.
+   --
+   -- So le. Nao altera percurso, material nem origem.
+   anotar("")
+   anotar("=== onde esta o zero, e onde estao os vetores ===")
+   pcall(function()
+      local pos = ToolpathPosData()
+      anotar(string.format("  ToolpathPosData: HomeX=%s HomeY=%s HomeZ=%s SafeZ=%s",
+                           tostring(pos.HomeX), tostring(pos.HomeY),
+                           tostring(pos.HomeZ), tostring(pos.SafeZ)))
+   end)
+   pcall(function()
+      local bloco = trabalho.MaterialBlock
+      if bloco == nil then
+         anotar("  MaterialBlock: nao consegui obter")
+         return
+      end
+      anotar(string.format("  material: %s x %s x %s  InMM=%s",
+                           tostring(bloco.Width), tostring(bloco.Height),
+                           tostring(bloco.Thickness), tostring(bloco.InMM)))
+      anotar("  XYOrigin = " .. numa_linha(bloco.XYOrigin) ..
+             "   ZOrigin = " .. numa_linha(bloco.ZOrigin))
+   end)
+   pcall(function()
+      -- Onde os vetores estao de verdade. Se o canto inferior esquerdo
+      -- nao for perto de (0,0), esta e a explicacao do deslocamento.
+      local todos = todos_os_vetores(trabalho)
+      local x0, y0, x1, y1
+      for _, obj in ipairs(todos) do
+         pcall(function()
+            local b = obj:GetBoundingBox()
+            if x0 == nil or b.BLC.x < x0 then x0 = b.BLC.x end
+            if y0 == nil or b.BLC.y < y0 then y0 = b.BLC.y end
+            if x1 == nil or b.TRC.x > x1 then x1 = b.TRC.x end
+            if y1 == nil or b.TRC.y > y1 then y1 = b.TRC.y end
+         end)
+      end
+      if x0 == nil then
+         anotar("  (nenhum vetor pra medir)")
+      else
+         anotar(string.format("  vetores ocupam: X de %.1f a %.1f   Y de %.1f a %.1f",
+                              x0, x1, y0, y1))
+         anotar(string.format("  canto inferior esquerdo dos vetores: (%.1f , %.1f)", x0, y0))
+      end
+   end)
+
    anotar("")
    anotar("=== percursos ===")
 
