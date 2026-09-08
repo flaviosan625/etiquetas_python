@@ -7,36 +7,9 @@ CORTE AUTOMATICO
 === o percurso tem campo de ordem? ===
   nenhum — a ordem so da pra garantir com percursos separados
 
-=== sonda: o que um vetor sabe dizer de si ===
-  vetores encontrados no trabalho: 461
-  --- CadObject ---
-    GetBoundingBox     funcao: No matching overload found, candidates: | Box2D const& GetBoundingBox(CadObject const&)
-    GetContour         funcao: No matching overload found, candidates: | Contour const* GetContour(CadObject const&)
-    Clone              funcao: No matching overload found, candidates: | CadObject* Clone(CadObject const&)
-  (GetContour testado em 1 objeto(s); respondeu no #1)
-  --- Contour ---
-    Area               number = 45706.885733479
-    Length             number = 1237.518880369
-    IsClosed           boolean = true
-    IsOpen             boolean = false
-    IsPointInside      funcao: No matching overload found, candidates: | bool IsPointInside(Contour const&,Point2D const&,custom [double])
-    Count              number = 12
-    GetHeadPosition    funcao: No matching overload found, candidates: | POSITION* GetHeadPosition(Contour const&)
-    GetNext            funcao: No matching overload found, candidates: | Span* GetNext(Contour const&,POSITION*&)
-    IsClockwise        boolean = true
-    Reverse            funcao: No matching overload found, candidates: | bool Reverse(Contour&)
-    Clone              funcao: No matching overload found, candidates: | Contour* Clone(Contour const&)
-  --- Box2D (do proprio objeto) ---
-    BLC                userdata = Point2D: X:3480.02989, Y:1623.83666
-    TRC                userdata = Point2D: X:3663.11243, Y:2044.35725
-    BRC                userdata = Point2D: X:3663.11243, Y:1623.83666
-    TLC                userdata = Point2D: X:3480.02989, Y:2044.35725
-    Centre             userdata = Point2D: X:3571.57116, Y:1834.09696
-    Center             userdata = Point2D: X:3571.57116, Y:1834.09696
-    Merge              funcao: No matching overload found, candidates: | void Merge(Box2D&,Box2D const&) | void Merge(Box2D&,Point2D const&) | void Merge(Box2D&,custom [double],custom [double
-
 === percursos ===
-  sem camada nomeada — um percurso so, no que esta SELECIONADO
-  o Aspire acerta dentro/fora sozinho; a ORDEM e que nao fica garantida
-  'CORTE' lado=0 -> criado luaUUID:
-  total de percursos no trabalho: 1
+  25 objeto(s) selecionado(s) — so eles viram percurso
+  por dentro: 11   por fora: 14
+  'CORTE INTERNO' lado=1 -> criado luaUUID:
+  'CORTE EXTERNO' lado=0 -> criado luaUUID:
+  total de percursos no trabalho: 2
