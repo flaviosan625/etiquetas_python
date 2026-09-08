@@ -32,6 +32,12 @@ def _isolar_pasta_relatorios(tmp_path, monkeypatch):
     monkeypatch.setattr(rl_hf, "CAMINHO_LOG", tmp_path / "hotfolder.log")
     monkeypatch.setattr(rl_hf, "CAMINHO_TRAVA", tmp_path / "hotfolder.lock")
     monkeypatch.setattr(rl_hf, "CAMINHO_ESTADO_AVISOS", tmp_path / "hotfolder_avisos.json")
+    # O crash tambem: sem esta linha, toda rodada de teste que passa por
+    # _rodar_protegido despeja traceback no arquivo de verdade do
+    # repositorio. Foram 49 entradas acumuladas assim, todas do mesmo
+    # teste, e uma investigacao inteira atras de um defeito de producao
+    # que nunca existiu (2026-09-07).
+    monkeypatch.setattr(rl_hf, "CAMINHO_CRASH", tmp_path / "hotfolder_crash.log")
 
 
 def _maquinas(hot_folder, largura_util_m=None):
@@ -821,7 +827,18 @@ def test_principal_uma_vez_faz_uma_passada_e_sai(tmp_path, monkeypatch):
     import rasterlink_hotfolder as modulo
 
     chamadas = []
-    monkeypatch.setattr(modulo, "vigiar_fila_uma_vez", lambda **kw: chamadas.append(kw))
+
+    # O dublê tem que devolver o MESMO tipo do verdadeiro (um dict por
+    # máquina). Enquanto devolveu o None do list.append, principal_uma_
+    # vez estourava em resultado.update(None) — e o teste continuava
+    # passando, porque _rodar_protegido engole o erro e a contagem
+    # acontece antes dele. Um teste que escondia a quebra que devia
+    # denunciar (2026-09-07).
+    def anotar(**kw):
+        chamadas.append(kw)
+        return {"UJV100": {"enviados": [], "ignorados": [], "falharam": []}}
+
+    monkeypatch.setattr(modulo, "vigiar_fila_uma_vez", anotar)
     monkeypatch.setattr(modulo, "vigiar_fila", lambda **kw: pytest.fail("nao pode chamar o loop eterno"))
     monkeypatch.setattr(modulo, "CAMINHO_TRAVA", tmp_path / "trava.lock")
     monkeypatch.setattr(modulo, "CAMINHO_ESTADO_AVISOS", tmp_path / "avisos.json")
@@ -829,6 +846,7 @@ def test_principal_uma_vez_faz_uma_passada_e_sai(tmp_path, monkeypatch):
     modulo.principal_uma_vez()
 
     assert len(chamadas) == 1
+    assert not modulo.CAMINHO_CRASH.exists(), "uma passada normal nao pode gerar arquivo de crash"
 
 
 def test_aviso_de_erro_nao_repete_entre_passadas_separadas(tmp_path, monkeypatch):
@@ -921,7 +939,6 @@ def test_erro_na_passada_vira_arquivo_de_crash_em_vez_de_sumir(tmp_path, monkeyp
     import rasterlink_hotfolder as modulo
     monkeypatch.setattr(modulo, "CAMINHO_TRAVA", tmp_path / "trava.lock")
     monkeypatch.setattr(modulo, "CAMINHO_ESTADO_AVISOS", tmp_path / "avisos.json")
-    monkeypatch.setattr(modulo, "__file__", str(tmp_path / "rasterlink_hotfolder.py"))
 
     def estoura(**kw):
         raise RuntimeError("quebrou bem no comeco")
@@ -929,7 +946,8 @@ def test_erro_na_passada_vira_arquivo_de_crash_em_vez_de_sumir(tmp_path, monkeyp
     monkeypatch.setattr(modulo, "vigiar_fila_uma_vez", estoura)
     modulo.principal_uma_vez()  # nao pode propagar: a tarefa do Agendador nao tem quem olhe
 
-    crash = (tmp_path / "rasterlink_hotfolder_crash.log").read_text(encoding="utf-8")
+    # CAMINHO_CRASH ja vem desviado pra tmp_path pela fixture autouse
+    crash = modulo.CAMINHO_CRASH.read_text(encoding="utf-8")
     assert "quebrou bem no comeco" in crash
 
 
@@ -1208,3 +1226,340 @@ def test_falha_ao_gravar_o_sinal_nao_derruba_a_passada(tmp_path, monkeypatch):
                                     logger=lambda n, m: None)
     assert resultado["UJV100"]["falharam"] == ["arte.pdf"] or resultado["UJV100"]["enviados"] == ["arte.pdf"]
     assert modulo.ler_sinal_de_vida(str(fila)) is None
+
+
+# ---------- postos: cada vigia cuida so das maquinas dele ----------
+#
+# As hot folders nao estao todas no mesmo PC (2026-09-07): as duas
+# Mimaki sao atendidas pelo RasterLink7 na maquina do RIP, e a DOCAN
+# pelo SAi Production Manager na maquina principal. Sem separar por
+# posto, o vigia do RIP procuraria a pasta da DOCAN do lado errado e
+# reclamaria dela de minuto em minuto — e o arquivo mandado pra DOCAN
+# ficaria encalhado esperando um vigia que nunca vem.
+
+def _duas_maquinas(hot_rip, hot_sai):
+    return {
+        "UJV100": {"hot_folder": str(hot_rip), "posto": rl_hf.POSTO_RIP},
+        "DOCAN": {"hot_folder": str(hot_sai), "posto": rl_hf.POSTO_SAI},
+    }
+
+
+def test_vigia_de_um_posto_nao_atende_maquina_do_outro(tmp_path):
+    fila = tmp_path / "fila"
+    hot_rip = tmp_path / "hot_rip"
+    hot_rip.mkdir()
+    (fila / "UJV100").mkdir(parents=True)
+    (fila / "DOCAN").mkdir(parents=True)
+
+    # a hot folder do posto 'sai' nem existe deste lado, de proposito
+    maquinas = _duas_maquinas(hot_rip, tmp_path / "hot_sai_que_so_existe_no_outro_pc")
+
+    resultado = vigiar_fila_uma_vez(pasta_fila=str(fila), maquinas=maquinas,
+                                    logger=lambda n, m: None, posto=rl_hf.POSTO_RIP)
+
+    assert list(resultado) == ["UJV100"]
+    assert "erro" not in resultado["UJV100"]
+
+
+def test_pasta_de_maquina_do_outro_posto_nao_vira_reclamacao(tmp_path):
+    """
+    A pasta da DOCAN dentro da fila e legitima e tem dono — so que o
+    dono e o outro vigia. Acusa-la de nome errado seria acusar de errado
+    o que esta certo, todo minuto, no log que a gente le quando a fila
+    para de verdade.
+    """
+    fila = tmp_path / "fila"
+    hot_rip = tmp_path / "hot_rip"
+    hot_rip.mkdir()
+    (fila / "UJV100").mkdir(parents=True)
+    (fila / "DOCAN").mkdir(parents=True)
+
+    avisos = []
+    vigiar_fila_uma_vez(
+        pasta_fila=str(fila), maquinas=_duas_maquinas(hot_rip, tmp_path / "nao_existe"),
+        logger=lambda nivel, msg: avisos.append((nivel, msg)), posto=rl_hf.POSTO_RIP,
+    )
+
+    assert not [m for n, m in avisos if "DOCAN" in m], f"reclamou da DOCAN a toa: {avisos}"
+
+
+def test_pasta_que_nao_e_de_maquina_nenhuma_continua_sendo_avisada(tmp_path):
+    """A separacao por posto nao pode calar o aviso que ja existia."""
+    fila = tmp_path / "fila"
+    hot_rip = tmp_path / "hot_rip"
+    hot_rip.mkdir()
+    (fila / "UJV100").mkdir(parents=True)
+    (fila / "UJV 100 UNY CVV").mkdir(parents=True)   # nome digitado errado
+
+    avisos = []
+    vigiar_fila_uma_vez(
+        pasta_fila=str(fila), maquinas=_duas_maquinas(hot_rip, tmp_path / "nao_existe"),
+        logger=lambda nivel, msg: avisos.append((nivel, msg)), posto=rl_hf.POSTO_RIP,
+    )
+
+    assert [m for n, m in avisos if "UJV 100 UNY CVV" in m]
+
+
+def test_hot_folder_sumida_do_proprio_posto_continua_sendo_erro_alto(tmp_path):
+    """
+    Pular em silencio so vale pra maquina de OUTRO posto. A do posto
+    daqui que sumiu (RasterLink reinstalado, Favorito renomeado) tem que
+    gritar — foi pra isso que o aviso por maquina foi feito.
+    """
+    fila = tmp_path / "fila"
+    maquinas = _duas_maquinas(tmp_path / "hot_rip_que_sumiu", tmp_path / "hot_sai")
+
+    resultado = vigiar_fila_uma_vez(pasta_fila=str(fila), maquinas=maquinas,
+                                    logger=lambda n, m: None, posto=rl_hf.POSTO_RIP)
+
+    assert "Hot folder" in resultado["UJV100"]["erro"]
+
+
+def test_maquina_sem_posto_declarado_e_do_posto_do_rip(tmp_path):
+    """
+    Entrada antiga (so o caminho da hot folder em texto) tem que
+    continuar valendo sem alteracao nenhuma: e o formato que a maquina
+    do RIP ja tem instalado.
+    """
+    hot = tmp_path / "hot"
+    hot.mkdir()
+    so_o_caminho = {"UJV100": str(hot)}
+
+    assert rl_hf.maquinas_do_posto(rl_hf.POSTO_RIP, so_o_caminho) == so_o_caminho
+    assert rl_hf.maquinas_do_posto(rl_hf.POSTO_SAI, so_o_caminho) == {}
+
+
+def test_posto_sem_nenhuma_maquina_reclama_em_vez_de_rodar_calado(tmp_path):
+    hot = tmp_path / "hot"
+    hot.mkdir()
+    with pytest.raises(RuntimeError, match="posto"):
+        vigiar_fila_uma_vez(pasta_fila=str(tmp_path / "fila"), maquinas={"UJV100": str(hot)},
+                            logger=lambda n, m: None, posto=rl_hf.POSTO_SAI)
+
+
+def test_cada_posto_deixa_o_sinal_de_vida_dele(tmp_path):
+    """
+    Um sinal so, gravado pelos dois, se apagaria a cada ciclo: cada
+    vigia escreve apenas as maquinas dele, entao o estado nunca bateria
+    com o anterior e a espera de 5 minutos deixaria de valer — viraria
+    uma gravacao por minuto de cada lado, numa pasta sincronizada.
+    """
+    fila = tmp_path / "fila"
+    hot_rip = tmp_path / "hot_rip"
+    hot_sai = tmp_path / "hot_sai"
+    hot_rip.mkdir()
+    hot_sai.mkdir()
+    maquinas = _duas_maquinas(hot_rip, hot_sai)
+
+    vigiar_fila_uma_vez(pasta_fila=str(fila), maquinas=maquinas,
+                        logger=lambda n, m: None, posto=rl_hf.POSTO_RIP)
+    vigiar_fila_uma_vez(pasta_fila=str(fila), maquinas=maquinas,
+                        logger=lambda n, m: None, posto=rl_hf.POSTO_SAI)
+
+    do_rip = rl_hf.ler_sinal_de_vida(str(fila), posto=rl_hf.POSTO_RIP)
+    do_sai = rl_hf.ler_sinal_de_vida(str(fila), posto=rl_hf.POSTO_SAI)
+
+    assert do_rip["maquinas"] == {"UJV100": None}, "o vigia da DOCAN apagou o sinal do RIP"
+    assert do_sai["maquinas"] == {"DOCAN": None}
+
+
+def test_sinal_do_rip_continua_no_arquivo_de_sempre(tmp_path):
+    """
+    E o nome que a tarefa ja agendada grava e que as telas ja leem —
+    trocar o nome cegaria a tela de envio sem ninguem perceber.
+    """
+    caminho = rl_hf.caminho_do_sinal(tmp_path, posto=rl_hf.POSTO_RIP)
+    assert caminho.name == rl_hf.NOME_ARQUIVO_SINAL
+    assert rl_hf.caminho_do_sinal(tmp_path).name == rl_hf.NOME_ARQUIVO_SINAL
+    assert rl_hf.caminho_do_sinal(tmp_path, posto=rl_hf.POSTO_SAI).name != rl_hf.NOME_ARQUIVO_SINAL
+
+
+def test_sem_argumento_o_posto_e_o_do_rip():
+    """
+    A tarefa do Agendador na maquina do RIP nao passa argumento nenhum e
+    tem que continuar identica depois de receber esta versao.
+    """
+    assert rl_hf.posto_pedido(["rasterlink_hotfolder.py", "--uma-vez"]) == rl_hf.POSTO_RIP
+
+
+def test_posto_e_lido_das_duas_formas_de_escrever():
+    assert rl_hf.posto_pedido(["x.py", "--posto", "sai"]) == rl_hf.POSTO_SAI
+    assert rl_hf.posto_pedido(["x.py", "--posto=sai"]) == rl_hf.POSTO_SAI
+    assert rl_hf.posto_pedido(["x.py", "--posto=SAI"]) == rl_hf.POSTO_SAI
+
+
+def test_docan_esta_cadastrada_com_a_largura_util_e_nao_a_da_midia():
+    """
+    A midia e de 5,20 m; quem imprime sao 5,00 (BYHX, Media/Width =
+    5000.00 mm). Cadastrar 5,20 aqui faria o giro automatico deixar
+    passar uma arte que a maquina corta na borda.
+    """
+    hot, largura = rl_hf._config_maquina(rl_hf.MAQUINAS["DOCAN"])
+    assert largura == 5.00
+    assert "SAi" in hot, "a hot folder da DOCAN e o Setup do SAi, nao uma pasta inventada"
+    assert rl_hf._posto_da_maquina(rl_hf.MAQUINAS["DOCAN"]) == rl_hf.POSTO_SAI
+    for mimaki in ("UJV 100 UNY CV", "SWJ320A"):
+        assert rl_hf._posto_da_maquina(rl_hf.MAQUINAS[mimaki]) == rl_hf.POSTO_RIP
+
+
+# ---------- o bilhete do rolo ----------
+#
+# A DOCAN roda dois rolos (3,20 e 5,00) e qual esta montado muda a
+# largura util DAQUELE trabalho. Quem indica e o usuario na tela; o
+# numero viaja num bilhete ao lado da arte, porque a fila so carrega
+# arquivos e o nome da arte nao pode ser sujo com isso — ele vira linha
+# no documento do cliente e no relatorio diario.
+
+def test_o_rolo_escolhido_viaja_num_bilhete_ao_lado_da_arte(tmp_path):
+    origem = tmp_path / "arte.pdf"
+    origem.write_bytes(b"conteudo")
+    maquinas = {"DOCAN": {"hot_folder": str(tmp_path / "hot"), "rolos_m": (3.20, 5.00)}}
+
+    destino = enviar_para_fila(origem, "DOCAN", pasta_fila=tmp_path / "fila",
+                               maquinas=maquinas, rolo_m=3.20)
+
+    assert rl_hf.ler_bilhete(destino) == {"rolo_m": 3.20}
+
+
+def test_arte_sem_rolo_nao_ganha_bilhete(tmp_path):
+    """As Mimaki tem uma largura so — bilhete ali seria arquivo a toa na fila."""
+    origem = tmp_path / "arte.pdf"
+    origem.write_bytes(b"conteudo")
+
+    destino = enviar_para_fila(origem, "UJV100", pasta_fila=tmp_path / "fila",
+                               maquinas={"UJV100": str(tmp_path / "hot")})
+
+    assert not rl_hf.caminho_do_bilhete(destino).exists()
+    assert rl_hf.ler_bilhete(destino) == {}
+
+
+def test_bilhete_e_escrito_antes_da_arte(tmp_path, monkeypatch):
+    """
+    O vigia so age quando ve a ARTE. Se a arte chegasse primeiro, um
+    ciclo poderia pega-la antes do bilhete e girar pela largura errada —
+    mandando pra impressao uma peca mais larga que o material.
+    """
+    origem = tmp_path / "arte.pdf"
+    origem.write_bytes(b"conteudo")
+    maquinas = {"DOCAN": {"hot_folder": str(tmp_path / "hot"), "rolos_m": (3.20, 5.00)}}
+
+    def copia_que_falha(*a, **kw):
+        raise OSError("rede caiu no meio")
+
+    monkeypatch.setattr(rl_hf.shutil, "copy2", copia_que_falha)
+
+    with pytest.raises(OSError):
+        enviar_para_fila(origem, "DOCAN", pasta_fila=tmp_path / "fila",
+                         maquinas=maquinas, rolo_m=3.20)
+
+    # a arte nem chegou, mas o bilhete ja estava la: essa e a ordem certa
+    fila_docan = tmp_path / "fila" / "DOCAN"
+    assert not (fila_docan / "arte.pdf").exists()
+    assert rl_hf.caminho_do_bilhete(fila_docan / "arte.pdf").exists()
+
+
+def test_vigia_gira_pela_largura_do_rolo_e_nao_pela_da_maquina(tmp_path, monkeypatch):
+    """
+    Numa DOCAN cadastrada com 5,00 mas rodando o rolo de 3,20, uma arte
+    de 3,90x0,95 TEM que girar. Girando pelos 5,00 do cadastro ela
+    passaria reta e sairia cortada na borda do material.
+    """
+    monkeypatch.setattr(rl_hf.time, "sleep", lambda s: None)
+    fila = tmp_path / "fila"
+    (fila / "DOCAN").mkdir(parents=True)
+    hot = tmp_path / "hot"
+    hot.mkdir()
+    arte = fila / "DOCAN" / "arte.pdf"
+    _pdf_de(arte, largura_cm=390, altura_cm=95)
+    rl_hf._escrever_bilhete(arte, {"rolo_m": 3.20})
+
+    maquinas = {"DOCAN": {"hot_folder": str(hot), "largura_util_m": 5.00,
+                          "rolos_m": (3.20, 5.00)}}
+    vigiar_fila_uma_vez(pasta_fila=str(fila), maquinas=maquinas, logger=lambda n, m: None)
+
+    assert _tamanho_cm(hot / "arte.pdf") == (95, 390), "devia girar pelo rolo de 3,20"
+
+
+def test_sem_bilhete_o_vigia_usa_a_largura_da_maquina(tmp_path, monkeypatch):
+    """A mesma arte, sem bilhete, cabe nos 5,00 da DOCAN e passa reta."""
+    monkeypatch.setattr(rl_hf.time, "sleep", lambda s: None)
+    fila = tmp_path / "fila"
+    (fila / "DOCAN").mkdir(parents=True)
+    hot = tmp_path / "hot"
+    hot.mkdir()
+    _pdf_de(fila / "DOCAN" / "arte.pdf", largura_cm=390, altura_cm=95)
+
+    maquinas = {"DOCAN": {"hot_folder": str(hot), "largura_util_m": 5.00,
+                          "rolos_m": (3.20, 5.00)}}
+    vigiar_fila_uma_vez(pasta_fila=str(fila), maquinas=maquinas, logger=lambda n, m: None)
+
+    assert _tamanho_cm(hot / "arte.pdf") == (390, 95)
+
+
+def test_bilhete_sai_da_fila_junto_com_a_arte(tmp_path, monkeypatch):
+    """
+    Bilhete que fica pra tras faz a PROXIMA arte de mesmo nome herdar o
+    rolo desta — e sozinho ele nunca mais seria lido por ninguem.
+    """
+    monkeypatch.setattr(rl_hf.time, "sleep", lambda s: None)
+    fila = tmp_path / "fila"
+    (fila / "DOCAN").mkdir(parents=True)
+    hot = tmp_path / "hot"
+    hot.mkdir()
+    arte = fila / "DOCAN" / "arte.pdf"
+    _pdf_de(arte, largura_cm=100, altura_cm=100)
+    rl_hf._escrever_bilhete(arte, {"rolo_m": 3.20})
+
+    maquinas = {"DOCAN": {"hot_folder": str(hot), "largura_util_m": 5.00}}
+    vigiar_fila_uma_vez(pasta_fila=str(fila), maquinas=maquinas, logger=lambda n, m: None)
+
+    sobrou = [f.name for f in (fila / "DOCAN").iterdir() if f.is_file()]
+    assert sobrou == [], f"sobrou lixo na fila: {sobrou}"
+
+
+def test_bilhete_nao_conta_como_arquivo_ignorado(tmp_path, monkeypatch):
+    """
+    Contar o bilhete como 'ignorado' faria o resumo da passada dizer o
+    dobro do que aconteceu — e quem le o resumo procura numero estranho.
+    """
+    monkeypatch.setattr(rl_hf.time, "sleep", lambda s: None)
+    fila = tmp_path / "fila"
+    (fila / "DOCAN").mkdir(parents=True)
+    hot = tmp_path / "hot"
+    hot.mkdir()
+    arte = fila / "DOCAN" / "arte.pdf"
+    _pdf_de(arte, largura_cm=100, altura_cm=100)
+    rl_hf._escrever_bilhete(arte, {"rolo_m": 3.20})
+
+    maquinas = {"DOCAN": {"hot_folder": str(hot), "largura_util_m": 5.00}}
+    r = vigiar_fila_uma_vez(pasta_fila=str(fila), maquinas=maquinas, logger=lambda n, m: None)
+
+    assert r["DOCAN"]["enviados"] == ["arte.pdf"]
+    assert r["DOCAN"]["ignorados"] == []
+
+
+def test_bilhete_ilegivel_nao_segura_a_arte(tmp_path, monkeypatch):
+    """
+    Detalhe nosso nunca pode virar arquivo represado: sem conseguir ler
+    o bilhete, vale a largura da maquina e a arte segue.
+    """
+    monkeypatch.setattr(rl_hf.time, "sleep", lambda s: None)
+    fila = tmp_path / "fila"
+    (fila / "DOCAN").mkdir(parents=True)
+    hot = tmp_path / "hot"
+    hot.mkdir()
+    arte = fila / "DOCAN" / "arte.pdf"
+    _pdf_de(arte, largura_cm=100, altura_cm=100)
+    rl_hf.caminho_do_bilhete(arte).write_text("isto nao e json", encoding="utf-8")
+
+    maquinas = {"DOCAN": {"hot_folder": str(hot), "largura_util_m": 5.00}}
+    r = vigiar_fila_uma_vez(pasta_fila=str(fila), maquinas=maquinas, logger=lambda n, m: None)
+
+    assert r["DOCAN"]["enviados"] == ["arte.pdf"]
+    assert (hot / "arte.pdf").exists()
+
+
+def test_rolos_so_existem_em_quem_tem_rolo(tmp_path):
+    assert rl_hf.rolos_da_maquina("DOCAN") == (3.20, 5.00)
+    assert rl_hf.rolos_da_maquina("SWJ320A") == ()
+    assert rl_hf.rolos_da_maquina("UJV 100 UNY CV") == ()

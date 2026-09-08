@@ -18,10 +18,21 @@ Três regras que vieram do usuário e que o código respeita literalmente:
     quem sabe o que já foi é o documento de Enviados, não a posição do
     arquivo na pasta.
   - **A máquina é decidida pelo material no nome, não pela largura**
-    (2026-09-05): lona sempre na SWJ320A, adesivo/vinil/adesivado
-    sempre na UJV — "na SWJ não colocamos adesivos". A largura útil
-    virou só alerta. A sugestão vem preenchida mas NUNCA fica travada:
-    "não sabemos o que pode acontecer no meio de uma produção".
+    (2026-09-05): adesivo/vinil/adesivado sempre na UJV — "na SWJ não
+    colocamos adesivos". A sugestão vem preenchida mas NUNCA fica
+    travada: "não sabemos o que pode acontecer no meio de uma produção".
+
+    Com a DOCAN (2026-09-07) abriu-se UMA exceção, e só uma: existindo
+    duas máquinas de lona, é a largura que desempata entre elas — "a SWJ
+    recebe porém a regra para ela é lonas até 320 na largura, no caso da
+    docan pode chegar até 500cm largura". O material continua decidindo
+    primeiro; a largura só escolhe qual das duas lonas.
+
+    A DOCAN roda DOIS rolos (3,20 e 5,00), e qual está montado muda a
+    largura útil daquele trabalho. O rolo vem sugerido (o mais estreito
+    em que a peça cabe, pra não desperdiçar material) e viaja pro vigia
+    num bilhete ao lado da arte — "eu devo indicar para qual vai o
+    determinado arquivo".
   - **Reenvio soma, não substitui**: mandar o mesmo arquivo de novo é
     caso real (peça danificada na instalação, arte corrigida salva por
     cima) — vira uma linha nova, com a hora dela, e conta no subtotal,
@@ -34,14 +45,31 @@ import shutil
 from dimensoes import extrair_dimensoes, extrair_quantidade, identificar_categoria, identificar_categoria_extra
 from producao import NOME_PASTA_PRODUCAO, NOME_SUBPASTA_PRONTOS, PASTA_CORTE, _pasta_de_trabalho_para
 from rasterlink_hotfolder import (
-    EXTENSOES_ACEITAS, MAQUINAS, PASTA_FILA_ONEDRIVE, _config_maquina, enviar_para_fila,
-    ler_sinal_de_vida,
+    EXTENSOES_ACEITAS, MAQUINAS, PASTA_FILA_ONEDRIVE, _config_maquina, apagar_bilhete,
+    enviar_para_fila, ler_sinal_de_vida, rolos_da_maquina,
 )
 
 # Nome da máquina de cada destino. Tem que bater EXATO com uma chave de
 # rasterlink_hotfolder.MAQUINAS — é o nome da subpasta da fila.
 MAQUINA_LONA = "SWJ320A"
 MAQUINA_ADESIVO = "UJV 100 UNY CV"
+
+# A DOCAN (2026-09-07). As duas imprimem lona, e o que separa é a
+# largura, dita pelo usuário: "a SWJ recebe porém a regra para ela é
+# lonas até 320 na largura, no caso da docan pode chegar até 500cm
+# largura".
+#
+# Isto ABRE UMA EXCEÇÃO na regra de 2026-09-05 ("a máquina é decidida
+# pelo material no nome, não pela largura"). Aquela regra continua
+# valendo pra escolher ENTRE MATERIAIS — adesivo na UJV, lona nas
+# outras, sem a largura opinar. A largura só entra depois, pra desempatar
+# QUAL das duas máquinas de lona, que é a única coisa que as distingue.
+MAQUINA_DOCAN = "DOCAN"
+
+# Mesma folga de 1mm do vigia: arte fechada exatamente na largura da
+# bobina vira 3.2000000038m depois da conversão e seria recusada por um
+# décimo de milímetro que não existe no material.
+_FOLGA_LARGURA_M = 0.001
 
 # Categoria que manda pra UJV. Não é só a categoria "ADESIVO" pura: o
 # config.json já mapeia VINIL como sinônimo de ADESIVO e ADESIVADO como
@@ -71,17 +99,26 @@ _ATTR_RECALL_ON_DATA_ACCESS = 0x400000
 _ATTRS_SO_NA_NUVEM = _ATTR_OFFLINE | _ATTR_RECALL_ON_OPEN | _ATTR_RECALL_ON_DATA_ACCESS
 
 
-def sugerir_maquina(nome_arquivo, config):
+def sugerir_maquina(nome_arquivo, config, dimensao=None, maquinas=None):
     """
-    Máquina sugerida pelo material que aparece no NOME do arquivo —
-    nunca pela largura (regra do usuário, 2026-09-05).
+    Máquina sugerida. O MATERIAL do nome decide primeiro, como sempre
+    (2026-09-05); a largura só entra depois, e só pra desempatar entre
+    as duas máquinas de lona (2026-09-07).
 
     Adesivo é conferido ANTES de lona de propósito: "PVC ADESIVADO"
     tem categoria PVC e categoria_extra ADESIVO, e o que manda é a
     palavra adesivo. Nome sem lona nem adesivo (ex: "PS IMPRESSO
-    REFILE") também vai pra UJV — decisão do usuário até a DOCAN, que
-    faz impressão direta, ser resolvida; quando ela entrar, é só mais
-    uma entrada em MAQUINAS e mais um caso aqui.
+    REFILE") também vai pra UJV — decisão do usuário, 2026-09-05.
+
+    Sendo lona: cabendo nos 3,20 da SWJ320A, vai pra ela; passando
+    disso, vai pra DOCAN, que chega a 5,00. "Caber" aqui é caber DE
+    ALGUM JEITO, inclusive girada — uma lona de 3,90x0,95 entra na SWJ
+    deitada com 0,95 de largura, e mandá-la pra DOCAN por causa do 3,90
+    do nome ocuparia a máquina grande à toa.
+
+    Sem medida legível no nome, a lona continua indo pra SWJ320A: é a
+    máquina de sempre, e a sugestão nunca fica travada — quem indica é
+    o usuário.
     """
     nome_upper = nome_arquivo.upper()
     materiais = config["materiais"]
@@ -91,11 +128,38 @@ def sugerir_maquina(nome_arquivo, config):
     if _CATEGORIA_ADESIVO in (categoria, categoria_extra):
         return MAQUINA_ADESIVO
     if categoria == _CATEGORIA_LONA:
+        if dimensao and not cabe_na_maquina(dimensao, MAQUINA_LONA, maquinas):
+            return MAQUINA_DOCAN
         return MAQUINA_LONA
     return MAQUINA_ADESIVO
 
 
-def prever_giro(dimensao, nome_maquina, maquinas=None):
+def rolo_sugerido(dimensao, nome_maquina, maquinas=None):
+    """
+    Qual rolo pré-selecionar pra esta peça nesta máquina. None quando a
+    máquina tem uma largura só — aí não há o que escolher.
+
+    Sugere o rolo MAIS ESTREITO em que a peça cabe: pôr uma lona de
+    2,80 no rolo de 5,00 desperdiça 2,20 m de material em toda a
+    extensão da peça. Não cabendo em nenhum, sugere o mais largo, que é
+    o que dá mais chance de sair — junto com o aviso de que não cabe.
+
+    É sugestão, não decisão: quem indica é o usuário, arquivo por
+    arquivo.
+    """
+    rolos = rolos_da_maquina(nome_maquina, maquinas)
+    if not rolos:
+        return None
+    if not dimensao:
+        return rolos[-1]
+    menor_lado = min(dimensao["largura_m"], dimensao["altura_m"])
+    for rolo in rolos:                       # já vêm do mais estreito pro mais largo
+        if menor_lado <= rolo + _FOLGA_LARGURA_M:
+            return rolo
+    return rolos[-1]
+
+
+def prever_giro(dimensao, nome_maquina, maquinas=None, rolo=None):
     """
     Diz se a arte deve girar 90° na máquina escolhida, a partir da
     medida lida do NOME — é previsão, não decisão: quem abre o PDF e
@@ -103,23 +167,24 @@ def prever_giro(dimensao, nome_maquina, maquinas=None):
     _copiar_para_hot_folder). A regra é a mesma dos dois lados, o que
     muda é a fonte da medida.
 
+    'rolo', quando vem, é a largura que vale — e é a MESMA que o vigia
+    vai usar do outro lado, porque ela viaja no bilhete ao lado da arte.
+    Se as duas pontas discordassem, a tela prometeria uma coisa e a
+    máquina faria outra.
+
     Devolve None quando não dá pra prever (sem medida no nome, máquina
     sem largura útil configurada) ou quando não gira. Senão devolve
     {"motivo": "economia"|"nao_cabe", "economia_m": float}.
     """
     if not dimensao:
         return None
-    maquinas = MAQUINAS if maquinas is None else maquinas
-    _, largura_util_m = _config_maquina(maquinas.get(nome_maquina))
+    largura_util_m = rolo or _largura_util(nome_maquina, maquinas)
     if not largura_util_m:
         return None
 
     largura_m = dimensao["largura_m"]
     altura_m = dimensao["altura_m"]
-    # mesma folga de 1mm do vigia: arte fechada exatamente na largura da
-    # bobina vira 3.2000000038m depois da conversão e seria recusada por
-    # arredondamento
-    limite = largura_util_m + 0.001
+    limite = largura_util_m + _FOLGA_LARGURA_M
     cabe_em_pe = largura_m <= limite
     cabe_deitado = altura_m <= limite
 
@@ -132,21 +197,58 @@ def prever_giro(dimensao, nome_maquina, maquinas=None):
     return {"motivo": "economia", "economia_m": altura_m - largura_m}
 
 
-def cabe_na_maquina(dimensao, nome_maquina, maquinas=None):
+def cabe_na_maquina(dimensao, nome_maquina, maquinas=None, rolo=None):
     """
     False só quando a arte não cabe na máquina NEM girada — caso em que
     o envio continua acontecendo, com aviso (escolha do usuário,
     2026-09-05: prefere decidir dentro do RasterLink a ter arquivo
     represado sem ele ver). True quando cabe ou quando não dá pra saber.
+
+    'rolo' manda mais que a largura do cadastro quando vem: numa DOCAN
+    com o rolo de 3,20 montado, quem decide se a peça cabe é o rolo, não
+    os 5,00 que a máquina alcança no melhor caso.
     """
     if not dimensao:
         return True
-    maquinas = MAQUINAS if maquinas is None else maquinas
-    _, largura_util_m = _config_maquina(maquinas.get(nome_maquina))
+    largura_util_m = rolo or _largura_util(nome_maquina, maquinas)
     if not largura_util_m:
         return True
-    limite = largura_util_m + 0.001
+    limite = largura_util_m + _FOLGA_LARGURA_M
     return dimensao["largura_m"] <= limite or dimensao["altura_m"] <= limite
+
+
+def _largura_util(nome_maquina, maquinas=None):
+    maquinas = MAQUINAS if maquinas is None else maquinas
+    return _config_maquina(maquinas.get(nome_maquina))[1]
+
+
+def _no_destino(item):
+    """"na SWJ320A" — ou "na DOCAN, no rolo de 3,20m" quando há rolo escolhido."""
+    if item.get("rolo"):
+        return f"na {item['maquina']}, no rolo de {item['rolo']:.2f}m".replace(".", ",")
+    return f"na {item['maquina']}"
+
+
+def onde_cabe(dimensao, maquina_atual, maquinas=None):
+    """
+    Onde mais esta peça caberia — outra máquina, ou outro rolo da
+    própria máquina. Texto pronto pra frase, ou None se não cabe em
+    lugar nenhum.
+    """
+    maquinas = MAQUINAS if maquinas is None else maquinas
+    for rolo in rolos_da_maquina(maquina_atual, maquinas):
+        if cabe_na_maquina(dimensao, maquina_atual, maquinas, rolo):
+            return f"no rolo de {rolo:.2f}m".replace(".", ",")
+    for nome in maquinas:
+        if nome == maquina_atual:
+            continue
+        rolos = rolos_da_maquina(nome, maquinas)
+        for rolo in (rolos or [None]):
+            if cabe_na_maquina(dimensao, nome, maquinas, rolo):
+                if rolo:
+                    return f"na {nome}, no rolo de {rolo:.2f}m".replace(".", ",")
+                return f"na {nome}"
+    return None
 
 
 def _so_na_nuvem(caminho):
@@ -293,7 +395,8 @@ def listar(pasta_escolhida, config, envios_anteriores=None, maquinas=None):
         categoria, _ = identificar_categoria(nome_upper, materiais, sinonimos)
         quantidade, _ = extrair_quantidade(nome_upper)
         dimensao = extrair_dimensoes(nome_upper, config)
-        maquina = sugerir_maquina(caminho.name, config)
+        maquina = sugerir_maquina(caminho.name, config, dimensao, maquinas)
+        rolo = rolo_sugerido(dimensao, maquina, maquinas)
 
         itens.append({
             "caminho": caminho,
@@ -304,8 +407,9 @@ def listar(pasta_escolhida, config, envios_anteriores=None, maquinas=None):
             "dimensao": dimensao,
             "area_total_m2": round(dimensao["area_m2"] * quantidade, 2) if dimensao else None,
             "maquina": maquina,
-            "giro": prever_giro(dimensao, maquina, maquinas),
-            "cabe": cabe_na_maquina(dimensao, maquina, maquinas),
+            "rolo": rolo,
+            "giro": prever_giro(dimensao, maquina, maquinas, rolo),
+            "cabe": cabe_na_maquina(dimensao, maquina, maquinas, rolo),
             "envios_anteriores": sorted(por_arquivo.get(caminho.name, []), key=lambda e: e["quando"]),
         })
     return itens
@@ -402,10 +506,17 @@ def conferir(itens, pasta_fila=None, maquinas=None):
 
         if not item["cabe"]:
             d = item["dimensao"]
-            avisos.append(
-                f"Tem {d['largura_m']:.2f}x{d['altura_m']:.2f}m e não cabe nem girado na "
-                f"{item['maquina']} — vai assim mesmo, confira no RasterLink."
+            onde = onde_cabe(d, item["maquina"], maquinas)
+            aviso = (
+                f"Tem {d['largura_m']:.2f}x{d['altura_m']:.2f}m e não cabe nem girado "
+                f"{_no_destino(item)} — vai assim mesmo, confira no RasterLink."
             )
+            # Quem indica a máquina é o usuário (2026-09-07), então este
+            # é o momento exato em que ele precisa indicar outra coisa —
+            # e dizer ONDE cabe poupa a conta de cabeça.
+            if onde:
+                aviso += f" Cabe {onde}."
+            avisos.append(aviso)
 
         if avisos:
             resultado["atencao"].append((item, avisos))
@@ -585,7 +696,10 @@ def enviar(itens, pasta_producao, pasta_fila=None, maquinas=None, agora=None, lo
             continue
 
         try:
-            destino = enviar_para_fila(caminho, item["maquina"], pasta_fila=pasta_fila, maquinas=maquinas)
+            destino = enviar_para_fila(
+                caminho, item["maquina"], pasta_fila=pasta_fila, maquinas=maquinas,
+                rolo_m=item.get("rolo"),
+            )
         except (OSError, ValueError, FileNotFoundError, shutil.Error) as e:
             resultado["falhas"].append((item, f"Falhei ao copiar pra fila: {e}"))
             continue
@@ -617,16 +731,22 @@ def enviar(itens, pasta_producao, pasta_fila=None, maquinas=None, agora=None, lo
             "dimensao": item["dimensao"],
             "area_total_m2": item["area_total_m2"],
             "girou_previsto": bool(item["giro"]),
+            "rolo_m": item.get("rolo"),
             "bytes": tamanho_origem,
         })
         if logger:
-            logger("ok", f"'{item['arquivo']}' enviado pra fila da {item['maquina']}.")
+            no_rolo = f" (rolo de {item['rolo']:.2f}m)".replace(".", ",") if item.get("rolo") else ""
+            logger("ok", f"'{item['arquivo']}' enviado pra fila da {item['maquina']}{no_rolo}.")
 
     return resultado
 
 
 def _apagar_copia(destino, logger=None):
     """Desfaz uma cópia que não passou na conferência — nunca deixa arquivo meio copiado esperando o RIP puxar."""
+    # O bilhete é escrito ANTES da arte (ver enviar_para_fila), então
+    # numa cópia desfeita ele é o que sobra sozinho. Sem isto, o próximo
+    # arquivo de mesmo nome herdaria o rolo desta tentativa que falhou.
+    apagar_bilhete(destino)
     try:
         destino.unlink()
     except OSError as e:

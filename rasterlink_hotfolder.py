@@ -22,20 +22,33 @@ Fluxo, em duas pontas:
      dentro da subpasta da máquina escolhida (nome_maquina precisa
      bater com uma chave de MAQUINAS). Sincroniza sozinha pras duas
      máquinas.
-  2. Só na máquina do RIP, rodando vigiar_fila(...) (loop contínuo,
-     pensado pra rodar em segundo plano nessa máquina, do mesmo jeito
-     que monitor_onedrive.py roda na máquina principal): a cada
-     intervalo, olha CADA subpasta de MAQUINAS, espera cada arquivo
-     novo ficar estável (parar de crescer — cobre tanto upload em
-     andamento quanto download do OneDrive ainda em progresso) e só
-     então copia pra hot folder local de verdade daquela máquina,
-     movendo o original da fila pra uma subpasta "Enviados" dentro da
-     subpasta da máquina (nunca apaga, só tira da fila pra não
-     reenviar de novo no próximo ciclo).
+  2. Num vigia por POSTO, rodando vigiar_fila(...) (loop contínuo, ou
+     vigiar_fila_uma_vez pela tarefa agendada): a cada intervalo, olha
+     CADA subpasta das máquinas DAQUELE posto, espera cada arquivo novo
+     ficar estável (parar de crescer — cobre tanto upload em andamento
+     quanto download do OneDrive ainda em progresso) e só então copia
+     pra hot folder local de verdade daquela máquina, movendo o
+     original da fila pra uma subpasta "Enviados" dentro da subpasta da
+     máquina (nunca apaga, só tira da fila pra não reenviar de novo no
+     próximo ciclo).
 
-MAQUINAS só tem a "UJV 100 UNY CV" preenchida até agora — adicione mais
-entradas (nome do Favorito -> caminho da hot folder) conforme as outras
-impressoras forem configuradas no RasterLink7.
+Hoje são DOIS postos, porque as hot folders não estão todas no mesmo PC
+(2026-09-07):
+
+  POSTO_RIP  — PC do RasterLink7, atende a UJV 100 UNY CV e a SWJ320A.
+               É o vigia que já roda pelo Agendador desde 2026-09-05, e
+               continua sendo o posto assumido quando ninguém diz qual é.
+  POSTO_SAI  — PC principal, onde roda o SAi Production Manager, que é
+               quem ripa pra DOCAN. A hot folder dela é o Setup do SAi.
+
+Cada vigia se identifica com '--posto rip' / '--posto sai' e cuida só
+das máquinas dele. Pasta de máquina do outro posto é pulada em silêncio;
+hot folder sumida de máquina DO posto continua sendo erro alto.
+
+O que a DOCAN tem de diferente e este módulo NÃO faz: nas Mimaki, chegar
+na hot folder é chegar na impressora. Na DOCAN, chegar na hot folder é
+só começar — o SAi ripa e cospe um .prt (1,5 GB é o tamanho normal), que
+ainda precisa ir pra máquina. Essa segunda perna é outro caminho.
 """
 import datetime
 import json
@@ -53,6 +66,26 @@ import time
 PASTA_FILA_ONEDRIVE = pathlib.Path.home() / "OneDrive" / "UNYCOMUNICACAO" / "Fila de Impressao RasterLink"
 NOME_SUBPASTA_ENVIADOS = "Enviados"
 
+# Posto = o PC onde mora a hot folder de uma máquina, ou seja, quem
+# consegue atendê-la. Existe porque as hot folders NÃO estão todas no
+# mesmo lugar (2026-09-07): as duas Mimaki são atendidas pelo
+# RasterLink7 no PC do RIP, e a DOCAN é atendida pelo SAi Production
+# Manager no PC principal.
+#
+# Sem isso, um vigia só percorreria as três e reclamaria eternamente da
+# pasta que não existe do lado dele — e pior, o arquivo mandado pra
+# DOCAN ficaria encalhado na fila esperando um vigia que nunca vem.
+# Cada vigia cuida do posto dele; pasta de máquina de OUTRO posto é
+# pulada em silêncio, porque não é problema dele.
+POSTO_RIP = "rip"   # PC do RasterLink7 (as Mimaki)
+POSTO_SAI = "sai"   # PC principal, onde roda o SAi Production Manager (a DOCAN)
+
+# Posto assumido quando ninguém diz qual é. É o do RIP de propósito: a
+# tarefa agendada que já roda naquela máquina desde 2026-09-05 não passa
+# argumento nenhum, e tem que continuar funcionando exatamente igual
+# depois de receber esta versão do arquivo.
+POSTO_PADRAO = POSTO_RIP
+
 # {nome do Favorito no RasterLink7: config da impressora NESSA máquina}.
 # O nome tem que ser IDÊNTICO ao nome da subpasta que enviar_para_fila
 # cria dentro da fila do OneDrive.
@@ -64,9 +97,105 @@ NOME_SUBPASTA_ENVIADOS = "Enviados"
 # hot folder (string) continua funcionando, só não ganha o giro
 # automático.
 MAQUINAS = {
-    "UJV 100 UNY CV": {"hot_folder": r"C:\MijCtrl\Hot\UJV 100 UNY CV", "largura_util_m": 1.48},
-    "SWJ320A": {"hot_folder": r"C:\MijCtrl\Hot\SWJ320A", "largura_util_m": 3.20},
+    "UJV 100 UNY CV": {
+        "hot_folder": r"C:\MijCtrl\Hot\UJV 100 UNY CV",
+        "largura_util_m": 1.48,
+        "posto": POSTO_RIP,
+    },
+    "SWJ320A": {
+        "hot_folder": r"C:\MijCtrl\Hot\SWJ320A",
+        "largura_util_m": 3.20,
+        "posto": POSTO_RIP,
+    },
+    # A hot folder da DOCAN é a do SETUP do SAi Production Manager, lida
+    # do PMSetups.ini dele (Device 'Docan-Docan'), não uma pasta
+    # inventada: é ali que o Production Manager fica olhando sozinho, e
+    # foi por ali que o teste de 2026-09-07 passou de ponta a ponta.
+    #
+    # 5,00 m é a largura ÚTIL, não a da mídia. A mídia é de 5,20 m; quem
+    # diz 5,00 é a própria máquina (BYHX, Media/Width = 5000.00 mm).
+    # Usar 5,20 aqui faria o giro automático deixar passar uma arte que
+    # a máquina corta na borda.
+    #
+    # 'rolos_m' é o que a DOCAN tem de diferente das Mimaki: ela roda
+    # DOIS rolos (2026-09-07), e qual está na máquina muda a largura
+    # útil daquele trabalho. Quem indica é o usuário, arquivo por
+    # arquivo, na tela de envio — não é escolha do código. Máquina sem
+    # 'rolos_m' tem uma largura só e continua funcionando como sempre.
+    "DOCAN": {
+        "hot_folder": r"C:\Program Files\SAi\SAi Production Suite 22\Jobs and Settings\Jobs\Docan\Docan",
+        "largura_util_m": 5.00,
+        "rolos_m": (3.20, 5.00),
+        "posto": POSTO_SAI,
+    },
 }
+
+# Sufixo do bilhete que viaja ao lado da arte na fila, quando ela leva
+# alguma instrução que o NOME do arquivo não carrega — hoje só o rolo
+# da DOCAN.
+#
+# Por que um arquivo separado em vez de renomear a arte: o nome é o que
+# vira linha no documento do cliente e no relatório diário. Enfiar
+# "_rolo320" nele sujaria os dois pra sempre. E por que não uma subpasta
+# por rolo: a fila tem uma pasta por máquina, e mudar essa forma cegaria
+# de uma vez o aviso de fila parada e a conferência de nome repetido,
+# que hoje olham direto dentro da pasta da máquina.
+SUFIXO_BILHETE = ".envio.json"
+
+
+def rolos_da_maquina(nome_maquina, maquinas=None):
+    """
+    Larguras de rolo que esta máquina aceita, da mais estreita pra mais
+    larga. Tupla vazia quando a máquina tem uma largura só — que é o
+    caso das duas Mimaki, e é o que faz a tela não mostrar escolha de
+    rolo pra elas.
+    """
+    maquinas = MAQUINAS if maquinas is None else maquinas
+    config = maquinas.get(nome_maquina)
+    if not isinstance(config, dict):
+        return ()
+    return tuple(sorted(config.get("rolos_m") or ()))
+
+
+def caminho_do_bilhete(caminho_arte):
+    return pathlib.Path(caminho_arte).with_name(pathlib.Path(caminho_arte).name + SUFIXO_BILHETE)
+
+
+def ler_bilhete(caminho_arte):
+    """
+    O que veio escrito junto com esta arte, ou {} se não veio nada.
+    Nunca levanta: bilhete ilegível é o mesmo que arte sem bilhete, e a
+    arte tem que seguir pra impressão de qualquer jeito — segurar
+    arquivo por causa de um detalhe nosso é o que este módulo inteiro
+    evita.
+    """
+    try:
+        with open(caminho_do_bilhete(caminho_arte), "r", encoding="utf-8") as f:
+            dados = json.load(f)
+    except (OSError, ValueError, json.JSONDecodeError):
+        return {}
+    return dados if isinstance(dados, dict) else {}
+
+
+def maquinas_do_posto(posto, maquinas=None):
+    """
+    Só as máquinas que ESTE posto consegue atender. Máquina sem 'posto'
+    declarado conta como POSTO_PADRAO, pra que uma entrada antiga (só o
+    caminho da hot folder em texto) continue valendo sem alteração.
+    """
+    maquinas = MAQUINAS if maquinas is None else maquinas
+    if not posto:
+        return dict(maquinas)
+    return {
+        nome: config for nome, config in maquinas.items()
+        if _posto_da_maquina(config) == posto
+    }
+
+
+def _posto_da_maquina(valor):
+    if isinstance(valor, dict):
+        return valor.get("posto") or POSTO_PADRAO
+    return POSTO_PADRAO
 
 # Extensões que o RasterLink7 aceita como arte de impressão — mesma
 # lista de formatos suportados pelo resto do projeto (ver
@@ -120,11 +249,26 @@ NOME_ARQUIVO_SINAL = "_sinal_de_vida.json"
 _INTERVALO_SINAL_MINUTOS = 5
 
 
-def caminho_do_sinal(pasta_fila=None):
-    return pathlib.Path(pasta_fila or PASTA_FILA_ONEDRIVE) / NOME_ARQUIVO_SINAL
+def caminho_do_sinal(pasta_fila=None, posto=None):
+    """
+    Um sinal POR POSTO. Dois vigias gravando o mesmo arquivo se
+    apagariam mutuamente a cada ciclo — cada um escreve só as máquinas
+    dele, então o estado nunca bateria com o anterior e a espera de 5
+    minutos deixaria de valer: viraria uma gravação por minuto de cada
+    lado, numa pasta sincronizada, que é exatamente o que
+    _INTERVALO_SINAL_MINUTOS existe pra evitar.
+
+    O posto do RIP mantém o nome antigo do arquivo de propósito: é o que
+    a tarefa que já roda naquela máquina grava, e o que as telas já leem.
+    """
+    pasta = pathlib.Path(pasta_fila or PASTA_FILA_ONEDRIVE)
+    if not posto or posto == POSTO_PADRAO:
+        return pasta / NOME_ARQUIVO_SINAL
+    raiz, ponto, extensao = NOME_ARQUIVO_SINAL.partition(".")
+    return pasta / f"{raiz}_{posto}{ponto}{extensao}"
 
 
-def ler_sinal_de_vida(pasta_fila=None, agora=None):
+def ler_sinal_de_vida(pasta_fila=None, agora=None, posto=None):
     """
     O que a máquina do RIP deixou dito por último, ou None se não houver
     sinal nenhum. Nunca levanta: sinal ilegível é o mesmo que sem sinal,
@@ -133,7 +277,7 @@ def ler_sinal_de_vida(pasta_fila=None, agora=None):
     Devolve {'quando': datetime, 'idade_minutos': float, 'maquina': str,
     'maquinas': {nome: erro ou None}}.
     """
-    caminho = caminho_do_sinal(pasta_fila)
+    caminho = caminho_do_sinal(pasta_fila, posto)
     try:
         with open(caminho, "r", encoding="utf-8") as f:
             dados = json.load(f)
@@ -151,7 +295,7 @@ def ler_sinal_de_vida(pasta_fila=None, agora=None):
     }
 
 
-def registrar_sinal_de_vida(pasta_fila=None, resultado_por_maquina=None, agora=None):
+def registrar_sinal_de_vida(pasta_fila=None, resultado_por_maquina=None, agora=None, posto=None):
     """
     Deixa (ou atualiza) o sinal de vida. Devolve o caminho quando
     gravou, None quando decidiu não gravar ainda.
@@ -165,15 +309,16 @@ def registrar_sinal_de_vida(pasta_fila=None, resultado_por_maquina=None, agora=N
         for nome, r in (resultado_por_maquina or {}).items()
     }
 
-    anterior = ler_sinal_de_vida(pasta_fila, agora=agora)
+    anterior = ler_sinal_de_vida(pasta_fila, agora=agora, posto=posto)
     if anterior is not None and anterior["maquinas"] == estado:
         if 0 <= anterior["idade_minutos"] < _INTERVALO_SINAL_MINUTOS:
             return None
 
-    caminho = caminho_do_sinal(pasta_fila)
+    caminho = caminho_do_sinal(pasta_fila, posto)
     conteudo = {
         "quando": agora.strftime("%Y-%m-%dT%H:%M:%S"),
         "maquina": platform.node(),
+        "posto": posto or POSTO_PADRAO,
         "maquinas": estado,
     }
     # grava atômico: quem lê do outro lado nunca pode pegar meio arquivo
@@ -269,12 +414,18 @@ def limpar_enviados_antigos(pasta_enviados, dias=None, logger=print, agora=None)
     return apagados
 
 
-def enviar_para_fila(caminho_arquivo, nome_maquina, pasta_fila=None, maquinas=None):
+def enviar_para_fila(caminho_arquivo, nome_maquina, pasta_fila=None, maquinas=None, rolo_m=None):
     """
     Copia 'caminho_arquivo' pra fila comum no OneDrive, na subpasta da
     máquina 'nome_maquina' — chamável de qualquer máquina (não precisa
     ser a do RIP). NUNCA move: o original do pedido continua intacto
     onde estava.
+
+    'rolo_m' é a largura do rolo que vai estar na máquina neste
+    trabalho (só a DOCAN tem escolha de rolo). Vai num bilhete ao lado
+    da arte, escrito ANTES dela de propósito: o vigia só age quando vê
+    a ARTE, então bilhete primeiro garante que ele nunca encontre uma
+    arte sem a instrução dela e gire pela largura errada.
     """
     maquinas = MAQUINAS if maquinas is None else maquinas
     if nome_maquina not in maquinas:
@@ -291,8 +442,33 @@ def enviar_para_fila(caminho_arquivo, nome_maquina, pasta_fila=None, maquinas=No
         raise FileNotFoundError(f"Arquivo não encontrado: {origem}")
 
     destino = pasta / origem.name
+    if rolo_m:
+        _escrever_bilhete(destino, {"rolo_m": float(rolo_m)})
     shutil.copy2(origem, destino)
     return destino
+
+
+def _escrever_bilhete(caminho_arte, dados):
+    """
+    Grava o bilhete da arte. Nunca levanta: não conseguir escrever o
+    bilhete não pode impedir a arte de ir pra fila — sem ele o vigia
+    usa a largura padrão da máquina, que é o comportamento de sempre.
+    """
+    caminho = caminho_do_bilhete(caminho_arte)
+    try:
+        with open(caminho, "w", encoding="utf-8") as f:
+            json.dump(dados, f, ensure_ascii=False, indent=2)
+    except OSError:
+        return None
+    return caminho
+
+
+def apagar_bilhete(caminho_arte):
+    """Tira o bilhete de perto da arte. Silencioso: bilhete que já não está lá é sucesso."""
+    try:
+        caminho_do_bilhete(caminho_arte).unlink()
+    except OSError:
+        pass
 
 
 def _arquivo_estavel(caminho, espera_segundos=3):
@@ -536,12 +712,28 @@ def _vigiar_uma_maquina(pasta_maquina, config_maquina, logger, pasta_relatorios=
 
     resultado = {"enviados": [], "ignorados": [], "falharam": []}
     for arquivo in [f for f in pasta_maquina.iterdir() if f.is_file()]:
+        # O bilhete não é arte e não é lixo: ele é lido junto com a arte
+        # dele, logo abaixo, e vai embora junto com ela. Contá-lo como
+        # "ignorado" faria o resumo da passada dizer o dobro do que
+        # aconteceu de verdade.
+        if arquivo.name.endswith(SUFIXO_BILHETE):
+            continue
         if arquivo.suffix.lower() not in _EXTENSOES_ACEITAS:
             resultado["ignorados"].append(arquivo.name)
             continue
         if not _arquivo_estavel(arquivo):
             logger("info", f"'{arquivo.name}' ainda mudando de tamanho (upload/download em andamento) — aguardando próximo ciclo.")
             continue
+
+        # O rolo escolhido na tela manda mais que a largura padrão da
+        # máquina: numa DOCAN com o rolo de 3,20 montado, girar pelos
+        # 5,00 do cadastro mandaria pra impressão uma arte mais larga
+        # que o material — que sai cortada na borda.
+        largura_do_trabalho = largura_util_m
+        rolo_m = ler_bilhete(arquivo).get("rolo_m")
+        if rolo_m:
+            largura_do_trabalho = float(rolo_m)
+            logger("info", f"'{arquivo.name}' vai no rolo de {largura_do_trabalho:.2f}m (indicado no envio).")
 
         # UM arquivo com problema não pode prender a fila inteira atrás
         # dele. Aconteceu de verdade (2026-09-05): 6 arquivos passaram,
@@ -554,7 +746,7 @@ def _vigiar_uma_maquina(pasta_maquina, config_maquina, logger, pasta_relatorios=
         try:
             _processar_arquivo_da_fila(
                 arquivo, hot_folder, pasta_enviados, pasta_maquina.name,
-                largura_util_m, logger, pasta_relatorios,
+                largura_do_trabalho, logger, pasta_relatorios,
             )
         except Exception as e:
             resultado["falharam"].append(arquivo.name)
@@ -582,6 +774,11 @@ def _processar_arquivo_da_fila(arquivo, hot_folder, pasta_enviados, nome_maquina
     if destino_enviados.exists():
         destino_enviados = pasta_enviados / f"{arquivo.stem}_{int(time.time())}{arquivo.suffix}"
     arquivo.rename(destino_enviados)
+
+    # O bilhete sai da fila junto com a arte dele. Deixá-lo pra trás
+    # faria a próxima arte de mesmo nome herdar o rolo da anterior — e
+    # sozinho ele nunca mais seria lido por ninguém.
+    apagar_bilhete(arquivo)
 
     logger("ok", f"'{arquivo.name}' enviado pra hot folder do RasterLink7 ({nome_maquina}).")
 
@@ -677,9 +874,10 @@ def salvar_estado_avisos(caminho=None):
         pass
 
 
-def vigiar_fila_uma_vez(pasta_fila=None, maquinas=None, logger=print, pasta_relatorios=None, dias_retencao=None):
+def vigiar_fila_uma_vez(pasta_fila=None, maquinas=None, logger=print, pasta_relatorios=None,
+                        dias_retencao=None, posto=None):
     """
-    Um ciclo só: pra cada máquina configurada, olha a subpasta dela
+    Um ciclo só: pra cada máquina DESTE POSTO, olha a subpasta dela
     dentro da fila, manda pra hot folder local o que já estiver
     estável, e move da fila pra 'Enviados' (dentro da subpasta da
     máquina). Separado de vigiar_fila (loop contínuo) pra dar pra
@@ -687,15 +885,28 @@ def vigiar_fila_uma_vez(pasta_fila=None, maquinas=None, logger=print, pasta_rela
     (Agendador de Tarefas do Windows) em vez de um processo eternamente
     rodando.
 
+    'posto' diz de quais máquinas este vigia cuida (ver POSTO_RIP /
+    POSTO_SAI). Máquina de outro posto é pulada em silêncio — a hot
+    folder dela não existe deste lado, e reclamar disso todo minuto
+    seria ruído, não notícia. Já a hot folder de uma máquina DESTE posto
+    que sumiu continua sendo erro alto, como sempre foi.
+
     Devolve {nome_maquina: {"enviados": [...], "ignorados": [...]}}.
     """
-    maquinas = MAQUINAS if maquinas is None else maquinas
-    if not maquinas:
+    todas = MAQUINAS if maquinas is None else maquinas
+    if not todas:
         raise RuntimeError(
             "Nenhuma máquina configurada ainda — preencha o dicionário "
             "MAQUINAS em rasterlink_hotfolder.py com {nome do favorito: "
             "caminho da hot folder} depois de criar o Favorito + Hot "
             "Folder no RasterLink7."
+        )
+
+    maquinas = maquinas_do_posto(posto, todas) if posto else dict(todas)
+    if posto and not maquinas:
+        raise RuntimeError(
+            f"Nenhuma máquina configurada para o posto '{posto}' — confira o "
+            f"campo 'posto' em MAQUINAS (postos conhecidos: {POSTO_RIP}, {POSTO_SAI})."
         )
 
     pasta_raiz = pathlib.Path(pasta_fila or PASTA_FILA_ONEDRIVE)
@@ -719,11 +930,15 @@ def vigiar_fila_uma_vez(pasta_fila=None, maquinas=None, logger=print, pasta_rela
         else:
             _avisar_erro_de_maquina(nome_maquina, None, logger)
 
-    registrar_sinal_de_vida(pasta_raiz, resultado_por_maquina)
+    registrar_sinal_de_vida(pasta_raiz, resultado_por_maquina, posto=posto)
 
     if pasta_raiz.is_dir():
         for item in pasta_raiz.iterdir():
-            if item.is_dir() and item.name not in maquinas:
+            # A conferência é contra TODAS as máquinas, não só as deste
+            # posto: a pasta da DOCAN é legítima e tem dono, só que o
+            # dono é o outro vigia. Avisar dela aqui seria acusar de
+            # errado o que está certo.
+            if item.is_dir() and item.name not in todas:
                 logger(
                     "warn",
                     f"Pasta '{item.name}' dentro da fila não corresponde a nenhuma máquina "
@@ -734,21 +949,26 @@ def vigiar_fila_uma_vez(pasta_fila=None, maquinas=None, logger=print, pasta_rela
 
 
 def vigiar_fila(pasta_fila=None, maquinas=None, intervalo_segundos=15, logger=print,
-                pasta_relatorios=None, dias_retencao=None):
+                pasta_relatorios=None, dias_retencao=None, posto=None):
     """
-    Loop contínuo — pensado pra rodar em segundo plano SÓ na máquina
-    do RIP (nunca nas outras, que só usam enviar_para_fila). Nunca
-    para sozinho por causa de um erro num ciclo — registra e segue
-    tentando no próximo, do mesmo jeito que monitor_onedrive.py nunca
-    deixa um erro de organização derrubar o monitor inteiro.
+    Loop contínuo — um por POSTO, em segundo plano na máquina daquele
+    posto (nunca nas outras, que só usam enviar_para_fila). Nunca para
+    sozinho por causa de um erro num ciclo — registra e segue tentando
+    no próximo, do mesmo jeito que monitor_onedrive.py nunca deixa um
+    erro de organização derrubar o monitor inteiro.
     """
-    nomes = ", ".join(maquinas if maquinas is not None else MAQUINAS) or "(nenhuma)"
-    logger("info", f"Vigiando fila do RasterLink7 em: {pasta_fila or PASTA_FILA_ONEDRIVE} (máquinas: {nomes})")
+    lista = maquinas_do_posto(posto, maquinas) if posto else (maquinas if maquinas is not None else MAQUINAS)
+    nomes = ", ".join(lista) or "(nenhuma)"
+    logger(
+        "info",
+        f"Vigiando fila em: {pasta_fila or PASTA_FILA_ONEDRIVE} "
+        f"(posto: {posto or POSTO_PADRAO} · máquinas: {nomes})",
+    )
     while True:
         try:
-            vigiar_fila_uma_vez(pasta_fila, maquinas, logger, pasta_relatorios, dias_retencao)
+            vigiar_fila_uma_vez(pasta_fila, maquinas, logger, pasta_relatorios, dias_retencao, posto)
         except Exception as e:
-            logger("err", f"Erro inesperado no ciclo da fila do RasterLink7: {e}")
+            logger("err", f"Erro inesperado no ciclo da fila: {e}")
         time.sleep(intervalo_segundos)
 
 
@@ -781,6 +1001,17 @@ def logger_arquivo(nivel, mensagem, caminho_log=None):
 
 
 CAMINHO_TRAVA = pathlib.Path(__file__).resolve().parent / "rasterlink_hotfolder.lock"
+
+# Onde o traceback de um erro logo no início é despejado (ver
+# _rodar_protegido). É constante de módulo, e não um caminho calculado
+# lá dentro, por um motivo prático: assim o teste consegue desviá-lo.
+#
+# Enquanto foi calculado inline, TODA rodada de teste que passasse por
+# _rodar_protegido escrevia no arquivo de verdade do repositório — e as
+# 49 entradas que se acumularam ali eram, todas, o mesmo teste. Alguém
+# (eu, 2026-09-07) gastou uma investigação inteira atrás de um defeito
+# de produção que nunca existiu.
+CAMINHO_CRASH = pathlib.Path(__file__).resolve().parent / "rasterlink_hotfolder_crash.log"
 
 
 def _travar_instancia_unica(caminho_trava=None):
@@ -818,7 +1049,7 @@ def _travar_instancia_unica(caminho_trava=None):
     return True, arquivo
 
 
-def _rodar_protegido(alvo):
+def _rodar_protegido(alvo, posto=None):
     """
     Roda 'alvo' segurando a trava de instância única, e grava o
     traceback num arquivo se quebrar.
@@ -827,13 +1058,23 @@ def _rodar_protegido(alvo):
     (pythonw.exe/.pyw) um erro bem no início — antes até do primeiro
     logger_arquivo(...) conseguir rodar — desaparecia sem deixar rastro
     nenhum, nem no log normal.
+
+    A trava é POR POSTO. O que ela impede é duas passadas pegarem o
+    MESMO arquivo e o RIP criar job duplicado — material impresso duas
+    vezes. Dois postos nunca olham a mesma pasta, então travar um contra
+    o outro só faria o vigia da DOCAN desistir do ciclo à toa se algum
+    dia os dois rodarem no mesmo PC.
     """
-    pode_rodar, trava = _travar_instancia_unica()
+    trava_do_posto = None
+    if posto and posto != POSTO_PADRAO:
+        trava_do_posto = CAMINHO_TRAVA.with_name(f"{CAMINHO_TRAVA.stem}_{posto}{CAMINHO_TRAVA.suffix}")
+
+    pode_rodar, trava = _travar_instancia_unica(trava_do_posto)
     if not pode_rodar:
         logger_arquivo(
             "warn",
-            "Já existe outro vigia rodando nesta máquina — esta instância vai sair "
-            "pra não mandar arquivo duplicado pro RIP.",
+            f"Já existe outro vigia do posto '{posto or POSTO_PADRAO}' rodando nesta máquina — "
+            f"esta instância vai sair pra não mandar arquivo duplicado pro RIP.",
         )
         return False
 
@@ -842,8 +1083,7 @@ def _rodar_protegido(alvo):
     except BaseException:
         import traceback
         try:
-            caminho_crash = pathlib.Path(__file__).resolve().parent / "rasterlink_hotfolder_crash.log"
-            with open(caminho_crash, "a", encoding="utf-8") as f:
+            with open(CAMINHO_CRASH, "a", encoding="utf-8") as f:
                 f.write(f"{datetime.datetime.now():%Y-%m-%d %H:%M:%S}\n{traceback.format_exc()}\n")
         except Exception:
             pass
@@ -853,7 +1093,23 @@ def _rodar_protegido(alvo):
     return True
 
 
-def principal_uma_vez():
+def posto_pedido(argv=None):
+    """
+    Lê '--posto rip' / '--posto sai' (ou '--posto=sai') da linha de
+    comando. Sem o argumento, devolve POSTO_PADRAO — que é o do RIP, e é
+    o que faz a tarefa já agendada naquela máquina continuar idêntica
+    depois de receber esta versão, sem tocar no Agendador.
+    """
+    argv = list(sys.argv if argv is None else argv)
+    for i, arg in enumerate(argv):
+        if arg.startswith("--posto="):
+            return arg.split("=", 1)[1].strip().lower() or POSTO_PADRAO
+        if arg == "--posto" and i + 1 < len(argv):
+            return argv[i + 1].strip().lower() or POSTO_PADRAO
+    return POSTO_PADRAO
+
+
+def principal_uma_vez(posto=None):
     """
     Uma passada na fila e sai — é este o modo que a tarefa do Agendador
     usa na máquina do RIP, disparada de minuto em minuto.
@@ -869,10 +1125,14 @@ def principal_uma_vez():
     A trava de instância única continua valendo: é ela que impede duas
     passadas de se atropelarem se alguma demorar mais que o intervalo.
     """
+    posto = posto or posto_pedido()
     carregar_estado_avisos()
     resultado = {}
     try:
-        _rodar_protegido(lambda: resultado.update(vigiar_fila_uma_vez(logger=logger_arquivo)))
+        _rodar_protegido(
+            lambda: resultado.update(vigiar_fila_uma_vez(logger=logger_arquivo, posto=posto)),
+            posto=posto,
+        )
     finally:
         salvar_estado_avisos()
 
@@ -935,8 +1195,9 @@ def rodando_de_dentro_do_onedrive(caminho=None):
     return any(parte.upper().startswith("ONEDRIVE") for parte in caminho.parts)
 
 
-def principal():
+def principal(posto=None):
     """O vigia como processo eterno — modo antigo, mantido pra rodar na mão e ver acontecendo."""
+    posto = posto or posto_pedido()
     # Dois cliques no .py DENTRO da pasta do OneDrive é o jeito errado
     # mais fácil de acontecer, e aconteceu (2026-09-05, 18:59): a pessoa
     # abre a pasta de deploy pra rodar o instalador e clica no arquivo
@@ -954,7 +1215,7 @@ def principal():
             f"desta mesma pasta — ele copia pra C:\\RasterLink e agenda direito.",
         )
         raise SystemExit(1)
-    _rodar_protegido(lambda: vigiar_fila(logger=logger_arquivo))
+    _rodar_protegido(lambda: vigiar_fila(logger=logger_arquivo, posto=posto), posto=posto)
 
 
 if __name__ == "__main__":
