@@ -304,22 +304,33 @@ function main(script_path)
    anotar("")
    anotar("=== sonda: o que um vetor sabe dizer de si ===")
    pcall(function()
+      -- Junta TODOS os vetores, de todas as camadas: o primeiro objeto
+      -- da primeira camada pode nao ser um vetor comum.
+      local vetores = {}
       local gerente = trabalho.LayerManager
       local posC = gerente:GetHeadPosition()
-      local amostra = nil
-      while posC ~= nil and amostra == nil do
+      while posC ~= nil do
          local camada
-         local a, b = gerente:GetNext(posC)
-         camada = a
-         posC = b
-         if camada ~= nil and camada.Count and camada.Count > 0 then
-            local pos = camada:GetHeadPosition()
-            if pos ~= nil then
-               local o = camada:GetNext(pos)
-               if o ~= nil then amostra = o end
-            end
+         local okC = pcall(function()
+            local a, b = gerente:GetNext(posC)
+            camada = a
+            posC = b
+         end)
+         if not okC or camada == nil then break end
+         local pos = camada:GetHeadPosition()
+         while pos ~= nil do
+            local objeto
+            local okO = pcall(function()
+               local a, b = camada:GetNext(pos)
+               objeto = a
+               pos = b
+            end)
+            if not okO or objeto == nil then break end
+            vetores[#vetores + 1] = objeto
          end
       end
+      anotar("  vetores encontrados no trabalho: " .. #vetores)
+      local amostra = vetores[1]
 
       if amostra == nil then
          anotar("  (nenhum vetor no trabalho pra sondar)")
@@ -365,10 +376,32 @@ function main(script_path)
       -- geometria de verdade. Se o Contour souber dizer se um ponto
       -- esta dentro dele, ou entregar os pontos, a classificacao pode
       -- acontecer aqui dentro e o PDF continua sendo o arquivo.
-      local contorno = nil
-      pcall(function() contorno = amostra:GetContour() end)
+      --
+      -- Tenta em VARIOS objetos, nao so no primeiro: o primeiro da
+      -- primeira camada pode nao ser um vetor comum (grupo, bitmap,
+      -- texto), e foi nil na sonda de 08/09/2026.
+      local contorno, deQual, tentados, erroContour = nil, 0, 0, nil
+      for i, obj in ipairs(vetores) do
+         tentados = i
+         local ok, r = pcall(function() return obj:GetContour() end)
+         if ok and r ~= nil then
+            contorno = r
+            deQual = i
+            break
+         end
+         if not ok and erroContour == nil then
+            erroContour = tostring(r):gsub("[\r\n]+", " | "):sub(1, 160)
+         end
+         if i >= 20 then break end
+      end
+      anotar(string.format("  (GetContour testado em %d objeto(s); respondeu no #%d)",
+                           tentados, deQual))
+      if erroContour ~= nil then
+         anotar("  erro tipico: " .. erroContour)
+      end
+
       if contorno == nil then
-         anotar("  --- Contour: nao consegui obter ---")
+         anotar("  --- Contour: nenhum objeto devolveu contorno ---")
       else
          sondar("Contour", contorno, {
             "Area", "GetArea", "Length", "GetLength", "Perimeter",
@@ -454,11 +487,12 @@ function main(script_path)
                "a ordem da lista e a ordem de usinagem."
    end
    if interna == nil and externa == nil then
-      recado = recado .. "\n\nATENCAO: o arquivo nao trazia camada CORTE INTERNO /\n" ..
-               "CORTE EXTERNO, entao saiu UM percurso so. O Aspire acerta\n" ..
-               "o dentro/fora, mas a ORDEM nao esta garantida.\n\n" ..
-               "Pra ter a ordem, use o DXF gerado pelo corte_dxf.py em vez\n" ..
-               "do PDF: ele ja vem com as duas camadas separadas."
+      recado = recado .. "\n\nSaiu UM percurso so. O Aspire acerta o dentro/fora\n" ..
+               "sozinho, mas a ORDEM (furo antes do contorno) nao esta\n" ..
+               "garantida.\n\n" ..
+               "Se quiser a ordem agora: selecione so os furos e clique,\n" ..
+               "depois selecione so os contornos e clique de novo — sao\n" ..
+               "dois percursos, na ordem em que voce criar."
    end
    MessageBox(recado)
    return true
