@@ -478,7 +478,13 @@ def conferir_pasta(pasta, converter_prontos=False):
             relatorio["estado"] = PRONTO
             relatorio["motivo"] = None
             if converter_prontos:
-                relatorio["dxf"] = str(escrever_dxf(polilinhas, pdf.with_suffix(".dxf")))
+                # A mesma classificação de aninhamento que converter() já
+                # faz — sem ela, o DXF sai tudo numa camada só (NOME_CAMADA)
+                # e o Aspire não separa dentro de fora. Ficou faltando aqui
+                # porque este caminho foi escrito depois e não repetiu o
+                # que converter() já fazia (2026-09-08).
+                camadas = classificar_aninhamento(polilinhas)
+                relatorio["dxf"] = str(escrever_dxf(polilinhas, pdf.with_suffix(".dxf"), camadas))
         else:
             relatorio["estado"] = CONFERIR
             relatorio["motivo"] = ("saiu pela cor magenta, não por camada nomeada — "

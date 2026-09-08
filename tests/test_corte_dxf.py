@@ -283,6 +283,26 @@ def test_conferir_pode_converter_so_os_prontos_quando_pedido(tmp_path):
     assert next(r for r in lista if r["estado"] == PRONTO)["dxf"]
 
 
+def test_dxf_do_pronto_tambem_sai_com_as_duas_camadas(tmp_path):
+    """
+    Achado em 08/09/2026: quando o PDF ja vem com a camada de corte
+    nomeada (estado PRONTO), este caminho escrevia o DXF sem rodar
+    classificar_aninhamento antes — igual a converter() ja fazia — e
+    tudo saia numa camada so. Uma peca com furo (a letra 'O') e o teste
+    que denuncia isso: sem a classificacao, CORTE INTERNO nunca aparece.
+    """
+    from corte_dxf import CAMADA_EXTERNO, CAMADA_INTERNO, conferir_pasta
+
+    _pdf_com_camada(tmp_path / "letra O.pdf", "corte",
+                    [((0, 0, 100, 100), (0, 0, 0)), ((30, 30, 70, 70), (0, 0, 0))])
+
+    conferir_pasta(tmp_path, converter_prontos=True)
+
+    texto = (tmp_path / "letra O.dxf").read_text(encoding="ascii")
+    tabela = texto[texto.index("TABLES"):texto.index("ENTITIES")]
+    assert CAMADA_EXTERNO in tabela and CAMADA_INTERNO in tabela
+
+
 def test_pasta_que_nao_existe_devolve_lista_vazia(tmp_path):
     from corte_dxf import conferir_pasta
     assert conferir_pasta(tmp_path / "nao existe") == []
