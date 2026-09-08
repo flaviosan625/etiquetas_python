@@ -13,6 +13,6 @@ aspire/teste_ponta_a_ponta/LOTE *.dxf
 # Logs de execução do vigia. O de crash chegou a ser commitado por
 # engano e acumulou 40 entradas — todas do mesmo teste, nenhuma de
 # produção (2026-09-07). Arquivo de execução não pertence ao repositório.
-rasterlink_hotfolder.log
-rasterlink_hotfolder_crash.log
-rasterlink_hotfolder.lock
+rasterlink_hotfolder*.log
+rasterlink_hotfolder*.lock
+rasterlink_hotfolder_avisos.json
