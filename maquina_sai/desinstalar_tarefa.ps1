@@ -1,4 +1,4 @@
-# Desfaz o que o instalar_tarefa.ps1 fez nesta máquina. Rode pelo
+﻿# Desfaz o que o instalar_tarefa.ps1 fez nesta máquina. Rode pelo
 # desinstalar_tarefa.bat, ao lado deste arquivo.
 #
 # Existe porque o git guarda o código, mas não guarda a tarefa do

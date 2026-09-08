@@ -1,4 +1,4 @@
-# Instala a tarefa do Agendador que alimenta a DOCAN nesta máquina — a
+﻿# Instala a tarefa do Agendador que alimenta a DOCAN nesta máquina — a
 # PRINCIPAL, onde roda o SAi Production Manager. Rode pelo
 # instalar_tarefa.bat, ao lado deste arquivo.
 #
