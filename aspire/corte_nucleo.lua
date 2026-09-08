@@ -202,6 +202,41 @@ local function caixa_do_objeto(trabalho, objeto)
    return caixa
 end
 
+-- Os vetores que ESTAO SELECIONADOS agora, copiados pra uma tabela.
+--
+-- Copiar antes de mexer e obrigatorio: medir a caixa de um objeto exige
+-- limpar a selecao e por so ele dentro (ver caixa_do_objeto), o que
+-- destruiria a selecao original no primeiro objeto medido.
+--
+-- A API 8.5 nao documenta GetHeadPosition/GetNext pra SelectionList — o
+-- DXF_Batch_Processor da Vectric so usa .IsEmpty e :GetBoundingBox().
+-- Entao aqui e tentativa protegida: se der, o gadget passa a trabalhar
+-- so no que voce escolheu; se nao der, ele diz isso no relatorio em vez
+-- de fingir que deu.
+local function selecao_atual(trabalho)
+   local selecao = trabalho.Selection
+   local vazia = true
+   pcall(function() vazia = selecao.IsEmpty end)
+   if vazia then return {}, "nada selecionado" end
+
+   local objetos = {}
+   local ok = pcall(function()
+      local pos = selecao:GetHeadPosition()
+      while pos ~= nil do
+         local objeto
+         local a, b = selecao:GetNext(pos)
+         objeto = a
+         pos = b
+         if objeto == nil then break end
+         objetos[#objetos + 1] = objeto
+      end
+   end)
+   if not ok then
+      return nil, "esta versao do Aspire nao deixa percorrer a selecao"
+   end
+   return objetos, nil
+end
+
 -- Todos os vetores do trabalho, de todas as camadas.
 local function todos_os_vetores(trabalho)
    local objetos = {}
@@ -392,11 +427,63 @@ function main(script_path)
 
    anotar("")
    anotar("=== percursos ===")
-   local interna, nomeInterna = achar_camada(trabalho, "CORTE INTERNO")
-   local externa, nomeExterna = achar_camada(trabalho, "CORTE EXTERNO")
+
+   -- A SELECAO MANDA (pedido do Flavio, 08/09/2026): havendo objeto
+   -- selecionado, o percurso sai so pra ele. E assim que a moldura de
+   -- acrilico e o gabarito ficam de fora sem ninguem precisar apagar
+   -- nada — ele seleciona o que vai cortar agora e clica.
+   local selecionados, recadoSelecao = selecao_atual(trabalho)
+   if recadoSelecao ~= nil then
+      anotar("  selecao: " .. recadoSelecao)
+   end
+
+   -- Selecao existe mas nao deu pra percorrer: PARA. Seguir daqui
+   -- pegaria TODOS os vetores da chapa — o contrario exato do que
+   -- pediram, e com a fresa ja no material o estrago nao volta atras.
+   if selecionados == nil then
+      anotar("  PAREI: havia selecao e eu nao consegui ler quais objetos eram.")
+      gravar()
+      MessageBox("Voce tem objeto selecionado, mas esta versao do Aspire\n" ..
+                 "nao me deixa ler QUAIS sao.\n\n" ..
+                 "Nao criei percurso nenhum — seguir pegaria a chapa inteira.\n\n" ..
+                 "Tire a selecao (clique num espaco vazio) e rode de novo\n" ..
+                 "pra cortar tudo, ou me avise pra eu achar outro caminho.")
+      return false
+   end
+
+   local interna, nomeInterna, externa, nomeExterna
+   if selecionados == nil or #selecionados == 0 then
+      interna, nomeInterna = achar_camada(trabalho, "CORTE INTERNO")
+      externa, nomeExterna = achar_camada(trabalho, "CORTE EXTERNO")
+   end
    local feitos = 0
 
-   if interna ~= nil or externa ~= nil then
+   if selecionados ~= nil and #selecionados > 0 then
+      anotar("  " .. #selecionados .. " objeto(s) selecionado(s) — so eles vao virar percurso")
+      local dentro, fora, semCaixa, medidas = classificar_por_caixa(trabalho, selecionados)
+      anotar("  por dentro: " .. #dentro .. "   por fora: " .. #fora)
+      if semCaixa > 0 then
+         anotar("  " .. semCaixa .. " vetor(es) sem caixa mensuravel foram pra externo")
+      end
+      for i, c in ipairs(medidas) do
+         anotar(string.format("    dentro #%d: %.1f x %.1f mm",
+                              i, c.x1 - c.x0, c.y1 - c.y0))
+      end
+
+      if #dentro > 0 then
+         selecionar_objetos(trabalho, dentro)
+         if criar_percurso("CORTE INTERNO", ferramenta, LADO_DENTRO, p) then
+            feitos = feitos + 1
+         end
+      end
+      if #fora > 0 then
+         selecionar_objetos(trabalho, fora)
+         if criar_percurso("CORTE EXTERNO", ferramenta, LADO_FORA, p) then
+            feitos = feitos + 1
+         end
+      end
+
+   elseif interna ~= nil or externa ~= nil then
       -- O INTERNO PRIMEIRO. A ordem na lista e a ordem de usinagem.
       if interna ~= nil then
          local n = selecionar_camada(trabalho, interna)
@@ -475,10 +562,14 @@ function main(script_path)
       recado = recado .. "\n\nCORTE INTERNO primeiro, CORTE EXTERNO depois —\n" ..
                "a ordem da lista e a ordem de usinagem."
    end
-   if interna == nil and externa == nil then
-      recado = recado .. "\n\nO arquivo nao trazia camada nomeada, entao eu\n" ..
-               "descobri o dentro/fora pelo aninhamento dos vetores.\n" ..
-               "Confira na tela antes de mandar pra maquina."
+   if selecionados ~= nil and #selecionados > 0 then
+      recado = recado .. "\n\nSo nos " .. #selecionados .. " objeto(s) que voce\n" ..
+               "tinha selecionado. O dentro/fora saiu do aninhamento —\n" ..
+               "confira na tela antes de mandar pra maquina."
+   elseif interna == nil and externa == nil then
+      recado = recado .. "\n\nNada estava selecionado e o arquivo nao trazia\n" ..
+               "camada nomeada, entao peguei TODOS os vetores e descobri\n" ..
+               "o dentro/fora pelo aninhamento. Confira na tela."
    end
    MessageBox(recado)
    return true
