@@ -288,6 +288,72 @@ function main(script_path)
       anotar("  nenhum — a ordem so da pra garantir com percursos separados")
    end
 
+   -- ============ SONDA: o que um VETOR sabe dizer de si? ============
+   --
+   -- Eu afirmei que a API so da a caixa envolvente e que por isso a
+   -- classificacao teria que sair do Aspire. Mas eu nunca sondei o
+   -- CadObject — a afirmacao veio de uma nota antiga, nao de teste.
+   --
+   -- Se aqui aparecer acesso aos PONTOS do vetor, ou uma pergunta do
+   -- tipo "este ponto esta dentro de voce?", da pra classificar dentro
+   -- do Aspire com a geometria de verdade, sem converter arquivo
+   -- nenhum. E o que o Flavio pediu desde o comeco.
+   --
+   -- Nao cria, nao altera e nao apaga nada. So le, e nunca derruba a
+   -- passada: tudo dentro de pcall.
+   anotar("")
+   anotar("=== sonda: o que um vetor sabe dizer de si ===")
+   pcall(function()
+      local gerente = trabalho.LayerManager
+      local posC = gerente:GetHeadPosition()
+      local amostra = nil
+      while posC ~= nil and amostra == nil do
+         local camada
+         local a, b = gerente:GetNext(posC)
+         camada = a
+         posC = b
+         if camada ~= nil and camada.Count and camada.Count > 0 then
+            local pos = camada:GetHeadPosition()
+            if pos ~= nil then
+               local o = camada:GetNext(pos)
+               if o ~= nil then amostra = o end
+            end
+         end
+      end
+
+      if amostra == nil then
+         anotar("  (nenhum vetor no trabalho pra sondar)")
+         return
+      end
+
+      local nomes = {
+         "Area", "Length", "Perimeter", "IsClosed", "Closed", "IsOpen",
+         "NumberOfPoints", "PointCount", "NumPoints", "Count", "SpanCount",
+         "NumSpans", "BoundingBox", "Bounds", "Name", "LayerName",
+         "GetPoint", "GetPoints", "Points", "GetSpan", "Span", "Spans",
+         "GetBoundingBox", "GetArea", "GetLength", "IsPointInside",
+         "PointInside", "Contains", "ContainsPoint", "Inside",
+         "GetPolyline", "ToPolyline", "GetContour", "Contours",
+         "GetHeadPosition", "GetNext", "Clone", "Type", "ObjectType",
+      }
+      for _, nome in ipairs(nomes) do
+         local ok, valor = pcall(function() return amostra[nome] end)
+         if ok and valor ~= nil then
+            local tipo = type(valor)
+            if tipo == "function" then
+               -- luabind cospe a assinatura C++ de verdade quando se
+               -- chama errado. Chamar com lixo e como arrancar a
+               -- documentacao de dentro do programa.
+               local certo, erro = pcall(valor, amostra, "\1lixo\1", -987654321)
+               local texto = certo and "(aceitou lixo)" or tostring(erro):gsub("[\r\n]+", " | ")
+               anotar(string.format("  %-18s funcao: %s", nome, texto:sub(1, 150)))
+            else
+               anotar(string.format("  %-18s %s = %s", nome, tipo, tostring(valor):sub(1, 60)))
+            end
+         end
+      end
+   end)
+
    anotar("")
    anotar("=== percursos ===")
 

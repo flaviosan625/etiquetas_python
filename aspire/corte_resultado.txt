@@ -8,25 +8,7 @@ CORTE AUTOMATICO
   nenhum — a ordem so da pra garantir com percursos separados
 
 === percursos ===
-  25 objeto(s) selecionado(s) — so eles vao virar percurso
-  por dentro: 16   por fora: 9
-    dentro #1: 180.5 x 165.8 mm
-    dentro #2: 71.2 x 55.2 mm
-    dentro #3: 108.1 x 153.8 mm
-    dentro #4: 155.4 x 238.0 mm
-    dentro #5: 341.9 x 227.5 mm
-    dentro #6: 119.8 x 129.8 mm
-    dentro #7: 103.3 x 129.8 mm
-    dentro #8: 95.9 x 129.8 mm
-    dentro #9: 136.2 x 134.9 mm
-    dentro #10: 124.1 x 129.8 mm
-    dentro #11: 116.9 x 129.8 mm
-    dentro #12: 92.6 x 129.8 mm
-    dentro #13: 110.1 x 129.8 mm
-    dentro #14: 133.1 x 129.8 mm
-    dentro #15: 116.9 x 129.8 mm
-    dentro #16: 103.3 x 129.8 mm
-  'CORTE INTERNO' lado=1 -> criado luaUUID:
-  'CORTE EXTERNO' lado=0 -> criado luaUUID:
-
-  total de percursos no trabalho: 2
+  sem camada nomeada — um percurso so, no que esta SELECIONADO
+  o Aspire acerta dentro/fora sozinho; a ORDEM e que nao fica garantida
+  'CORTE' lado=0 -> criado luaUUID:
+  total de percursos no trabalho: 1
