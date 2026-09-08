@@ -16,3 +16,9 @@ aspire/teste_ponta_a_ponta/LOTE *.dxf
 rasterlink_hotfolder*.log
 rasterlink_hotfolder*.lock
 rasterlink_hotfolder_avisos.json
+
+# Gerados pelo instalador na maquina onde ele roda: trazem caminho
+# absoluto e nome de usuario, entao sao daquela maquina, nao do projeto.
+maquina_sai/rodar_uma_vez.bat
+maquina_sai/tarefa_*.xml
+maquina_rip/tarefa_*.xml

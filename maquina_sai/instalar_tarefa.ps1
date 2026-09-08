@@ -79,12 +79,37 @@ $problemas = @()
 if (-not (Test-Path $SCRIPT))  { $problemas += "Não existe $SCRIPT." }
 if (-not (Test-Path $PYTHONW)) { $problemas += "Não existe $PYTHONW (o .venv do projeto)." }
 
-# A hot folder da DOCAN é o Setup do SAi, lido do PMSetups.ini dele.
-# Confere ANTES: sem ela, toda passada vira erro alto e a tarefa fica
-# gritando no log de minuto em minuto.
-$hotFolder = & $PYTHON -c "import rasterlink_hotfolder as r; print(r._config_maquina(r.MAQUINAS['DOCAN'])[0])" 2>$null
+# A hot folder da DOCAN é o Setup do SAi, e quem sabe qual é ela é o
+# rasterlink_hotfolder.py — perguntar a ele evita duas verdades sobre o
+# mesmo caminho. Confere ANTES: sem a pasta, toda passada vira erro alto
+# e a tarefa fica gritando no log de minuto em minuto.
+#
+# Duas armadilhas que já morderam aqui (2026-09-07), as duas nesta linha:
+#
+#   - O .bat chama este script pelo caminho dele, então a pasta atual NÃO
+#     é a do projeto e um 'import rasterlink_hotfolder' seco não acha o
+#     módulo. Por isso o sys.path.insert, igual o instalador do RIP faz.
+#   - Redirecionar o stderr de um .exe ('2>$null') faz o PowerShell 5.1
+#     embrulhar cada linha num NativeCommandError; com
+#     ErrorActionPreference = "Stop" lá em cima, isso derruba o script
+#     inteiro em vez de cair no meu 'não consegui ler'. Então aqui não se
+#     redireciona nada, e a preferência é afrouxada só neste trecho.
+$hotFolder = ""
+$eapAntigo = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+try {
+    $codigo = "import sys; sys.path.insert(0, r'$PASTA'); import rasterlink_hotfolder as r; print(r._config_maquina(r.MAQUINAS['DOCAN'])[0])"
+    $saida = & $PYTHON -c $codigo
+    if ($LASTEXITCODE -eq 0 -and $saida) {
+        $hotFolder = ([string]($saida | Select-Object -Last 1)).Trim()
+    }
+} catch {
+    $hotFolder = ""
+}
+$ErrorActionPreference = $eapAntigo
+
 if ([string]::IsNullOrWhiteSpace($hotFolder)) {
-    $problemas += "Não consegui ler a hot folder da DOCAN do rasterlink_hotfolder.py."
+    $problemas += "Não consegui perguntar ao rasterlink_hotfolder.py qual é a hot folder da DOCAN."
 } elseif (-not (Test-Path $hotFolder)) {
     $problemas += "A hot folder da DOCAN não existe: $hotFolder"
 }
