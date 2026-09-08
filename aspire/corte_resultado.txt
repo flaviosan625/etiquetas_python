@@ -8,8 +8,8 @@ CORTE AUTOMATICO
   nenhum — a ordem so da pra garantir com percursos separados
 
 === percursos ===
-  25 objeto(s) selecionado(s) — so eles viram percurso
-  por dentro: 11   por fora: 14
-  'CORTE INTERNO' lado=1 -> criado luaUUID:
+  2 objeto(s) selecionado(s) — so eles viram percurso
+  por dentro: 0   por fora: 2
+  (nada por dentro — nenhuma peca com furo)
   'CORTE EXTERNO' lado=0 -> criado luaUUID:
-  total de percursos no trabalho: 2
+  total de percursos no trabalho: 5
