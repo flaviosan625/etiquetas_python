@@ -178,10 +178,10 @@ def test_falha_no_meio_do_lote_nao_registra_o_que_nao_foi(tmp_path, monkeypatch)
     _pdf(pasta / "LONAS" / "1UN LONA IMPRESSA_ruim_1,00x2,00M.pdf")
     original = env.enviar_para_fila
 
-    def falha_na_ruim(caminho, maquina, pasta_fila=None, maquinas=None, rolo_m=None):
+    def falha_na_ruim(caminho, maquina, pasta_fila=None, maquinas=None):
         if "ruim" in str(caminho):
             raise OSError("rede caiu")
-        return original(caminho, maquina, pasta_fila=pasta_fila, maquinas=maquinas, rolo_m=rolo_m)
+        return original(caminho, maquina, pasta_fila=pasta_fila, maquinas=maquinas)
 
     monkeypatch.setattr(env, "enviar_para_fila", falha_na_ruim)
     resultado, raiz = _rodar_envio(pasta, tmp_path / "fila")

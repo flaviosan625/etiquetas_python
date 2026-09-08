@@ -36,7 +36,7 @@ from documento_enviados import (
 from envio_impressao import (
     cabe_na_maquina, conferir as conferir_envio, enviar as enviar_para_maquinas,
     estado_do_rip, fila_parada, listar as listar_para_envio, onde_cabe, prever_giro,
-    raiz_do_cliente, rolo_sugerido, subtotais_por_material,
+    raiz_do_cliente, subtotais_por_material,
 )
 from estado_pedido import estado_existe, localizar_pastas_cliente
 from estoque import (
@@ -48,7 +48,7 @@ from estoque import (
 from impressao import imprimir_pdf, impressora_padrao, listar_impressoras
 from processamento import processar_etiquetas
 from rasterlink import rastrear as rastrear_rip
-from rasterlink_hotfolder import MAQUINAS as MAQUINAS_RIP, rolos_da_maquina
+from rasterlink_hotfolder import MAQUINAS as MAQUINAS_RIP
 from utils import sanitizar_nome_arquivo
 
 # Onde o seletor de pasta da tela de envio começa quando ainda não há
@@ -1994,16 +1994,6 @@ class JanelaDashboard(tk.Toplevel):
             tk.Frame(barra_fundo, bg=cor_barra, height=6, width=largura).place(x=0, y=0)
 
 
-def _rotulo_rolo(rolo_m):
-    """3.2 -> 'rolo 3,20 m'. Vírgula porque é assim que a medida é lida na casa."""
-    return f"rolo {rolo_m:.2f} m".replace(".", ",")
-
-
-def _rolo_do_rotulo(rotulo):
-    """'rolo 3,20 m' -> 3.2, o caminho de volta do que o combo mostra."""
-    return float(rotulo.split()[1].replace(",", "."))
-
-
 class JanelaEnviarImpressao(tk.Toplevel):
     """
     Manda pra fila das máquinas o que está numa pasta de produção.
@@ -2032,7 +2022,6 @@ class JanelaEnviarImpressao(tk.Toplevel):
         self.itens = []
         self.marcados = {}     # índice do item -> BooleanVar
         self.combos_maquina = {}   # índice do item -> StringVar da máquina escolhida
-        self.combos_rolo = {}      # índice do item -> StringVar do rolo (só máquina com rolo)
         self.envios_anteriores = []
 
         self.columnconfigure(0, weight=1)
@@ -2281,7 +2270,6 @@ class JanelaEnviarImpressao(tk.Toplevel):
             widget.destroy()
         self.marcados = {}
         self.combos_maquina = {}
-        self.combos_rolo = {}
 
         if not self.itens:
             tk.Label(
@@ -2345,31 +2333,16 @@ class JanelaEnviarImpressao(tk.Toplevel):
         tk.Label(self.frame_lista, text=medida, bg=COR_FUNDO_JANELA, fg=cor_texto, anchor="w").grid(
             row=linha, column=2, sticky="w", padx=8)
 
-        # A máquina e o rolo ficam na MESMA célula, um debaixo do outro:
-        # o rolo é um detalhe da máquina escolhida, não uma escolha
-        # paralela — e só aparece pra quem tem rolo (hoje só a DOCAN).
-        celula = tk.Frame(self.frame_lista, bg=COR_FUNDO_JANELA)
-        celula.grid(row=linha, column=3, padx=6)
-
+        # Só o nome da máquina no combo, nunca medida junto: "não colocar
+        # medidas somente as máquinas" (usuário, 2026-09-07).
         var_maquina = tk.StringVar(value=item["maquina"])
         self.combos_maquina[indice] = var_maquina
         combo = ttk.Combobox(
-            celula, textvariable=var_maquina, state="readonly", width=16,
+            self.frame_lista, textvariable=var_maquina, state="readonly", width=16,
             values=list(MAQUINAS_RIP),
         )
-        combo.pack()
+        combo.grid(row=linha, column=3, padx=6)
         combo.bind("<<ComboboxSelected>>", lambda e, i=indice: self._trocar_maquina(i))
-
-        rolos = rolos_da_maquina(item["maquina"])
-        if rolos:
-            var_rolo = tk.StringVar(value=_rotulo_rolo(item["rolo"]))
-            self.combos_rolo[indice] = var_rolo
-            combo_rolo = ttk.Combobox(
-                celula, textvariable=var_rolo, state="readonly", width=16,
-                values=[_rotulo_rolo(r) for r in rolos],
-            )
-            combo_rolo.pack(pady=(3, 0))
-            combo_rolo.bind("<<ComboboxSelected>>", lambda e, i=indice: self._trocar_rolo(i))
 
         tk.Label(
             self.frame_lista, text=self._observacao(item), bg=COR_FUNDO_JANELA,
@@ -2400,30 +2373,11 @@ class JanelaEnviarImpressao(tk.Toplevel):
         return "\n".join(partes) or "—"
 
     def _trocar_maquina(self, indice):
-        """
-        A máquina mudou: o giro previsto depende da largura útil dela,
-        então a linha é refeita.
-
-        O rolo é recalculado do zero, nunca aproveitado: o rolo de 3,20
-        da DOCAN não quer dizer nada na SWJ320A, e carregar o número
-        antigo pra máquina nova daria uma previsão de giro que não
-        corresponde a máquina nenhuma.
-        """
+        """A máquina mudou: o giro previsto depende da largura útil dela, então a linha é refeita."""
         item = self.itens[indice]
         item["maquina"] = self.combos_maquina[indice].get()
-        item["rolo"] = rolo_sugerido(item["dimensao"], item["maquina"])
-        self._refazer_linha(indice)
-
-    def _trocar_rolo(self, indice):
-        """O rolo mudou: é ele que passa a mandar na largura útil deste trabalho."""
-        item = self.itens[indice]
-        item["rolo"] = _rolo_do_rotulo(self.combos_rolo[indice].get())
-        self._refazer_linha(indice)
-
-    def _refazer_linha(self, indice):
-        item = self.itens[indice]
-        item["giro"] = prever_giro(item["dimensao"], item["maquina"], rolo=item.get("rolo"))
-        item["cabe"] = cabe_na_maquina(item["dimensao"], item["maquina"], rolo=item.get("rolo"))
+        item["giro"] = prever_giro(item["dimensao"], item["maquina"])
+        item["cabe"] = cabe_na_maquina(item["dimensao"], item["maquina"])
         marcados_antes = {i for i, v in self.marcados.items() if v.get()}
         self._preencher_lista()
         for i in marcados_antes:

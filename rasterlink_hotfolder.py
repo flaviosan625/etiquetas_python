@@ -117,64 +117,22 @@ MAQUINAS = {
     # Usar 5,20 aqui faria o giro automático deixar passar uma arte que
     # a máquina corta na borda.
     #
-    # 'rolos_m' é o que a DOCAN tem de diferente das Mimaki: ela roda
-    # DOIS rolos (2026-09-07), e qual está na máquina muda a largura
-    # útil daquele trabalho. Quem indica é o usuário, arquivo por
-    # arquivo, na tela de envio — não é escolha do código. Máquina sem
-    # 'rolos_m' tem uma largura só e continua funcionando como sempre.
+    # A DOCAN roda mais de um rolo, mas 'largura_util_m' aqui é UMA só,
+    # a maior. Chegou a existir escolha de rolo por arquivo e o usuário
+    # cortou (2026-09-07): "não colocar medidas somente as máquinas, eu
+    # seleciono qual devo usar sem se basear pelas medidas". Quem sabe
+    # que rolo está montado é quem está na máquina.
+    #
+    # O que isso custa, dito de frente: com o rolo de 3,20 montado, o
+    # giro automático continua raciocinando por 5,00 e deixa passar reta
+    # uma arte que o material corta na borda. É consequência aceita da
+    # simplificação, não descuido.
     "DOCAN": {
         "hot_folder": r"C:\Program Files\SAi\SAi Production Suite 22\Jobs and Settings\Jobs\Docan\Docan",
         "largura_util_m": 5.00,
-        "rolos_m": (3.20, 5.00),
         "posto": POSTO_SAI,
     },
 }
-
-# Sufixo do bilhete que viaja ao lado da arte na fila, quando ela leva
-# alguma instrução que o NOME do arquivo não carrega — hoje só o rolo
-# da DOCAN.
-#
-# Por que um arquivo separado em vez de renomear a arte: o nome é o que
-# vira linha no documento do cliente e no relatório diário. Enfiar
-# "_rolo320" nele sujaria os dois pra sempre. E por que não uma subpasta
-# por rolo: a fila tem uma pasta por máquina, e mudar essa forma cegaria
-# de uma vez o aviso de fila parada e a conferência de nome repetido,
-# que hoje olham direto dentro da pasta da máquina.
-SUFIXO_BILHETE = ".envio.json"
-
-
-def rolos_da_maquina(nome_maquina, maquinas=None):
-    """
-    Larguras de rolo que esta máquina aceita, da mais estreita pra mais
-    larga. Tupla vazia quando a máquina tem uma largura só — que é o
-    caso das duas Mimaki, e é o que faz a tela não mostrar escolha de
-    rolo pra elas.
-    """
-    maquinas = MAQUINAS if maquinas is None else maquinas
-    config = maquinas.get(nome_maquina)
-    if not isinstance(config, dict):
-        return ()
-    return tuple(sorted(config.get("rolos_m") or ()))
-
-
-def caminho_do_bilhete(caminho_arte):
-    return pathlib.Path(caminho_arte).with_name(pathlib.Path(caminho_arte).name + SUFIXO_BILHETE)
-
-
-def ler_bilhete(caminho_arte):
-    """
-    O que veio escrito junto com esta arte, ou {} se não veio nada.
-    Nunca levanta: bilhete ilegível é o mesmo que arte sem bilhete, e a
-    arte tem que seguir pra impressão de qualquer jeito — segurar
-    arquivo por causa de um detalhe nosso é o que este módulo inteiro
-    evita.
-    """
-    try:
-        with open(caminho_do_bilhete(caminho_arte), "r", encoding="utf-8") as f:
-            dados = json.load(f)
-    except (OSError, ValueError, json.JSONDecodeError):
-        return {}
-    return dados if isinstance(dados, dict) else {}
 
 
 def maquinas_do_posto(posto, maquinas=None):
@@ -414,18 +372,12 @@ def limpar_enviados_antigos(pasta_enviados, dias=None, logger=print, agora=None)
     return apagados
 
 
-def enviar_para_fila(caminho_arquivo, nome_maquina, pasta_fila=None, maquinas=None, rolo_m=None):
+def enviar_para_fila(caminho_arquivo, nome_maquina, pasta_fila=None, maquinas=None):
     """
     Copia 'caminho_arquivo' pra fila comum no OneDrive, na subpasta da
     máquina 'nome_maquina' — chamável de qualquer máquina (não precisa
     ser a do RIP). NUNCA move: o original do pedido continua intacto
     onde estava.
-
-    'rolo_m' é a largura do rolo que vai estar na máquina neste
-    trabalho (só a DOCAN tem escolha de rolo). Vai num bilhete ao lado
-    da arte, escrito ANTES dela de propósito: o vigia só age quando vê
-    a ARTE, então bilhete primeiro garante que ele nunca encontre uma
-    arte sem a instrução dela e gire pela largura errada.
     """
     maquinas = MAQUINAS if maquinas is None else maquinas
     if nome_maquina not in maquinas:
@@ -442,33 +394,8 @@ def enviar_para_fila(caminho_arquivo, nome_maquina, pasta_fila=None, maquinas=No
         raise FileNotFoundError(f"Arquivo não encontrado: {origem}")
 
     destino = pasta / origem.name
-    if rolo_m:
-        _escrever_bilhete(destino, {"rolo_m": float(rolo_m)})
     shutil.copy2(origem, destino)
     return destino
-
-
-def _escrever_bilhete(caminho_arte, dados):
-    """
-    Grava o bilhete da arte. Nunca levanta: não conseguir escrever o
-    bilhete não pode impedir a arte de ir pra fila — sem ele o vigia
-    usa a largura padrão da máquina, que é o comportamento de sempre.
-    """
-    caminho = caminho_do_bilhete(caminho_arte)
-    try:
-        with open(caminho, "w", encoding="utf-8") as f:
-            json.dump(dados, f, ensure_ascii=False, indent=2)
-    except OSError:
-        return None
-    return caminho
-
-
-def apagar_bilhete(caminho_arte):
-    """Tira o bilhete de perto da arte. Silencioso: bilhete que já não está lá é sucesso."""
-    try:
-        caminho_do_bilhete(caminho_arte).unlink()
-    except OSError:
-        pass
 
 
 def _arquivo_estavel(caminho, espera_segundos=3):
@@ -712,28 +639,12 @@ def _vigiar_uma_maquina(pasta_maquina, config_maquina, logger, pasta_relatorios=
 
     resultado = {"enviados": [], "ignorados": [], "falharam": []}
     for arquivo in [f for f in pasta_maquina.iterdir() if f.is_file()]:
-        # O bilhete não é arte e não é lixo: ele é lido junto com a arte
-        # dele, logo abaixo, e vai embora junto com ela. Contá-lo como
-        # "ignorado" faria o resumo da passada dizer o dobro do que
-        # aconteceu de verdade.
-        if arquivo.name.endswith(SUFIXO_BILHETE):
-            continue
         if arquivo.suffix.lower() not in _EXTENSOES_ACEITAS:
             resultado["ignorados"].append(arquivo.name)
             continue
         if not _arquivo_estavel(arquivo):
             logger("info", f"'{arquivo.name}' ainda mudando de tamanho (upload/download em andamento) — aguardando próximo ciclo.")
             continue
-
-        # O rolo escolhido na tela manda mais que a largura padrão da
-        # máquina: numa DOCAN com o rolo de 3,20 montado, girar pelos
-        # 5,00 do cadastro mandaria pra impressão uma arte mais larga
-        # que o material — que sai cortada na borda.
-        largura_do_trabalho = largura_util_m
-        rolo_m = ler_bilhete(arquivo).get("rolo_m")
-        if rolo_m:
-            largura_do_trabalho = float(rolo_m)
-            logger("info", f"'{arquivo.name}' vai no rolo de {largura_do_trabalho:.2f}m (indicado no envio).")
 
         # UM arquivo com problema não pode prender a fila inteira atrás
         # dele. Aconteceu de verdade (2026-09-05): 6 arquivos passaram,
@@ -746,7 +657,7 @@ def _vigiar_uma_maquina(pasta_maquina, config_maquina, logger, pasta_relatorios=
         try:
             _processar_arquivo_da_fila(
                 arquivo, hot_folder, pasta_enviados, pasta_maquina.name,
-                largura_do_trabalho, logger, pasta_relatorios,
+                largura_util_m, logger, pasta_relatorios,
             )
         except Exception as e:
             resultado["falharam"].append(arquivo.name)
@@ -774,11 +685,6 @@ def _processar_arquivo_da_fila(arquivo, hot_folder, pasta_enviados, nome_maquina
     if destino_enviados.exists():
         destino_enviados = pasta_enviados / f"{arquivo.stem}_{int(time.time())}{arquivo.suffix}"
     arquivo.rename(destino_enviados)
-
-    # O bilhete sai da fila junto com a arte dele. Deixá-lo pra trás
-    # faria a próxima arte de mesmo nome herdar o rolo da anterior — e
-    # sozinho ele nunca mais seria lido por ninguém.
-    apagar_bilhete(arquivo)
 
     logger("ok", f"'{arquivo.name}' enviado pra hot folder do RasterLink7 ({nome_maquina}).")
 

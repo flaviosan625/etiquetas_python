@@ -8,8 +8,7 @@ import rasterlink_hotfolder as rl_hf
 from config import carregar_config
 from envio_impressao import (
     MAQUINA_ADESIVO, MAQUINA_DOCAN, MAQUINA_LONA, cabe_na_maquina, conferir, enviar, listar,
-    onde_cabe, prever_giro, raiz_do_cliente, rolo_sugerido, subtotais_por_material,
-    sugerir_maquina,
+    onde_cabe, prever_giro, raiz_do_cliente, subtotais_por_material, sugerir_maquina,
 )
 
 
@@ -34,8 +33,7 @@ CONFIG = carregar_config()
 MAQUINAS_TESTE = {
     MAQUINA_LONA: {"hot_folder": r"C:\nao_usado", "largura_util_m": 3.20},
     MAQUINA_ADESIVO: {"hot_folder": r"C:\nao_usado", "largura_util_m": 1.48},
-    MAQUINA_DOCAN: {"hot_folder": r"C:\nao_usado", "largura_util_m": 5.00,
-                    "rolos_m": (3.20, 5.00)},
+    MAQUINA_DOCAN: {"hot_folder": r"C:\nao_usado", "largura_util_m": 5.00},
 }
 
 
@@ -395,7 +393,7 @@ def test_copia_incompleta_e_desfeita_e_nao_vira_registro(tmp_path, monkeypatch):
     _arte(pasta / "LONAS", nome, conteudo=b"conteudo completo")
     fila = tmp_path / "fila"
 
-    def copia_truncada(caminho, maquina, pasta_fila=None, maquinas=None, rolo_m=None):
+    def copia_truncada(caminho, maquina, pasta_fila=None, maquinas=None):
         destino = pathlib_destino = (fila / maquina / nome)
         destino.parent.mkdir(parents=True, exist_ok=True)
         destino.write_bytes(b"pela")
@@ -418,10 +416,10 @@ def test_falha_num_arquivo_nao_derruba_o_resto_do_lote(tmp_path, monkeypatch):
 
     original = env.enviar_para_fila
 
-    def falha_na_ruim(caminho, maquina, pasta_fila=None, maquinas=None, rolo_m=None):
+    def falha_na_ruim(caminho, maquina, pasta_fila=None, maquinas=None):
         if "ruim" in str(caminho):
             raise OSError("disco cheio")
-        return original(caminho, maquina, pasta_fila=pasta_fila, maquinas=maquinas, rolo_m=rolo_m)
+        return original(caminho, maquina, pasta_fila=pasta_fila, maquinas=maquinas)
 
     monkeypatch.setattr(env, "enviar_para_fila", falha_na_ruim)
 
@@ -651,66 +649,16 @@ def test_a_lista_ja_traz_a_lona_larga_na_docan(tmp_path):
     assert item["cabe"] is True
 
 
-# ---------- o rolo da DOCAN ----------
-
-def test_rolo_sugerido_e_o_mais_estreito_que_serve():
-    """
-    Por uma lona de 2,80 no rolo de 5,00 desperdica 2,20m de material em
-    toda a extensao da peca.
-    """
-    dimensao = {"largura_m": 2.80, "altura_m": 1.90, "area_m2": 5.32}
-    assert rolo_sugerido(dimensao, MAQUINA_DOCAN, MAQUINAS_TESTE) == 3.20
-
-
-def test_peca_que_so_cabe_no_rolo_largo_ganha_o_rolo_largo():
-    dimensao = {"largura_m": 4.60, "altura_m": 3.50, "area_m2": 16.1}
-    assert rolo_sugerido(dimensao, MAQUINA_DOCAN, MAQUINAS_TESTE) == 5.00
-
-
-def test_peca_deitada_conta_pelo_lado_menor():
-    """4,00x1,20 entra girada no rolo de 3,20 com 1,20 de largura."""
-    dimensao = {"largura_m": 4.00, "altura_m": 1.20, "area_m2": 4.8}
-    assert rolo_sugerido(dimensao, MAQUINA_DOCAN, MAQUINAS_TESTE) == 3.20
-
-
-def test_maquina_de_uma_largura_so_nao_tem_rolo_pra_escolher():
-    dimensao = {"largura_m": 1.00, "altura_m": 2.00, "area_m2": 2.0}
-    assert rolo_sugerido(dimensao, MAQUINA_LONA, MAQUINAS_TESTE) is None
-    assert rolo_sugerido(dimensao, MAQUINA_ADESIVO, MAQUINAS_TESTE) is None
-
-
-def test_o_rolo_manda_no_cabe_e_no_giro():
-    """
-    Numa DOCAN cadastrada com 5,00 mas com o rolo de 3,20 montado, quem
-    decide e o rolo — senao a tela prometeria uma coisa e a maquina
-    faria outra.
-    """
-    dimensao = {"largura_m": 3.90, "altura_m": 0.95, "area_m2": 3.705}
-
-    assert cabe_na_maquina(dimensao, MAQUINA_DOCAN, MAQUINAS_TESTE) is True
-    assert prever_giro(dimensao, MAQUINA_DOCAN, MAQUINAS_TESTE) is None
-
-    assert cabe_na_maquina(dimensao, MAQUINA_DOCAN, MAQUINAS_TESTE, rolo=3.20) is True
-    assert prever_giro(dimensao, MAQUINA_DOCAN, MAQUINAS_TESTE, rolo=3.20)["motivo"] == "nao_cabe"
-
-
-def test_peca_que_nao_cabe_em_rolo_nenhum_sugere_o_mais_largo_e_avisa():
-    dimensao = {"largura_m": 6.00, "altura_m": 5.50, "area_m2": 33.0}
-    assert rolo_sugerido(dimensao, MAQUINA_DOCAN, MAQUINAS_TESTE) == 5.00
-    assert cabe_na_maquina(dimensao, MAQUINA_DOCAN, MAQUINAS_TESTE, rolo=5.00) is False
-
-
 # ---------- onde mais cabe ----------
 
 def test_diz_em_qual_maquina_a_peca_caberia():
-    """Quem indica a maquina e o usuario — este e o momento em que ele precisa indicar outra."""
+    """
+    So aparece quando a peca ja NAO cabe onde esta: nao e a maquina
+    sendo escolhida por medida, e o aviso de "nao cabe" dizendo pra onde
+    olhar, no momento em que o usuario vai trocar o combo.
+    """
     dimensao = {"largura_m": 4.60, "altura_m": 3.50, "area_m2": 16.1}
-    assert "DOCAN" in onde_cabe(dimensao, MAQUINA_LONA, MAQUINAS_TESTE)
-
-
-def test_diz_o_rolo_certo_quando_e_so_trocar_de_rolo():
-    dimensao = {"largura_m": 4.60, "altura_m": 3.50, "area_m2": 16.1}
-    assert onde_cabe(dimensao, MAQUINA_DOCAN, MAQUINAS_TESTE) == "no rolo de 5,00m"
+    assert onde_cabe(dimensao, MAQUINA_LONA, MAQUINAS_TESTE) == MAQUINA_DOCAN
 
 
 def test_peca_que_nao_cabe_em_lugar_nenhum_nao_inventa_destino():
@@ -718,54 +666,13 @@ def test_peca_que_nao_cabe_em_lugar_nenhum_nao_inventa_destino():
     assert onde_cabe(dimensao, MAQUINA_LONA, MAQUINAS_TESTE) is None
 
 
-# ---------- o rolo no envio ----------
-
-def test_o_rolo_escolhido_fica_no_registro_do_envio(tmp_path):
+def test_o_envio_registra_a_maquina_e_nada_de_medida_junto(tmp_path):
+    """A tela mostra maquinas e so isso — nao ha rolo pra guardar."""
     pasta = _producao(tmp_path)
     _arte(pasta / "LONAS", "1UN LONA IMPRESSA_fachada_4,60x3,50M.pdf")
-    fila = tmp_path / "fila"
-
-    resultado = enviar(_itens_de(pasta), pasta, pasta_fila=fila, maquinas=MAQUINAS_TESTE)
-
-    registro, = resultado["enviados"]
-    assert registro["maquina"] == MAQUINA_DOCAN
-    assert registro["rolo_m"] == 5.00
-
-
-def test_envio_pra_maquina_sem_rolo_nao_inventa_rolo(tmp_path):
-    pasta = _producao(tmp_path)
-    _arte(pasta / "LONAS", "1UN LONA IMPRESSA_faixa_1,00x2,00M.pdf")
 
     resultado = enviar(_itens_de(pasta), pasta, pasta_fila=tmp_path / "fila", maquinas=MAQUINAS_TESTE)
 
     registro, = resultado["enviados"]
-    assert registro["maquina"] == MAQUINA_LONA
-    assert registro["rolo_m"] is None
-
-
-def test_copia_desfeita_nao_deixa_o_bilhete_orfao_na_fila(tmp_path, monkeypatch):
-    """
-    O bilhete e escrito ANTES da arte, entao numa copia desfeita ele e o
-    que sobra sozinho — e o proximo arquivo de mesmo nome herdaria o
-    rolo desta tentativa que falhou.
-    """
-    pasta = _producao(tmp_path)
-    nome = "1UN LONA IMPRESSA_fachada_4,60x3,50M.pdf"
-    _arte(pasta / "LONAS", nome, conteudo=b"conteudo completo")
-    fila = tmp_path / "fila"
-
-    def copia_truncada(caminho, maquina, pasta_fila=None, maquinas=None, rolo_m=None):
-        destino = fila / maquina / nome
-        destino.parent.mkdir(parents=True, exist_ok=True)
-        if rolo_m:
-            rl_hf._escrever_bilhete(destino, {"rolo_m": rolo_m})
-        destino.write_bytes(b"pela")
-        return destino
-
-    monkeypatch.setattr(env, "enviar_para_fila", copia_truncada)
-
-    resultado = enviar(_itens_de(pasta), pasta, pasta_fila=fila, maquinas=MAQUINAS_TESTE)
-
-    assert resultado["enviados"] == []
-    sobrou = [f.name for f in (fila / MAQUINA_DOCAN).iterdir() if f.is_file()]
-    assert sobrou == [], f"sobrou lixo na fila: {sobrou}"
+    assert registro["maquina"] == MAQUINA_DOCAN
+    assert "rolo_m" not in registro

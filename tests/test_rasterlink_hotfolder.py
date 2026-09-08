@@ -1401,87 +1401,15 @@ def test_docan_esta_cadastrada_com_a_largura_util_e_nao_a_da_midia():
     for mimaki in ("UJV 100 UNY CV", "SWJ320A"):
         assert rl_hf._posto_da_maquina(rl_hf.MAQUINAS[mimaki]) == rl_hf.POSTO_RIP
 
-
-# ---------- o bilhete do rolo ----------
+# ---------- a DOCAN tem UMA largura ----------
 #
-# A DOCAN roda dois rolos (3,20 e 5,00) e qual esta montado muda a
-# largura util DAQUELE trabalho. Quem indica e o usuario na tela; o
-# numero viaja num bilhete ao lado da arte, porque a fila so carrega
-# arquivos e o nome da arte nao pode ser sujo com isso — ele vira linha
-# no documento do cliente e no relatorio diario.
+# Chegou a existir escolha de rolo por arquivo, com um bilhete viajando
+# ao lado da arte, e o usuario cortou (2026-09-07): "nao colocar medidas
+# somente as maquinas". Ficou a largura maior cadastrada, e quem sabe
+# que rolo esta montado e quem esta na maquina.
 
-def test_o_rolo_escolhido_viaja_num_bilhete_ao_lado_da_arte(tmp_path):
-    origem = tmp_path / "arte.pdf"
-    origem.write_bytes(b"conteudo")
-    maquinas = {"DOCAN": {"hot_folder": str(tmp_path / "hot"), "rolos_m": (3.20, 5.00)}}
-
-    destino = enviar_para_fila(origem, "DOCAN", pasta_fila=tmp_path / "fila",
-                               maquinas=maquinas, rolo_m=3.20)
-
-    assert rl_hf.ler_bilhete(destino) == {"rolo_m": 3.20}
-
-
-def test_arte_sem_rolo_nao_ganha_bilhete(tmp_path):
-    """As Mimaki tem uma largura so — bilhete ali seria arquivo a toa na fila."""
-    origem = tmp_path / "arte.pdf"
-    origem.write_bytes(b"conteudo")
-
-    destino = enviar_para_fila(origem, "UJV100", pasta_fila=tmp_path / "fila",
-                               maquinas={"UJV100": str(tmp_path / "hot")})
-
-    assert not rl_hf.caminho_do_bilhete(destino).exists()
-    assert rl_hf.ler_bilhete(destino) == {}
-
-
-def test_bilhete_e_escrito_antes_da_arte(tmp_path, monkeypatch):
-    """
-    O vigia so age quando ve a ARTE. Se a arte chegasse primeiro, um
-    ciclo poderia pega-la antes do bilhete e girar pela largura errada —
-    mandando pra impressao uma peca mais larga que o material.
-    """
-    origem = tmp_path / "arte.pdf"
-    origem.write_bytes(b"conteudo")
-    maquinas = {"DOCAN": {"hot_folder": str(tmp_path / "hot"), "rolos_m": (3.20, 5.00)}}
-
-    def copia_que_falha(*a, **kw):
-        raise OSError("rede caiu no meio")
-
-    monkeypatch.setattr(rl_hf.shutil, "copy2", copia_que_falha)
-
-    with pytest.raises(OSError):
-        enviar_para_fila(origem, "DOCAN", pasta_fila=tmp_path / "fila",
-                         maquinas=maquinas, rolo_m=3.20)
-
-    # a arte nem chegou, mas o bilhete ja estava la: essa e a ordem certa
-    fila_docan = tmp_path / "fila" / "DOCAN"
-    assert not (fila_docan / "arte.pdf").exists()
-    assert rl_hf.caminho_do_bilhete(fila_docan / "arte.pdf").exists()
-
-
-def test_vigia_gira_pela_largura_do_rolo_e_nao_pela_da_maquina(tmp_path, monkeypatch):
-    """
-    Numa DOCAN cadastrada com 5,00 mas rodando o rolo de 3,20, uma arte
-    de 3,90x0,95 TEM que girar. Girando pelos 5,00 do cadastro ela
-    passaria reta e sairia cortada na borda do material.
-    """
-    monkeypatch.setattr(rl_hf.time, "sleep", lambda s: None)
-    fila = tmp_path / "fila"
-    (fila / "DOCAN").mkdir(parents=True)
-    hot = tmp_path / "hot"
-    hot.mkdir()
-    arte = fila / "DOCAN" / "arte.pdf"
-    _pdf_de(arte, largura_cm=390, altura_cm=95)
-    rl_hf._escrever_bilhete(arte, {"rolo_m": 3.20})
-
-    maquinas = {"DOCAN": {"hot_folder": str(hot), "largura_util_m": 5.00,
-                          "rolos_m": (3.20, 5.00)}}
-    vigiar_fila_uma_vez(pasta_fila=str(fila), maquinas=maquinas, logger=lambda n, m: None)
-
-    assert _tamanho_cm(hot / "arte.pdf") == (95, 390), "devia girar pelo rolo de 3,20"
-
-
-def test_sem_bilhete_o_vigia_usa_a_largura_da_maquina(tmp_path, monkeypatch):
-    """A mesma arte, sem bilhete, cabe nos 5,00 da DOCAN e passa reta."""
+def test_docan_gira_pela_largura_cadastrada(tmp_path, monkeypatch):
+    """3,90x0,95 cabe nos 5,00 da DOCAN e passa reta — nada de rolo pra consultar."""
     monkeypatch.setattr(rl_hf.time, "sleep", lambda s: None)
     fila = tmp_path / "fila"
     (fila / "DOCAN").mkdir(parents=True)
@@ -1489,77 +1417,33 @@ def test_sem_bilhete_o_vigia_usa_a_largura_da_maquina(tmp_path, monkeypatch):
     hot.mkdir()
     _pdf_de(fila / "DOCAN" / "arte.pdf", largura_cm=390, altura_cm=95)
 
-    maquinas = {"DOCAN": {"hot_folder": str(hot), "largura_util_m": 5.00,
-                          "rolos_m": (3.20, 5.00)}}
+    maquinas = {"DOCAN": {"hot_folder": str(hot), "largura_util_m": 5.00}}
     vigiar_fila_uma_vez(pasta_fila=str(fila), maquinas=maquinas, logger=lambda n, m: None)
 
     assert _tamanho_cm(hot / "arte.pdf") == (390, 95)
 
 
-def test_bilhete_sai_da_fila_junto_com_a_arte(tmp_path, monkeypatch):
+def test_a_fila_nao_ganha_arquivo_alem_da_arte(tmp_path):
     """
-    Bilhete que fica pra tras faz a PROXIMA arte de mesmo nome herdar o
-    rolo desta — e sozinho ele nunca mais seria lido por ninguem.
+    Enviar nao pode deixar nada alem da propria copia na pasta da
+    maquina: qualquer arquivo extra ali vira lixo que ninguem tira, e o
+    aviso de fila parada aprende a mentir.
     """
-    monkeypatch.setattr(rl_hf.time, "sleep", lambda s: None)
-    fila = tmp_path / "fila"
-    (fila / "DOCAN").mkdir(parents=True)
-    hot = tmp_path / "hot"
-    hot.mkdir()
-    arte = fila / "DOCAN" / "arte.pdf"
-    _pdf_de(arte, largura_cm=100, altura_cm=100)
-    rl_hf._escrever_bilhete(arte, {"rolo_m": 3.20})
+    origem = tmp_path / "arte.pdf"
+    origem.write_bytes(b"conteudo")
 
-    maquinas = {"DOCAN": {"hot_folder": str(hot), "largura_util_m": 5.00}}
-    vigiar_fila_uma_vez(pasta_fila=str(fila), maquinas=maquinas, logger=lambda n, m: None)
+    enviar_para_fila(origem, "DOCAN", pasta_fila=tmp_path / "fila",
+                     maquinas={"DOCAN": str(tmp_path / "hot")})
 
-    sobrou = [f.name for f in (fila / "DOCAN").iterdir() if f.is_file()]
-    assert sobrou == [], f"sobrou lixo na fila: {sobrou}"
+    na_fila = sorted(f.name for f in (tmp_path / "fila" / "DOCAN").iterdir())
+    assert na_fila == ["arte.pdf"]
 
 
-def test_bilhete_nao_conta_como_arquivo_ignorado(tmp_path, monkeypatch):
-    """
-    Contar o bilhete como 'ignorado' faria o resumo da passada dizer o
-    dobro do que aconteceu — e quem le o resumo procura numero estranho.
-    """
-    monkeypatch.setattr(rl_hf.time, "sleep", lambda s: None)
-    fila = tmp_path / "fila"
-    (fila / "DOCAN").mkdir(parents=True)
-    hot = tmp_path / "hot"
-    hot.mkdir()
-    arte = fila / "DOCAN" / "arte.pdf"
-    _pdf_de(arte, largura_cm=100, altura_cm=100)
-    rl_hf._escrever_bilhete(arte, {"rolo_m": 3.20})
-
-    maquinas = {"DOCAN": {"hot_folder": str(hot), "largura_util_m": 5.00}}
-    r = vigiar_fila_uma_vez(pasta_fila=str(fila), maquinas=maquinas, logger=lambda n, m: None)
-
-    assert r["DOCAN"]["enviados"] == ["arte.pdf"]
-    assert r["DOCAN"]["ignorados"] == []
-
-
-def test_bilhete_ilegivel_nao_segura_a_arte(tmp_path, monkeypatch):
-    """
-    Detalhe nosso nunca pode virar arquivo represado: sem conseguir ler
-    o bilhete, vale a largura da maquina e a arte segue.
-    """
-    monkeypatch.setattr(rl_hf.time, "sleep", lambda s: None)
-    fila = tmp_path / "fila"
-    (fila / "DOCAN").mkdir(parents=True)
-    hot = tmp_path / "hot"
-    hot.mkdir()
-    arte = fila / "DOCAN" / "arte.pdf"
-    _pdf_de(arte, largura_cm=100, altura_cm=100)
-    rl_hf.caminho_do_bilhete(arte).write_text("isto nao e json", encoding="utf-8")
-
-    maquinas = {"DOCAN": {"hot_folder": str(hot), "largura_util_m": 5.00}}
-    r = vigiar_fila_uma_vez(pasta_fila=str(fila), maquinas=maquinas, logger=lambda n, m: None)
-
-    assert r["DOCAN"]["enviados"] == ["arte.pdf"]
-    assert (hot / "arte.pdf").exists()
-
-
-def test_rolos_so_existem_em_quem_tem_rolo(tmp_path):
-    assert rl_hf.rolos_da_maquina("DOCAN") == (3.20, 5.00)
-    assert rl_hf.rolos_da_maquina("SWJ320A") == ()
-    assert rl_hf.rolos_da_maquina("UJV 100 UNY CV") == ()
+def test_docan_esta_cadastrada_com_uma_largura_util_so():
+    hot, largura = rl_hf._config_maquina(rl_hf.MAQUINAS["DOCAN"])
+    assert largura == 5.00
+    assert "rolos_m" not in rl_hf.MAQUINAS["DOCAN"]
+    assert "SAi" in hot, "a hot folder da DOCAN e o Setup do SAi, nao uma pasta inventada"
+    assert rl_hf._posto_da_maquina(rl_hf.MAQUINAS["DOCAN"]) == rl_hf.POSTO_SAI
+    for mimaki in ("UJV 100 UNY CV", "SWJ320A"):
+        assert rl_hf._posto_da_maquina(rl_hf.MAQUINAS[mimaki]) == rl_hf.POSTO_RIP
