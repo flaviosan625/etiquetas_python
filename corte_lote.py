@@ -24,9 +24,11 @@ import pathlib
 import corte_dxf
 import corte_parametros
 
-# Chapa cheia de PVC/MDF: 1220 x 2440 mm. Fica como padrão, mas entra
-# por parâmetro porque acrílico costuma vir em outras medidas.
-CHAPA_PADRAO_MM = (1220.0, 2440.0)
+# Chapa cheia de PVC/MDF: 1220 x 2440 mm. A definição desceu pro
+# corte_parametros.py em 08/09/2026, porque o gadget do Aspire também
+# precisa dela pra barrar percurso que sai fora da chapa. Continua
+# exposta aqui com o mesmo nome — quem já usava não muda.
+CHAPA_PADRAO_MM = corte_parametros.CHAPA_PADRAO_MM
 
 # Vão entre as linhas de corte de duas peças vizinhas. É o número que o
 # Flávio pediu (07/09/2026): 15 mm "para não colidir uma linha da

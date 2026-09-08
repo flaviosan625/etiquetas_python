@@ -6,6 +6,7 @@ return {
    unidade = "mm",
    avanco = 2000.0, ataque = 1000.0, rotacao = 18000.0,
    passo_lateral = 2.0, rampa = 10.0,
+   chapa_largura = 1220.0, chapa_altura = 2440.0,
    materiais = {
       ["ACRILICO 1"] = { ferramenta = "Topo Raso (6 mm)", diametro = 6.0, passada = 3.0, profundidade = 2.0, passes = 1 },
       ["ACRILICO 2"] = { ferramenta = "Topo Raso (6 mm)", diametro = 6.0, passada = 3.0, profundidade = 3.0, passes = 1 },

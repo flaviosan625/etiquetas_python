@@ -116,6 +116,18 @@ PASSO_LATERAL_MM = 2.0
 # (no gadget: ferramenta.InMM = true, antes de qualquer número).
 UNIDADE = "mm"
 
+# Chapa cheia de PVC/MDF. Morava no corte_lote.py e desceu pra cá em
+# 08/09/2026 porque o GADGET também precisa dela: sem saber o tamanho da
+# chapa ele não tem como barrar um percurso que sai fora dela.
+#
+# Aconteceu de verdade: um PDF arrastado traz o tamanho da PÁGINA — 4,2 x
+# 2,7 m nos arquivos da ASICS — o Aspire monta o material com esse
+# tamanho, e a máquina ia começar o corte fora do material.
+#
+# Fica como padrão, mas entra por parâmetro onde é usada: acrílico
+# costuma vir em outras medidas.
+CHAPA_PADRAO_MM = (1220.0, 2440.0)
+
 _FRESA_2 = {"grupo": "Fresa 2 mm", "ferramenta": "Topo Raso (2 mm)", "diametro_mm": 2.0}
 _FRESA_4 = {"grupo": "Fresa 4 mm", "ferramenta": "Topo Raso (4 mm)", "diametro_mm": 4.0}
 _FRESA_6 = {"grupo": "Fresa 6 mm", "ferramenta": "Topo Raso (6 mm)", "diametro_mm": 6.0}
@@ -220,6 +232,12 @@ def exportar_para_lua(destino=None):
         f'   unidade = "{UNIDADE}",',
         f"   avanco = {AVANCO_MM_MIN}, ataque = {ATAQUE_MM_MIN}, rotacao = {ROTACAO_RPM},",
         f"   passo_lateral = {PASSO_LATERAL_MM}, rampa = {RAMPA_SUAVE_MM},",
+        # A chapa vai junto pro gadget conseguir barrar percurso que sai
+        # fora dela. Aconteceu em 08/09/2026: um PDF arrastado traz o
+        # tamanho da PAGINA (4,2 x 2,7 m nesses arquivos), o Aspire monta
+        # o material com esse tamanho, e a maquina ia comecar o corte
+        # fora do material. Fonte unica: corte_lote.CHAPA_PADRAO_MM.
+        f"   chapa_largura = {CHAPA_PADRAO_MM[0]}, chapa_altura = {CHAPA_PADRAO_MM[1]},",
         "   materiais = {",
     ]
     for material, espessura in combinacoes_cadastradas():

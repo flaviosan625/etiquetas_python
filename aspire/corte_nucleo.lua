@@ -106,6 +106,10 @@ local function carregar_parametros()
    material.rotacao = dados.rotacao
    material.passo_lateral = dados.passo_lateral
    material.rampa = dados.rampa
+   -- A chapa vem junto: e com ela que o gadget barra percurso que sai
+   -- fora do material (ver a trava la embaixo).
+   material.chapa_largura = dados.chapa_largura
+   material.chapa_altura = dados.chapa_altura
    return material
 end
 
@@ -453,28 +457,6 @@ function main(script_path)
       anotar("  XYOrigin = " .. numa_linha(bloco.XYOrigin) ..
              "   ZOrigin = " .. numa_linha(bloco.ZOrigin))
    end)
-   pcall(function()
-      -- Onde os vetores estao de verdade. Se o canto inferior esquerdo
-      -- nao for perto de (0,0), esta e a explicacao do deslocamento.
-      local todos = todos_os_vetores(trabalho)
-      local x0, y0, x1, y1
-      for _, obj in ipairs(todos) do
-         pcall(function()
-            local b = obj:GetBoundingBox()
-            if x0 == nil or b.BLC.x < x0 then x0 = b.BLC.x end
-            if y0 == nil or b.BLC.y < y0 then y0 = b.BLC.y end
-            if x1 == nil or b.TRC.x > x1 then x1 = b.TRC.x end
-            if y1 == nil or b.TRC.y > y1 then y1 = b.TRC.y end
-         end)
-      end
-      if x0 == nil then
-         anotar("  (nenhum vetor pra medir)")
-      else
-         anotar(string.format("  vetores ocupam: X de %.1f a %.1f   Y de %.1f a %.1f",
-                              x0, x1, y0, y1))
-         anotar(string.format("  canto inferior esquerdo dos vetores: (%.1f , %.1f)", x0, y0))
-      end
-   end)
 
    anotar("")
    anotar("=== percursos ===")
@@ -498,6 +480,73 @@ function main(script_path)
    else
       alvos = todos_os_vetores(trabalho)
       anotar("  nada selecionado — pegando os " .. #alvos .. " vetores do trabalho")
+   end
+
+   -- ============ NADA PODE NASCER FORA DA CHAPA ====================
+   --
+   -- 08/09/2026: "ela nao esta reconhecendo que a chapa tem 1220x2440mm,
+   -- vai iniciar o corte fora do material."
+   --
+   -- A causa: PDF arrastado traz o tamanho da PAGINA. Nos arquivos da
+   -- ASICS a pagina tem 4,2 x 2,7 METROS, entao o Aspire monta o
+   -- material com esse tamanho e aceita percurso a 6 metros da origem.
+   -- Na maquina isso e a fresa saindo da chapa.
+   --
+   -- O Aspire nao barra porque, pra ele, o material E daquele tamanho.
+   -- Quem sabe o tamanho da chapa de verdade e o corte_parametros.py.
+   -- Entao a conferencia e aqui, ANTES de criar qualquer percurso.
+   local x0, y0, x1, y1
+   for _, obj in ipairs(alvos) do
+      pcall(function()
+         local b = obj:GetBoundingBox()
+         if x0 == nil or b.BLC.x < x0 then x0 = b.BLC.x end
+         if y0 == nil or b.BLC.y < y0 then y0 = b.BLC.y end
+         if x1 == nil or b.TRC.x > x1 then x1 = b.TRC.x end
+         if y1 == nil or b.TRC.y > y1 then y1 = b.TRC.y end
+      end)
+   end
+
+   if x0 ~= nil and p.chapa_largura and p.chapa_altura then
+      anotar(string.format("  chapa cadastrada: %.0f x %.0f mm",
+                           p.chapa_largura, p.chapa_altura))
+      anotar(string.format("  o corte ocupa:    X de %.1f a %.1f   Y de %.1f a %.1f",
+                           x0, x1, y0, y1))
+
+      local FOLGA = 0.5     -- meio milimetro de tolerancia, nao mais
+      local estouros = {}
+      if x0 < -FOLGA then
+         estouros[#estouros + 1] = string.format("comeca %.1f mm ANTES do zero em X", -x0)
+      end
+      if y0 < -FOLGA then
+         estouros[#estouros + 1] = string.format("comeca %.1f mm ANTES do zero em Y", -y0)
+      end
+      if x1 > p.chapa_largura + FOLGA then
+         estouros[#estouros + 1] = string.format("passa %.1f mm da largura da chapa",
+                                                 x1 - p.chapa_largura)
+      end
+      if y1 > p.chapa_altura + FOLGA then
+         estouros[#estouros + 1] = string.format("passa %.1f mm da altura da chapa",
+                                                 y1 - p.chapa_altura)
+      end
+
+      if #estouros > 0 then
+         anotar("  PAREI: o corte cairia fora da chapa —")
+         for _, e in ipairs(estouros) do anotar("    - " .. e) end
+         gravar()
+         MessageBox(string.format(
+            "PAREI. Nao criei percurso nenhum.\n\n" ..
+            "O desenho esta FORA da chapa:\n\n" ..
+            "  chapa cadastrada: %.0f x %.0f mm\n" ..
+            "  o corte ocupa:    X de %.0f a %.0f\n" ..
+            "                    Y de %.0f a %.0f\n\n" ..
+            "Isso acontece quando o PDF entra com o tamanho da PAGINA\n" ..
+            "dele, que e bem maior que a chapa.\n\n" ..
+            "Traga o desenho pra dentro da chapa (canto inferior\n" ..
+            "esquerdo perto do zero) e rode de novo.",
+            p.chapa_largura, p.chapa_altura, x0, x1, y0, y1))
+         return false
+      end
+      anotar("  cabe na chapa: ok")
    end
 
    local feitos = 0

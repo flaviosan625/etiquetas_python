@@ -7,9 +7,15 @@ CORTE AUTOMATICO
 === o percurso tem campo de ordem? ===
   nenhum — a ordem so da pra garantir com percursos separados
 
+=== onde esta o zero, e onde estao os vetores ===
+  ToolpathPosData: HomeX=0 HomeY=0 HomeZ=20 SafeZ=15
+  MaterialBlock: nao consegui obter
+  vetores ocupam: X de -1523.6 a 5600.9   Y de 0.0 a 3549.4
+  canto inferior esquerdo dos vetores: (-1523.6 , 0.0)
+
 === percursos ===
-  2 objeto(s) selecionado(s) — so eles viram percurso
-  por dentro: 0   por fora: 2
+  1 objeto(s) selecionado(s) — so eles viram percurso
+  por dentro: 0   por fora: 1
   (nada por dentro — nenhuma peca com furo)
   'CORTE EXTERNO' lado=0 -> criado luaUUID:
-  total de percursos no trabalho: 5
+  total de percursos no trabalho: 6
