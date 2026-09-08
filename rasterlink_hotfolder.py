@@ -686,7 +686,11 @@ def _processar_arquivo_da_fila(arquivo, hot_folder, pasta_enviados, nome_maquina
         destino_enviados = pasta_enviados / f"{arquivo.stem}_{int(time.time())}{arquivo.suffix}"
     arquivo.rename(destino_enviados)
 
-    logger("ok", f"'{arquivo.name}' enviado pra hot folder do RasterLink7 ({nome_maquina}).")
+    # Não diz mais "do RasterLink7": o RIP da DOCAN é o SAi Production
+    # Manager, e essa linha é justamente a que alguém lê quando vai
+    # descobrir por que um arquivo não imprimiu. Mandá-la procurar no
+    # RasterLink7 um trabalho que está no SAi custa a manhã da pessoa.
+    logger("ok", f"'{arquivo.name}' entregue na hot folder da {nome_maquina}.")
 
 
 # Último erro já avisado de cada máquina e de cada arquivo, pra não
