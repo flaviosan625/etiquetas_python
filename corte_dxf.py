@@ -192,12 +192,19 @@ def _mascaras_suspeitas(pagina):
     return achadas
 
 
-def extrair_contornos(caminho_pdf, tolerancia_mm=TOLERANCIA_MM):
+def extrair_contornos(caminho_pdf, tolerancia_mm=TOLERANCIA_MM, aceitar_tudo=False):
     """
     Lê o PDF e devolve (polilinhas_em_mm, relatorio).
 
     As polilinhas já vêm em milímetros e com o Y virado pra cima, que é
     como o DXF conta — o PDF conta de cima pra baixo.
+
+    'aceitar_tudo' pega TODO vetor do arquivo, sem exigir magenta nem
+    camada nomeada. É OPT-IN e nunca o padrão, porque recusar continua
+    sendo a resposta certa pra um arquivo qualquer: um DXF cheio de
+    coisa que não era corte vai pra fresa e só se descobre com a chapa
+    na máquina. Quem liga isto está afirmando "esta pasta só tem arquivo
+    de corte" — que é o caso de uma pasta CORTES (2026-09-08).
     """
     caminho_pdf = pathlib.Path(caminho_pdf)
     tolerancia_pt = tolerancia_mm / _PT_PARA_MM
@@ -221,9 +228,16 @@ def extrair_contornos(caminho_pdf, tolerancia_mm=TOLERANCIA_MM):
         nomes = {str(d.get("layer")) for _, d in todos if d.get("layer")}
         relatorio["camadas"] = sorted(n for n in nomes if n != "None")
         por_camada = any(e_camada_de_corte(n) for n in nomes)
-        relatorio["criterio"] = "camada" if por_camada else "cor"
+        tem_magenta = any(e_cor_de_corte(d.get("color")) or e_cor_de_corte(d.get("fill"))
+                          for _, d in todos)
+        # 'tudo' só entra quando o arquivo não diz nada por conta própria:
+        # havendo camada ou magenta, é o arquivo falando, e ele ganha.
+        usar_tudo = aceitar_tudo and not por_camada and not tem_magenta
+        relatorio["criterio"] = "tudo" if usar_tudo else ("camada" if por_camada else "cor")
 
         def e_de_corte(d):
+            if usar_tudo:
+                return True
             if por_camada:
                 return e_camada_de_corte(d.get("layer"))
             return e_cor_de_corte(d.get("color")) or e_cor_de_corte(d.get("fill"))
@@ -379,7 +393,7 @@ def escrever_dxf(polilinhas, caminho_dxf, camadas=None):
     return caminho_dxf
 
 
-def converter(caminho_pdf, caminho_dxf=None, tolerancia_mm=TOLERANCIA_MM):
+def converter(caminho_pdf, caminho_dxf=None, tolerancia_mm=TOLERANCIA_MM, aceitar_tudo=False):
     """
     Gera o DXF de corte ao lado do PDF, com o mesmo nome.
 
@@ -389,9 +403,12 @@ def converter(caminho_pdf, caminho_dxf=None, tolerancia_mm=TOLERANCIA_MM):
     'motivo' explicando por que não deu. Recusar é a resposta certa
     quando não há magenta: um DXF vazio parece que funcionou, vai pra
     fresa e só se descobre com a chapa na máquina.
+
+    'aceitar_tudo' repassa pro extrair_contornos — ver lá por que é
+    opt-in.
     """
     caminho_pdf = pathlib.Path(caminho_pdf)
-    polilinhas, relatorio = extrair_contornos(caminho_pdf, tolerancia_mm)
+    polilinhas, relatorio = extrair_contornos(caminho_pdf, tolerancia_mm, aceitar_tudo)
     relatorio["pdf"] = str(caminho_pdf)
     relatorio["dxf"] = None
     relatorio["motivo"] = None

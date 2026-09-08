@@ -29,4 +29,4 @@ CORTE AUTOMATICO
   'CORTE INTERNO' lado=1 -> criado luaUUID:
   'CORTE EXTERNO' lado=0 -> criado luaUUID:
 
-  total de percursos no trabalho: 4
+  total de percursos no trabalho: 2

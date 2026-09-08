@@ -21,17 +21,14 @@
 -- não expõe a aba "Ordem". Dois percursos custam nada e tornam a ordem
 -- explícita.
 --
--- SE NÃO HOUVER CAMADA NOMEADA, ele descobre sozinho (08/09/2026).
--- Percorre os vetores do trabalho, mede a caixa de cada um e separa
--- interno de externo pelo aninhamento — a mesma regra do
--- corte_dxf.py, só que aqui dentro. Assim vale pra QUALQUER formato
--- que entre no Aspire, inclusive PDF arrastado direto, que é o caso
--- dos arquivos da ASICS: camada chamada "Camada 1" e traço quase
--- preto, então nem o nome nem a cor dizem o que é corte.
+-- SEM CAMADA NOMEADA sai UM percurso só, e a ordem não fica garantida.
+-- Já tentei classificar aqui dentro pela caixa envolvente de cada vetor
+-- (08/09/2026) e ERROU num arquivo de produção — ver o bloco "SO O QUE
+-- ESTA SELECIONADO" mais abaixo. Foi retirado.
 --
--- Antes disso, sem camada, saía um percurso só e a ordem não ficava
--- garantida — que é justamente a única coisa que o Aspire NÃO resolve
--- sozinho.
+-- Quem classifica é o corte_dxf.py, que lê o PDF e tem os PONTOS do
+-- vetor na mão. Arraste o DXF que ele gera, não o PDF: é o DXF que traz
+-- as duas camadas e, com elas, a garantia da ordem.
 --
 -- Os valores vêm de corte_parametros.py. Números da API confirmados na
 -- tela: ProfileSide 0 = Fora/Direita, 1 = Dentro/Esquerda;
@@ -163,169 +160,35 @@ local function selecionar_camada(trabalho, camada)
    return quantos
 end
 
--- ================== CLASSIFICAR SEM DEPENDER DE CAMADA ==============
+-- ================== SO O QUE ESTA SELECIONADO ======================
 --
--- O arquivo pode chegar de qualquer jeito: PDF arrastado, DXF do nosso
--- conversor, DWG do cliente. Quando ele NAO traz camada nomeada, o
--- gadget descobre sozinho quem esta dentro de quem, usando a caixa
--- envolvente de cada vetor.
+-- Por que NAO ha classificacao de aninhamento aqui dentro (08/09/2026):
+-- foi tentada, pela caixa envolvente de cada vetor, e ERROU num arquivo
+-- de producao. No "Mova Belo Horizonte" as 13 letras do texto caem
+-- dentro da CAIXA do logo — que e uma forma varrida, com as letras no
+-- vazio embaixo da curva — sem estarem dentro do logo. Resultado: 11
+-- letras classificadas como furo e cortadas por dentro, 4 mm menores.
+-- No "Rio de Janeiro" o mesmo codigo acertou, mas por sorte: o logo de
+-- la e mais baixo e a caixa dele nao alcanca o texto.
 --
--- Por que a caixa e nao o teste exato de ponto: a API do Aspire 8.5 da
--- a caixa de uma selecao (selection:GetBoundingBox(), usado pelo proprio
--- DXF_Batch_Processor da Vectric), mas nao expoe os pontos do vetor. E
--- errar pro lado "interno" e SEGURO: cortar antes uma forma cercada por
--- outra esta certo nos dois casos possiveis — furo de letra, ou peca
--- pequena dentro de uma moldura. O caro e o contrario, e esse a caixa
--- nao produz.
-
-local FOLGA_CAIXA = 0.01   -- mm, pra caixas identicas nao se conterem
-
--- Mede UM objeto: limpa a selecao, poe so ele, pede a caixa.
-local function caixa_do_objeto(trabalho, objeto)
-   local selecao = trabalho.Selection
-   selecao:Clear()
-   local entrou = false
-   for _, par in ipairs({{true, true}, {true, false}, {false, false}}) do
-      if pcall(function() selecao:Add(objeto, par[1], par[2]) end) then
-         entrou = true
-         break
-      end
-   end
-   if not entrou then return nil end
-
-   local caixa
-   local ok = pcall(function()
-      local b = selecao:GetBoundingBox()
-      caixa = {x0 = b.BLC.x, y0 = b.BLC.y, x1 = b.BRC.x, y1 = b.TLC.y}
-   end)
-   if not ok or caixa == nil then return nil end
-   return caixa
-end
-
--- Os vetores que ESTAO SELECIONADOS agora, copiados pra uma tabela.
+-- A API do Aspire 8.5 nao expoe os pontos do vetor, so a caixa
+-- (selection:GetBoundingBox). Sem os pontos nao da pra fazer o teste de
+-- ponto-dentro-do-poligono, que e o unico que distingue "dentro do
+-- desenho" de "dentro do retangulo do desenho".
 --
--- Copiar antes de mexer e obrigatorio: medir a caixa de um objeto exige
--- limpar a selecao e por so ele dentro (ver caixa_do_objeto), o que
--- destruiria a selecao original no primeiro objeto medido.
+-- Quem tem os pontos e o corte_dxf.py, lendo o PDF. Entao a
+-- classificacao mora la, e chega aqui pronta, nas camadas do DXF. O
+-- caminho da camada nomeada — o de cima, no main — e o unico que
+-- garante a ordem furo-antes-do-contorno.
 --
--- A API 8.5 nao documenta GetHeadPosition/GetNext pra SelectionList — o
--- DXF_Batch_Processor da Vectric so usa .IsEmpty e :GetBoundingBox().
--- Entao aqui e tentativa protegida: se der, o gadget passa a trabalhar
--- so no que voce escolheu; se nao der, ele diz isso no relatorio em vez
--- de fingir que deu.
-local function selecao_atual(trabalho)
-   local selecao = trabalho.Selection
+-- Sem camada nomeada, este gadget faz UM percurso com ProfileSide=0 e
+-- avisa: o Aspire acerta o dentro/fora sozinho (confirmado 06/09/2026),
+-- so a ORDEM e que fica por conta do acaso.
+
+local function tem_selecao(trabalho)
    local vazia = true
-   pcall(function() vazia = selecao.IsEmpty end)
-   if vazia then return {}, "nada selecionado" end
-
-   local objetos = {}
-   local ok = pcall(function()
-      local pos = selecao:GetHeadPosition()
-      while pos ~= nil do
-         local objeto
-         local a, b = selecao:GetNext(pos)
-         objeto = a
-         pos = b
-         if objeto == nil then break end
-         objetos[#objetos + 1] = objeto
-      end
-   end)
-   if not ok then
-      return nil, "esta versao do Aspire nao deixa percorrer a selecao"
-   end
-   return objetos, nil
-end
-
--- Todos os vetores do trabalho, de todas as camadas.
-local function todos_os_vetores(trabalho)
-   local objetos = {}
-   local gerente = trabalho.LayerManager
-   local posCamada = gerente:GetHeadPosition()
-   while posCamada ~= nil do
-      local camada
-      local ok = pcall(function()
-         local a, b = gerente:GetNext(posCamada)
-         camada = a
-         posCamada = b
-      end)
-      if not ok or camada == nil then break end
-
-      local pos = camada:GetHeadPosition()
-      while pos ~= nil do
-         local objeto
-         local certo = pcall(function()
-            local a, b = camada:GetNext(pos)
-            objeto = a
-            pos = b
-         end)
-         if not certo or objeto == nil then break end
-         objetos[#objetos + 1] = objeto
-      end
-   end
-   return objetos
-end
-
-local function contem(fora, dentro)
-   return fora.x0 <= dentro.x0 + FOLGA_CAIXA
-      and fora.y0 <= dentro.y0 + FOLGA_CAIXA
-      and fora.x1 >= dentro.x1 - FOLGA_CAIXA
-      and fora.y1 >= dentro.y1 - FOLGA_CAIXA
-      and ((fora.x1 - fora.x0) > (dentro.x1 - dentro.x0) + FOLGA_CAIXA
-        or (fora.y1 - fora.y0) > (dentro.y1 - dentro.y0) + FOLGA_CAIXA)
-end
-
--- Devolve duas listas: os que ficam por dentro e os que ficam por fora.
--- A regra e a mesma do corte_dxf.py: quem esta dentro de um numero IMPAR
--- de outros e interno. Cobre o 'B' de dois furos e a ilha dentro do furo.
-local function classificar_por_caixa(trabalho, objetos)
-   local caixas = {}
-   for i, objeto in ipairs(objetos) do
-      caixas[i] = caixa_do_objeto(trabalho, objeto)
-   end
-
-   local dentro, fora, semCaixa, medidasDentro = {}, {}, 0, {}
-   for i, objeto in ipairs(objetos) do
-      if caixas[i] == nil then
-         semCaixa = semCaixa + 1
-         fora[#fora + 1] = objeto          -- nao medi: vai como externo
-      else
-         -- for numerico, NUNCA ipairs: 'caixas' tem buraco toda vez que
-         -- um vetor nao pode ser medido, e ipairs para no primeiro nil.
-         -- Pararia de contar no meio e classificaria como externo peca
-         -- que e furo — que e o erro caro, o que solta a peca antes da
-         -- hora.
-         local nivel = 0
-         for j = 1, #objetos do
-            local outra = caixas[j]
-            if i ~= j and outra ~= nil and contem(outra, caixas[i]) then
-               nivel = nivel + 1
-            end
-         end
-         if nivel % 2 == 1 then
-            dentro[#dentro + 1] = objeto
-            medidasDentro[#medidasDentro + 1] = caixas[i]
-         else
-            fora[#fora + 1] = objeto
-         end
-      end
-   end
-   return dentro, fora, semCaixa, medidasDentro
-end
-
-local function selecionar_objetos(trabalho, objetos)
-   local selecao = trabalho.Selection
-   selecao:Clear()
-   local quantos = 0
-   for _, objeto in ipairs(objetos) do
-      for _, par in ipairs({{true, true}, {true, false}, {false, false}}) do
-         if pcall(function() selecao:Add(objeto, par[1], par[2]) end) then
-            quantos = quantos + 1
-            break
-         end
-      end
-   end
-   return quantos
+   pcall(function() vazia = trabalho.Selection.IsEmpty end)
+   return not vazia
 end
 
 
@@ -428,63 +291,14 @@ function main(script_path)
    anotar("")
    anotar("=== percursos ===")
 
-   -- A SELECAO MANDA (pedido do Flavio, 08/09/2026): havendo objeto
-   -- selecionado, o percurso sai so pra ele. E assim que a moldura de
-   -- acrilico e o gabarito ficam de fora sem ninguem precisar apagar
-   -- nada — ele seleciona o que vai cortar agora e clica.
-   local selecionados, recadoSelecao = selecao_atual(trabalho)
-   if recadoSelecao ~= nil then
-      anotar("  selecao: " .. recadoSelecao)
-   end
-
-   -- Selecao existe mas nao deu pra percorrer: PARA. Seguir daqui
-   -- pegaria TODOS os vetores da chapa — o contrario exato do que
-   -- pediram, e com a fresa ja no material o estrago nao volta atras.
-   if selecionados == nil then
-      anotar("  PAREI: havia selecao e eu nao consegui ler quais objetos eram.")
-      gravar()
-      MessageBox("Voce tem objeto selecionado, mas esta versao do Aspire\n" ..
-                 "nao me deixa ler QUAIS sao.\n\n" ..
-                 "Nao criei percurso nenhum — seguir pegaria a chapa inteira.\n\n" ..
-                 "Tire a selecao (clique num espaco vazio) e rode de novo\n" ..
-                 "pra cortar tudo, ou me avise pra eu achar outro caminho.")
-      return false
-   end
-
-   local interna, nomeInterna, externa, nomeExterna
-   if selecionados == nil or #selecionados == 0 then
-      interna, nomeInterna = achar_camada(trabalho, "CORTE INTERNO")
-      externa, nomeExterna = achar_camada(trabalho, "CORTE EXTERNO")
-   end
+   local interna, nomeInterna = achar_camada(trabalho, "CORTE INTERNO")
+   local externa, nomeExterna = achar_camada(trabalho, "CORTE EXTERNO")
    local feitos = 0
 
-   if selecionados ~= nil and #selecionados > 0 then
-      anotar("  " .. #selecionados .. " objeto(s) selecionado(s) — so eles vao virar percurso")
-      local dentro, fora, semCaixa, medidas = classificar_por_caixa(trabalho, selecionados)
-      anotar("  por dentro: " .. #dentro .. "   por fora: " .. #fora)
-      if semCaixa > 0 then
-         anotar("  " .. semCaixa .. " vetor(es) sem caixa mensuravel foram pra externo")
-      end
-      for i, c in ipairs(medidas) do
-         anotar(string.format("    dentro #%d: %.1f x %.1f mm",
-                              i, c.x1 - c.x0, c.y1 - c.y0))
-      end
-
-      if #dentro > 0 then
-         selecionar_objetos(trabalho, dentro)
-         if criar_percurso("CORTE INTERNO", ferramenta, LADO_DENTRO, p) then
-            feitos = feitos + 1
-         end
-      end
-      if #fora > 0 then
-         selecionar_objetos(trabalho, fora)
-         if criar_percurso("CORTE EXTERNO", ferramenta, LADO_FORA, p) then
-            feitos = feitos + 1
-         end
-      end
-
-   elseif interna ~= nil or externa ~= nil then
-      -- O INTERNO PRIMEIRO. A ordem na lista e a ordem de usinagem.
+   if interna ~= nil or externa ~= nil then
+      -- O CAMINHO BOM. As camadas vieram do corte_dxf.py, que leu o PDF
+      -- e classificou com os pontos do vetor na mao. Dois percursos, e o
+      -- INTERNO PRIMEIRO: a ordem na lista e a ordem de usinagem.
       if interna ~= nil then
          local n = selecionar_camada(trabalho, interna)
          anotar("  camada '" .. nomeInterna .. "': " .. n .. " vetores")
@@ -502,53 +316,24 @@ function main(script_path)
             feitos = feitos + 1
          end
       end
+
    else
-      -- SEM camada nomeada: o gadget classifica sozinho, pela caixa de
-      -- cada vetor. Vale pra qualquer formato — PDF arrastado inclusive,
-      -- que e o caso da pasta de CORTES da ASICS (2026-09-08): camada
-      -- chamada "Camada 1" e traco quase preto, entao nem o nome nem a
-      -- cor dizem o que e corte.
-      anotar("  sem camada nomeada — classificando pelo aninhamento das caixas")
-      local objetos = todos_os_vetores(trabalho)
-      anotar("  vetores no trabalho: " .. #objetos)
-
-      local dentro, fora, semCaixa, medidas = classificar_por_caixa(trabalho, objetos)
-      anotar("  por dentro: " .. #dentro .. "   por fora: " .. #fora)
-      if semCaixa > 0 then
-         anotar("  " .. semCaixa .. " vetor(es) sem caixa mensuravel foram pra externo")
-      end
-
-      -- Lista o que foi pra DENTRO, com medida. A caixa envolvente nao
-      -- distingue um furo de uma peca encostada no vao de outra em L:
-      -- as duas ficam "contidas". Furo de letra e pequeno; peca inteira
-      -- classificada como furo salta aos olhos nesta lista — e cortar
-      -- por dentro uma peca que devia ser cortada por fora a deixa
-      -- menor que o desenho, na largura da fresa.
-      for i, c in ipairs(medidas) do
-         anotar(string.format("    dentro #%d: %.1f x %.1f mm",
-                              i, c.x1 - c.x0, c.y1 - c.y0))
-      end
-
-      -- O INTERNO PRIMEIRO, pelo mesmo motivo de sempre: assim que o
-      -- externo fecha, a peca solta da chapa e o furo seguinte sai torto.
-      if #dentro > 0 then
-         selecionar_objetos(trabalho, dentro)
-         if criar_percurso("CORTE INTERNO", ferramenta, LADO_DENTRO, p) then
-            feitos = feitos + 1
-         end
+      -- SEM camada nomeada. UM percurso, com ProfileSide=0: o Aspire
+      -- detecta o aninhamento sozinho e corta o furo por dentro
+      -- (confirmado na tela em 06/09/2026). O que ele NAO garante e a
+      -- ORDEM — e nao ha como pedir isso pela API.
+      --
+      -- Se houver selecao, ela manda: o percurso sai so no que esta
+      -- selecionado. E assim que a moldura de acrilico fica de fora.
+      if tem_selecao(trabalho) then
+         anotar("  sem camada nomeada — um percurso so, no que esta SELECIONADO")
       else
-         anotar("  (nada por dentro — nenhuma peca tem furo)")
+         anotar("  sem camada nomeada e nada selecionado — um percurso so, na chapa toda")
       end
-
-      if #fora > 0 then
-         selecionar_objetos(trabalho, fora)
-         if criar_percurso("CORTE EXTERNO", ferramenta, LADO_FORA, p) then
-            feitos = feitos + 1
-         end
-      end
+      anotar("  o Aspire acerta dentro/fora sozinho; a ORDEM e que nao fica garantida")
+      if criar_percurso("CORTE", ferramenta, LADO_FORA, p) then feitos = 1 end
    end
 
-   anotar("")
    anotar("  total de percursos no trabalho: " .. tostring(ToolpathManager().Count))
    gravar()
 
@@ -562,14 +347,12 @@ function main(script_path)
       recado = recado .. "\n\nCORTE INTERNO primeiro, CORTE EXTERNO depois —\n" ..
                "a ordem da lista e a ordem de usinagem."
    end
-   if selecionados ~= nil and #selecionados > 0 then
-      recado = recado .. "\n\nSo nos " .. #selecionados .. " objeto(s) que voce\n" ..
-               "tinha selecionado. O dentro/fora saiu do aninhamento —\n" ..
-               "confira na tela antes de mandar pra maquina."
-   elseif interna == nil and externa == nil then
-      recado = recado .. "\n\nNada estava selecionado e o arquivo nao trazia\n" ..
-               "camada nomeada, entao peguei TODOS os vetores e descobri\n" ..
-               "o dentro/fora pelo aninhamento. Confira na tela."
+   if interna == nil and externa == nil then
+      recado = recado .. "\n\nATENCAO: o arquivo nao trazia camada CORTE INTERNO /\n" ..
+               "CORTE EXTERNO, entao saiu UM percurso so. O Aspire acerta\n" ..
+               "o dentro/fora, mas a ORDEM nao esta garantida.\n\n" ..
+               "Pra ter a ordem, use o DXF gerado pelo corte_dxf.py em vez\n" ..
+               "do PDF: ele ja vem com as duas camadas separadas."
    end
    MessageBox(recado)
    return true
