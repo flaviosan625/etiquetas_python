@@ -10,12 +10,13 @@ CORTE AUTOMATICO
 === onde esta o zero, e onde estao os vetores ===
   ToolpathPosData: HomeX=0 HomeY=0 HomeZ=20 SafeZ=15
   MaterialBlock: nao consegui obter
-  vetores ocupam: X de -1523.6 a 5600.9   Y de 0.0 a 3549.4
-  canto inferior esquerdo dos vetores: (-1523.6 , 0.0)
 
 === percursos ===
-  1 objeto(s) selecionado(s) — so eles viram percurso
-  por dentro: 0   por fora: 1
-  (nada por dentro — nenhuma peca com furo)
+  4 objeto(s) selecionado(s) — so eles viram percurso
+  chapa cadastrada: 1220 x 2440 mm
+  o corte ocupa:    X de 45.5 a 845.5   Y de 38.0 a 1662.2
+  cabe na chapa: ok
+  por dentro: 2   por fora: 2
+  'CORTE INTERNO' lado=1 -> criado luaUUID:
   'CORTE EXTERNO' lado=0 -> criado luaUUID:
   total de percursos no trabalho: 6

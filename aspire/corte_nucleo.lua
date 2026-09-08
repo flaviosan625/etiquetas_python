@@ -495,6 +495,7 @@ function main(script_path)
    -- O Aspire nao barra porque, pra ele, o material E daquele tamanho.
    -- Quem sabe o tamanho da chapa de verdade e o corte_parametros.py.
    -- Entao a conferencia e aqui, ANTES de criar qualquer percurso.
+   local avisoChapa = nil
    local x0, y0, x1, y1
    for _, obj in ipairs(alvos) do
       pcall(function()
@@ -529,24 +530,22 @@ function main(script_path)
                                                  y1 - p.chapa_altura)
       end
 
+      -- AVISA, nao barra. Esta conferencia nasceu de uma hipotese minha
+      -- pra um corte que saiu errado em 08/09/2026 — e a causa real era
+      -- outra (o formato de salvar: G code mm .tap). Barrar por uma
+      -- suspeita que ja se mostrou falsa pararia producao a toa, e o
+      -- falso positivo e certo: acrilico vem em outras medidas, entao
+      -- uma chapa de 2000 mm cairia aqui sem motivo.
+      --
+      -- O numero continua util: ver o corte passando da chapa e o tipo
+      -- de coisa que se quer saber ANTES da fresa, nao depois.
       if #estouros > 0 then
-         anotar("  PAREI: o corte cairia fora da chapa —")
+         anotar("  ATENCAO: pela chapa cadastrada, o corte passaria dela —")
          for _, e in ipairs(estouros) do anotar("    - " .. e) end
-         gravar()
-         MessageBox(string.format(
-            "PAREI. Nao criei percurso nenhum.\n\n" ..
-            "O desenho esta FORA da chapa:\n\n" ..
-            "  chapa cadastrada: %.0f x %.0f mm\n" ..
-            "  o corte ocupa:    X de %.0f a %.0f\n" ..
-            "                    Y de %.0f a %.0f\n\n" ..
-            "Isso acontece quando o PDF entra com o tamanho da PAGINA\n" ..
-            "dele, que e bem maior que a chapa.\n\n" ..
-            "Traga o desenho pra dentro da chapa (canto inferior\n" ..
-            "esquerdo perto do zero) e rode de novo.",
-            p.chapa_largura, p.chapa_altura, x0, x1, y0, y1))
-         return false
+         avisoChapa = estouros
+      else
+         anotar("  cabe na chapa: ok")
       end
-      anotar("  cabe na chapa: ok")
    end
 
    local feitos = 0
@@ -602,6 +601,12 @@ function main(script_path)
                "pela geometria: o centro de cada vetor foi testado dentro\n" ..
                "do contorno dos outros, pelo proprio Aspire.\n\n" ..
                "Confira na tela antes de mandar pra maquina."
+   end
+   if avisoChapa ~= nil then
+      -- Aviso, nao impedimento: a chapa cadastrada e a padrao de
+      -- 1220x2440, e acrilico vem em outras medidas.
+      recado = recado .. "\n\nOLHO NA CHAPA: pelo tamanho cadastrado, o corte\n" ..
+               "passaria dela. Se a chapa desta vez e outra, ignore."
    end
    MessageBox(recado)
    return true
