@@ -57,6 +57,24 @@ function TraduzirResultado($codigo) {
 # ---------------------------------------------------------------- 1/6
 Titulo "1/6  Conferindo o terreno antes de mexer em qualquer coisa"
 
+# Conferido ANTES de tudo, e não lá na hora de registrar: nesta máquina
+# o Register-ScheduledTask devolve "Acesso negado" (0x80070005) sem
+# elevação — comprovado em 2026-09-07. Descobrir isso no fim faria o
+# instalador rodar cinco passos pra morrer no sexto.
+$souAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
+            ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if (-not $souAdmin) {
+    Write-Host ""
+    Write-Host "  PAREI ANTES DE MEXER EM QUALQUER COISA." -ForegroundColor Red
+    Write-Host ""
+    Write-Host "  Criar tarefa no Agendador precisa de administrador nesta máquina." -ForegroundColor Yellow
+    Write-Host "  Feche esta janela, clique com o BOTÃO DIREITO no instalar_tarefa.bat" -ForegroundColor Yellow
+    Write-Host "  e escolha 'Executar como administrador'." -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "  Nada foi alterado." -ForegroundColor Green
+    exit 1
+}
+
 $problemas = @()
 if (-not (Test-Path $SCRIPT))  { $problemas += "Não existe $SCRIPT." }
 if (-not (Test-Path $PYTHONW)) { $problemas += "Não existe $PYTHONW (o .venv do projeto)." }

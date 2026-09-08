@@ -17,6 +17,20 @@ $ErrorActionPreference = "Stop"
 $NOME_TAREFA = "Vigia DOCAN (SAi)"
 $PASTA       = Split-Path -Parent $PSScriptRoot
 
+# Mexer no Agendador precisa de elevação nesta máquina, igual ao
+# instalar. Falhar no meio aqui é pior que falhar no instalar: pararia
+# com a tarefa já derrubada e não removida.
+$souAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
+            ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if (-not $souAdmin) {
+    Write-Host ""
+    Write-Host "  PAREI ANTES DE MEXER EM QUALQUER COISA." -ForegroundColor Red
+    Write-Host "  Clique com o BOTÃO DIREITO no desinstalar_tarefa.bat e escolha" -ForegroundColor Yellow
+    Write-Host "  'Executar como administrador'." -ForegroundColor Yellow
+    Write-Host "  Nada foi alterado." -ForegroundColor Green
+    exit 1
+}
+
 Write-Host ""
 Write-Host ("=" * 70) -ForegroundColor DarkGray
 Write-Host "  Removendo a tarefa '$NOME_TAREFA'" -ForegroundColor Cyan
