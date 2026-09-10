@@ -295,15 +295,25 @@ def registrar_sinal_de_vida(pasta_fila=None, resultado_por_maquina=None, agora=N
     return caminho
 
 
-def registrar_envio(maquina, arquivo, girado, pasta_relatorios=None, quando=None, logger=None):
+def registrar_envio(maquina, arquivo, girado, pasta_relatorios=None, quando=None,
+                   logger=None, pagina=None):
     """
     Anota uma linha no registro permanente do mês: uma linha JSON por
     arquivo entregue à máquina. É de propósito que grave só FATO BRUTO
-    (quando, qual máquina, qual arquivo, tamanho, se girou) e nenhuma
-    interpretação: a máquina do RIP só tem este módulo instalado, não o
-    projeto inteiro — quem lê medida/material/m² do nome do arquivo é o
-    gerador de relatório, lá no PC principal, que tem config.json e
-    dimensoes.py.
+    (quando, qual máquina, qual arquivo, tamanho, se girou, o tamanho
+    físico da página) e nenhuma interpretação: a máquina do RIP só tem
+    este módulo instalado, não o projeto inteiro — quem lê
+    medida/material/m² do nome do arquivo é o gerador de relatório, lá
+    no PC principal, que tem config.json e dimensoes.py.
+
+    'pagina' é (largura_m, altura_m, quantas_páginas) do arquivo COMO
+    CHEGOU, antes de qualquer giro — o vigia já abre o PDF pra decidir
+    o giro, então essa medida não custa nada e não é palpite, é o
+    arquivo. Existe porque nome de arquivo falha: "arquivos
+    emendas_01_montado.pdf" não tem medida nenhuma escrita, e o
+    relatório do dia 08/09/2026 mostrou "medida não lida" pra material
+    que rodou de verdade na UJV. Com isso guardado, o relatório de
+    qualquer dia futuro tem de onde tirar o m² quando o nome não disser.
 
     Nunca levanta exceção: falha de registro não pode impedir a arte de
     chegar na impressora. Mas AVISA no log quando falha — este arquivo é
@@ -319,13 +329,18 @@ def registrar_envio(maquina, arquivo, girado, pasta_relatorios=None, quando=None
             tamanho = arquivo.stat().st_size
         except OSError:
             tamanho = None
-        linha = json.dumps({
+        dados = {
             "quando": quando.strftime("%Y-%m-%dT%H:%M:%S"),
             "maquina": maquina,
             "arquivo": arquivo.name,
             "bytes": tamanho,
             "girado": bool(girado),
-        }, ensure_ascii=False)
+        }
+        if pagina:
+            largura_m, altura_m, paginas = pagina
+            dados["pagina_m"] = [round(largura_m, 4), round(altura_m, 4)]
+            dados["paginas"] = paginas
+        linha = json.dumps(dados, ensure_ascii=False)
         with open(pasta / f"{quando:%Y-%m}.jsonl", "a", encoding="utf-8") as f:
             f.write(linha + "\n")
         return True
@@ -446,17 +461,135 @@ def _importar_pymupdf():
 
 
 def _largura_altura_m(caminho, pymupdf):
-    """Tamanho físico da 1ª página do PDF em metros, ou None se não der pra ler."""
+    """
+    Tamanho físico da 1ª página do PDF em metros mais quantas páginas
+    o arquivo tem, ou None se não der pra ler.
+
+    A contagem de páginas anda junto porque um PDF de 4 páginas gasta 4
+    vezes o material de uma — e o relatório de produção usa essa medida
+    quando o nome do arquivo não traz nenhuma.
+    """
     metros_por_ponto = 0.0254 / 72
     try:
         doc = pymupdf.open(str(caminho))
         try:
             rect = doc.load_page(0).rect
+            paginas = doc.page_count
         finally:
             doc.close()
     except Exception:
         return None
-    return rect.width * metros_por_ponto, rect.height * metros_por_ponto
+    return (rect.width * metros_por_ponto, rect.height * metros_por_ponto, paginas)
+
+
+# Caixas que descrevem a página em papel: a física (MediaBox), a
+# visível (CropBox) e as de acabamento — sangria, corte e arte. Todas
+# viram junto com o desenho; senão a sangria de um arquivo girado
+# ficaria apontando pro lado errado da lona.
+_CAIXAS_DA_PAGINA = ("MediaBox", "CropBox", "TrimBox", "BleedBox", "ArtBox")
+
+# Matriz do giro, em coordenadas de PDF. Só rotação e translação: não
+# tem escala nenhuma aqui, e é isso que garante que a arte chega na
+# máquina do mesmo tamanho e na mesma proporção com que saiu.
+_MATRIZ_DO_GIRO = {
+    90: "0 -1 1 0 {a} {b} cm",
+    180: "-1 0 0 -1 {a} {b} cm",
+    270: "0 1 -1 0 {a} {b} cm",
+}
+
+
+def _numero_de_pdf(valor):
+    """
+    Número do jeito que o PDF entende. Precisa ser notação fixa: com
+    '%g' um zero que sobrou da conta vira '1.86265e-09', o leitor de
+    PDF não conhece notação científica e lê aquilo como 'null' — a
+    caixa da página inteira se perde por causa de um expoente.
+    """
+    if abs(valor) < 1e-6:
+        valor = 0.0
+    return ("%.5f" % valor).rstrip("0").rstrip(".") or "0"
+
+
+def _caixa_girada(caixa, mx0, my0, largura, altura, graus):
+    """A mesma transformação do desenho, aplicada aos cantos da caixa."""
+    def levar(x, y):
+        if graus == 90:
+            return (y - my0, largura + mx0 - x)
+        if graus == 180:
+            return (largura + mx0 - x, altura + my0 - y)
+        if graus == 270:
+            return (altura + my0 - y, x - mx0)
+        return (x - mx0, y - my0)
+
+    canto_a = levar(caixa[0], caixa[1])
+    canto_b = levar(caixa[2], caixa[3])
+    return (min(canto_a[0], canto_b[0]), min(canto_a[1], canto_b[1]),
+            max(canto_a[0], canto_b[0]), max(canto_a[1], canto_b[1]))
+
+
+def _assar_giro(pagina, graus, pymupdf):
+    """
+    Gira a página MUDANDO A GEOMETRIA DELA, e não pendurando um
+    '/Rotate 90' no canto.
+
+    Por que isso importa (prejuízo real, 2026-09-10): marcar '/Rotate'
+    deixa o arquivo com duas leituras possíveis. A MediaBox continua
+    dizendo, por exemplo, 5,65 x 1,80m — deitado — e o '/Rotate' pede
+    que o desenho apareça em pé. Quem obedece as duas coisas ao mesmo
+    tempo espreme o desenho em pé dentro da caixa deitada, e a arte sai
+    DISTORCIDA. Foi o que aconteceu numa lona da SWJ. E o pior nem é a
+    lona perdida: quem estivesse imprimindo sem ter visto a arte
+    original acharia que ela é daquele jeito.
+
+    Assando o giro na geometria não sobra leitura dupla — a página
+    passa a SER retrato em vez de dizer que é, e o '/Rotate' vai
+    zerado. A arte não é tocada: entra só uma matriz de rotação, sem
+    escala, sem redesenhar, sem recomprimir imagem. Está provado por
+    pixel: o render deste arquivo é idêntico ao do arquivo com
+    '/Rotate' em quem lê '/Rotate' direito.
+    """
+    total = (pagina.rotation + graus) % 360
+    mx0, my0, mx1, my1 = pagina.mediabox
+    largura, altura = mx1 - mx0, my1 - my0
+
+    if total == 90:
+        a, b = -my0, largura + mx0
+    elif total == 180:
+        a, b = largura + mx0, altura + my0
+    elif total == 270:
+        a, b = altura + my0, -mx0
+    else:
+        a = b = 0.0
+
+    doc = pagina.parent
+    caixas = {}
+    for nome in _CAIXAS_DA_PAGINA:
+        if nome == "MediaBox":
+            cantos = [mx0, my0, mx1, my1]
+        else:
+            tipo, valor = doc.xref_get_key(pagina.xref, nome)
+            if tipo != "array":
+                continue
+            try:
+                cantos = [float(n) for n in valor.strip("[]").split()]
+            except ValueError:
+                continue
+            if len(cantos) != 4:
+                continue
+        caixas[nome] = _caixa_girada(cantos, mx0, my0, largura, altura, total)
+
+    if total:
+        cm = _MATRIZ_DO_GIRO[total].format(a=_numero_de_pdf(a), b=_numero_de_pdf(b))
+        # 'q' e 'Q' em volta: o desenho da página pode ter um 'Q' a mais
+        # sobrando no fim, e sem o 'q' nosso ele devolveria a matriz ao
+        # que era — o giro se perderia no meio da arte.
+        pymupdf.TOOLS._insert_contents(pagina, ("q " + cm + " ").encode("latin-1"), False)
+        pymupdf.TOOLS._insert_contents(pagina, b" Q", True)
+
+    pagina.set_rotation(0)
+    for nome, caixa in caixas.items():
+        doc.xref_set_key(pagina.xref, nome,
+                         "[%s]" % " ".join(_numero_de_pdf(v) for v in caixa))
 
 
 # Marca dos arquivos de montagem. O prefixo '~' e o sufixo juntos
@@ -527,14 +660,15 @@ def _copiar_para_hot_folder(arquivo, destino, largura_util_m, logger):
     """
     Põe 'arquivo' na hot folder do RIP — montando fora dela e entrando
     com um rename atômico, pra o RIP nunca ver arquivo pela metade (ver
-    _caminho_de_montagem). Devolve se girou.
+    _caminho_de_montagem). Devolve (girou, página), onde página é a
+    medida real do arquivo como chegou — ver registrar_envio.
     """
     montagem = _caminho_de_montagem(destino)
     if montagem is None:
         return _montar_para_hot_folder(arquivo, destino, largura_util_m, logger)
 
     try:
-        girado = _montar_para_hot_folder(arquivo, montagem, largura_util_m, logger)
+        girado, pagina = _montar_para_hot_folder(arquivo, montagem, largura_util_m, logger)
         os.replace(montagem, destino)
     except BaseException:
         # inclui a morte por limite de tempo da tarefa: o resto não pode
@@ -544,7 +678,7 @@ def _copiar_para_hot_folder(arquivo, destino, largura_util_m, logger):
         except OSError:
             pass
         raise
-    return girado
+    return girado, pagina
 
 
 def _montar_para_hot_folder(arquivo, destino, largura_util_m, logger):
@@ -554,27 +688,34 @@ def _montar_para_hot_folder(arquivo, destino, largura_util_m, logger):
     CÓPIA — o arquivo que fica guardado em 'Enviados' continua
     exatamente como chegou.
 
+    Devolve (girou, página): 'página' é (largura_m, altura_m, páginas)
+    do arquivo como chegou, pro registro de produção — ver
+    registrar_envio. É None quando não deu pra medir.
+
     Quando não cabe nem girado, manda assim mesmo e registra o aviso
     (escolha do usuário, 2026-09-05: prefere decidir dentro do
     RasterLink a ter arquivo represado sem ele ver).
     """
     if not largura_util_m or arquivo.suffix.lower() != ".pdf":
         shutil.copy2(arquivo, destino)
-        return False
+        return False, None
 
     pymupdf = _importar_pymupdf()
     if pymupdf is None:
         logger("warn", f"pymupdf não instalado nesta máquina — '{arquivo.name}' enviado sem conferir a largura.")
         shutil.copy2(arquivo, destino)
-        return False
+        return False, None
 
-    tamanho = _largura_altura_m(arquivo, pymupdf)
-    if tamanho is None:
+    # 'medida', nao 'pagina': logo abaixo o laco que gira usa 'pagina'
+    # como variavel e sobrescreveria esta — ja aconteceu, e o registro
+    # de producao do dia se perdia inteiro sem ninguem ver.
+    medida = _largura_altura_m(arquivo, pymupdf)
+    if medida is None:
         logger("warn", f"Não consegui ler o tamanho de '{arquivo.name}' — enviado sem conferir a largura.")
         shutil.copy2(arquivo, destino)
-        return False
+        return False, None
 
-    largura_m, altura_m = tamanho
+    largura_m, altura_m, _paginas = medida
     # Tolerância de 1mm: uma arte fechada exatamente na largura da
     # bobina vira 3.2000000038m depois da conversão de pontos pra
     # metros, e sem folga ela seria recusada por erro de arredondamento.
@@ -589,7 +730,7 @@ def _montar_para_hot_folder(arquivo, destino, largura_util_m, logger):
             f"máquina ({largura_util_m:.2f}m úteis) — enviado assim mesmo, confira no RasterLink.",
         )
         shutil.copy2(arquivo, destino)
-        return False
+        return False, medida
 
     # O que gasta bobina é o lado que corre no comprimento: em pé
     # gasta 'altura_m', deitado gasta 'largura_m'. Então deitar só
@@ -598,7 +739,7 @@ def _montar_para_hot_folder(arquivo, destino, largura_util_m, logger):
     # 2026-09-05: "a ideia é reaproveitar o máximo de material").
     if not cabe_deitado or (cabe_em_pe and largura_m >= altura_m):
         shutil.copy2(arquivo, destino)
-        return False
+        return False, medida
 
     economia_m = altura_m - largura_m
 
@@ -606,21 +747,21 @@ def _montar_para_hot_folder(arquivo, destino, largura_util_m, logger):
         doc = pymupdf.open(str(arquivo))
         try:
             for pagina in doc:
-                pagina.set_rotation((pagina.rotation + 90) % 360)
+                _assar_giro(pagina, 90, pymupdf)
             doc.save(str(destino))
         finally:
             doc.close()
     except Exception as e:
         logger("warn", f"Falhei ao girar '{arquivo.name}' ({e}) — enviado sem girar.")
         shutil.copy2(arquivo, destino)
-        return False
+        return False, medida
 
     if cabe_em_pe:
         motivo = f"economiza {economia_m:.2f}m de bobina ({altura_m:.2f}m em pé contra {largura_m:.2f}m deitado)"
     else:
         motivo = f"tinha {largura_m:.2f}m de largura, mais que os {largura_util_m:.2f}m úteis da máquina"
     logger("ok", f"'{arquivo.name}' girado 90° automaticamente: {motivo}.")
-    return True
+    return True, medida
 
 
 def _vigiar_uma_maquina(pasta_maquina, config_maquina, logger, pasta_relatorios=None, dias_retencao=None):
@@ -675,11 +816,12 @@ def _processar_arquivo_da_fila(arquivo, hot_folder, pasta_enviados, nome_maquina
                                largura_util_m, logger, pasta_relatorios):
     """Um arquivo: copia pra hot folder, registra e tira da fila."""
     destino_hot_folder = hot_folder / arquivo.name
-    girado = _copiar_para_hot_folder(arquivo, destino_hot_folder, largura_util_m, logger)
+    girado, pagina = _copiar_para_hot_folder(arquivo, destino_hot_folder, largura_util_m, logger)
 
     # registra ANTES de mover: depois do rename o caminho muda, e o
     # que interessa guardar é o nome com que o arquivo entrou na fila
-    registrar_envio(nome_maquina, arquivo, girado, pasta_relatorios=pasta_relatorios, logger=logger)
+    registrar_envio(nome_maquina, arquivo, girado, pasta_relatorios=pasta_relatorios,
+                    logger=logger, pagina=pagina)
 
     destino_enviados = pasta_enviados / arquivo.name
     if destino_enviados.exists():

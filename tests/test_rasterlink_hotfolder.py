@@ -341,6 +341,144 @@ def test_pdf_que_nao_cabe_nem_girado_vai_assim_mesmo_com_aviso(tmp_path, monkeyp
     assert any(nivel == "warn" and "nem girado" in msg for nivel, msg in avisos)
 
 
+def _pdf_marcado(caminho, largura_cm, altura_cm, rotacao=0, sangria_pt=None):
+    """
+    PDF com um desenho ASSIMETRICO e area de corte propria — assim
+    qualquer giro errado (pro lado contrario, espelhado ou espremido)
+    aparece na hora, o que um retangulo liso esconderia.
+    """
+    import pymupdf
+
+    pt_por_cm = 72 / 2.54
+    largura, altura = largura_cm * pt_por_cm, altura_cm * pt_por_cm
+    doc = pymupdf.open()
+    pagina = doc.new_page(width=largura, height=altura)
+    pagina.draw_rect(pymupdf.Rect(0, 0, largura * 0.4, altura * 0.1),
+                     color=None, fill=(1, 0, 0))
+    pagina.draw_rect(pymupdf.Rect(0, 0, largura * 0.1, altura * 0.6),
+                     color=None, fill=(0, 0, 1))
+    if sangria_pt:
+        doc.xref_set_key(pagina.xref, "TrimBox", "[%g %g %g %g]" % (
+            sangria_pt, sangria_pt, largura - sangria_pt, altura - sangria_pt))
+    if rotacao:
+        pagina.set_rotation(rotacao)
+    doc.save(str(caminho))
+    doc.close()
+
+
+def _pagina_entregue(caminho):
+    """Como a pagina chega na maquina: medida da caixa fisica e /Rotate."""
+    import pymupdf
+
+    pt_por_cm = 72 / 2.54
+    doc = pymupdf.open(str(caminho))
+    pagina = doc[0]
+    dados = {
+        "rotate": pagina.rotation,
+        "caixa_cm": (round(pagina.mediabox.width / pt_por_cm),
+                     round(pagina.mediabox.height / pt_por_cm)),
+        "vista_cm": (round(pagina.rect.width / pt_por_cm),
+                     round(pagina.rect.height / pt_por_cm)),
+        "trim": doc.xref_get_key(pagina.xref, "TrimBox"),
+    }
+    doc.close()
+    return dados
+
+
+def _render(caminho, largura_px=260):
+    import pymupdf
+
+    doc = pymupdf.open(str(caminho))
+    pagina = doc[0]
+    escala = largura_px / pagina.rect.width
+    px = pagina.get_pixmap(matrix=pymupdf.Matrix(escala, escala))
+    fora = (px.width, px.height, px.samples)
+    doc.close()
+    return fora
+
+
+def test_arquivo_girado_chega_com_a_pagina_ja_em_pe_e_nao_so_marcada(tmp_path, monkeypatch):
+    """
+    O prejuizo de 2026-09-10: a copia saia com MediaBox deitada e um
+    '/Rotate 90' pendurado. Quem le as duas coisas espreme a arte
+    dentro da caixa deitada e imprime DISTORCIDO. A caixa fisica tem
+    que concordar com o que se ve, sem depender de ninguem obedecer o
+    '/Rotate'.
+    """
+    fila, hot_folder = _fila_com_pdf(tmp_path, monkeypatch, largura_cm=200, altura_cm=100)
+
+    vigiar_fila_uma_vez(pasta_fila=str(fila), maquinas=_maquinas(hot_folder, largura_util_m=1.48))
+
+    entregue = _pagina_entregue(hot_folder / "arte.pdf")
+    assert entregue["caixa_cm"] == (100, 200), "a caixa fisica tem que estar em pe de verdade"
+    assert entregue["rotate"] == 0, "nao pode sobrar '/Rotate' pra maquina interpretar"
+    assert entregue["caixa_cm"] == entregue["vista_cm"], "caixa e desenho tem que contar a mesma historia"
+
+
+def test_giro_nao_mexe_no_desenho_so_vira(tmp_path, monkeypatch):
+    """
+    Prova de que so girou: o arquivo entregue tem que renderizar igual,
+    pixel por pixel, ao mesmo original girado. Se entrar escala,
+    espelho ou recompressao no meio, os pixels deixam de bater.
+    """
+    monkeypatch.setattr(rl_hf.time, "sleep", lambda s: None)
+    fila = tmp_path / "fila"
+    (fila / "UJV100").mkdir(parents=True)
+    hot_folder = tmp_path / "hotfolder"
+    hot_folder.mkdir()
+    _pdf_marcado(fila / "UJV100" / "arte.pdf", largura_cm=200, altura_cm=100)
+
+    referencia = tmp_path / "referencia.pdf"
+    _pdf_marcado(referencia, largura_cm=200, altura_cm=100, rotacao=90)
+
+    vigiar_fila_uma_vez(pasta_fila=str(fila), maquinas=_maquinas(hot_folder, largura_util_m=1.48))
+
+    assert _render(hot_folder / "arte.pdf") == _render(referencia),         "o desenho tem que sair identico ao original girado, sem nenhuma deformacao"
+
+
+def test_giro_leva_junto_a_area_de_corte(tmp_path, monkeypatch):
+    """
+    Arquivo com sangria: a area de corte tem que virar com o desenho.
+    Se ela ficasse como estava, apontaria pro lado errado da lona.
+    """
+    monkeypatch.setattr(rl_hf.time, "sleep", lambda s: None)
+    fila = tmp_path / "fila"
+    (fila / "UJV100").mkdir(parents=True)
+    hot_folder = tmp_path / "hotfolder"
+    hot_folder.mkdir()
+    _pdf_marcado(fila / "UJV100" / "arte.pdf", largura_cm=200, altura_cm=100, sangria_pt=20)
+
+    vigiar_fila_uma_vez(pasta_fila=str(fila), maquinas=_maquinas(hot_folder, largura_util_m=1.48))
+
+    tipo, valor = _pagina_entregue(hot_folder / "arte.pdf")["trim"]
+    assert tipo == "array", "a area de corte nao pode sumir no caminho"
+    x0, y0, x1, y1 = [float(n) for n in valor.strip("[]").split()]
+    pt_por_cm = 72 / 2.54
+    assert round((x1 - x0) / pt_por_cm) == 100 - round(40 / pt_por_cm)
+    assert round((y1 - y0) / pt_por_cm) == 200 - round(40 / pt_por_cm)
+
+
+def test_arquivo_que_ja_chega_girado_soma_o_giro_sem_distorcer(tmp_path, monkeypatch):
+    """
+    Arte que ja vem com '/Rotate 90' de casa: 100x200 na tela. Girar
+    mais 90 devolve 200x100 — e a caixa fisica tem que acompanhar.
+    """
+    monkeypatch.setattr(rl_hf.time, "sleep", lambda s: None)
+    fila = tmp_path / "fila"
+    (fila / "UJV100").mkdir(parents=True)
+    hot_folder = tmp_path / "hotfolder"
+    hot_folder.mkdir()
+    # 100 de largura por 200 de altura na tela, guardado deitado
+    _pdf_marcado(fila / "UJV100" / "arte.pdf", largura_cm=200, altura_cm=100, rotacao=90)
+
+    vigiar_fila_uma_vez(pasta_fila=str(fila), maquinas=_maquinas(hot_folder, largura_util_m=3.20))
+
+    entregue = _pagina_entregue(hot_folder / "arte.pdf")
+    assert entregue["vista_cm"] == (200, 100), "girar de novo devolve a arte deitada"
+    assert entregue["caixa_cm"] == (200, 100)
+    assert entregue["rotate"] == 0
+
+
 def test_original_na_fila_nunca_e_girado_mesmo_quando_a_copia_gira(tmp_path, monkeypatch):
     fila, hot_folder = _fila_com_pdf(tmp_path, monkeypatch, largura_cm=200, altura_cm=100)
 

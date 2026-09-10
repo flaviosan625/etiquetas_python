@@ -298,3 +298,123 @@ def test_dias_com_registro_lista_os_dias_do_mes(tmp_path):
     dias = rp.dias_com_registro(datetime.date(2026, 9, 1), pasta_relatorios=tmp_path)
 
     assert dias == [datetime.date(2026, 9, 2), datetime.date(2026, 9, 3)]
+
+
+# ---------------------------------------------------------------------
+# Medida vinda do ARQUIVO quando o nome nao da conta
+#
+# Motivo (2026-09-10): o relatorio de 08/09 mostrou a UJV com "medida
+# nao lida" em dois arquivos e "0,00 m2" num terceiro — material que
+# rodou de verdade aparecendo como producao nenhuma. Regra do usuario:
+# "se nao conseguir medida precisa acessar o arquivo e buscar medida da
+# arte".
+# ---------------------------------------------------------------------
+
+def _arte_em_enviados(pasta_fila, maquina, nome, largura_m, altura_m,
+                      margem_m=0.0, paginas=1):
+    """
+    Grava um PDF em 'Enviados' com a ARTE do tamanho pedido, dentro de
+    uma pagina 'margem_m' maior de cada lado — pra provar que o que
+    vale e a arte, nao a folha do gabarito.
+    """
+    pt_por_m = 72 / 0.0254
+    destino = pasta_fila / maquina / "Enviados"
+    destino.mkdir(parents=True, exist_ok=True)
+    doc = pymupdf.open()
+    for _ in range(paginas):
+        pagina = doc.new_page(width=(largura_m + 2 * margem_m) * pt_por_m,
+                              height=(altura_m + 2 * margem_m) * pt_por_m)
+        pagina.draw_rect(
+            pymupdf.Rect(margem_m * pt_por_m, margem_m * pt_por_m,
+                         (margem_m + largura_m) * pt_por_m,
+                         (margem_m + altura_m) * pt_por_m),
+            color=None, fill=(0, 0, 0))
+    caminho = destino / nome
+    doc.save(str(caminho))
+    doc.close()
+    return caminho
+
+
+def _uma_linha(tmp_path, registro, pasta_fila):
+    por_maquina = rp.interpretar([{**registro, "_quando": datetime.datetime(2026, 9, 8, 12, 0)}],
+                                 maquinas=MAQUINAS_TESTE, pasta_fila=pasta_fila)
+    return list(por_maquina.values())[0][0]
+
+
+def test_nome_sem_medida_vai_medir_a_arte_dentro_do_arquivo(tmp_path):
+    fila = tmp_path / "fila"
+    _arte_em_enviados(fila, "UJV 100 UNY CV", "arquivos emendas_01_montado.pdf",
+                      largura_m=1.20, altura_m=1.41, margem_m=0.05)
+
+    linha = _uma_linha(tmp_path, _envio("2026-09-08T18:46:55", "UJV 100 UNY CV",
+                                        "arquivos emendas_01_montado.pdf"), fila)
+
+    assert linha["origem_medida"] == "arte"
+    assert round(linha["dimensao"]["largura_m"], 2) == 1.20, "tem que medir a ARTE, nao a folha"
+    assert round(linha["dimensao"]["altura_m"], 2) == 1.41
+    assert round(linha["area_m2"], 2) == round(1.20 * 1.41, 2)
+
+
+def test_medida_impossivel_no_nome_e_trocada_pela_arte_medida(tmp_path):
+    """'0.77X0.15CM' seria 7,7mm x 1,5mm — nenhuma maquina daqui faz isso."""
+    fila = tmp_path / "fila"
+    nome = "Adesivo_pantone + GABARITO 0.77X0.15CM_logo tv_.pdf"
+    _arte_em_enviados(fila, "UJV 100 UNY CV", nome, largura_m=1.22, altura_m=0.59)
+
+    linha = _uma_linha(tmp_path, _envio("2026-09-08T12:37:05", "UJV 100 UNY CV", nome), fila)
+
+    assert linha["origem_medida"] == "arte"
+    assert round(linha["area_m2"], 2) == round(1.22 * 0.59, 2), "0,00 m2 nao pode sair no relatorio"
+
+
+def test_nome_que_escreveu_metro_e_digitou_cm_e_lido_em_metros(tmp_path):
+    """A lona 5,65x1,80 M com 'cm' no fim do nome (09/09/2026)."""
+    fila = tmp_path / "fila"
+    nome = "1 UN LONA IMPRESSA COM ILHOS  5,65X1,80cm.pdf"
+    _arte_em_enviados(fila, "SWJ320A", nome, largura_m=5.65, altura_m=1.80)
+
+    linha = _uma_linha(tmp_path, _envio("2026-09-09T17:15:34", "SWJ320A", nome), fila)
+
+    assert linha["origem_medida"] == "nome_em_metros"
+    assert round(linha["area_m2"], 2) == round(5.65 * 1.80, 2)
+
+
+def test_centimetro_de_verdade_continua_sendo_centimetro(tmp_path):
+    """
+    '60X20cm' e 60 por 20 centimetros mesmo, e a arte no arquivo e uma
+    folha encaixada de 1x1m. Sem a prova dos 100x, nao se mexe na
+    medida do nome — senao um adesivo de 0,12 m2 viraria 12 m2.
+    """
+    fila = tmp_path / "fila"
+    nome = "6 UN ADESIVO VINIL DE RECORTE IMPRESSO 60X20cm.pdf"
+    _arte_em_enviados(fila, "UJV 100 UNY CV", nome, largura_m=0.95, altura_m=0.96)
+
+    linha = _uma_linha(tmp_path, _envio("2026-09-09T19:18:00", "UJV 100 UNY CV", nome), fila)
+
+    assert linha["origem_medida"] == "nome"
+    assert round(linha["area_m2"], 2) == round(0.60 * 0.20 * 6, 2)
+
+
+def test_sem_o_arquivo_usa_a_medida_da_folha_anotada_no_envio(tmp_path):
+    """Relatorio refeito depois dos 15 dias: o arquivo ja nao existe."""
+    registro = _envio("2026-09-08T18:46:55", "UJV 100 UNY CV", "sumiu_dos_15_dias.pdf")
+    registro["pagina_m"] = [1.20, 1.45]
+    registro["paginas"] = 2
+
+    linha = _uma_linha(tmp_path, registro, tmp_path / "fila_vazia")
+
+    assert linha["origem_medida"] == "folha"
+    assert round(linha["area_m2"], 2) == round(1.20 * 1.45 * 2, 2), "2 paginas gastam 2x o material"
+
+
+def test_material_sem_nome_ganha_subtotal_proprio_em_vez_de_sumir(tmp_path):
+    fila = tmp_path / "fila"
+    _arte_em_enviados(fila, "UJV 100 UNY CV", "arquivos emendas_01_montado.pdf",
+                      largura_m=1.20, altura_m=1.41)
+
+    linha = _uma_linha(tmp_path, _envio("2026-09-08T18:46:55", "UJV 100 UNY CV",
+                                        "arquivos emendas_01_montado.pdf"), fila)
+    subtotais = rp.subtotais_por_material([linha])
+
+    assert rp.MATERIAL_SEM_NOME in subtotais, "m2 real nao pode sumir do rodape por falta de material"
+    assert not linha["categoria"]

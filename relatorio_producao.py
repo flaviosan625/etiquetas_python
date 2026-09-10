@@ -34,8 +34,11 @@ import pymupdf
 
 from branding import CAMINHO_LOGO_GUI, inserir_logo
 from config import carregar_config
-from dimensoes import extrair_dimensoes, extrair_quantidade, identificar_categoria
-from rasterlink_hotfolder import MAQUINAS, NOME_SUBPASTA_REGISTRO, PASTA_RELATORIOS, _config_maquina
+from dimensoes import extrair_dimensoes, extrair_quantidade, identificar_categoria, medir_conteudo_pagina
+from rasterlink_hotfolder import (
+    MAQUINAS, NOME_SUBPASTA_ENVIADOS, NOME_SUBPASTA_REGISTRO, PASTA_FILA_ONEDRIVE,
+    PASTA_RELATORIOS, _config_maquina,
+)
 
 LARGURA_PAGINA = 595.27  # A4
 ALTURA_PAGINA = 841.89
@@ -95,6 +98,122 @@ def ler_registros_do_dia(data, pasta_relatorios=None):
     return registros
 
 
+# Lado mínimo que uma peça impressa pode ter. Abaixo disso a medida
+# lida do nome não é medida, é erro de digitação: "0.77X0.15CM" quer
+# dizer 7,7 mm por 1,5 mm, coisa que nenhuma máquina daqui produz. Foi
+# o que zerou a UJV no relatório de 08/09/2026.
+_LADO_MINIMO_M = 0.01
+
+# Quanto a arte pode diferir da medida do nome pra ainda ser "a mesma
+# medida" — usado só pra reconhecer o nome que escreveu METRO e digitou
+# "cm" no fim ("5,65X1,80cm" numa lona de 5,65 x 1,80 m).
+_TOLERANCIA_IGUAL = 0.05
+
+MATERIAL_SEM_NOME = "MATERIAL NÃO IDENTIFICADO"
+
+
+def caminho_do_enviado(nome_maquina, nome_arquivo, pasta_fila=None):
+    """Onde o arquivo fica guardado depois de entregue (15 dias)."""
+    raiz = pathlib.Path(pasta_fila or PASTA_FILA_ONEDRIVE)
+    return raiz / nome_maquina / NOME_SUBPASTA_ENVIADOS / nome_arquivo
+
+
+def medir_arte_do_arquivo(nome_maquina, nome_arquivo, pasta_fila=None):
+    """
+    Abre o arquivo guardado em 'Enviados' e mede A ARTE — o conteúdo
+    de verdade da página, não a folha (regra do usuário, 2026-09-10:
+    "se não conseguir medida precisa acessar o arquivo e buscar medida
+    da arte"). Um arquivo com margem de gabarito tem página maior que
+    a peça; é o mesmo medidor que o resto do sistema usa.
+
+    Soma a área de TODAS as páginas: um PDF de 4 páginas gasta quatro
+    vezes o material de uma. A largura/altura devolvida é a da maior
+    página, só pra mostrar na linha.
+
+    Devolve None quando não dá pra medir — arquivo já apagado pelos 15
+    dias, formato que não é PDF, ou página sem conteúdo. Nunca levanta
+    exceção: o relatório do dia não pode morrer por causa de um arquivo.
+    """
+    caminho = caminho_do_enviado(nome_maquina, nome_arquivo, pasta_fila)
+    if caminho.suffix.lower() != ".pdf" or not caminho.is_file():
+        return None
+
+    metros_por_ponto = 0.0254 / 72
+    try:
+        doc = pymupdf.open(str(caminho))
+    except Exception:
+        return None
+    try:
+        area_m2 = 0.0
+        largura_m = altura_m = 0.0
+        for pagina in doc:
+            caixa = medir_conteudo_pagina(pagina)
+            if caixa.is_empty or caixa.is_infinite:
+                continue
+            largura = caixa.width * metros_por_ponto
+            altura = caixa.height * metros_por_ponto
+            area_m2 += largura * altura
+            if largura * altura > largura_m * altura_m:
+                largura_m, altura_m = largura, altura
+        paginas = doc.page_count
+    except Exception:
+        return None
+    finally:
+        doc.close()
+
+    if area_m2 <= 0:
+        return None
+    return {"largura_m": largura_m, "altura_m": altura_m, "area_m2": area_m2,
+            "paginas": paginas, "origem": "arte"}
+
+
+def _medida_do_registro(registro):
+    """
+    Último recurso: o tamanho da FOLHA que o vigia anotou na hora do
+    envio. Serve pra relatório refeito depois dos 15 dias, quando o
+    arquivo já não existe mais pra ser medido.
+    """
+    pagina_m = registro.get("pagina_m")
+    if not pagina_m or len(pagina_m) != 2:
+        return None
+    largura_m, altura_m = pagina_m
+    if not largura_m or not altura_m:
+        return None
+    paginas = registro.get("paginas") or 1
+    return {"largura_m": largura_m, "altura_m": altura_m,
+            "area_m2": largura_m * altura_m * paginas,
+            "paginas": paginas, "origem": "folha"}
+
+
+def _nome_escreveu_metro(dimensao, arte):
+    """
+    Reconhece o nome que diz a medida em METROS mas termina com 'cm' —
+    "1 UN LONA IMPRESSA COM ILHÓS 5,65X1,80cm.pdf" é uma lona de 5,65 x
+    1,80 M, e lida ao pé da letra vira 0,00 m² no relatório.
+
+    Só aceita com a arte na mão e batendo nos DOIS lados: 100x a medida
+    do nome tem que dar o tamanho medido no arquivo. Sem essa prova não
+    mexe — 'cm' também é cm de verdade em muito arquivo daqui
+    ("60X20cm" é 60 por 20 centímetros mesmo).
+    """
+    if not arte or dimensao["unidade_usada"] != "CM":
+        return None
+    for do_nome, medido in ((dimensao["largura_m"], arte["largura_m"]),
+                            (dimensao["altura_m"], arte["altura_m"])):
+        if not medido or abs(do_nome * 100 - medido) > medido * _TOLERANCIA_IGUAL:
+            return None
+    largura_m = dimensao["largura_m"] * 100
+    altura_m = dimensao["altura_m"] * 100
+    return {**dimensao, "largura_m": largura_m, "altura_m": altura_m,
+            "area_m2": largura_m * altura_m, "unidade_usada": "M",
+            "origem": "nome_em_metros"}
+
+
+def _medida_utilizavel(dimensao):
+    """Medida de peça que nenhuma máquina daqui produziria não é medida."""
+    return bool(dimensao) and min(dimensao["largura_m"], dimensao["altura_m"]) >= _LADO_MINIMO_M
+
+
 def _largura_util(nome_maquina, maquinas=None):
     maquinas = MAQUINAS if maquinas is None else maquinas
     if nome_maquina not in maquinas:
@@ -102,11 +221,17 @@ def _largura_util(nome_maquina, maquinas=None):
     return _config_maquina(maquinas[nome_maquina])[1]
 
 
-def interpretar(registros, config=None, maquinas=None):
+def interpretar(registros, config=None, maquinas=None, pasta_fila=None):
     """
     Transforma os registros brutos em linhas de relatório: lê do nome do
     arquivo a quantidade, o material, a medida e o m², e marca as duas
     conferências (repetido no dia / não cabe na máquina).
+
+    Quando o nome NÃO dá uma medida utilizável, vai buscar no arquivo
+    guardado em 'Enviados' e mede a arte (regra do usuário,
+    2026-09-10). Nesse caso o m² é o da arte medida e NÃO é
+    multiplicado pela quantidade: a folha medida já contém o que
+    contém — multiplicar de novo contaria o mesmo material N vezes.
 
     Devolve {nome_maquina: [linha, ...]} preservando a ordem de horário.
     """
@@ -126,7 +251,20 @@ def interpretar(registros, config=None, maquinas=None):
         vistos[nome] = vistos.get(nome, 0) + 1
         repeticao = vistos[nome]
 
-        area_m2 = dimensao["area_m2"] * quantidade if dimensao else None
+        # Só abre o arquivo quando pode mudar alguma coisa: sem medida
+        # utilizável no nome, ou com medida em 'cm' que pode ser metro
+        # escrito errado. Arquivo grande não é aberto à toa.
+        arte = None
+        if not _medida_utilizavel(dimensao) or dimensao["unidade_usada"] == "CM":
+            arte = medir_arte_do_arquivo(registro["maquina"], nome, pasta_fila)
+
+        if _medida_utilizavel(dimensao):
+            dimensao = _nome_escreveu_metro(dimensao, arte) or dimensao
+            area_m2 = dimensao["area_m2"] * quantidade
+        else:
+            medida = arte or _medida_do_registro(registro)
+            dimensao = medida
+            area_m2 = medida["area_m2"] if medida else None
         largura_util = _largura_util(registro["maquina"], maquinas)
         nao_cabe = False
         if dimensao and largura_util:
@@ -139,6 +277,7 @@ def interpretar(registros, config=None, maquinas=None):
             "quantidade": quantidade,
             "categoria": categoria,
             "dimensao": dimensao,
+            "origem_medida": dimensao["origem"] if dimensao else None,
             "area_m2": area_m2,
             "bytes": registro.get("bytes"),
             "girado": registro.get("girado", False),
@@ -163,9 +302,14 @@ def subtotais_por_material(linhas):
     """
     totais = {}
     for linha in linhas:
-        if linha["area_m2"] is None or not linha["categoria"]:
+        if linha["area_m2"] is None:
             continue
-        totais[linha["categoria"]] = totais.get(linha["categoria"], 0.0) + round(linha["area_m2"], 2)
+        # Sem material no nome o m² ia sumindo do rodapé e a máquina
+        # aparecia sem produção nenhuma (UJV, 08/09/2026). Vai pro
+        # próprio balde: continua sem misturar material com material,
+        # e o que falta nomear fica visível em vez de escondido.
+        material = linha["categoria"] or MATERIAL_SEM_NOME
+        totais[material] = totais.get(material, 0.0) + round(linha["area_m2"], 2)
     return totais
 
 
@@ -277,7 +421,8 @@ def _hex_para_rgb(cor):
     return tuple(int(cor[i:i + 2], 16) / 255 for i in (0, 2, 4))
 
 
-def gerar_pdf(data, pasta_relatorios=None, config=None, maquinas=None, caminho_saida=None):
+def gerar_pdf(data, pasta_relatorios=None, config=None, maquinas=None, caminho_saida=None,
+              pasta_fila=None):
     """
     Gera o PDF do dia e devolve o caminho — ou None se nada passou pelas
     máquinas nesse dia (não faz sentido emitir comprovação em branco).
@@ -294,7 +439,7 @@ def gerar_pdf(data, pasta_relatorios=None, config=None, maquinas=None, caminho_s
     if not registros:
         return None
 
-    por_maquina = interpretar(registros, config, maquinas)
+    por_maquina = interpretar(registros, config, maquinas, pasta_fila)
     folha = _Folha(data)
 
     total_arquivos = sum(len(linhas) for linhas in por_maquina.values())
@@ -340,6 +485,27 @@ def gerar_pdf(data, pasta_relatorios=None, config=None, maquinas=None, caminho_s
                 ))
             if linha["girado"]:
                 avisos.append((_COR_SUAVE, "Girado 90° automaticamente para aproveitar melhor a bobina."))
+            # De onde veio a medida tem que estar escrito. Este documento
+            # serve de comprovação: número medido por nós e número
+            # declarado pelo cliente não podem parecer a mesma coisa.
+            if linha["origem_medida"] == "arte":
+                avisos.append((
+                    _COR_ACENTO,
+                    "Medida obtida abrindo o arquivo e medindo a arte — o nome não trazia medida "
+                    "utilizável. É a área da arte impressa, não multiplicada pela quantidade.",
+                ))
+            elif linha["origem_medida"] == "folha":
+                avisos.append((
+                    _COR_ACENTO,
+                    "Medida da folha, anotada pelo sistema na hora do envio — o nome não trazia "
+                    "medida e o arquivo já saiu dos 15 dias de guarda.",
+                ))
+            elif linha["origem_medida"] == "nome_em_metros":
+                avisos.append((
+                    _COR_AVISO,
+                    "O nome termina em “cm” mas a medida está em METROS — conferido abrindo o "
+                    "arquivo. Vale corrigir o nome na origem.",
+                ))
 
             dim = linha["dimensao"]
             medida = f'{_num(dim["largura_m"])} × {_num(dim["altura_m"])} m' if dim else "medida não lida"
@@ -385,7 +551,8 @@ def gerar_pdf(data, pasta_relatorios=None, config=None, maquinas=None, caminho_s
         f'Este documento registra os arquivos <b>entregues à fila de impressão</b> de cada máquina na data acima, '
         f'com hora de entrada registrada automaticamente pelo sistema. Um mesmo arquivo enviado mais de uma vez '
         f'<b>conta em cada envio</b> — refação e arte corrigida consomem material igual. Quantidades e medidas são '
-        f'lidas do nome do arquivo.<br>'
+        f'lidas do nome do arquivo; quando o nome não traz medida utilizável, ela é obtida abrindo o próprio '
+        f'arquivo e medindo a arte, e a linha fica assinalada.<br>'
         f'Gerado em {datetime.datetime.now():%d/%m/%Y %H:%M} · arquivo original guardado por 15 dias.'
         f'</div>',
     )
