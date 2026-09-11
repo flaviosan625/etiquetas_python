@@ -25,6 +25,7 @@ Vale só o carimbo posicionado DENTRO. O próprio usuário confirmou:
 "o ideal é olhar para os que ficam dentro da imagem; aqueles do rodapé
 eles deixam como exemplo".
 """
+import hashlib
 import pathlib
 import re
 import unicodedata
@@ -45,16 +46,30 @@ _ROTULOS = {
     "OBS:": "obs",
 }
 
-# Nome do arquivo de imagem -> o que aquele carimbo quer dizer. Os nomes
-# vêm do próprio .pptx e foram conferidos abrindo cada imagem.
-CARIMBOS = {
-    "image4.png": "APROVADO",
-    "image8.png": "EM APROVACAO",
-    "image3.png": "REPROVADO",
-    "image2.png": "EM CRIACAO",
-    "image11.png": "CRIACAO CONFERIDO",
-    "image1.png": "ARQUITETURA CONFERIDO",
-    "image9.png": "PRODUCAO CONFERIDO",
+# Carimbo identificado pelo CONTEÚDO da imagem, nunca pelo nome do
+# arquivo. A numeração de 'ppt/media' é por apresentação: num caderno o
+# APROVADO é 'image4.png' e no seguinte é 'image3.png' — que lá é o
+# REPROVADO. Identificar por nome fez um caderno inteiro de 154 peças
+# sair como reprovado (2026-09-11), com o sinal exatamente invertido.
+#
+# Os arquivos são byte a byte iguais entre cadernos (é o mesmo desenho
+# colado por quem monta), então o hash é chave estável. Cada rótulo foi
+# conferido abrindo a imagem e lendo o que está escrito nela.
+CARIMBOS_POR_CONTEUDO = {
+    "d8526c205cbf8b983a082104c3cb8b552203feb258675a3aadffffa1ac8d6ddb":
+        "APROVADO",
+    "69c29d1179daae87971292e4f90d8482a4e4d2e8831571359c1d1879ca8dee9d":
+        "EM APROVACAO",
+    "96dd93ac4e091665a9ca363178ff6fb3c2ece1982a4cd3862fa0342fccc7fc88":
+        "REPROVADO",
+    "6d11db18b0874985e52a3e1343a223f873eda4f87c297682e67c56480ba0663b":
+        "EM CRIACAO",
+    "89220e36e20c82b66382b6ebd7a162840ad263ef22531fc03c757d9863cede07":
+        "CRIACAO CONFERIDO",
+    "43f499e8d82ccf003862c8a54c6635108c43d05466fc54fd2e2c675227140eba":
+        "ARQUITETURA CONFERIDO",
+    "9810866343bebde306e69d91c6c548b7f60ecc739ba8571db7e34be3839c8059":
+        "PRODUCAO CONFERIDO",
 }
 
 # Carimbo colado abaixo disto (em % da altura) é paleta, não status.
@@ -101,14 +116,29 @@ def _midias_do_slide(z, arquivo):
     return mapa, sorted(set(links))
 
 
-def _carimbos_aplicados(xml, mapa, altura):
+def _carimbo_da_imagem(z, nome_midia, cache):
+    """Que carimbo é esta imagem, pelo conteúdo. None se não for carimbo."""
+    if nome_midia in cache:
+        return cache[nome_midia]
+    try:
+        digito = hashlib.sha256(z.read("ppt/media/" + nome_midia)).hexdigest()
+    except KeyError:
+        digito = None
+    cache[nome_midia] = CARIMBOS_POR_CONTEUDO.get(digito)
+    return cache[nome_midia]
+
+
+def _carimbos_aplicados(z, xml, mapa, altura, cache):
     aplicados = []
     for pic in re.findall(r"<p:pic>.*?</p:pic>", xml, re.S):
         rid = re.search(r'r:embed="([^"]+)"', pic)
         off = re.search(r'<a:off x="(-?\d+)" y="(-?\d+)"', pic)
         if not (rid and off):
             continue
-        marca = CARIMBOS.get(mapa.get(rid.group(1)))
+        nome_midia = mapa.get(rid.group(1))
+        if not nome_midia:
+            continue
+        marca = _carimbo_da_imagem(z, nome_midia, cache)
         if marca and 100 * int(off.group(2)) / altura < _LIMITE_PALETA:
             aplicados.append(marca)
     return sorted(set(aplicados))
@@ -131,6 +161,7 @@ def ler(caminho):
     """
     with zipfile.ZipFile(str(caminho)) as z:
         altura = _altura_do_slide(z)
+        cache_carimbos = {}
         fichas = []
         for arquivo in _slides(z):
             xml = z.read(arquivo).decode("utf-8")
@@ -153,7 +184,7 @@ def ler(caminho):
 
             mapa, links = _midias_do_slide(z, arquivo)
             ficha["links"] = links
-            ficha["carimbos"] = _carimbos_aplicados(xml, mapa, altura)
+            ficha["carimbos"] = _carimbos_aplicados(z, xml, mapa, altura, cache_carimbos)
             ficha["situacao"] = situacao(ficha["carimbos"])
             fichas.append(ficha)
     return fichas

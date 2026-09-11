@@ -205,7 +205,7 @@ def ler_observacoes(caminho):
         wb.close()
 
 
-def montar_linhas(fichas, itens, caderno, observacoes=None):
+def montar_linhas(fichas, itens, caderno, observacoes=None, baixados=None):
     """
     A união das duas fontes, com o par feito onde der.
 
@@ -216,6 +216,7 @@ def montar_linhas(fichas, itens, caderno, observacoes=None):
     uma órfã fantasma.
     """
     observacoes = list(observacoes or [])
+    baixados = baixados or {}
     por_ancora = {}
     for registro in observacoes:
         for ancora in registro["ancoras"]:
@@ -246,6 +247,15 @@ def montar_linhas(fichas, itens, caderno, observacoes=None):
 
         chave_slide, chave_nome = chaves_da_peca(caderno, ficha)
         observacao = _resgatar(chave_slide, chave_nome)
+        registro_baixa = baixados.get("%s|slide|%s" % (caderno, ficha.get("slide"))) or {}
+        baixado_em = ""
+        if registro_baixa.get("quando"):
+            import datetime as _dt
+            try:
+                q = _dt.datetime.strptime(registro_baixa["quando"], "%Y-%m-%dT%H:%M:%S")
+                baixado_em = q.strftime("%d/%m/%Y %H:%M")
+            except ValueError:
+                baixado_em = registro_baixa["quando"]
 
         if par is None:
             confere = MARCA_SO_CADERNO
@@ -265,9 +275,9 @@ def montar_linhas(fichas, itens, caderno, observacoes=None):
             "status_caderno": ficha.get("situacao") or "",
             "status_planilha": par["status"] if par else "",
             "confere": confere,
-            "arquivo": ficha.get("nome_arquivo") or (
+            "arquivo": registro_baixa.get("arquivo") or ficha.get("nome_arquivo") or (
                 "— %s" % ficha["motivo_nome"] if ficha.get("motivo_nome") else ""),
-            "baixado": ficha.get("baixado_em") or "",
+            "baixado": baixado_em,
             "link": ficha["links"][0] if ficha.get("links") else "",
             "observacao": observacao,
             "_ancoras": [chave_slide, chave_nome],
@@ -391,5 +401,7 @@ def gerar(destino, caminho_caderno, caminho_planilha=None, titulo=None, config=N
     fichas = caderno_arte.fichas_com_nome(caminho_caderno, config)
     itens = ler_planilha_do_cliente(caminho_planilha) if caminho_planilha else []
 
-    linhas = montar_linhas(fichas, itens, caderno, ler_observacoes(destino))
+    import arte_recebida
+    baixados = arte_recebida.ler_baixados(destino.parent)
+    linhas = montar_linhas(fichas, itens, caderno, ler_observacoes(destino), baixados)
     return escrever(destino, linhas, titulo or "CONTROLE DE ARTES — %s" % caderno)

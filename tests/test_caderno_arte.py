@@ -1,13 +1,49 @@
+import hashlib
 import pathlib
 import sys
 import zipfile
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
+import pytest
+
 import caderno_arte as ca
 
 ALTURA_SLIDE = 5143500
 LARGURA_SLIDE = 9144000
+
+# Conteudo ficticio de cada carimbo. O modulo identifica carimbo pelo
+# CONTEUDO da imagem, nunca pelo nome do arquivo — entao o teste tambem
+# precisa de bytes de verdade dentro do .pptx.
+CONTEUDO = {
+    "APROVADO": b"<carimbo aprovado>",
+    "EM APROVACAO": b"<carimbo em aprovacao>",
+    "REPROVADO": b"<carimbo reprovado>",
+    "EM CRIACAO": b"<carimbo em criacao>",
+    "CRIACAO CONFERIDO": b"<carimbo criacao conferido>",
+    "ARQUITETURA CONFERIDO": b"<carimbo arquitetura conferido>",
+    "PRODUCAO CONFERIDO": b"<carimbo producao conferido>",
+}
+
+
+@pytest.fixture(autouse=True)
+def _registrar_carimbos_de_teste(monkeypatch):
+    tabela = dict(ca.CARIMBOS_POR_CONTEUDO)
+    for rotulo, dados in CONTEUDO.items():
+        tabela[hashlib.sha256(dados).hexdigest()] = rotulo
+    monkeypatch.setattr(ca, "CARIMBOS_POR_CONTEUDO", tabela)
+
+
+# Preenchida por _midias(): diz que rotulo cada arquivo de imagem carrega
+# dentro do .pptx do teste.
+_MIDIAS = {}
+
+
+def _midias(**por_arquivo):
+    """Define a numeracao de midia deste caderno de teste."""
+    _MIDIAS.clear()
+    _MIDIAS.update(por_arquivo)
+    return _MIDIAS
 
 
 def _pic(rid, y_percentual):
@@ -23,7 +59,11 @@ def _pic(rid, y_percentual):
 def _caderno(tmp_path, slides, nome="caderno.pptx"):
     """
     Monta um .pptx minimo: so o que o leitor realmente le. Cada slide e
-    (lista de textos, lista de (rId, imagem, y%), link_externo_ou_None).
+    (lista de textos, lista de (rId, arquivo_de_imagem, y%), link).
+
+    O terceiro elemento de cada carimbo e o NOME do arquivo de midia; o
+    conteudo vem de CONTEUDO pelo rotulo, e o nome pode ser qualquer um —
+    e justamente isso que os testes exercitam.
     """
     caminho = tmp_path / nome
     with zipfile.ZipFile(str(caminho), "w") as z:
@@ -45,6 +85,9 @@ def _caderno(tmp_path, slides, nome="caderno.pptx"):
                     '<Relationship Id="rLink" Target="%s" TargetMode="External"/>' % link)
             rels.append("</Relationships>")
             z.writestr("ppt/slides/_rels/slide%d.xml.rels" % numero, "".join(rels))
+
+        for arquivo, rotulo in _MIDIAS.items():
+            z.writestr("ppt/media/" + arquivo, CONTEUDO[rotulo])
     return caminho
 
 
@@ -90,9 +133,11 @@ def test_carimbo_do_rodape_e_paleta_e_nao_conta_como_status(tmp_path):
     area (y ~110%) e e so a paleta de onde o designer arrasta. Confundir
     as duas faria toda peca do caderno parecer aprovada.
     """
+    _midias(**{"image1.png": "ARQUITETURA CONFERIDO",
+               "image4.png": "APROVADO", "image3.png": "REPROVADO"})
     caminho = _caderno(tmp_path, [(
         _ficha(),
-        [("rId1", "image1.png", 6.7),      # ARQUITETURA CONFERIDO, colado
+        [("rId1", "image1.png", 6.7),      # colado no slide
          ("rId4", "image4.png", 110.5),    # APROVADO, mas na paleta
          ("rId3", "image3.png", 110.5)],   # REPROVADO, mas na paleta
         None)])
@@ -104,6 +149,8 @@ def test_carimbo_do_rodape_e_paleta_e_nao_conta_como_status(tmp_path):
 
 
 def test_aprovado_colado_no_slide_vale(tmp_path):
+    _midias(**{"image1.png": "ARQUITETURA CONFERIDO", "image11.png": "CRIACAO CONFERIDO",
+               "image4.png": "APROVADO", "image3.png": "REPROVADO"})
     caminho = _caderno(tmp_path, [(
         _ficha(),
         [("rId1", "image1.png", 6.7), ("rId11", "image11.png", 25.8),
@@ -116,12 +163,33 @@ def test_aprovado_colado_no_slide_vale(tmp_path):
 
 def test_reprovado_vence_aprovado_no_mesmo_slide(tmp_path):
     """Sobrou carimbo antigo: o pior caso manda, nunca o melhor."""
+    _midias(**{"image4.png": "APROVADO", "image3.png": "REPROVADO"})
     caminho = _caderno(tmp_path, [(
         _ficha(),
         [("rId4", "image4.png", 43.5), ("rId3", "image3.png", 20.0)],
         None)])
 
     assert ca.pecas(caminho)[0]["situacao"] == "REPROVADO"
+
+
+def test_carimbo_e_reconhecido_pelo_conteudo_e_nao_pelo_nome_do_arquivo(tmp_path):
+    """
+    A numeracao de 'ppt/media' e por apresentacao. Num caderno o APROVADO
+    e 'image4.png'; no caderno seguinte esse mesmo nome e o REPROVADO.
+    Identificar por nome inverteu o sinal de um caderno inteiro de 154
+    pecas (2026-09-11) — reprovando o que estava aprovado.
+
+    Aqui a numeracao e deliberadamente TROCADA em relacao aos outros
+    testes: quem manda tem que ser o conteudo.
+    """
+    _midias(**{"image9.png": "APROVADO", "image1.png": "REPROVADO"})
+    caminho = _caderno(tmp_path, [(
+        _ficha(),
+        [("rId9", "image9.png", 30.0),      # APROVADO colado no slide
+         ("rId1", "image1.png", 110.5)],    # REPROVADO na paleta
+        None)])
+
+    assert ca.pecas(caminho)[0]["situacao"] == "APROVADO"
 
 
 def test_slide_sem_carimbo_nenhum_fica_marcado(tmp_path):
