@@ -207,6 +207,21 @@ def medida_para_nome(medida):
     return "%sX%sM" % (m.group(1), m.group(2))
 
 
+# Material que o cliente ainda não definiu na ficha. Regra do usuário
+# (2026-09-12): quando a peça está APROVADA e tem link, "aguardando
+# imagens 3D" é sobre o render de arquitetura do slide, não sobre a arte
+# — a arte já existe na pasta e deve ser baixada. Fica "A DEFINIR" no
+# nome, sinalizando que o material real ainda precisa ser confirmado
+# antes de mandar pra máquina.
+MATERIAL_A_DEFINIR = "A DEFINIR"
+
+
+def _material_aguardando(texto):
+    """True quando o campo MATERIAL é o placeholder de espera do cliente."""
+    t = _sem_acento(texto).upper()
+    return "AGUARDANDO" in t and "3D" in t
+
+
 def categoria_do_material(texto_material, config=None):
     """
     A categoria que vai no nome, tirada SEMPRE do campo MATERIAL da ficha
@@ -217,11 +232,17 @@ def categoria_do_material(texto_material, config=None):
     mesma data). Sem isso, num "LOGO XPS RECORTE COM ADESIVO IMPRESSO" o
     desempate por nome mais longo daria ADESIVO (7 letras) em vez de PVC
     (3) — e a peça iria pra máquina errada.
+
+    Material que o cliente deixou como "aguardando 3D" vira A DEFINIR:
+    a arte é baixável (aprovada, com link), o material real fica pra
+    confirmar.
     """
     config = config or carregar_config()
     texto = _sem_acento(texto_material).upper()
     if re.search(r"\bXPS\b", texto) or re.search(r"\bPVC\b", texto):
         return "PVC"
+    if _material_aguardando(texto_material):
+        return MATERIAL_A_DEFINIR
     categoria, _ = identificar_categoria(
         texto, config["materiais"], config.get("sinonimos_categoria", {}))
     return categoria
@@ -242,7 +263,15 @@ def _descricao_limpa(descricao, config):
     return " ".join(sobra).strip(" -;,")
 
 
-def nome_no_padrao(ficha, config=None):
+def _medida_metros_para_nome(medida_m):
+    """(6.0, 3.0) -> '6,00X3,00M'. É a medida MEDIDA na arte, não do nome."""
+    if not medida_m:
+        return None
+    return "%sX%sM" % (("%.2f" % medida_m[0]).replace(".", ","),
+                       ("%.2f" % medida_m[1]).replace(".", ","))
+
+
+def nome_no_padrao(ficha, config=None, medida_arte=None):
     """
     Nome do arquivo no padrão da casa, a partir da ficha:
 
@@ -252,13 +281,16 @@ def nome_no_padrao(ficha, config=None):
     que já existe no projeto ("duas medidas no nome, vale a primeira"),
     então a sangria fica registrada sem entrar em conta nenhuma.
 
-    Devolve (nome, None) ou (None, motivo). Nunca inventa: medida que o
-    cliente não preencheu no formato largura x altura vira motivo, não
-    palpite — três peças do caderno real vieram com um número só.
+    'medida_arte' é (largura_m, altura_m) medida no PDF. Só entra quando
+    o caderno NÃO deu a medida no formato largura x altura (o cliente
+    preencheu só um número) — aí a medida real da arte completa o nome,
+    em vez de a peça ficar de fora. Sem ela, não se inventa medida.
+
+    Devolve (nome, None) ou (None, motivo).
     """
     config = config or carregar_config()
 
-    medida = medida_para_nome(ficha.get("medidas"))
+    medida = medida_para_nome(ficha.get("medidas")) or _medida_metros_para_nome(medida_arte)
     if not medida:
         return None, "medida '%s' não está no formato largura x altura" % (ficha.get("medidas") or "",)
 

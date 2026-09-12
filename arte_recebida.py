@@ -182,12 +182,22 @@ def processar_pdf(caminho_pdf, caminho_caderno, pasta, quando=None, logger=None,
             return False, ("'%s' casa com mais de uma peça do mesmo tamanho: %s. "
                            "Me diga qual é." % (caminho_pdf.name, nomes)), candidatas
 
-    if not ficha.get("nome_arquivo"):
-        return False, ("achei a peça (slide %s, %s), mas o caderno não dá um nome utilizável: %s. "
-                       "A arte fica em '_entrada' até o caderno ser corrigido."
-                       % (ficha["slide"], ficha["nome"], ficha.get("motivo_nome"))), ficha
+    nome_arquivo = ficha.get("nome_arquivo")
+    if not nome_arquivo:
+        # O caderno não deu nome — quase sempre porque o cliente preencheu
+        # a medida com um número só. Com a arte na mão, a medida REAL
+        # dela completa o nome (regra do usuário, 2026-09-12: peça
+        # aprovada com link deve baixar, mesmo com a ficha pela metade).
+        nome_arquivo, motivo = caderno_arte.nome_no_padrao(
+            ficha, medida_arte=medir_arte(caminho_pdf))
+        if not nome_arquivo:
+            return False, ("achei a peça (slide %s, %s), mas nem o caderno nem a arte dão um "
+                           "nome utilizável: %s. A arte fica em '_entrada'."
+                           % (ficha["slide"], ficha["nome"], motivo)), ficha
+        aviso("info", "'%s': o caderno não deu medida; usei a medida da arte (%s)."
+                      % (ficha["nome"], nome_arquivo))
 
-    destino = pasta / NOME_ARTES / (ficha["nome_arquivo"] + ".pdf")
+    destino = pasta / NOME_ARTES / (nome_arquivo + ".pdf")
     destino.parent.mkdir(parents=True, exist_ok=True)
 
     # A marca sai ENQUANTO a arte ainda está em _entrada. Só depois de

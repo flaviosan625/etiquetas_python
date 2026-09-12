@@ -32,10 +32,20 @@ import drive_artes
 
 
 def pecas_liberadas(caminho_caderno, config=None):
-    """As peças que entram no lote: aprovadas, com link e com nome utilizável."""
+    """
+    As peças que entram no lote: aprovadas e com link de pasta.
+
+    O nome utilizável NÃO é exigido aqui. Quando o caderno traz a medida
+    pela metade — um número só, "0,80" — a peça ainda entra: o nome é
+    completado na hora do processamento, medindo a arte baixada (regra do
+    usuário, 2026-09-12: "aprovada com link deve baixar, mesmo com a ficha
+    pela metade"; vale para as áreas 'aguardando 3D' também). Se nem a arte
+    der um nome, aí sim ela fica em '_entrada', sinalizada, sem entrar em
+    ARTES no escuro — quem decide isso é arte_recebida.processar_pdf.
+    """
     fichas = caderno_arte.fichas_com_nome(caminho_caderno, config)
     return [f for f in fichas
-            if f.get("situacao") == "APROVADO" and f.get("links") and f.get("nome_arquivo")]
+            if f.get("situacao") == "APROVADO" and f.get("links")]
 
 
 def baixar_lote(caminho_caderno, pasta, drive=None, limite=None, refazer=False,

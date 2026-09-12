@@ -422,10 +422,16 @@ def remover_marcas_com_limite(caminho_pdf, timeout_s=_LIMITE_ILLUSTRATOR_S, logg
         "ok, msg = m.remover_marcas_de_corte(sys.argv[1]);"
         "print('OK' if ok else 'NAO', msg)"
     )
+    # O filho fala UTF-8 na força: sem isto o print dele vai pro cano em
+    # cp1252 (padrão do Windows) e QUALQUER caractere fora do Latin-1 na
+    # mensagem de erro do Illustrator derruba o filho com 'charmap codec
+    # can't encode' — a falha real some e vira um traceback ilegível que
+    # ainda derruba o pai ao logar (visto no Mercado Livre, 2026-09-12).
+    ambiente = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUTF8="1")
     try:
         saida = subprocess.run(
             [sys.executable, "-c", codigo, str(caminho_pdf)],
-            cwd=str(pathlib.Path(__file__).parent),
+            cwd=str(pathlib.Path(__file__).parent), env=ambiente,
             capture_output=True, text=True, encoding="utf-8", errors="replace",
             timeout=timeout_s)
     except subprocess.TimeoutExpired:

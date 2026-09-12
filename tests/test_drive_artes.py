@@ -95,6 +95,39 @@ def test_pasta_com_varios_pdfs_nao_escolhe_no_chute():
     assert "2 PDFs" in motivo
 
 
+def test_ai_reportado_como_pdf_nao_conta_como_segundo_pdf():
+    """
+    O Drive rotula o .ai (arquivo de trabalho do Illustrator) como
+    'application/pdf'. Sem filtrar pela extensão, a pasta parecia ter 2
+    PDFs e a peça não baixava (LATERAL 02 e L08 do Mercado Livre,
+    2026-09-12). O .ai não é o material de entrega — sai fora.
+    """
+    drive = _DriveFake(
+        tipos={"pastaAAAAAAAAAA1": "pasta"},
+        conteudo={"pastaAAAAAAAAAA1": [
+            {"id": "pdf1", "name": "AF_LAT_2x3m.pdf", "size": "500"},
+            {"id": "ai1", "name": "AF_LAT_2x3m.ai", "size": "900"}]})
+
+    arquivo, motivo = da.resolver_pdf_da_pasta(drive, "https://drive.google.com/open?id=pastaAAAAAAAAAA1")
+
+    assert motivo is None
+    assert arquivo["id"] == "pdf1"
+
+
+def test_dois_pdfs_de_verdade_continuam_ambiguos():
+    """Filtrar .ai não pode mascarar ambiguidade real (LOGO ML x MP)."""
+    drive = _DriveFake(
+        tipos={"pastaAAAAAAAAAA1": "pasta"},
+        conteudo={"pastaAAAAAAAAAA1": [
+            {"id": "ml", "name": "LOGO_ML_1,5M.pdf"},
+            {"id": "mp", "name": "LOGO_MP_1,5M.pdf"}]})
+
+    arquivo, motivo = da.resolver_pdf_da_pasta(drive, "https://drive.google.com/open?id=pastaAAAAAAAAAA1")
+
+    assert arquivo is None
+    assert "2 PDFs" in motivo
+
+
 def test_pasta_sem_pdf_avisa():
     drive = _DriveFake(tipos={"pastaAAAAAAAAAA1": "pasta"}, conteudo={"pastaAAAAAAAAAA1": []})
 

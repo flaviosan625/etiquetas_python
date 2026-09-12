@@ -112,10 +112,23 @@ def _tipo_do_id(drive, id_drive):
     return "pasta" if info.get("mimeType") == MIME_PASTA else "arquivo"
 
 
+def _e_pdf_de_entrega(arquivo):
+    """
+    Um .ai é PDF-compatível, e o Drive costuma reportá-lo com
+    mimeType 'application/pdf' — então a consulta por mimeType traz o
+    arquivo de trabalho do Illustrator junto do PDF de entrega, e a pasta
+    parece ter "2 PDFs" (visto no Mercado Livre, 2026-09-12). O .ai não é o
+    material que a gente pega ("somente o PDF"), então sai pela extensão.
+    """
+    nome = (arquivo.get("name") or "").lower()
+    return not nome.endswith((".ai", ".eps", ".psd"))
+
+
 def listar_pdfs(drive, id_pasta):
     """
-    Os PDFs de uma pasta do Drive (nome, id, tamanho, quando mudou).
-    Ignora tudo que não é PDF. Paginado — pasta grande não trunca.
+    Os PDFs de ENTREGA de uma pasta do Drive (nome, id, tamanho, quando
+    mudou). Ignora o que não é PDF e também o .ai/.eps/.psd que o Drive
+    rotula como PDF. Paginado — pasta grande não trunca.
     """
     pdfs = []
     pagina = None
@@ -126,7 +139,7 @@ def listar_pdfs(drive, id_pasta):
             fields="nextPageToken, files(id, name, size, modifiedTime, md5Checksum)",
             pageSize=100, supportsAllDrives=True, includeItemsFromAllDrives=True,
             pageToken=pagina).execute()
-        pdfs.extend(resposta.get("files", []))
+        pdfs.extend(a for a in resposta.get("files", []) if _e_pdf_de_entrega(a))
         pagina = resposta.get("nextPageToken")
         if not pagina:
             break
