@@ -25,3 +25,6 @@ maquina_rip/tarefa_*.xml
 
 # Credencial e token do Google Drive - NUNCA versionar
 .google/
+
+# Atalhos tirados da inicializacao, guardados pra devolver depois
+_congelado/

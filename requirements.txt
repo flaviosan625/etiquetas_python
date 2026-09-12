@@ -5,3 +5,4 @@ pystray>=0.19; sys_platform == "win32"
 Pillow>=10.0; sys_platform == "win32"
 google-api-python-client>=2.100
 google-auth-oauthlib>=1.2
+openpyxl>=3.1
