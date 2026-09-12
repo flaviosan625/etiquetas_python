@@ -181,6 +181,17 @@ def _desenhar_item_os(pagina, y, x_thumb, x_texto, largura_texto, item, cor_fund
     else:
         html_selo_novo = ""
 
+    # Selo genérico (texto + cores), opcional: é por ele que o Checklist de
+    # Produção mostra o status que vem da pasta (PRONTO / A FAZER / ESPERA).
+    # A OS normal do pedido não passa 'selo' — pra ela nada muda aqui.
+    selo = item.get("selo")
+    if selo:
+        html_selo_novo += (
+            f'<span style="font-size: 7pt; font-weight: bold; color: {selo["cor"]}; '
+            f'background-color: {selo["fundo"]}; display: inline-block; '
+            f'padding: 2px 7px; margin-left: 5px;">{selo["texto"]}</span>'
+        )
+
     caixa_texto = pymupdf.Rect(x_texto, y, x_texto + largura_texto, y + ALTURA_ITEM_OS)
     html_item = f"""
     <div style="font-family: sans-serif;">
