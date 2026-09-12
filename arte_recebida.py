@@ -130,15 +130,20 @@ def _gravar_baixados(pasta, estado):
 
 
 def processar_pdf(caminho_pdf, caminho_caderno, pasta, quando=None, logger=None,
-                  remover_marcas=True):
+                  remover_marcas=True, ficha=None):
     """
     Uma arte, de ponta a ponta:
 
-      1. identifica a peça pela medida (contra o caderno)
+      1. sabe qual peça é (pela 'ficha' dada, ou identifica pela medida)
       2. tira a marca de corte, se houver, sem tocar na arte
       3. renomeia no nosso padrão
       4. move pra ARTES/
       5. registra em _baixados.json (peça, arquivo, quando, medida conferida)
+
+    'ficha' é a peça JÁ conhecida — passada pelo lote, que baixou da pasta
+    do link dela. Com ela, a medida serve só pra conferir, nunca pra
+    escolher: duas peças do mesmo tamanho não se trocam. Sem ela (download
+    manual, sem saber de qual peça é), identifica pela medida.
 
     Devolve (ok, mensagem, detalhe). Não move nada quando a peça não é
     identificada com segurança — devolve as candidatas em 'detalhe'.
@@ -153,16 +158,29 @@ def processar_pdf(caminho_pdf, caminho_caderno, pasta, quando=None, logger=None,
     if caminho_pdf.suffix.lower() != ".pdf":
         return False, "só processo PDF; '%s' não é." % caminho_pdf.name, None
 
-    fichas = caderno_arte.fichas_com_nome(caminho_caderno)
-    ficha, candidatas = identificar(caminho_pdf, fichas)
-    if ficha is None:
-        if not candidatas:
-            return False, ("não achei no caderno nenhuma peça aprovada do tamanho de '%s'. "
-                           "Confira se é a arte certa, ou se a peça já foi aprovada."
-                           % caminho_pdf.name), []
-        nomes = ", ".join("slide %s (%s)" % (c["slide"], c["nome"]) for c in candidatas)
-        return False, ("'%s' casa com mais de uma peça do mesmo tamanho: %s. "
-                       "Me diga qual é." % (caminho_pdf.name, nomes)), candidatas
+    if ficha is not None:
+        # Peça JÁ conhecida — veio do lote, que baixou da pasta do link
+        # DESTA ficha. Aqui não se adivinha nada: a medida serve só pra
+        # conferir. Sem isto, duas peças do mesmo tamanho (o BALCÃO e a
+        # TESTEIRA, ambos 6x1) se trocavam na identificação por medida —
+        # e arte trocada é impressão perdida (2026-09-11).
+        alvo = medir_arte(caminho_pdf)
+        esperada = _medida_da_ficha(ficha)
+        if alvo and esperada and not _casa_medida(alvo, esperada):
+            aviso("warn", "A arte baixada pra '%s' mede %.2fx%.2f m, mas o caderno diz %.2fx%.2f m. "
+                          "Baixei mesmo assim — confira se a pasta do cliente tem a arte certa."
+                          % (ficha["nome"], alvo[0], alvo[1], esperada[0], esperada[1]))
+    else:
+        fichas = caderno_arte.fichas_com_nome(caminho_caderno)
+        ficha, candidatas = identificar(caminho_pdf, fichas)
+        if ficha is None:
+            if not candidatas:
+                return False, ("não achei no caderno nenhuma peça aprovada do tamanho de '%s'. "
+                               "Confira se é a arte certa, ou se a peça já foi aprovada."
+                               % caminho_pdf.name), []
+            nomes = ", ".join("slide %s (%s)" % (c["slide"], c["nome"]) for c in candidatas)
+            return False, ("'%s' casa com mais de uma peça do mesmo tamanho: %s. "
+                           "Me diga qual é." % (caminho_pdf.name, nomes)), candidatas
 
     if not ficha.get("nome_arquivo"):
         return False, ("achei a peça (slide %s, %s), mas o caderno não dá um nome utilizável: %s. "
@@ -172,21 +190,23 @@ def processar_pdf(caminho_pdf, caminho_caderno, pasta, quando=None, logger=None,
     destino = pasta / NOME_ARTES / (ficha["nome_arquivo"] + ".pdf")
     destino.parent.mkdir(parents=True, exist_ok=True)
 
-    # move pra ARTES antes de mexer: a partir daqui trabalhamos na cópia
-    # de trabalho, e o que estava em _entrada sai de cena.
-    import shutil
-    shutil.move(str(caminho_pdf), str(destino))
-
+    # A marca sai ENQUANTO a arte ainda está em _entrada. Só depois de
+    # pronta ela entra em ARTES. É de propósito: se o Illustrator travar,
+    # ARTES nunca recebe uma arte pela metade — o arquivo fica em
+    # _entrada, sinalizado, pra tentar de novo. ARTES só guarda arte final.
     marca_removida = False
     if remover_marcas:
-        dados = marcas_de_corte.medidas(destino)
-        tem_moldura = dados and dados.get("MediaBox_pt") and dados.get("TrimBox_pt") \
-            and dados["MediaBox_pt"] != dados["TrimBox_pt"]
-        if tem_moldura:
-            trocou, msg = marcas_de_corte.remover_marcas_de_corte(destino, logger=logger)
+        if marcas_de_corte.tem_marca_de_corte(marcas_de_corte.medidas(caminho_pdf)):
+            trocou, msg = marcas_de_corte.remover_marcas_com_limite(caminho_pdf, logger=logger)
             marca_removida = trocou
             if not trocou:
-                aviso("warn", "A arte foi salva, mas não removi a marca de corte: %s" % msg)
+                return False, ("identifiquei a peça (slide %s, %s), mas a remoção da marca "
+                               "de corte falhou: %s. A arte ficou em '_entrada' pra tentar "
+                               "de novo — não entrou em ARTES pela metade."
+                               % (ficha["slide"], ficha["nome"], msg)), ficha
+
+    import shutil
+    shutil.move(str(caminho_pdf), str(destino))
 
     conferida = medir_arte(destino)
     estado = ler_baixados(pasta)

@@ -22,3 +22,6 @@ rasterlink_hotfolder_avisos.json
 maquina_sai/rodar_uma_vez.bat
 maquina_sai/tarefa_*.xml
 maquina_rip/tarefa_*.xml
+
+# Credencial e token do Google Drive - NUNCA versionar
+.google/

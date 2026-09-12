@@ -58,8 +58,11 @@ _TOLERANCIA_PT = 0.5
 
 # Como a arte é comparada antes de substituir o original. Pela DIFERENÇA
 # MÉDIA, não pelo pior pixel — ver arte_esta_igual. Reprocessar o mesmo
-# desenho dá média perto de 0 (medido: 0,66); arte trocada daria dezenas.
-_DIFERENCA_MEDIA_MAXIMA = 3.0
+# desenho dá média perto de 0 (peças pequenas ~0,6); lona grande e cheia
+# de detalhe fino chega a ~3 só de ruído de rasterização (medido em lonas
+# de 20-29 m, 2026-09-11). O limite fica bem acima disso e ainda longe de
+# uma arte TROCADA, que daria dezenas.
+_DIFERENCA_MEDIA_MAXIMA = 6.0
 # Guarda secundária: no máximo esta fração da área pode diferir muito, pra
 # pegar alteração localizada que a média diluiria.
 _FRACAO_ALTERADA_MAXIMA = 0.05
@@ -125,6 +128,34 @@ def medidas(caminho):
         return fora
     finally:
         doc.close()
+
+
+def tem_marca_de_corte(dados):
+    """
+    True quando a página ainda traz a moldura de marcas de corte.
+
+    A marca acrescenta espaço ALÉM da sangria — então a página (MediaBox)
+    fica maior que a borda de sangria (BleedBox). Depois de removida,
+    MediaBox = BleedBox, e o que sobra maior que o TrimBox é a sangria,
+    que DEVE ficar. Comparar MediaBox com TrimBox (e não com BleedBox)
+    confundiria a sangria com marca e removeria de novo o que já está
+    limpo (visto em 2026-09-11). Sem BleedBox declarado, cai pra tarja de
+    informação como sinal, ou pra diferença grande da página pro corte.
+    """
+    if not dados:
+        return False
+    media = dados.get("MediaBox_pt")
+    if not media:
+        return False
+    sangria = dados.get("BleedBox_pt")
+    if sangria:
+        return (media[0] - sangria[0] > _TOLERANCIA_PT
+                or media[1] - sangria[1] > _TOLERANCIA_PT)
+    if dados.get("tem_texto"):
+        return True
+    corte = dados.get("TrimBox_pt")
+    return bool(corte and (media[0] - corte[0] > _TOLERANCIA_PT
+                           or media[1] - corte[1] > _TOLERANCIA_PT))
 
 
 def sangria_em_pontos(dados):
@@ -256,7 +287,7 @@ def remover_marcas_de_corte(caminho_pdf, logger=None):
         return False, ("'%s' não tem área de corte (TrimBox) declarada — sem ela não dá pra "
                        "saber o que é arte e o que é marca. Não mexi." % caminho_pdf.name)
 
-    if antes["MediaBox_pt"] == antes["TrimBox_pt"] and not antes["tem_texto"]:
+    if not tem_marca_de_corte(antes):
         return False, "'%s' já está sem marcas de corte." % caminho_pdf.name
 
     sangria = sangria_em_pontos(antes)
@@ -345,16 +376,18 @@ def _conferir_e_trocar(original, novo, antes):
                            % (media_nova[0] * 0.0254 / 72, media_nova[1] * 0.0254 / 72,
                               sangria_antes[0] * 0.0254 / 72, sangria_antes[1] * 0.0254 / 72))
 
-    sobrou = []
-    if depois.get("tem_texto"):
-        sobrou.append("a tarja de informação continua na página")
+    # A prova de que a marca e a tarja saíram é a página ter ENCOLHIDO até
+    # a sangria — a tarja mora fora dela, então some junto. NÃO se checa
+    # "sobrou texto": arte de verdade tem texto próprio (logo, slogan), e
+    # confundir isso com a tarja recusava a troca de artes perfeitas — 3
+    # lonas do Mercado Livre travaram por isso (2026-09-11), com a página
+    # encolhida e a arte idêntica.
     media_depois = depois.get("MediaBox_pt")
     media_antes = antes.get("MediaBox_pt")
     if media_depois and media_antes and media_depois[0] >= media_antes[0] - _TOLERANCIA_PT:
-        sobrou.append("a página não encolheu — as marcas parecem continuar lá")
-    if sobrou:
         novo.unlink(missing_ok=True)
-        return False, "%s. NÃO troquei — o original continua lá." % (", e ".join(sobrou),)
+        return False, ("a página não encolheu — as marcas parecem continuar lá. "
+                       "NÃO troquei — o original continua lá.")
 
     os.replace(str(novo), str(original))
     mp = 0.0254 / 72
@@ -364,3 +397,56 @@ def _conferir_e_trocar(original, novo, antes):
                       media_antes[0] * mp, media_antes[1] * mp,
                       media_depois[0] * mp, media_depois[1] * mp,
                       corte_depois[0] * mp, corte_depois[1] * mp, explicacao))
+
+
+# Tempo que o Illustrator tem pra devolver o arquivo antes de a gente
+# desistir. Ele já travou de vez no meio do 'salvar' (2026-09-11) e
+# pendurou o processo inteiro. Num lote de 93 artes, uma trava não pode
+# parar as outras — passado este limite, aborta esta arte e segue.
+_LIMITE_ILLUSTRATOR_S = 150
+
+
+def remover_marcas_com_limite(caminho_pdf, timeout_s=_LIMITE_ILLUSTRATOR_S, logger=None):
+    """
+    Igual a remover_marcas_de_corte, mas num processo à parte com
+    tempo-limite: se o Illustrator travar, o processo é morto e a função
+    volta com um aviso, em vez de pendurar pra sempre. O original nunca
+    fica corrompido — a troca lá dentro só acontece depois da conferência.
+    """
+    import subprocess
+    import sys
+
+    caminho_pdf = pathlib.Path(caminho_pdf)
+    codigo = (
+        "import sys, marcas_de_corte as m;"
+        "ok, msg = m.remover_marcas_de_corte(sys.argv[1]);"
+        "print('OK' if ok else 'NAO', msg)"
+    )
+    try:
+        saida = subprocess.run(
+            [sys.executable, "-c", codigo, str(caminho_pdf)],
+            cwd=str(pathlib.Path(__file__).parent),
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=timeout_s)
+    except subprocess.TimeoutExpired:
+        if logger:
+            logger("warn", "O Illustrator não respondeu em %ds; abandonei a remoção "
+                           "de marca desta arte. Ela segue com a marca." % timeout_s)
+        return False, "o Illustrator travou (mais de %ds)" % timeout_s
+
+    linha = (saida.stdout or "").strip().splitlines()
+    resposta = linha[-1] if linha else ""
+    ok = resposta.startswith("OK")
+    mensagem = resposta[3:].strip() if resposta[:3] in ("OK ", "NAO") else (
+        saida.stderr.strip()[-200:] or "sem resposta do Illustrator")
+    if logger and not ok:
+        logger("warn", "Não removi a marca: %s" % mensagem)
+    return ok, mensagem
+
+
+if __name__ == "__main__":
+    # Chamado como subprocesso por remover_marcas_com_limite.
+    import sys
+    if len(sys.argv) > 1:
+        ok, msg = remover_marcas_de_corte(sys.argv[1])
+        print("OK" if ok else "NAO", msg)
