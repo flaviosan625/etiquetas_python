@@ -179,6 +179,16 @@ class JanelaPrincipal(tk.Tk):
             fg=COR_ACENTO, cursor="hand2", command=self._abrir_envio_impressao,
         ).pack(anchor="w", padx=16, pady=(0, 2))
 
+        tk.Button(
+            self, text="👥 Clientes — recebimento de artes...", relief="flat",
+            fg=COR_ACENTO, cursor="hand2", command=self._abrir_clientes,
+        ).pack(anchor="w", padx=16, pady=(0, 2))
+
+        tk.Button(
+            self, text="🤖 Agentes — o que roda sozinho...", relief="flat",
+            fg=COR_ACENTO, cursor="hand2", command=self._abrir_agentes,
+        ).pack(anchor="w", padx=16, pady=(0, 2))
+
         # DESATIVADO a pedido do usuário (2026-09-05): "ficou muito
         # complicado de operar, vou pensar em alguma coisa melhor pra
         # essa função". O botão saiu da tela, mas JanelaCruzarRIP e
@@ -276,6 +286,29 @@ class JanelaPrincipal(tk.Tk):
 
     def _abrir_envio_impressao(self):
         JanelaEnviarImpressao(self, self.config_dados)
+
+    def _abrir_clientes(self):
+        # import aqui dentro pelo mesmo motivo de _abrir_agentes
+        from gui_clientes import JanelaClientes
+
+        janela = getattr(self, "_janela_clientes", None)
+        if janela is not None and janela.winfo_exists():
+            janela.lift()
+            janela.focus_force()
+            return
+        self._janela_clientes = JanelaClientes(self)
+
+    def _abrir_agentes(self):
+        # import aqui dentro: gui_agentes importa as cores deste módulo, e
+        # importar lá em cima faria um ciclo na carga do programa
+        from gui_agentes import JanelaAgentes
+
+        janela = getattr(self, "_janela_agentes", None)
+        if janela is not None and janela.winfo_exists():
+            janela.lift()
+            janela.focus_force()
+            return
+        self._janela_agentes = JanelaAgentes(self)
 
     def _abrir_cruzamento_rip(self):
         # sem botão que chame isso hoje — ver comentário do botão
