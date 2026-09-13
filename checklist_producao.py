@@ -185,7 +185,7 @@ def resumo(itens):
     }
 
 
-def gerar(pasta_saida, pasta_producao, nome_cliente="MERCADO LIVRE 26",
+def gerar(pasta_saida, pasta_producao, nome_cliente,
           nome_gerente=None, nome_produtor=None, quando=None, config=None,
           com_miniatura=True):
     """
@@ -223,7 +223,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Gera a OS/Checklist da pasta de produção.")
     parser.add_argument("pasta", help="pasta PRODUCAO do evento")
     parser.add_argument("saida", help="pasta onde gravar a OS")
-    parser.add_argument("--cliente", default="MERCADO LIVRE 26")
+    parser.add_argument("--cliente", required=True, help="nome que vai na OS")
     args = parser.parse_args()
     caminho = gerar(args.saida, args.pasta, nome_cliente=args.cliente)
     print("Gerado:", caminho)

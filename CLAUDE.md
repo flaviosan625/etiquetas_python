@@ -93,6 +93,49 @@ Ele exporta para `aspire/parametros_corte.lua`, que `aspire/corte_nucleo.lua` (o
 EXTERNO** não é estética — quando o contorno externo fecha, a peça solta da chapa e qualquer furo
 feito depois sai torto.
 
+## OS e Checklist são MODELOS PADRÃO — nunca redesenhe
+
+**Antes de gerar qualquer documento, procure o modelo no código.** OS, Checklist,
+etiqueta, relatório: todos já existem e já foram aprovados pelo usuário depois de
+muita iteração. O padrão não é "um jeito de fazer", é *o* jeito.
+
+- **OS** → `relatorios.gerar_os` — agrupada por material, miniatura da arte,
+  quadrinho pra marcar a caneta, página final "Subtotal por material" com m² por
+  material e tempo de máquina. Escreve `OS - <CLIENTE>.pdf`.
+- **Checklist** → o PDF de etiquetas **meia A4** (`ALTURA_ETIQUETA = ALTURA_A4/2`,
+  2 por folha), montado dentro de `processamento.processar_etiquetas` com
+  `pdf_layout.iniciar_pagina_com_banner`. Escreve `Checklist <CLIENTE>.pdf`.
+- **Relatório de produção / recebimento** → `relatorio_producao`,
+  `relatorio_recebimento`.
+
+Aconteceu em 2026-09-12: pediram um checklist da pasta de produção e eu inventei
+um layout próprio em vez de usar `gerar_os`. Foi recusado — *"precisa lembrar o
+padrão que era a OS e checklist no codigo"*. Refazer custou uma rodada inteira.
+
+Se o modelo não encaixa no caso novo, **estenda por parâmetro opcional** (foi
+assim que o selo de status entrou em `_desenhar_item_os`: quem não passa `selo`
+não vê diferença nenhuma) — nunca clonando o desenho num módulo novo.
+
+## Clientes, saída descartável e o caminho pro executável
+
+Decisões do usuário de 2026-09-13, que valem pro sistema inteiro:
+
+- **"O sistema precisa funcionar totalmente pela janela."** Nada que ele use no dia a dia pode
+  existir só como comando. Lógica sem Tk num módulo (`clientes.py`, `agentes.py`), tela em
+  `gui_<coisa>.py` que só chama a lógica — é o que vai pro executável sem reescrever.
+- **Todo caminho vem de `caminhos.py`.** Nunca `__file__` solto nem caminho relativo à pasta onde
+  o programa foi aberto (era assim com `etiquetas_geradas`, e num .exe isso quebra). Ler sempre
+  como `caminhos.X` na hora do uso, pra teste conseguir apontar pra `tmp_path`. Exceção:
+  `rasterlink_hotfolder.py`, que vai sozinho pro PC do RIP.
+- **Cliente = uma pasta em `OneDrive/UNYCOMUNICACAO/Recebimento de Artes/`** (`clientes.py`). Não
+  existe lista central: a pasta é o cadastro, o `cliente.json` dentro dela é a configuração.
+  Vários clientes em paralelo; nenhum nome de cliente escrito no código.
+- **`etiquetas_geradas` é SAÍDA DESCARTÁVEL.** O usuário apaga pedido e cliente de lá quando o
+  trabalho termina — *"preciso manter somente o que está em andamento"*. Então nada que o sistema
+  precise **lembrar** mora lá: vai em `Recebimento de Artes/<cliente>/_sistema/`. Aconteceu em
+  2026-09-13: uma limpeza pelo Explorer levou pra Lixeira a lista das 50 etiquetas já impressas,
+  e o próximo lote teria reimpresso todas. O PDF se regera; a memória do que já saiu, não.
+
 ## Regras que já custaram material de verdade
 
 - **Nunca escrever em pasta de produção sem pedido explícito.** As pastas de cliente em

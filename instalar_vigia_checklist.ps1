@@ -1,5 +1,7 @@
 ﻿# Instala (ou conserta) a tarefa do Agendador que mantem o Checklist de
-# Producao do Mercado Livre atualizado a cada movimento.
+# Producao de TODOS os clientes com checklist ligado atualizado a cada
+# movimento. Cliente novo entra pelo cadastro (pasta em Recebimento de
+# Artes), sem reinstalar nada.
 #
 # O modelo e o mesmo do RasterLink (o confiavel daqui): NAO um processo
 # eterno que morre calado, mas UMA PASSADA POR MINUTO que trabalha uns
@@ -13,7 +15,10 @@
 
 $ErrorActionPreference = "Stop"
 
-$NOME    = "Checklist Producao - Mercado Livre"
+$NOME    = "Checklist de Producao"
+# Nome que a tarefa teve quando atendia so o Mercado Livre (ate 2026-09-13).
+# Se ainda existir, sai: duas tarefas iguais rodariam a mesma passada.
+$NOME_ANTIGO = "Checklist Producao - Mercado Livre"
 $PROJETO = $PSScriptRoot
 $PYTHONW = Join-Path $PROJETO ".venv\Scripts\pythonw.exe"
 $ARGS    = "-m vigia_checklist --uma-vez"
@@ -54,7 +59,7 @@ $xml = @"
 <?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
-    <Description>Vigia do Checklist de Producao (Mercado Livre 26). Uma passada por minuto: se a pasta PRODUCAO mudou, regenera o PDF do checklist em etiquetas_geradas. So leitura, nao organiza nada.</Description>
+    <Description>Vigia do Checklist de Producao. Uma passada por minuto por todos os clientes com checklist ligado: se a pasta de producao de algum mudou, regenera a OS dele em etiquetas_geradas. So leitura, nao organiza nada.</Description>
   </RegistrationInfo>
   <Triggers>
     <LogonTrigger><Enabled>true</Enabled><Repetition><Interval>PT1M</Interval><StopAtDurationEnd>false</StopAtDurationEnd></Repetition></LogonTrigger>
@@ -86,7 +91,12 @@ $xml = @"
 </Task>
 "@
 
-# 4/4 -- cria, dispara uma vez e confere que rodou sem erro.
+# 4/4 -- tira a tarefa do nome antigo (se houver), cria a nova, dispara uma
+# vez e confere que rodou sem erro.
+if (Get-ScheduledTask -TaskName $NOME_ANTIGO -ErrorAction SilentlyContinue) {
+    Unregister-ScheduledTask -TaskName $NOME_ANTIGO -Confirm:$false
+    Write-Host "  Tarefa antiga removida: $NOME_ANTIGO" -ForegroundColor DarkGray
+}
 Register-ScheduledTask -TaskName $NOME -Xml $xml -Force | Out-Null
 Write-Host ""
 Write-Host "  Tarefa criada: $NOME" -ForegroundColor Green

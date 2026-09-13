@@ -1,87 +1,170 @@
 """
-Vigia do checklist: uma passada regenera o PDF só quando a pasta mudou.
+Vigia do checklist: uma passada regenera a OS de cada cliente ativo só
+quando a pasta de produção dele mudou.
 
-Regra da casa: teste nunca toca pasta real. A fixture autouse aponta TODOS
-os caminhos do módulo (pasta vigiada, PDF, estado, log) pra tmp_path antes
-de qualquer teste rodar.
+Regra da casa: teste nunca toca pasta real. A fixture autouse aponta o
+OneDrive (Recebimento de Artes, EVENTOS) e etiquetas_geradas pra tmp_path.
 """
 import pathlib
+import shutil
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 import pytest
 
+import caminhos
+import clientes
 import vigia_checklist as vc
 
 
 @pytest.fixture(autouse=True)
-def _isolar_em_tmp(tmp_path, monkeypatch):
-    prod = tmp_path / "PRODUCAO"
-    saida = tmp_path / "saida"
-    prod.mkdir()
-    monkeypatch.setattr(vc, "PASTA_PRODUCAO", prod)
-    monkeypatch.setattr(vc, "PASTA_SAIDA", saida)
-    monkeypatch.setattr(vc, "NOME_CLIENTE", "TESTE ML")
-    monkeypatch.setattr(vc, "DESTINO_PDF", saida / "OS - TESTE ML.pdf")
-    monkeypatch.setattr(vc, "ARQUIVO_ESTADO", saida / "_estado.json")
-    monkeypatch.setattr(vc, "ARQUIVO_LOG", saida / "_log.log")
-    return prod
+def onedrive_de_mentira(tmp_path, monkeypatch):
+    onedrive = tmp_path / "UNYCOMUNICACAO"
+    monkeypatch.setattr(caminhos, "ONEDRIVE_UNY", onedrive)
+    monkeypatch.setattr(caminhos, "RECEBIMENTO_DE_ARTES", onedrive / "Recebimento de Artes")
+    monkeypatch.setattr(caminhos, "EVENTOS", onedrive / "EVENTOS")
+    monkeypatch.setattr(caminhos, "ETIQUETAS_GERADAS", tmp_path / "etiquetas_geradas")
+    (onedrive / "Recebimento de Artes").mkdir(parents=True)
+    return onedrive
 
 
-def _por(prod, rel):
-    caminho = prod / rel
+def _cliente(onedrive, nome, evento, ativo=True):
+    producao = onedrive / "EVENTOS" / evento / "PRODUCAO"
+    producao.mkdir(parents=True)
+    return clientes.criar(nome, pasta_producao=producao, checklist_ativo=ativo)
+
+
+def _por(pasta, rel):
+    caminho = pasta / rel
     caminho.parent.mkdir(parents=True, exist_ok=True)
     caminho.write_bytes(b"%PDF-1.4 fake")
 
 
-def test_primeira_passada_gera_o_pdf(_isolar_em_tmp):
-    prod = _isolar_em_tmp
-    _por(prod, "A_PREMIUM/UV/1UN LONA IMPRESSA 5.00X3.00M_L01.pdf")
-
-    assert vc.passada() is True
-    assert vc.DESTINO_PDF.is_file()
-
-
-def test_segunda_passada_sem_mudanca_nao_regenera(_isolar_em_tmp):
-    prod = _isolar_em_tmp
-    _por(prod, "A_PREMIUM/UV/1UN LONA IMPRESSA 5.00X3.00M_L01.pdf")
-
-    assert vc.passada() is True
-    assert vc.passada() is False        # nada mudou
+@pytest.fixture
+def repsol(onedrive_de_mentira):
+    c = _cliente(onedrive_de_mentira, "Repsol", "REPSOL")
+    _por(c.pasta_producao, "UV/1UN LONA IMPRESSA 5.00X3.00M_L01.pdf")
+    return clientes.obter("Repsol")
 
 
-def test_movimento_na_pasta_regenera(_isolar_em_tmp):
-    prod = _isolar_em_tmp
-    _por(prod, "A_PREMIUM/UV/1UN LONA IMPRESSA 5.00X3.00M_L01.pdf")
+# ----------------------------------------------------------- um cliente
+
+def test_primeira_passada_gera_a_os(repsol):
+    assert vc.passada() == ["Repsol"]
+    assert vc.destino_pdf(repsol).is_file()
+    assert vc.destino_pdf(repsol).name == "OS - REPSOL.pdf"
+
+
+def test_segunda_passada_sem_mudanca_nao_regenera(repsol):
     vc.passada()
 
-    # entrou peça nova = movimento
-    _por(prod, "A_PREMIUM/UV/1UN LONA IMPRESSA 6.00X3.00M_L02.pdf")
-    assert vc.passada() is True
-
-    # e voltou a estabilizar
-    assert vc.passada() is False
+    assert vc.passada() == []
 
 
-def test_mover_para_prontos_conta_como_movimento(_isolar_em_tmp):
-    prod = _isolar_em_tmp
-    _por(prod, "A_PREMIUM/UV/1UN LONA IMPRESSA 5.00X3.00M_L01.pdf")
+def test_movimento_na_pasta_regenera(repsol):
     vc.passada()
+    _por(repsol.pasta_producao, "UV/1UN LONA IMPRESSA 6.00X3.00M_L02.pdf")
 
-    # simula o arquivo indo pra Prontos (mudou de pasta = mudou de status)
-    origem = prod / "A_PREMIUM/UV/1UN LONA IMPRESSA 5.00X3.00M_L01.pdf"
-    destino = prod / "A_PREMIUM/UV/PRONTOS/1UN LONA IMPRESSA 5.00X3.00M_L01.pdf"
+    assert vc.passada() == ["Repsol"]
+    assert vc.passada() == []
+
+
+def test_mover_para_prontos_conta_como_movimento(repsol):
+    vc.passada()
+    origem = repsol.pasta_producao / "UV/1UN LONA IMPRESSA 5.00X3.00M_L01.pdf"
+    destino = repsol.pasta_producao / "UV/PRONTOS/1UN LONA IMPRESSA 5.00X3.00M_L01.pdf"
     destino.parent.mkdir(parents=True, exist_ok=True)
     origem.rename(destino)
 
-    assert vc.passada() is True
+    assert vc.passada() == ["Repsol"]
 
 
-def test_pdf_apagado_e_regenerado(_isolar_em_tmp):
-    prod = _isolar_em_tmp
-    _por(prod, "A_PREMIUM/UV/1UN LONA IMPRESSA 5.00X3.00M_L01.pdf")
+# ------------------------------------ etiquetas_geradas pode ser apagada
+
+def test_apagar_etiquetas_geradas_inteira_nao_apaga_a_memoria(repsol):
+    """
+    Regra do usuário (2026-09-13): "estruturar pra que eu possa apagar sempre
+    que precisar qualquer cliente em etiquetas_geradas". A OS volta; a memória
+    nunca esteve lá.
+    """
+    vc.passada()
+    shutil.rmtree(caminhos.ETIQUETAS_GERADAS)
+
+    assert vc.arquivo_estado(repsol).is_file()                # memória na pasta do cliente
+    assert vc.passada() == ["Repsol"]                         # a OS volta sozinha
+    assert vc.destino_pdf(repsol).is_file()
+    assert vc.passada() == []                                 # e não fica regenerando à toa
+
+
+def test_estado_e_log_moram_na_pasta_do_cliente_e_nao_na_saida(repsol):
     vc.passada()
 
-    vc.DESTINO_PDF.unlink()
-    assert vc.passada() is True         # PDF sumiu, refaz mesmo sem mudança
+    assert vc.arquivo_estado(repsol).parent == repsol.pasta / clientes.PASTA_SISTEMA
+    assert vc.arquivo_log(repsol).parent == repsol.pasta / clientes.PASTA_SISTEMA
+    assert not list(repsol.pasta_documentos.glob("*.json"))
+    assert not list(repsol.pasta_documentos.glob("*.log"))
+
+
+# ---------------------------------------------------- vários clientes
+
+def test_clientes_em_paralelo_so_regenera_quem_mudou(onedrive_de_mentira):
+    a = _cliente(onedrive_de_mentira, "Asics", "ASICS")
+    m = _cliente(onedrive_de_mentira, "Mercado Livre", "MERCADO LIVRE 26")
+    _por(a.pasta_producao, "1UN LONA IMPRESSA 2.00X1.00M_A.pdf")
+    _por(m.pasta_producao, "1UN LONA IMPRESSA 2.00X1.00M_M.pdf")
+
+    assert vc.passada() == ["Asics", "Mercado Livre"]         # cada um na sua pasta
+    assert vc.destino_pdf(a).parent != vc.destino_pdf(m).parent
+
+    _por(m.pasta_producao, "1UN LONA IMPRESSA 3.00X1.00M_M2.pdf")
+    assert vc.passada() == ["Mercado Livre"]                  # só quem mudou
+
+
+def test_cliente_com_checklist_desligado_nao_gera(onedrive_de_mentira):
+    c = _cliente(onedrive_de_mentira, "Interlagos", "INTERLAGOS", ativo=False)
+    _por(c.pasta_producao, "1UN LONA IMPRESSA 2.00X1.00M_I.pdf")
+
+    assert vc.passada() == []
+    assert not vc.destino_pdf(c).exists()
+
+
+def test_erro_num_cliente_nao_impede_os_outros(onedrive_de_mentira, monkeypatch):
+    a = _cliente(onedrive_de_mentira, "Asics", "ASICS")
+    r = _cliente(onedrive_de_mentira, "Repsol", "REPSOL")
+    _por(a.pasta_producao, "1UN LONA IMPRESSA 2.00X1.00M_A.pdf")
+    _por(r.pasta_producao, "1UN LONA IMPRESSA 2.00X1.00M_R.pdf")
+
+    import checklist_producao
+    original = checklist_producao.gerar
+
+    def gerar_que_quebra_na_asics(pasta_saida, pasta_producao, nome_cliente, **k):
+        if nome_cliente == "ASICS":
+            raise RuntimeError("PDF corrompido")
+        return original(pasta_saida, pasta_producao, nome_cliente=nome_cliente, **k)
+
+    monkeypatch.setattr(checklist_producao, "gerar", gerar_que_quebra_na_asics)
+
+    assert vc.passada() == ["Repsol"]
+    assert "PDF corrompido" in vc.arquivo_log(clientes.obter("Asics")).read_text(encoding="utf-8")
+
+
+# --------------------------------------------------------------- trava
+
+def test_duas_passadas_juntas_so_uma_trabalha(repsol):
+    """
+    Desde o painel de agentes, um disparo forçado pode cair em cima da
+    passada agendada. Com a trava ocupada, a segunda sai sem regenerar.
+    """
+    from rasterlink_hotfolder import _travar_instancia_unica
+
+    vc.arquivo_trava().parent.mkdir(parents=True, exist_ok=True)
+    pode, trava = _travar_instancia_unica(vc.arquivo_trava())     # "a outra passada"
+    assert pode
+    try:
+        assert vc.passada() is None
+        assert not vc.destino_pdf(repsol).exists()
+    finally:
+        trava.close()
+
+    assert vc.passada() == ["Repsol"]

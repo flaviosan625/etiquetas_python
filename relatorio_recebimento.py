@@ -140,11 +140,15 @@ def montar_blocos(fichas, baixados, presentation_id, mapa_etiquetas, caderno_nom
 
 
 def gerar(destino, caminho_caderno, pasta, presentation_id, drive_slides=None,
-          agora=None, config=None):
+          agora=None, config=None, nome_cliente=None):
     """
     Escreve o PDF do relatório. Puxa os objectIds dos slides via Slides
     API (pro link direto); se a API falhar, os links caem no caderno
     inteiro, e o relatório sai mesmo assim.
+
+    'nome_cliente' vai no cabeçalho; sem ele, é o nome da pasta do cliente
+    em Recebimento de Artes (até 2026-09-13 o cabeçalho dizia "Mercado
+    Livre" pra qualquer cliente).
     """
     agora = agora or datetime.datetime.now()
     caminho_caderno = pathlib.Path(caminho_caderno)
@@ -170,8 +174,8 @@ def gerar(destino, caminho_caderno, pasta, presentation_id, drive_slides=None,
         pymupdf.Rect(LARG / 2, MARGEM - 4, LARG - MARGEM, MARGEM + 34),
         "<div style='text-align:right;font-family:sans-serif'>"
         "<div style='font-size:13pt;font-weight:700;color:%s'>Recebimento de Artes</div>"
-        "<div style='font-size:9pt;color:%s;margin-top:2px'>Mercado Livre · Experience 26</div>"
-        "</div>" % (_TEXTO, _SUAVE))
+        "<div style='font-size:9pt;color:%s;margin-top:2px'>%s</div>"
+        "</div>" % (_TEXTO, _SUAVE, _escapar(nome_cliente or pathlib.Path(pasta).name)))
     pagina.draw_line(pymupdf.Point(MARGEM, MARGEM + 38), pymupdf.Point(LARG - MARGEM, MARGEM + 38),
                      color=_rgb(_TEXTO), width=1.2)
 
