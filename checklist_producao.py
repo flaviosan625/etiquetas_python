@@ -94,12 +94,26 @@ def miniatura(caminho_pdf, lado=_LADO_MINIATURA):
         return None
 
 
-def inventariar(pasta_producao, config=None, com_miniatura=True):
+def esta_pronto(caminho, pasta_producao):
+    """
+    True quando o arquivo está numa pasta 'Prontos' (e não em espera).
+    É a regra do selo PRONTO, exposta pra quem só precisa filtrar — o
+    lote de etiquetas usa a mesma, pra OS e etiquetas nunca discordarem.
+    """
+    partes = pathlib.Path(caminho).relative_to(pasta_producao).parts
+    return _status_da_peca(partes) == STATUS_PRONTO
+
+
+def inventariar(pasta_producao, config=None, com_miniatura=True, so_prontos=False):
     """
     Varre a pasta e devolve um item por PDF, no formato que
     relatorios.gerar_os espera (categoria, quantidade, arquivo, dimensao,
     thumbnail_bytes, selo), mais o que é nosso (area, maquina, status).
     Só LÊ — não move, não renomeia, não organiza nada.
+
+    'so_prontos' deixa de fora tudo que não estiver numa pasta 'Prontos'
+    (ver Cliente.so_prontos). Sai antes de abrir o PDF: não gasta
+    miniatura com o que não vai pro documento.
     """
     config = config or carregar_config()
     typos = config.get("typos_unidade", {})
@@ -110,9 +124,17 @@ def inventariar(pasta_producao, config=None, com_miniatura=True):
     itens = []
     for pdf in sorted(pasta_producao.rglob("*.pdf")):
         partes = pdf.relative_to(pasta_producao).parts
+        if so_prontos and _status_da_peca(partes) != STATUS_PRONTO:
+            continue
         nome = pdf.name
         quantidade, _ = dimensoes.extrair_quantidade(nome)      # (qtd, achou)
         categoria = dimensoes.identificar_categoria(nome.upper(), materiais, sinonimos)[0]
+        # material composto ("PS ADESIVADO") também consome o extra — igual
+        # ao processamento, pra m² e custo do evento baterem com os do pedido
+        categoria_extra = dimensoes.identificar_categoria_extra(
+            nome.upper(), materiais, config.get("materiais_compostos", {}))
+        if categoria_extra == categoria:
+            categoria_extra = None
         dim = dimensoes.extrair_dimensoes(nome, typos)
         status = _status_da_peca(partes)
 
@@ -128,6 +150,7 @@ def inventariar(pasta_producao, config=None, com_miniatura=True):
         itens.append({
             # o que a OS lê
             "categoria": categoria,
+            "categoria_extra": categoria_extra,
             "quantidade": quantidade,
             "arquivo": nome,
             "dimensao": dimensao,
@@ -150,7 +173,9 @@ def dados_por_categoria(itens, ordem_categorias):
     """
     dados = {}
     for cat in ordem_categorias:
-        do_material = [i for i in itens if i["categoria"] == cat]
+        # a peça de material composto consome o extra também (mesma regra
+        # do processamento) — mas continua sendo UMA peça na contagem
+        do_material = [i for i in itens if i["categoria"] == cat or i.get("categoria_extra") == cat]
         dados[cat] = {
             "contem_arquivos": bool(do_material),
             "area_total_m2": round(sum(i["m2_total"] for i in do_material), 2),
@@ -163,8 +188,9 @@ def ordem_das_categorias(itens, config):
     configurada = [c for c in config.get("ordem_unificado", [])]
     presentes = []
     for i in itens:
-        if i["categoria"] and i["categoria"] not in presentes:
-            presentes.append(i["categoria"])
+        for cat in (i["categoria"], i.get("categoria_extra")):
+            if cat and cat not in presentes:
+                presentes.append(cat)
     return ([c for c in configurada if c in presentes]
             + [c for c in presentes if c not in configurada])
 
@@ -187,17 +213,23 @@ def resumo(itens):
 
 def gerar(pasta_saida, pasta_producao, nome_cliente,
           nome_gerente=None, nome_produtor=None, quando=None, config=None,
-          com_miniatura=True):
+          com_miniatura=True, on_aviso=None, so_prontos=False):
     """
     Escreve a OS/Checklist da pasta de produção e devolve o caminho do PDF
     (pasta_saida/'OS - <CLIENTE>.pdf', como manda a convenção da casa).
+
+    Ao lado, quando houver preço cadastrado, sai a cópia da gerência
+    'CUSTOS - <CLIENTE>.pdf' — que, sendo a pasta de produção inteira, é o
+    custo de material do EVENTO. Falhar nela nunca derruba a OS: vira aviso
+    em 'on_aviso(nivel, texto)'. Com 'so_prontos', as duas contam só o que
+    já está em 'Prontos'.
     """
     config = config or carregar_config()
     quando = quando or datetime.datetime.now()
     nome_gerente = nome_gerente or config.get("ultimo_gerente") or ""
     nome_produtor = nome_produtor or config.get("ultimo_produtor") or ""
 
-    itens = inventariar(pasta_producao, config, com_miniatura=com_miniatura)
+    itens = inventariar(pasta_producao, config, com_miniatura=com_miniatura, so_prontos=so_prontos)
     ordem = ordem_das_categorias(itens, config)
     # Dentro de cada material, o que falta fazer vem primeiro — é o que a
     # produção precisa ver de relance; o que já está pronto desce.
@@ -209,12 +241,21 @@ def gerar(pasta_saida, pasta_producao, nome_cliente,
     # A OS espera a data JÁ FORMATADA (é string que entra no cabeçalho,
     # igual processamento.py faz). Mandar o datetime cru imprime
     # "2026-09-12 20:44:42.538633" no lugar de "12/09/2026 20:44:42".
+    data_hora = quando.strftime("%d/%m/%Y %H:%M:%S")
+    dados = dados_por_categoria(itens, ordem)
+    materiais = config.get("materiais", {})
     caminho = relatorios.gerar_os(
         str(pasta_saida), nome_cliente, nome_gerente, nome_produtor,
-        itens, dados_por_categoria(itens, ordem), ordem,
-        quando.strftime("%d/%m/%Y %H:%M:%S"),
-        materiais_config=config.get("materiais", {}),
+        itens, dados, ordem, data_hora, materiais_config=materiais,
     )
+
+    try:
+        import custos
+        custos.gerar_copia(str(pasta_saida), nome_cliente, nome_gerente, nome_produtor,
+                           itens, dados, ordem, data_hora, materiais)
+    except Exception as e:
+        if on_aviso:
+            on_aviso("warn", "a OS saiu, mas a cópia de custos falhou: %s: %s" % (type(e).__name__, e))
     return pathlib.Path(caminho)
 
 

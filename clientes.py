@@ -58,6 +58,13 @@ class Cliente:
     pasta: pathlib.Path
     pasta_producao: pathlib.Path | None = None
     checklist_ativo: bool = False
+    # Só o que está numa pasta 'Prontos' entra na OS e nas etiquetas.
+    # Pedido do usuário (2026-09-16) pro Mercado Livre: "o que estiver
+    # fora da pasta de pronto ainda não entra". Etiqueta é pra peça que
+    # já saiu da máquina; peça ainda em preparo não tem o que etiquetar.
+    # Por cliente, e desligado por padrão: cliente que não usa 'Prontos'
+    # ficaria com a OS vazia.
+    so_prontos: bool = False
     # Nome que vai nos documentos (OS - <nome>.pdf). Normalmente o nome em
     # maiúsculas; existe separado porque um cliente pode ter documento com
     # outro nome já em uso (a pasta "Mercado Livre" gera "MERCADO LIVRE 26").
@@ -100,6 +107,7 @@ def _ler(pasta):
         return cliente              # config ilegível = sem configuração, nunca quebra a lista
     cliente.pasta_producao = caminhos.resolver_do_onedrive(dados.get("pasta_producao"))
     cliente.checklist_ativo = bool(dados.get("checklist_ativo"))
+    cliente.so_prontos = bool(dados.get("so_prontos"))
     cliente.nome_documento = dados.get("nome_documento") or ""
     cliente.criado_em = dados.get("criado_em") or ""
     cliente.configurado = True
@@ -130,6 +138,7 @@ def salvar(cliente):
         "nome_documento": cliente.nome_documento or None,
         "pasta_producao": caminhos.relativo_ao_onedrive(cliente.pasta_producao) if cliente.pasta_producao else None,
         "checklist_ativo": bool(cliente.checklist_ativo),
+        "so_prontos": bool(cliente.so_prontos),
         "criado_em": cliente.criado_em or datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
     }
     (cliente.pasta / NOME_CONFIG).write_text(

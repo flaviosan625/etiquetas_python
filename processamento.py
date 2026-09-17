@@ -1205,6 +1205,22 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
     except Exception as e:
         logger.emitir("err", f"Não foi possível gerar a Ordem de Serviço: {e}")
 
+    # Cópia da GERÊNCIA com o custo de material (custos.py): só sai com
+    # preço cadastrado, nunca se chama "OS - ..." (não aparece na tela de
+    # impressão da produção) e, se falhar, a OS acima continua valendo.
+    caminho_custos = None
+    if caminho_os:
+        try:
+            import custos
+            caminho_custos = custos.gerar_copia(
+                str(pasta_saida), nome_cliente_seguro, nome_gerente, nome_produtor,
+                itens_para_os, dados_categorias_os, ordem_unificado, data_hora_atual, materiais,
+            )
+            if caminho_custos:
+                logger.emitir("ok", f"Cópia de custos (só gerência): {pathlib.Path(caminho_custos).name}")
+        except Exception as e:
+            logger.emitir("warn", f"A OS saiu, mas a cópia de custos falhou: {e}")
+
     # Estado desta pasta pra próxima rodada: itens de antes + os que
     # acabaram de ser processados agora, sem o selo (que é só pra exibir
     # a OS desta rodada — ver estado_pedido.salvar_estado). Salvo mesmo
@@ -1267,6 +1283,7 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
         "log_csv": caminho_log,
         "os": caminho_os,
         "os_json": caminho_os_json,
+        "custos": caminho_custos,
         "arquivos_novos": len(arquivos_arte),
         "arquivos_ignorados": arquivos_ignorados,
         "atualizacao": modo_atualizacao,

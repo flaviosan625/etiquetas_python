@@ -168,3 +168,59 @@ def test_duas_passadas_juntas_so_uma_trabalha(repsol):
         trava.close()
 
     assert vc.passada() == ["Repsol"]
+
+
+# ------------------------------------------------------ preço é movimento
+
+def test_mudar_preco_atualiza_a_copia_de_custos_sem_mexer_na_pasta(repsol, monkeypatch):
+    """
+    Sem isto, a cópia de custos do evento ficaria com o valor velho até
+    alguém mexer na produção — número errado com cara de certo.
+    """
+    import config as modulo_config
+    import checklist_producao
+    import custos
+
+    base = modulo_config.carregar_config()
+    materiais = {k: dict(v) for k, v in base["materiais"].items()}
+    materiais["LONA"].pop("preco_m2", None)
+    cfg = dict(base, materiais=materiais)
+    monkeypatch.setattr(modulo_config, "carregar_config", lambda: cfg)
+    monkeypatch.setattr(checklist_producao, "carregar_config", lambda: cfg)
+
+    assert vc.passada() == ["Repsol"]                         # primeira vez, sem preço
+    assert not (repsol.pasta_documentos / custos.nome_arquivo(repsol.documento)).exists()
+    assert vc.passada() == []
+
+    materiais["LONA"]["preco_m2"] = 18.0                      # cadastrou o preço
+    assert vc.passada() == ["Repsol"]
+    assert (repsol.pasta_documentos / custos.nome_arquivo(repsol.documento)).is_file()
+    assert "preço mudou" in vc.arquivo_log(repsol).read_text(encoding="utf-8")
+    assert vc.passada() == []                                 # e estabiliza
+
+
+# ------------------------------------------------------------ só Prontos
+
+def test_ligar_so_prontos_regera_a_os_sem_mexer_na_pasta(repsol):
+    """Marcou na janela, a OS muda na passada seguinte — não quando alguém mexer na pasta."""
+    vc.passada()
+    assert vc.passada() == []
+
+    repsol.so_prontos = True
+    clientes.salvar(repsol)
+
+    assert vc.passada() == ["Repsol"]
+    assert vc.passada() == []
+
+
+def test_os_so_com_prontos_leva_so_as_pecas_prontas(repsol, monkeypatch):
+    _por(repsol.pasta_producao, "UV/PRONTOS/1UN LONA IMPRESSA 6.00X3.00M_L02.pdf")
+    repsol.so_prontos = True
+    clientes.salvar(repsol)
+    recebidos = []
+    monkeypatch.setattr(vc.checklist_producao, "gerar",
+                        lambda *a, **k: recebidos.append(k.get("so_prontos")))
+
+    vc.passada()
+
+    assert recebidos == [True]

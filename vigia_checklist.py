@@ -122,16 +122,40 @@ def passada_do_cliente(cliente, forcar=False):
             _log(cliente, "warn", "pasta de produção não encontrada: %s" % cliente.pasta_producao)
             return False
 
+        import custos
+        from config import carregar_config
+
         atual = assinatura(cliente.pasta_producao)
-        mudou = atual["hash"] != _ler_estado(cliente).get("hash")
+        # preço cadastrado também é "movimento": sem isto, a cópia de custos
+        # do evento ficaria com o valor velho até alguém mexer na produção
+        atual["precos"] = custos.assinatura_precos(carregar_config().get("materiais", {}))
+        # a regra "só Prontos" também é movimento: ligou na janela, a OS
+        # tem que mudar já, não quando alguém mexer na pasta de novo
+        atual["so_prontos"] = bool(cliente.so_prontos)
+        anterior = _ler_estado(cliente)
+        mudou_pasta = atual["hash"] != anterior.get("hash")
+        mudou_preco = atual["precos"] != anterior.get("precos", "")
+        mudou_regra = atual["so_prontos"] != bool(anterior.get("so_prontos", False))
         sem_pdf = not destino_pdf(cliente).is_file()
-        if not (mudou or sem_pdf or forcar):
+        if not (mudou_pasta or mudou_preco or mudou_regra or sem_pdf or forcar):
             return False
 
         checklist_producao.gerar(cliente.pasta_documentos, cliente.pasta_producao,
-                                 nome_cliente=cliente.documento)
-        motivo = "forçado" if forcar else ("OS faltando" if sem_pdf and not mudou else "movimento na pasta")
-        _log(cliente, "ok", "OS regenerada (%s) — %d PDFs na pasta" % (motivo, atual["quantidade"]))
+                                 nome_cliente=cliente.documento,
+                                 on_aviso=lambda nivel, texto: _log(cliente, nivel, texto),
+                                 so_prontos=cliente.so_prontos)
+        if forcar:
+            motivo = "forçado"
+        elif mudou_pasta:
+            motivo = "movimento na pasta"
+        elif mudou_regra:
+            motivo = "regra de Prontos mudou"
+        elif mudou_preco:
+            motivo = "preço mudou"
+        else:
+            motivo = "OS faltando"
+        _log(cliente, "ok", "OS regenerada (%s) — %d PDFs na pasta%s" % (
+            motivo, atual["quantidade"], ", só os de Prontos na OS" if cliente.so_prontos else ""))
         _gravar_estado(cliente, atual)
         return True
     except Exception as e:

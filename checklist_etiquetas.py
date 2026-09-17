@@ -38,6 +38,7 @@ import shutil
 import tempfile
 
 import caminhos
+import checklist_producao
 import processamento
 from config import carregar_config
 
@@ -61,17 +62,23 @@ def _gravar_estado(caminho_estado, ja_impressos, lote):
     }, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def artes_novas(pasta_producao, caminho_estado):
+def artes_novas(pasta_producao, caminho_estado, so_prontos=False):
     """
     As artes que ainda não viraram etiqueta, na ordem da pasta.
 
     Identifica pelo NOME do arquivo: a mesma peça muda de pasta quando vai
     pra 'Prontos', e isso não a torna nova de novo.
+
+    'so_prontos' só conta o que já está em 'Prontos' — a mesma regra da OS
+    (checklist_producao.esta_pronto), pra etiqueta e OS nunca discordarem.
     """
     ja = _ler_estado(caminho_estado)
+    pasta_producao = pathlib.Path(pasta_producao)
     novas, vistos = [], set()
-    for pdf in sorted(pathlib.Path(pasta_producao).rglob("*.pdf")):
+    for pdf in sorted(pasta_producao.rglob("*.pdf")):
         if pdf.name in ja or pdf.name in vistos:
+            continue
+        if so_prontos and not checklist_producao.esta_pronto(pdf, pasta_producao):
             continue
         vistos.add(pdf.name)
         novas.append(pdf)
@@ -102,7 +109,7 @@ def arquivo_estado(cliente):
 def artes_novas_do_cliente(cliente):
     if not cliente.producao_existe:
         return []
-    return artes_novas(cliente.pasta_producao, arquivo_estado(cliente))
+    return artes_novas(cliente.pasta_producao, arquivo_estado(cliente), so_prontos=cliente.so_prontos)
 
 
 def gerar_lote_do_cliente(cliente, config=None, on_log=None):
@@ -111,12 +118,13 @@ def gerar_lote_do_cliente(cliente, config=None, on_log=None):
         return {"gerou": False, "quantidade": 0, "arquivos": [],
                 "motivo": "o cliente não tem pasta de produção configurada"}
     return gerar_lote(cliente.pasta_producao, cliente.documento,
-                      caminho_estado=arquivo_estado(cliente), config=config, on_log=on_log)
+                      caminho_estado=arquivo_estado(cliente), config=config, on_log=on_log,
+                      so_prontos=cliente.so_prontos)
 
 
 def gerar_lote(pasta_producao, nome_cliente, *, caminho_estado,
                pasta_saida_base=None, config=None,
-               nome_gerente=None, nome_produtor=None, on_log=None):
+               nome_gerente=None, nome_produtor=None, on_log=None, so_prontos=False):
     """
     Monta o checklist do que é novo e devolve um resumo:
     {gerou, quantidade, arquivos, pasta_saida, checklist, os, motivo}.
@@ -139,7 +147,7 @@ def gerar_lote(pasta_producao, nome_cliente, *, caminho_estado,
     nome_gerente = nome_gerente or config.get("ultimo_gerente") or ""
     nome_produtor = nome_produtor or config.get("ultimo_produtor") or ""
 
-    novas = artes_novas(pasta_producao, caminho_estado)
+    novas = artes_novas(pasta_producao, caminho_estado, so_prontos=so_prontos)
     if not novas:
         return {"gerou": False, "quantidade": 0, "arquivos": [],
                 "motivo": "nenhuma arte nova desde o último checklist"}

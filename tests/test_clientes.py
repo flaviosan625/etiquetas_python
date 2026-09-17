@@ -166,3 +166,15 @@ def test_nao_chuta_quando_ha_mais_de_um_parecido(onedrive_de_mentira):
 def test_as_subpastas_sao_as_mesmas_que_o_recebimento_usa():
     import arte_recebida
     assert set(cl.PASTAS_DO_CLIENTE) == {arte_recebida.NOME_ARTES, arte_recebida.NOME_ENTRADA}
+
+
+def test_so_prontos_e_gravado_e_lido_do_cliente_json(onedrive_de_mentira):
+    producao = _evento(onedrive_de_mentira, "MERCADO LIVRE 26")
+    c = cl.criar("Mercado Livre", pasta_producao=producao)
+    assert c.so_prontos is False, "desligado por padrão: cliente sem Prontos ficaria com a OS vazia"
+
+    c.so_prontos = True
+    cl.salvar(c)
+
+    assert cl.obter("Mercado Livre").so_prontos is True
+    assert json.loads((c.pasta / cl.NOME_CONFIG).read_text(encoding="utf-8"))["so_prontos"] is True

@@ -800,6 +800,32 @@ class JanelaCruzarRIP(tk.Toplevel):
         self.texto_resultado.configure(state="disabled")
 
 
+def _preco_na_tela(valor):
+    """18.5 -> '18,50' (vazio quando não há preço)."""
+    try:
+        numero = float(valor)
+    except (TypeError, ValueError):
+        return ""
+    return ("%.2f" % numero).replace(".", ",") if numero > 0 else ""
+
+
+def _preco_digitado(texto):
+    """
+    '18,50' / '18.50' / 'R$ 18,50' / '1.250,00' -> (número, True);
+    vazio -> (None, True); texto que não é número, ou zero -> (None, False).
+    """
+    limpo = (texto or "").strip().upper().replace("R$", "").replace(" ", "")
+    if not limpo:
+        return None, True
+    if "," in limpo:
+        limpo = limpo.replace(".", "").replace(",", ".")
+    try:
+        numero = float(limpo)
+    except ValueError:
+        return None, False
+    return (numero, True) if numero > 0 else (None, False)
+
+
 class JanelaConfiguracoes(tk.Toplevel):
     """
     Tela de cadastro de materiais (rolos e chapas). É aqui que, no
@@ -810,7 +836,7 @@ class JanelaConfiguracoes(tk.Toplevel):
     def __init__(self, mestre, config_dados, ao_salvar):
         super().__init__(mestre)
         self.title("Configurar Materiais")
-        self.geometry("580x500")
+        self.geometry("900x580")
         self.transient(mestre)
         self.config_dados = config_dados
         self.ao_salvar = ao_salvar
@@ -826,7 +852,9 @@ class JanelaConfiguracoes(tk.Toplevel):
             text="Edite as medidas existentes ou adicione um material novo. As mudanças valem para o cálculo\n"
                  "de desperdício e para o reconhecimento de categoria pelo nome do arquivo. \"Min/m²\" é\n"
                  "opcional — quantos minutos a máquina leva pra imprimir/cortar 1m² dessa categoria; se\n"
-                 "preenchido, a OS mostra a estimativa de tempo de máquina ao lado do m² de cada material.",
+                 "preenchido, a OS mostra a estimativa de tempo de máquina ao lado do m² de cada material.\n"
+                 "\"R$/m²\" é opcional e só aparece na cópia de CUSTOS (gerência) — nunca na OS da produção.\n"
+                 "Em chapa com espessura, o preço de cada uma fica em Variantes; o daqui vale pra que não tiver.",
             justify="left",
         ).pack(anchor="w", padx=16, pady=(0, 10))
 
@@ -834,28 +862,36 @@ class JanelaConfiguracoes(tk.Toplevel):
         cabecalho.pack(fill="x", padx=16)
         for texto, largura in [
             ("Categoria", 16), ("Tipo", 10), ("Largura (cm)", 12), ("Compr. (cm)", 12),
-            ("Min/m² (opcional)", 15), ("", 3),
+            ("Min/m² (opcional)", 15), ("R$/m² (gerência)", 14), ("", 3),
         ]:
             tk.Label(cabecalho, text=texto, fg="#666666", width=largura, anchor="w").pack(side="left")
 
-        canvas = tk.Canvas(self, highlightthickness=0)
-        scrollbar = ttk.Scrollbar(self, orient="vertical", command=canvas.yview)
+        # A lista mora num quadro próprio. Empacotada direto na janela com
+        # side="left", tudo que vinha depois (Adicionar, Salvar) ia pro LADO
+        # dela em vez de ir pra baixo, e as colunas da direita saíam cortadas
+        # — ficou inutilizável quando entrou a coluna de preço (2026-09-14).
+        area_lista = tk.Frame(self)
+        area_lista.pack(fill="both", expand=True, padx=16)
+        # altura pequena pedida de propósito: a lista cresce pro espaço que sobra,
+        # e Salvar/Cancelar nunca ficam cortados embaixo
+        canvas = tk.Canvas(area_lista, highlightthickness=0, height=160)
+        scrollbar = ttk.Scrollbar(area_lista, orient="vertical", command=canvas.yview)
         self.frame_linhas = tk.Frame(canvas)
         self.frame_linhas.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
         canvas.create_window((0, 0), window=self.frame_linhas, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
-        canvas.pack(side="left", fill="both", expand=True, padx=(16, 0))
-        scrollbar.pack(side="left", fill="y", padx=(0, 16))
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="left", fill="y")
 
         for categoria, dados in self.config_dados["materiais"].items():
             self._adicionar_linha(
                 categoria, dados["tipo"], dados["largura_cm"], dados["comprimento_cm"],
-                dados.get("variantes", []), dados.get("minutos_por_m2", ""),
+                dados.get("variantes", []), dados.get("minutos_por_m2", ""), dados.get("preco_m2", ""),
             )
 
         tk.Button(
             self, text="➕ Adicionar novo material", relief="flat", fg=COR_ACENTO, cursor="hand2",
-            command=lambda: self._adicionar_linha("", "rolo", "", "", [], ""),
+            command=lambda: self._adicionar_linha("", "rolo", "", "", [], "", ""),
         ).pack(anchor="w", padx=16, pady=8)
 
         frame_botoes = tk.Frame(self)
@@ -863,7 +899,7 @@ class JanelaConfiguracoes(tk.Toplevel):
         tk.Button(frame_botoes, text="Cancelar", command=self.destroy).pack(side="right", padx=(6, 0))
         tk.Button(frame_botoes, text="Salvar", bg=COR_ACENTO, fg="white", relief="flat", command=self._salvar).pack(side="right")
 
-    def _adicionar_linha(self, categoria, tipo, largura, comprimento, variantes, minutos_por_m2=""):
+    def _adicionar_linha(self, categoria, tipo, largura, comprimento, variantes, minutos_por_m2="", preco_m2=""):
         linha = tk.Frame(self.frame_linhas)
         linha.pack(fill="x", pady=2)
 
@@ -872,17 +908,20 @@ class JanelaConfiguracoes(tk.Toplevel):
         var_largura = tk.StringVar(value=str(largura))
         var_comprimento = tk.StringVar(value=str(comprimento))
         var_minutos_m2 = tk.StringVar(value=str(minutos_por_m2) if minutos_por_m2 else "")
+        var_preco_m2 = tk.StringVar(value=_preco_na_tela(preco_m2))
 
         tk.Entry(linha, textvariable=var_categoria, width=16).pack(side="left")
         ttk.Combobox(linha, textvariable=var_tipo, values=["rolo", "chapa"], width=8, state="readonly").pack(side="left", padx=4)
         tk.Entry(linha, textvariable=var_largura, width=12).pack(side="left", padx=4)
         tk.Entry(linha, textvariable=var_comprimento, width=12).pack(side="left", padx=4)
         tk.Entry(linha, textvariable=var_minutos_m2, width=15).pack(side="left", padx=4)
+        tk.Entry(linha, textvariable=var_preco_m2, width=12).pack(side="left", padx=4)
 
         registro = {
             "frame": linha, "categoria": var_categoria, "tipo": var_tipo,
             "largura": var_largura, "comprimento": var_comprimento, "variantes": list(variantes or []),
             "minutos_por_m2": var_minutos_m2,
+            "preco_m2": var_preco_m2,
         }
 
         def abrir_variantes():
@@ -946,6 +985,16 @@ class JanelaConfiguracoes(tk.Toplevel):
                     return
                 material["minutos_por_m2"] = minutos_m2
 
+            preco_m2, preco_ok = _preco_digitado(registro["preco_m2"].get())
+            if not preco_ok:
+                messagebox.showwarning(
+                    "Valor inválido",
+                    f"'R$/m²' de '{categoria}' precisa ser um número maior que zero (ou fique em branco).",
+                )
+                return
+            if preco_m2 is not None:
+                material["preco_m2"] = preco_m2
+
             novos_materiais[categoria] = material
 
         if not novos_materiais:
@@ -976,7 +1025,7 @@ class JanelaVariantes(tk.Toplevel):
     def __init__(self, mestre, nome_categoria, variantes_atuais, ao_salvar):
         super().__init__(mestre)
         self.title(f"Variantes — {nome_categoria.strip() or '(novo material)'}")
-        self.geometry("420x460")
+        self.geometry("600x560")
         self.transient(mestre)
         self.ao_salvar = ao_salvar
         self.linhas_variantes = []
@@ -992,29 +1041,40 @@ class JanelaVariantes(tk.Toplevel):
                  "Cor é opcional — deixe em branco pra uma variante que só depende\n"
                  "da espessura (ex: MDF cru). Rótulo é opcional, pra quando o nome\n"
                  "comercial é diferente da cor usada no nome do arquivo (ex: cor\n"
-                 "\"VERDE\" no arquivo, mas rótulo \"MDF HIDRO\" na exibição).",
+                 "\"VERDE\" no arquivo, mas rótulo \"MDF HIDRO\" na exibição).\n"
+                 "R$/m² é opcional — o preço desta espessura/cor, só na cópia de\n"
+                 "CUSTOS da gerência. Em branco, vale o preço do material.",
         ).pack(anchor="w", padx=16, pady=(0, 10))
 
         cabecalho = tk.Frame(self)
         cabecalho.pack(fill="x", padx=16)
-        for texto, largura in [("Espessura", 12), ("Cor (opcional)", 12), ("Rótulo (opcional)", 14)]:
+        for texto, largura in [("Espessura", 12), ("Cor (opcional)", 12), ("Rótulo (opcional)", 14), ("R$/m²", 10)]:
             tk.Label(cabecalho, text=texto, fg="#666666", width=largura, anchor="w").pack(side="left")
 
-        canvas = tk.Canvas(self, highlightthickness=0)
-        scrollbar = ttk.Scrollbar(self, orient="vertical", command=canvas.yview)
+        # A lista mora num quadro próprio. Empacotada direto na janela com
+        # side="left", tudo que vinha depois (Adicionar, Salvar) ia pro LADO
+        # dela em vez de ir pra baixo, e as colunas da direita saíam cortadas
+        # — ficou inutilizável quando entrou a coluna de preço (2026-09-14).
+        area_lista = tk.Frame(self)
+        area_lista.pack(fill="both", expand=True, padx=16)
+        # altura pequena pedida de propósito: a lista cresce pro espaço que sobra,
+        # e Salvar/Cancelar nunca ficam cortados embaixo
+        canvas = tk.Canvas(area_lista, highlightthickness=0, height=160)
+        scrollbar = ttk.Scrollbar(area_lista, orient="vertical", command=canvas.yview)
         self.frame_linhas = tk.Frame(canvas)
         self.frame_linhas.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
         canvas.create_window((0, 0), window=self.frame_linhas, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
-        canvas.pack(side="left", fill="both", expand=True, padx=(16, 0))
-        scrollbar.pack(side="left", fill="y", padx=(0, 16))
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="left", fill="y")
 
         for variante in variantes_atuais:
-            self._adicionar_linha_variante(variante.get("espessura", ""), variante.get("cor", ""), variante.get("rotulo", ""))
+            self._adicionar_linha_variante(variante.get("espessura", ""), variante.get("cor", ""),
+                                           variante.get("rotulo", ""), variante.get("preco_m2", ""))
 
         tk.Button(
             self, text="➕ Adicionar variante", relief="flat", fg=COR_ACENTO, cursor="hand2",
-            command=lambda: self._adicionar_linha_variante("", "", ""),
+            command=lambda: self._adicionar_linha_variante("", "", "", ""),
         ).pack(anchor="w", padx=16, pady=8)
 
         frame_botoes = tk.Frame(self)
@@ -1022,19 +1082,22 @@ class JanelaVariantes(tk.Toplevel):
         tk.Button(frame_botoes, text="Cancelar", command=self.destroy).pack(side="right", padx=(6, 0))
         tk.Button(frame_botoes, text="Salvar", bg=COR_ACENTO, fg="white", relief="flat", command=self._salvar).pack(side="right")
 
-    def _adicionar_linha_variante(self, espessura, cor, rotulo):
+    def _adicionar_linha_variante(self, espessura, cor, rotulo, preco_m2=""):
         linha = tk.Frame(self.frame_linhas)
         linha.pack(fill="x", pady=2)
 
         var_espessura = tk.StringVar(value=espessura)
         var_cor = tk.StringVar(value=cor)
         var_rotulo = tk.StringVar(value=rotulo)
+        var_preco = tk.StringVar(value=_preco_na_tela(preco_m2))
 
         tk.Entry(linha, textvariable=var_espessura, width=12).pack(side="left")
         tk.Entry(linha, textvariable=var_cor, width=12).pack(side="left", padx=4)
         tk.Entry(linha, textvariable=var_rotulo, width=14).pack(side="left", padx=4)
+        tk.Entry(linha, textvariable=var_preco, width=10).pack(side="left", padx=4)
 
-        registro = {"frame": linha, "espessura": var_espessura, "cor": var_cor, "rotulo": var_rotulo}
+        registro = {"frame": linha, "espessura": var_espessura, "cor": var_cor, "rotulo": var_rotulo,
+                    "preco_m2": var_preco}
 
         def remover():
             linha.destroy()
@@ -1057,6 +1120,16 @@ class JanelaVariantes(tk.Toplevel):
                 variante["cor"] = cor
             if rotulo:
                 variante["rotulo"] = rotulo
+            preco_m2, preco_ok = _preco_digitado(registro["preco_m2"].get())
+            if not preco_ok:
+                messagebox.showwarning(
+                    "Valor inválido",
+                    f"'R$/m²' da variante {espessura} precisa ser um número maior que zero (ou fique em branco).",
+                    parent=self,
+                )
+                return
+            if preco_m2 is not None:
+                variante["preco_m2"] = preco_m2
             novas_variantes.append(variante)
 
         self.ao_salvar(novas_variantes)

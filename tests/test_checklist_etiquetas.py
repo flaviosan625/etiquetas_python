@@ -210,3 +210,27 @@ def test_cliente_sem_producao_nao_gera_nem_quebra(tmp_path, monkeypatch):
 
     assert ce.gerar_lote_do_cliente(c)["gerou"] is False
     assert ce.artes_novas_do_cliente(c) == []
+
+
+# ------------------------------------------------------------ só Prontos
+
+def test_so_prontos_nao_da_etiqueta_pra_peca_que_nao_saiu_da_maquina(producao, estado):
+    """Etiqueta é pra peça pronta — a mesma regra da OS (2026-09-16)."""
+    pronta = producao / "A_PREMIUM/UV/PRONTOS/1UN LONA IMPRESSA 2.00X1.00M_PECA_C.pdf"
+    _pdf(pronta)
+
+    novas = ce.artes_novas(producao, estado, so_prontos=True)
+
+    assert [a.name for a in novas] == [pronta.name]
+
+
+def test_so_prontos_ignora_pronto_em_espera(producao, estado):
+    _pdf(producao / "TUNEL/NAO RODAR AINDA/PRONTOS/1UN LONA IMPRESSA 2.00X1.00M_PECA_D.pdf")
+
+    assert ce.artes_novas(producao, estado, so_prontos=True) == []
+
+
+def test_cliente_com_so_prontos_leva_a_regra_pro_lote(cliente_ml):
+    cliente_ml.so_prontos = True
+
+    assert ce.artes_novas_do_cliente(cliente_ml) == [], "as duas peças da produção estão fora de Prontos"

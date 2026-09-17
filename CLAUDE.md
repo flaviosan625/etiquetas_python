@@ -124,6 +124,14 @@ Se o modelo não encaixa no caso novo, **estenda por parâmetro opcional** (foi
 assim que o selo de status entrou em `_desenhar_item_os`: quem não passa `selo`
 não vê diferença nenhuma) — nunca clonando o desenho num módulo novo.
 
+**Custo de material só na cópia da gerência** (decisão de 2026-09-14): a OS impressa vai
+pra produção e não leva valor. `gerar_os(custos=...)` escreve a cópia `CUSTOS - <CLIENTE>.pdf`
+(`custos.py`), com cabeçalho "SÓ GERÊNCIA" em toda folha. **Ela nunca pode se chamar
+`OS - ...`**: a tela de reimpressão (`gui._pedidos_para_impressao`) e o arquivamento acham OS
+por `glob("OS - *.pdf")` — com esse nome, os valores iriam parar na mão de quem imprime pra
+produção. Travado em `tests/test_custos.py`. Preço mora em `config.json` (por material e por
+variante) — mais um motivo pra `config.json` nunca subir no commit.
+
 ## Clientes, saída descartável e o caminho pro executável
 
 Decisões do usuário de 2026-09-13, que valem pro sistema inteiro:

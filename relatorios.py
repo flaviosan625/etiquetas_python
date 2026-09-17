@@ -96,13 +96,17 @@ def _descricao_arquivo(nome_arquivo, categoria=None, nome_cliente=None):
     return sem_extensao.strip(" ._-") or nome_arquivo
 
 
-def _nova_pagina_os(pdf_os, nome_cliente, nome_gerente, nome_produtor, data_hora_atual, caixas_pagina):
+def _nova_pagina_os(pdf_os, nome_cliente, nome_gerente, nome_produtor, data_hora_atual, caixas_pagina,
+                    rotulo="ORDEM DE SERVIÇO &mdash; IMPRESSA", cor_rotulo="#999999"):
     """
     Cria uma página A4 nova com o cabeçalho (logo + cliente + gerente/
     produtor/data), repetido em toda página — impressa em folhas soltas,
     cada uma precisa se identificar sozinha. O número da página só é
     escrito depois, quando o total de páginas for conhecido; por isso
     guarda a caixa reservada em 'caixas_pagina' pra preencher no final.
+
+    'rotulo' só muda na cópia de custos da gerência: cada folha dela diz
+    que é de gerência, pra não ir parar na produção se for impressa solta.
     """
     pagina = pdf_os.new_page(width=LARGURA_OS, height=ALTURA_OS)
     y = MARGEM_OS
@@ -113,7 +117,7 @@ def _nova_pagina_os(pdf_os, nome_cliente, nome_gerente, nome_produtor, data_hora
     caixa_texto = pymupdf.Rect(MARGEM_OS + 80, y - 2, LARGURA_OS - MARGEM_OS - 65, y + 42)
     html_texto = f"""
     <div style="font-family: sans-serif;">
-        <p style="font-size: 7pt; color: #999999; margin: 0 0 1px 0; letter-spacing: 0.5px;">ORDEM DE SERVIÇO &mdash; IMPRESSA</p>
+        <p style="font-size: 7pt; color: {cor_rotulo}; margin: 0 0 1px 0; letter-spacing: 0.5px;">{rotulo}</p>
         <p style="font-size: 13pt; font-weight: bold; margin: 0; color: #141414;">{nome_cliente.upper()}</p>
         <p style="font-size: 7.5pt; color: #666666; margin: 2px 0 0 0;">Gerente: {nome_gerente} &nbsp;·&nbsp; Produtor: {nome_produtor} &nbsp;·&nbsp; {data_hora_atual}</p>
     </div>
@@ -215,8 +219,42 @@ def _desenhar_item_os(pagina, y, x_thumb, x_texto, largura_texto, item, cor_fund
     return y
 
 
+def _rodape_de_custos(pdf_os, pagina, y, custos, limite_y, cabecalho, dados_pagina):
+    """
+    O fim da cópia da gerência: o custo total de material, o que ficou sem
+    preço (se houver) e o que a conta inclui. Tudo numa chamada de
+    insert_htmlbox só — cada chamada embute a fonte de novo.
+    """
+    from custos import formatar_reais
+
+    if y + 70 > limite_y:
+        pagina, y = _nova_pagina_os(pdf_os, *dados_pagina, **cabecalho)
+    else:
+        y += 16
+
+    parcial = "" if custos["completo"] else " (parcial)"
+    faltando = ""
+    if custos["faltando_preco"]:
+        faltando = (f'<p style="font-size: 8pt; color: #b45309; margin: 3px 0 0 0;">Sem preço cadastrado: '
+                    f'{", ".join(custos["faltando_preco"])} — cadastre em "Configurar medidas de rolos e chapas".</p>')
+    html = f"""
+    <div style="font-family: sans-serif;">
+        <p style="font-size: 11pt; font-weight: bold; color: #141414; margin: 0; text-align: right;">
+            Custo de material: {formatar_reais(custos["total"])}{parcial}</p>
+        {faltando}
+        <p style="font-size: 7pt; color: #999999; margin: 4px 0 0 0;">
+            Custo = (área das peças + sobra estimada do rolo/chapa) × preço por m² cadastrado.
+            Só material: não inclui tinta, máquina nem mão de obra. Valores em reais somam entre
+            materiais; m² nunca.</p>
+    </div>
+    """
+    pagina.insert_htmlbox(pymupdf.Rect(MARGEM_OS, y, LARGURA_OS - MARGEM_OS, y + 70), html)
+    return y + 70
+
+
 def gerar_os(pasta_saida, nome_cliente, nome_gerente, nome_produtor,
-             itens, dados_categorias, ordem_categorias, data_hora_atual, materiais_config=None):
+             itens, dados_categorias, ordem_categorias, data_hora_atual, materiais_config=None,
+             custos=None, nome_arquivo=None):
     """
     Gera a Ordem de Serviço (OS) paginada em folhas A4, pronta pra
     impressão: logo da empresa repetido em cada página, itens agrupados
@@ -235,7 +273,16 @@ def gerar_os(pasta_saida, nome_cliente, nome_gerente, nome_produtor,
     ao m² — nunca somado entre categorias diferentes, porque cada uma
     roda numa máquina diferente, em paralelo, e um total combinado não
     representaria um tempo real de espera.
+
+    'custos' (opcional, de custos.calcular) faz desta a CÓPIA DA GERÊNCIA:
+    cabeçalho marcado em toda folha, sobra estimada e valor em R$ em cada
+    material, e o custo total no fim (reais somam entre materiais; m², não).
+    Quem não passa 'custos' recebe a OS de sempre, sem diferença nenhuma —
+    é ela que vai pra produção. 'nome_arquivo' troca o nome do PDF (a cópia
+    NÃO pode se chamar "OS - ...", ver custos.py).
     """
+    cabecalho = ({"rotulo": "ORDEM DE SERVIÇO &mdash; CUSTOS &middot; SÓ GERÊNCIA, NÃO VAI PRA PRODUÇÃO",
+                  "cor_rotulo": "#b32d24"} if custos else {})
     materiais_config = materiais_config or {}
     # 'categorias_com_item': só quem tem etiqueta de verdade na lista (pra
     # não desenhar um cabeçalho de categoria vazio no corpo da OS —
@@ -253,14 +300,14 @@ def gerar_os(pasta_saida, nome_cliente, nome_gerente, nome_produtor,
 
     pdf_os = pymupdf.open()
     caixas_pagina = []
-    pagina, y = _nova_pagina_os(pdf_os, nome_cliente, nome_gerente, nome_produtor, data_hora_atual, caixas_pagina)
+    pagina, y = _nova_pagina_os(pdf_os, nome_cliente, nome_gerente, nome_produtor, data_hora_atual, caixas_pagina, **cabecalho)
 
     for cat in categorias_com_item:
         cor_fundo, cor_texto = _cor_categoria(cat, ordem_categorias)
         itens_categoria = [i for i in itens if i["categoria"] == cat]
 
         if y + ALTURA_GRUPO_OS + ALTURA_ITEM_OS > limite_y:
-            pagina, y = _nova_pagina_os(pdf_os, nome_cliente, nome_gerente, nome_produtor, data_hora_atual, caixas_pagina)
+            pagina, y = _nova_pagina_os(pdf_os, nome_cliente, nome_gerente, nome_produtor, data_hora_atual, caixas_pagina, **cabecalho)
 
         pagina.insert_htmlbox(
             pymupdf.Rect(MARGEM_OS, y, LARGURA_OS - MARGEM_OS, y + ALTURA_GRUPO_OS - 4),
@@ -270,7 +317,7 @@ def gerar_os(pasta_saida, nome_cliente, nome_gerente, nome_produtor,
 
         for item in itens_categoria:
             if y + ALTURA_ITEM_OS > limite_y:
-                pagina, y = _nova_pagina_os(pdf_os, nome_cliente, nome_gerente, nome_produtor, data_hora_atual, caixas_pagina)
+                pagina, y = _nova_pagina_os(pdf_os, nome_cliente, nome_gerente, nome_produtor, data_hora_atual, caixas_pagina, **cabecalho)
                 # a categoria continua na página nova: repete o cabeçalho
                 # simples pra não perder o contexto de qual material é
                 pagina.insert_htmlbox(
@@ -283,9 +330,9 @@ def gerar_os(pasta_saida, nome_cliente, nome_gerente, nome_produtor,
 
     # Resumo: subtotal de m² separado por material — nunca soma
     # materiais diferentes num único número
-    altura_resumo = 24 + len(categorias_com_subtotal) * 20 + 30
+    altura_resumo = 24 + len(categorias_com_subtotal) * 20 + 30 + (70 if custos else 0)
     if y + altura_resumo > limite_y:
-        pagina, y = _nova_pagina_os(pdf_os, nome_cliente, nome_gerente, nome_produtor, data_hora_atual, caixas_pagina)
+        pagina, y = _nova_pagina_os(pdf_os, nome_cliente, nome_gerente, nome_produtor, data_hora_atual, caixas_pagina, **cabecalho)
     else:
         y += 10
 
@@ -308,13 +355,24 @@ def gerar_os(pasta_saida, nome_cliente, nome_gerente, nome_produtor,
         _, cor_texto = _cor_categoria(cat, ordem_categorias)
 
         if y + 20 > limite_y:
-            pagina, y = _nova_pagina_os(pdf_os, nome_cliente, nome_gerente, nome_produtor, data_hora_atual, caixas_pagina)
+            pagina, y = _nova_pagina_os(pdf_os, nome_cliente, nome_gerente, nome_produtor, data_hora_atual, caixas_pagina, **cabecalho)
 
-        texto_area = f"{cat_info['area_total_m2']:.2f} m²"
+        partes = [f"{cat_info['area_total_m2']:.2f} m²"]
+        conta = custos["por_material"].get(cat) if custos else None
+        if conta:
+            # a sobra é estimativa: sai escrita como tal (regra da casa)
+            partes[0] += f" + {conta['area_sobra_m2']:.2f} m² sobra est."
         minutos_m2 = materiais_config.get(cat, {}).get("minutos_por_m2")
         if minutos_m2:
             tempo_estimado = formatar_duracao_minutos(cat_info["area_total_m2"] * minutos_m2)
-            texto_area += f" · ≈ {tempo_estimado}"
+            partes.append(f"≈ {tempo_estimado}")
+        if conta:
+            from custos import formatar_reais
+            if not conta["valor"]:
+                partes.append("sem preço")
+            else:
+                partes.append(formatar_reais(conta["valor"]) + ("" if conta["completo"] else " (parcial)"))
+        texto_area = " · ".join(partes)
 
         total_nessa_categoria = qtd_itens_categoria + qtd_itens_categoria_extra
         html_linha = f"""
@@ -328,7 +386,7 @@ def gerar_os(pasta_saida, nome_cliente, nome_gerente, nome_produtor,
         y += 20
 
     if y + 26 > limite_y:
-        pagina, y = _nova_pagina_os(pdf_os, nome_cliente, nome_gerente, nome_produtor, data_hora_atual, caixas_pagina)
+        pagina, y = _nova_pagina_os(pdf_os, nome_cliente, nome_gerente, nome_produtor, data_hora_atual, caixas_pagina, **cabecalho)
     else:
         y += 4
     pagina.draw_line(pymupdf.Point(MARGEM_OS, y), pymupdf.Point(LARGURA_OS - MARGEM_OS, y),
@@ -346,6 +404,10 @@ def gerar_os(pasta_saida, nome_cliente, nome_gerente, nome_produtor,
         f'{total_itens_visiveis} {"item" if total_itens_visiveis == 1 else "itens"} no total</p>'
     )
 
+    if custos:
+        y = _rodape_de_custos(pdf_os, pagina, y, custos, limite_y, cabecalho,
+                              (nome_cliente, nome_gerente, nome_produtor, data_hora_atual, caixas_pagina))
+
     # numera as páginas só agora, que o total já é conhecido — busca a
     # página pelo índice de novo, em vez de reusar o objeto Page salvo
     # antes (fica inválido depois que outras páginas são criadas)
@@ -356,7 +418,7 @@ def gerar_os(pasta_saida, nome_cliente, nome_gerente, nome_produtor,
             f'<p style="font-family: sans-serif; font-size: 7.5pt; color: #999999; margin: 0; text-align: right;">Página {i} de {total_paginas}</p>'
         )
 
-    nome_os = os.path.join(pasta_saida, f"OS - {nome_cliente.upper()}.pdf")
+    nome_os = os.path.join(pasta_saida, nome_arquivo or f"OS - {nome_cliente.upper()}.pdf")
     # garbage=4 remove os objetos de fonte duplicados que o insert_htmlbox
     # cria a cada chamada (sem isso o arquivo fica ordens de grandeza
     # maior do que precisa)

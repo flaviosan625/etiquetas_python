@@ -160,3 +160,29 @@ def test_data_sai_formatada_e_nao_datetime_cru(tmp_path):
         doc.close()
     assert "12/09/2026 20:44:42" in texto
     assert "2026-09-12" not in texto
+
+
+# ------------------------------------------------------------ só Prontos
+
+def test_so_prontos_deixa_de_fora_o_que_ainda_nao_saiu_da_maquina(tmp_path):
+    """
+    Pedido de 2026-09-16 (Mercado Livre): "o que estiver fora da pasta de
+    pronto ainda não entra". Nem o que está em espera.
+    """
+    itens = cp.inventariar(_producao(tmp_path), com_miniatura=False, so_prontos=True)
+
+    assert sorted(i["arquivo"].split("_")[-1] for i in itens) == ["L04.pdf", "TESTEIRA.pdf"]
+    assert all(i["status"] == cp.STATUS_PRONTO for i in itens)
+
+
+def test_sem_a_regra_a_os_continua_com_a_pasta_inteira(tmp_path):
+    """Cliente que não usa 'Prontos' não pode ficar com a OS vazia."""
+    assert len(cp.inventariar(_producao(tmp_path), com_miniatura=False)) == 4
+
+
+def test_so_prontos_vale_tambem_pro_m2_da_os(tmp_path):
+    """O subtotal por material não pode contar peça que ficou de fora."""
+    itens = cp.inventariar(_producao(tmp_path), com_miniatura=False, so_prontos=True)
+    dados = cp.dados_por_categoria(itens, cp.ordem_das_categorias(itens, {}))
+
+    assert dados["LONA"]["area_total_m2"] == 16.64      # só a L04 (5,20 x 3,20)

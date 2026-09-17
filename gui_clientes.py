@@ -167,21 +167,29 @@ class JanelaClientes(tk.Toplevel):
                              command=lambda n=cliente.nome: self._alternar_checklist(n))
         chk.grid(row=2, column=0, columnspan=2, sticky="w", padx=12, pady=(6, 0))
 
-        ttk.Separator(cartao).grid(row=3, column=0, columnspan=2, sticky="ew", padx=16, pady=(8, 0))
+        var_prontos = tk.BooleanVar()
+        chk_prontos = tk.Checkbutton(cartao, text="Só o que está em Prontos entra na OS e nas etiquetas",
+                                     variable=var_prontos, bg=COR_CARTAO, activebackground=COR_CARTAO,
+                                     fg=COR_TEXTO, font=("Segoe UI", 9), anchor="w",
+                                     command=lambda n=cliente.nome: self._alternar_prontos(n))
+        chk_prontos.grid(row=3, column=0, columnspan=2, sticky="w", padx=12)
+
+        ttk.Separator(cartao).grid(row=4, column=0, columnspan=2, sticky="ew", padx=16, pady=(8, 0))
 
         var_etiquetas = tk.StringVar()
         lbl_etiquetas = tk.Label(cartao, textvariable=var_etiquetas, font=("Segoe UI", 10), bg=COR_CARTAO,
                                  fg=COR_TEXTO, anchor="w", justify="left", wraplength=560)
-        lbl_etiquetas.grid(row=4, column=0, sticky="w", padx=16, pady=(8, 12))
+        lbl_etiquetas.grid(row=5, column=0, sticky="w", padx=16, pady=(8, 12))
         btn_lote = tk.Button(cartao, text="🏷  Gerar checklist das novas", bg=COR_ACENTO, fg="white",
                              activebackground=COR_ACENTO, activeforeground="white", relief="flat",
                              font=("Segoe UI", 9, "bold"), cursor="hand2", padx=10, pady=3,
                              command=lambda n=cliente.nome: self._gerar_lote(n))
-        btn_lote.grid(row=4, column=1, sticky="e", padx=14, pady=(8, 12))
+        btn_lote.grid(row=5, column=1, sticky="e", padx=14, pady=(8, 12))
 
         self._cartoes[cliente.nome] = {
             "var_producao": var_producao, "lbl_producao": lbl_producao,
             "var_checklist": var_checklist, "chk": chk, "btn_os": btn_os,
+            "var_prontos": var_prontos, "chk_prontos": chk_prontos,
             "var_etiquetas": var_etiquetas, "lbl_etiquetas": lbl_etiquetas, "btn_lote": btn_lote,
         }
 
@@ -206,6 +214,8 @@ class JanelaClientes(tk.Toplevel):
 
         c["var_checklist"].set(cliente.checklist_ativo)
         c["chk"].configure(state="normal" if cliente.producao_existe else "disabled")
+        c["var_prontos"].set(cliente.so_prontos)
+        c["chk_prontos"].configure(state="normal" if cliente.producao_existe else "disabled")
         c["btn_os"].configure(state="normal" if vigia_checklist.destino_pdf(cliente).is_file() else "disabled")
 
         if cliente.nome in self._gerando:
@@ -216,13 +226,15 @@ class JanelaClientes(tk.Toplevel):
             _ligar_botao(c["btn_lote"], False)
             return
         novas = len(checklist_etiquetas.artes_novas_do_cliente(cliente))
+        s = "s" if novas != 1 else ""
         if novas:
-            c["var_etiquetas"].set("🏷 %d arte%s nova%s sem etiqueta desde o último checklist."
-                                   % (novas, "s" if novas != 1 else "", "s" if novas != 1 else ""))
+            qual = ("pronta%s" % s) if cliente.so_prontos else ("nova%s" % s)
+            c["var_etiquetas"].set("🏷 %d arte%s %s sem etiqueta desde o último checklist." % (novas, s, qual))
             c["lbl_etiquetas"].configure(fg=COR_ALERTA)
             _ligar_botao(c["btn_lote"], True)
         else:
-            c["var_etiquetas"].set("✓ Todas as artes da produção já têm etiqueta.")
+            c["var_etiquetas"].set("✓ Todas as artes %s já têm etiqueta."
+                                   % ("prontas" if cliente.so_prontos else "da produção"))
             c["lbl_etiquetas"].configure(fg=COR_POSITIVO)
             _ligar_botao(c["btn_lote"], False)
 
@@ -268,6 +280,16 @@ class JanelaClientes(tk.Toplevel):
         if cliente is None:
             return
         cliente.checklist_ativo = bool(self._cartoes[nome]["var_checklist"].get()) and cliente.producao_existe
+        clientes.salvar(cliente)
+        self._recarregar_agora()
+
+    def _alternar_prontos(self, nome):
+        cliente = clientes.obter(nome)
+        if cliente is None:
+            return
+        # o vigia trata a troca de regra como movimento: a OS muda na
+        # próxima passada, sem ninguém mexer na pasta
+        cliente.so_prontos = bool(self._cartoes[nome]["var_prontos"].get())
         clientes.salvar(cliente)
         self._recarregar_agora()
 
