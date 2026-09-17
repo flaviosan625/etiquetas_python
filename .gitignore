@@ -16,6 +16,8 @@ aspire/teste_ponta_a_ponta/LOTE *.dxf
 rasterlink_hotfolder*.log
 rasterlink_hotfolder*.lock
 rasterlink_hotfolder_avisos.json
+registro_pendente.jsonl
+registro_pendente.jsonl.tmp
 
 # Gerados pelo instalador na maquina onde ele roda: trazem caminho
 # absoluto e nome de usuario, entao sao daquela maquina, nao do projeto.

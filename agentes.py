@@ -390,7 +390,10 @@ def ultima_acao(ag, agora=None):
             if sinal is None:
                 return "nenhum sinal de vida gravado ainda"
             maquinas = ", ".join("%s: %s" % (m, erro or "ok") for m, erro in sinal["maquinas"].items())
-            return "sinal de vida %s — %s" % (_dia_e_hora(sinal["quando"], agora), maquinas or "sem máquinas")
+            linha = "sinal de vida %s — %s" % (_dia_e_hora(sinal["quando"], agora), maquinas or "sem máquinas")
+            if sinal.get("registro_pendente"):
+                linha += " · %d entrega(s) ainda fora do relatório" % sinal["registro_pendente"]
+            return linha
 
         if ag.chave == "relatorio":
             from rasterlink_hotfolder import PASTA_RELATORIOS

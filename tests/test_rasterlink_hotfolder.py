@@ -32,6 +32,10 @@ def _isolar_pasta_relatorios(tmp_path, monkeypatch):
     monkeypatch.setattr(rl_hf, "CAMINHO_LOG", tmp_path / "hotfolder.log")
     monkeypatch.setattr(rl_hf, "CAMINHO_TRAVA", tmp_path / "hotfolder.lock")
     monkeypatch.setattr(rl_hf, "CAMINHO_ESTADO_AVISOS", tmp_path / "hotfolder_avisos.json")
+    # A fila local do registro tambem mora ao lado do modulo: sem
+    # isolar, teste deixaria linha de mentira esperando pra entrar no
+    # registro de producao de verdade na proxima passada do vigia.
+    monkeypatch.setattr(rl_hf, "CAMINHO_REGISTRO_PENDENTE", tmp_path / "registro_pendente.jsonl")
     # O crash tambem: sem esta linha, toda rodada de teste que passa por
     # _rodar_protegido despeja traceback no arquivo de verdade do
     # repositorio. Foram 49 entradas acumuladas assim, todas do mesmo
@@ -655,6 +659,122 @@ def test_falha_de_registro_nao_impede_o_envio_pra_impressora(tmp_path, monkeypat
 
     assert resultado["UJV100"]["enviados"] == ["arte.pdf"]
     assert (hot_folder / "arte.pdf").exists(), "a arte tem que chegar na impressora mesmo assim"
+
+
+def test_linha_que_nao_gravou_fica_guardada_e_entra_depois(tmp_path):
+    """
+    O buraco de 09 a 16/09/2026: 61 entregas sumiram do relatorio porque
+    a gravacao falhava, o vigia avisava no log daquela maquina (que
+    ninguem le) e seguia em frente. Agora a linha fica guardada e entra
+    sozinha quando o caminho voltar.
+    """
+    arquivo = tmp_path / "lona.pdf"
+    arquivo.write_bytes(b"x")
+    quando = datetime.datetime(2026, 9, 16, 15, 27, 24)
+
+    assert rl_hf.registrar_envio("SWJ320A", arquivo, False, pasta_relatorios=tmp_path / "in<>valido",
+                                 quando=quando) is False
+    assert rl_hf._ler_jsonl(rl_hf.CAMINHO_REGISTRO_PENDENTE), "a linha nao pode se perder"
+
+    rel = tmp_path / "rel"
+    assert rl_hf.conciliar_registro(pasta_relatorios=rel) == {"gravadas": 1, "pendentes": 0}
+
+    linhas = rl_hf._ler_jsonl(rel / "_registro" / "2026-09.jsonl")
+    assert [l["arquivo"] for l in linhas] == ["lona.pdf"]
+
+    [entrada] = rl_hf._ler_diario(rl_hf.CAMINHO_REGISTRO_PENDENTE)
+    assert entrada["conferida_em"], "fica na fila, mas marcada como conferida"
+
+
+def test_linha_apagada_do_registro_volta_na_passada_seguinte(tmp_path):
+    """
+    Gravar sem erro nao provou nada em setembro/2026: a linha saia do
+    vigia e depois nao estava la. Enquanto nao for LIDA de volta, ela
+    continua na fila local — e volta.
+    """
+    arquivo = tmp_path / "lona.pdf"
+    arquivo.write_bytes(b"x")
+    rel = tmp_path / "rel"
+    registro = rel / "_registro" / "2026-09.jsonl"
+
+    rl_hf.registrar_envio("SWJ320A", arquivo, False, pasta_relatorios=rel,
+                          quando=datetime.datetime(2026, 9, 16, 11, 34, 58))
+    assert len(rl_hf._ler_jsonl(registro)) == 1
+
+    registro.write_text("", encoding="utf-8")   # o OneDrive trocou o arquivo por uma versao sem ela
+
+    rl_hf.registrar_envio("SWJ320A", arquivo, False, pasta_relatorios=rel,
+                          quando=datetime.datetime(2026, 9, 16, 11, 40, 0))
+    arquivos = [(l["arquivo"], l["quando"]) for l in rl_hf._ler_jsonl(registro)]
+    assert len(arquivos) == 2, "a entrega antiga volta junto com a nova"
+
+
+def test_conciliar_nao_duplica_o_que_ja_esta_no_registro(tmp_path):
+    arquivo = tmp_path / "lona.pdf"
+    arquivo.write_bytes(b"x")
+    rel = tmp_path / "rel"
+
+    rl_hf.registrar_envio("SWJ320A", arquivo, False, pasta_relatorios=rel,
+                          quando=datetime.datetime(2026, 9, 16, 9, 0, 0))
+    for _ in range(3):
+        rl_hf.conciliar_registro(pasta_relatorios=rel)
+
+    assert len(rl_hf._ler_jsonl(rel / "_registro" / "2026-09.jsonl")) == 1
+
+
+def test_vigia_concilia_o_registro_mesmo_sem_arquivo_novo(tmp_path):
+    """A pendencia se resolve sozinha na passada seguinte, sem ninguem mandar."""
+    fila = tmp_path / "fila"
+    (fila / "UJV100").mkdir(parents=True)
+    hot_folder = tmp_path / "hotfolder"
+    hot_folder.mkdir()
+    rel = tmp_path / "rel"
+    rl_hf._guardar_pendentes([{
+        "quando": "2026-09-16T15:27:24", "maquina": "UJV100",
+        "arquivo": "atrasada.pdf", "bytes": 10, "girado": False,
+    }])
+
+    vigiar_fila_uma_vez(pasta_fila=str(fila), maquinas=_maquinas(hot_folder),
+                        logger=lambda n, m: None, pasta_relatorios=rel)
+
+    assert [l["arquivo"] for l in rl_hf._ler_jsonl(rel / "_registro" / "2026-09.jsonl")] == ["atrasada.pdf"]
+
+
+def test_fila_local_larga_a_linha_velha_ja_provada_mas_nunca_a_que_falta(tmp_path):
+    """
+    A fila nao pode crescer pra sempre — mas comprovacao nao caduca:
+    linha que nunca entrou no registro fica, por mais antiga que seja.
+    """
+    rel = tmp_path / "rel"
+    velha_provada = {"quando": "2026-08-01T10:00:00", "maquina": "SWJ320A", "arquivo": "antiga.pdf"}
+    velha_perdida = {"quando": "2026-08-01T11:00:00", "maquina": "SWJ320A", "arquivo": "sumida.pdf"}
+    rl_hf._guardar_pendentes([velha_provada, velha_perdida])
+
+    # so a primeira esta la dentro; a segunda o vigia nao vai conseguir gravar
+    registro = rel / "_registro" / "2026-08.jsonl"
+    registro.parent.mkdir(parents=True)
+    registro.write_text(json.dumps(velha_provada, ensure_ascii=False) + "\n", encoding="utf-8")
+    registro.chmod(0o444)
+    try:
+        rl_hf.conciliar_registro(pasta_relatorios=rel, agora=datetime.datetime(2026, 9, 16, 12, 0, 0))
+    finally:
+        registro.chmod(0o666)
+
+    restantes = [e["linha"]["arquivo"] for e in rl_hf._ler_diario(rl_hf.CAMINHO_REGISTRO_PENDENTE)]
+    assert restantes == ["sumida.pdf"], "larga a provada e velha, segura a que falta"
+
+
+def test_sinal_de_vida_leva_a_pendencia_do_registro(tmp_path):
+    """
+    Pendencia tem que aparecer no PC principal. Antes, linha perdida so
+    dava as caras meses depois, quando a comprovacao fizesse falta.
+    """
+    fila = tmp_path / "fila"
+    fila.mkdir()
+
+    rl_hf.registrar_sinal_de_vida(pasta_fila=fila, resultado_por_maquina={}, registro_pendente=4)
+
+    assert rl_hf.ler_sinal_de_vida(pasta_fila=fila)["registro_pendente"] == 4
 
 
 def test_limpar_enviados_apaga_o_que_passou_do_prazo(tmp_path):

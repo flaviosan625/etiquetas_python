@@ -36,7 +36,12 @@ rem A conferencia mais importante do arquivo. O OneDrive demora, e as
 rem vezes muito: ja mediu 10 minutos pra um PDF chegar aqui. Sem esta
 rem linha, rodar cedo demais copiaria o arquivo ANTIGO por cima e
 rem diria "pronto" - falha silenciosa, que e a pior de todas.
-findstr /m /c:"_assar_giro" "%ORIGEM%\rasterlink_hotfolder.py" >nul
+rem
+rem A marca procurada tem que ser da ULTIMA versao, nunca de uma que
+rem ja esta instalada: com marca velha esta conferencia passa com o
+rem arquivo antigo e deixa de servir. Trocar a cada deploy.
+rem Hoje: conciliar_registro (registro que nao se perde, 16/09/2026).
+findstr /m /c:"conciliar_registro" "%ORIGEM%\rasterlink_hotfolder.py" >nul
 if errorlevel 1 (
   echo.
   echo   PAREI: o arquivo na pasta de deploy AINDA E O ANTIGO.
@@ -83,7 +88,7 @@ if not defined PY (
 echo   CONFERINDO com %PY%
 echo.
 cd /d "%DESTINO%"
-"%PY%" -c "import rasterlink_hotfolder as r, pymupdf; ok = hasattr(r, '_assar_giro'); sup = hasattr(pymupdf.TOOLS, '_insert_contents'); print('   giro novo instalado :', ok); print('   pymupdf desta maquina:', pymupdf.version[0]); print('   pymupdf sabe girar   :', sup); print(); print('   ' + ('TUDO CERTO. A proxima lona larga sai girada sem distorcer.' if ok and sup else 'ATENCAO: avise o Flavio, faltou alguma coisa acima.'))"
+"%PY%" -c "import rasterlink_hotfolder as r, pymupdf; ok = hasattr(r, '_assar_giro'); reg = hasattr(r, 'conciliar_registro'); sup = hasattr(pymupdf.TOOLS, '_insert_contents'); print('   giro novo instalado  :', ok); print('   registro nao se perde:', reg); print('   pymupdf desta maquina:', pymupdf.version[0]); print('   pymupdf sabe girar   :', sup); print(); print('   ' + ('TUDO CERTO. Toda entrega entra no relatorio, mesmo se o OneDrive falhar.' if ok and reg and sup else 'ATENCAO: avise o Flavio, faltou alguma coisa acima.'))"
 
 :fim
 echo.

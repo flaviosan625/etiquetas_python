@@ -79,6 +79,14 @@ bytes, se girou, tamanho da página. **Nada interpretado** — o PC do RIP só t
 projeto inteiro. Quem transforma nome em material/medida/m² é `relatorio_producao.py`, no PC
 principal, que tem `config.json` e `dimensoes.py`.
 
+**Nenhuma linha nasce direto no OneDrive.** Nasce na fila local ao lado do módulo
+(`CAMINHO_REGISTRO_PENDENTE`) e `conciliar_registro`, a cada passada, escreve e **relê pra
+conferir**, seguindo conferindo por 20 dias. Aconteceu de 09 a 16/09/2026: 61 entregas (1.311 m² de
+lona) sumiram do relatório — a gravação falhava, o aviso ficava no log do PC do RIP e a linha
+morria. Gravar sem erro não é prova. A prova de que uma entrega aconteceu é o arquivo em
+`Fila\<máquina>\Enviados` (guardado 15 dias); é dali que se recupera, marcando a linha com
+`recuperado`.
+
 ### Entrega atômica na hot folder
 
 Arquivo nunca é escrito dentro da hot folder: é montado na pasta-mãe (`~montando~*.parcial`) e entra

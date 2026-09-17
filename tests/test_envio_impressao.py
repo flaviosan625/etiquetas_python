@@ -471,14 +471,58 @@ def test_fila_vazia_nao_dispara_alerta(tmp_path):
 # --- sinal de vida do RIP ---
 
 
-def _sinal(tmp_path, quando, maquinas=None):
+def _sinal(tmp_path, quando, maquinas=None, registro_pendente=None):
     import json
     from rasterlink_hotfolder import NOME_ARQUIVO_SINAL
-    (tmp_path / NOME_ARQUIVO_SINAL).write_text(json.dumps({
+    dados = {
         "quando": quando.strftime("%Y-%m-%dT%H:%M:%S"),
         "maquina": "PC-DO-RIP",
         "maquinas": maquinas if maquinas is not None else {"SWJ320A": None},
-    }), encoding="utf-8")
+    }
+    if registro_pendente is not None:
+        dados["registro_pendente"] = registro_pendente
+    (tmp_path / NOME_ARQUIVO_SINAL).write_text(json.dumps(dados), encoding="utf-8")
+
+
+def test_entrega_fora_do_relatorio_aparece_na_tela_em_amarelo(tmp_path):
+    """
+    61 entregas sumiram do relatorio entre 09 e 16/09/2026 sem aparecer
+    em tela nenhuma. Agora aparece — em amarelo, nao vermelho: a arte
+    chegou na maquina, so a anotacao atrasou.
+    """
+    import datetime as dt
+    from envio_impressao import estado_do_rip
+
+    agora = dt.datetime(2026, 9, 16, 21, 0, 0)
+    _sinal(tmp_path, agora - dt.timedelta(seconds=40), registro_pendente=3)
+    estado = estado_do_rip(pasta_fila=str(tmp_path), agora=agora)
+
+    assert estado["nivel"] == "atencao"
+    assert estado["registro_pendente"] == 3
+    assert "3 entregas ainda fora do relatório" in estado["texto"]
+
+
+def test_pendencia_de_registro_nao_esconde_o_vermelho(tmp_path):
+    import datetime as dt
+    from envio_impressao import estado_do_rip
+
+    agora = dt.datetime(2026, 9, 16, 21, 0, 0)
+    _sinal(tmp_path, agora - dt.timedelta(hours=2), registro_pendente=1)
+
+    assert estado_do_rip(pasta_fila=str(tmp_path), agora=agora)["nivel"] == "parado"
+
+
+def test_sinal_de_vigia_antigo_sem_o_campo_nao_acusa_pendencia(tmp_path):
+    """O RIP ainda roda a versao anterior ate alguem rodar o atualizar.bat."""
+    import datetime as dt
+    from envio_impressao import estado_do_rip
+
+    agora = dt.datetime(2026, 9, 16, 21, 0, 0)
+    _sinal(tmp_path, agora - dt.timedelta(seconds=40))
+    estado = estado_do_rip(pasta_fila=str(tmp_path), agora=agora)
+
+    assert estado["nivel"] == "ok"
+    assert estado["registro_pendente"] == 0
 
 
 def test_estado_do_rip_sem_sinal_nenhum(tmp_path):

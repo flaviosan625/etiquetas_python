@@ -526,7 +526,8 @@ def estado_do_rip(pasta_fila=None, agora=None):
       sem_sinal — nunca houve sinal (vigia velho lá, ou nunca rodou)
 
     'erros' é {máquina: motivo} do que o vigia reclamou na última
-    passada — hot folder faltando, por exemplo.
+    passada — hot folder faltando, por exemplo. 'registro_pendente' é
+    quantas entregas ainda não entraram no relatório de produção.
     """
     sinal = ler_sinal_de_vida(pasta_fila, agora=agora)
     if sinal is None:
@@ -535,6 +536,7 @@ def estado_do_rip(pasta_fila=None, agora=None):
             "texto": 'RIP: sem informação — não é "parado", é "não sei". '
                      "A máquina do RIP ainda não deixou sinal de vida.",
             "erros": {},
+            "registro_pendente": 0,
         }
 
     erros = {nome: motivo for nome, motivo in sinal["maquinas"].items() if motivo}
@@ -572,7 +574,21 @@ def estado_do_rip(pasta_fila=None, agora=None):
                  f'erro nenhum. Se não voltar, aí sim vá até a máquina do RIP e veja '
                  f'"Última execução" no Agendador.')
 
-    return {"nivel": nivel, "texto": texto, "erros": erros}
+    # Entrega que ainda não entrou no registro de produção. De 09 a
+    # 16/09/2026 isso aconteceu com 61 entregas sem aparecer em tela
+    # nenhuma — só se descobriu cruzando o relatório com a pasta
+    # Enviados. Não trava a fila (a arte chega na máquina igual), por
+    # isso sobe no máximo pra amarelo; o vermelho continua sendo só
+    # "a fila não anda".
+    pendente = sinal.get("registro_pendente", 0)
+    if pendente:
+        if nivel == "ok":
+            nivel = "atencao"
+        plural = "entrega ainda fora" if pendente == 1 else "entregas ainda fora"
+        texto += (f" · {pendente} {plural} do relatório de produção — o vigia tenta "
+                  f"de novo a cada minuto, nada se perde.")
+
+    return {"nivel": nivel, "texto": texto, "erros": erros, "registro_pendente": pendente}
 
 
 def _data_curta(quando_iso):

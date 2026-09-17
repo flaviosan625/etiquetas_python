@@ -245,18 +245,29 @@ def ler_sinal_de_vida(pasta_fila=None, agora=None, posto=None):
 
     agora = agora or datetime.datetime.now()
     maquinas = dados.get("maquinas")
+    try:
+        pendente = int(dados.get("registro_pendente") or 0)
+    except (TypeError, ValueError):
+        pendente = 0
     return {
         "quando": quando,
         "idade_minutos": (agora - quando).total_seconds() / 60,
         "maquina": dados.get("maquina") or "?",
         "maquinas": maquinas if isinstance(maquinas, dict) else {},
+        "registro_pendente": pendente,
     }
 
 
-def registrar_sinal_de_vida(pasta_fila=None, resultado_por_maquina=None, agora=None, posto=None):
+def registrar_sinal_de_vida(pasta_fila=None, resultado_por_maquina=None, agora=None, posto=None,
+                            registro_pendente=None):
     """
     Deixa (ou atualiza) o sinal de vida. Devolve o caminho quando
     gravou, None quando decidiu não gravar ainda.
+
+    'registro_pendente' é quantas entregas ainda não entraram no
+    registro de produção. Vai junto pra que o PC principal enxergue a
+    pendência sem ir até a máquina do RIP ler log — antes, uma linha
+    perdida só aparecia meses depois, quando a comprovação fizesse falta.
 
     Nunca levanta: falhar em avisar que está vivo não pode impedir de
     trabalhar — é a mesma regra de registrar_envio.
@@ -267,8 +278,12 @@ def registrar_sinal_de_vida(pasta_fila=None, resultado_por_maquina=None, agora=N
         for nome, r in (resultado_por_maquina or {}).items()
     }
 
+    pendente = int(registro_pendente or 0)
     anterior = ler_sinal_de_vida(pasta_fila, agora=agora, posto=posto)
-    if anterior is not None and anterior["maquinas"] == estado:
+    # Pendência que mudou fura a espera pelo mesmo motivo que erro de
+    # máquina fura: é notícia, não rotina.
+    if (anterior is not None and anterior["maquinas"] == estado
+            and anterior["registro_pendente"] == pendente):
         if 0 <= anterior["idade_minutos"] < _INTERVALO_SINAL_MINUTOS:
             return None
 
@@ -278,6 +293,7 @@ def registrar_sinal_de_vida(pasta_fila=None, resultado_por_maquina=None, agora=N
         "maquina": platform.node(),
         "posto": posto or POSTO_PADRAO,
         "maquinas": estado,
+        "registro_pendente": pendente,
     }
     # grava atômico: quem lê do outro lado nunca pode pegar meio arquivo
     temporario = caminho.with_suffix(".json.tmp")
@@ -293,6 +309,206 @@ def registrar_sinal_de_vida(pasta_fila=None, resultado_por_maquina=None, agora=N
             pass
         return None
     return caminho
+
+
+# --- registro que não se perde ---------------------------------------
+#
+# Fila LOCAL das linhas que ainda não foram confirmadas lá no registro
+# do OneDrive. Mora ao lado do módulo, no disco da própria máquina do
+# RIP — de propósito: o que ela existe pra cobrir é justamente o
+# OneDrive falhar.
+#
+# Aconteceu de verdade, de 09 a 16/09/2026: 61 entregas sumiram do
+# relatório, 1.311 m² só de lona entre elas. O vigia entregava a arte,
+# tentava anotar a linha, a gravação falhava, ele avisava no log daquela
+# máquina (que ninguém lê) e seguia em frente. A linha morria ali. Dava
+# pra ver o buraco de fora: dentro de UMA rajada, umas gravavam e outras
+# não — às 15:27 de 16/09 entraram seis lonas e só uma foi registrada.
+#
+# Por isso nenhuma linha nasce mais direto no OneDrive: nasce aqui, e só
+# sai daqui quando for LIDA DE VOLTA lá dentro. Escrever sem erro não é
+# prova de que ficou.
+CAMINHO_REGISTRO_PENDENTE = pathlib.Path(__file__).resolve().parent / "registro_pendente.jsonl"
+
+# Por quantos dias a fila local continua CONFERINDO uma linha que já
+# entrou no registro, antes de largar ela de vez.
+#
+# Não basta conferir uma vez: a linha pode sumir depois. Enquanto ela
+# estiver aqui, toda passada relê o registro e reescreve o que faltar —
+# é a mesma ideia dos 15 dias de "Enviados", que foram o que permitiu
+# recuperar as 61 entregas perdidas. Um pouco mais que aqueles 15, de
+# propósito: a fila local é a primeira linha de defesa, a pasta
+# "Enviados" é a segunda.
+DIAS_GUARDA_REGISTRO = 20
+
+
+def _chave_do_registro(dados):
+    """Identidade de uma linha do registro: quando + máquina + arquivo."""
+    return (dados.get("quando"), dados.get("maquina"), dados.get("arquivo"))
+
+
+def _entrada_do_diario(item):
+    """
+    Uma entrada da fila local: a linha do registro + quando ela foi
+    conferida lá dentro pela última vez ('None' = ainda não entrou).
+
+    Aceita também a linha crua, sem embrulho, pra que um arquivo escrito
+    por uma versão anterior deste módulo continue sendo lido em vez de
+    virar lixo — é fila de comprovação, não pode se perder numa
+    atualização.
+    """
+    if isinstance(item, dict) and isinstance(item.get("linha"), dict):
+        return {"linha": item["linha"], "conferida_em": item.get("conferida_em")}
+    return {"linha": item, "conferida_em": None}
+
+
+def _ler_jsonl(caminho):
+    """
+    As linhas de um .jsonl como dicionários. Nunca levanta: arquivo que
+    não abre é o mesmo que vazio, e linha truncada (queda no meio de uma
+    gravação) é pulada em vez de derrubar a leitura inteira.
+    """
+    try:
+        with open(caminho, "r", encoding="utf-8") as f:
+            achados = []
+            for linha in f:
+                linha = linha.strip()
+                if not linha:
+                    continue
+                try:
+                    dados = json.loads(linha)
+                except ValueError:
+                    continue
+                if isinstance(dados, dict):
+                    achados.append(dados)
+            return achados
+    except OSError:
+        return []
+
+
+def _ler_diario(caminho=None):
+    """A fila local inteira, cada linha do registro com a última conferência dela."""
+    caminho = pathlib.Path(caminho or CAMINHO_REGISTRO_PENDENTE)
+    return [_entrada_do_diario(item) for item in _ler_jsonl(caminho)]
+
+
+def _guardar_pendentes(entradas, caminho=None):
+    """
+    Regrava a fila local inteira, atômico. False quando não conseguiu.
+
+    Aceita entrada embrulhada ou a linha crua — quem chama de fora
+    (teste, recuperação na mão) não precisa saber do embrulho.
+    """
+    caminho = pathlib.Path(caminho or CAMINHO_REGISTRO_PENDENTE)
+    temporario = caminho.with_suffix(".jsonl.tmp")
+    try:
+        caminho.parent.mkdir(parents=True, exist_ok=True)
+        with open(temporario, "w", encoding="utf-8") as f:
+            for item in entradas:
+                f.write(json.dumps(_entrada_do_diario(item), ensure_ascii=False) + "\n")
+        os.replace(temporario, caminho)
+        return True
+    except (OSError, TypeError, ValueError):
+        try:
+            temporario.unlink()
+        except OSError:
+            pass
+        return False
+
+
+def _arquivo_do_mes(quando_iso, pasta_relatorios=None):
+    """O .jsonl do mês a que a linha pertence ('2026-09-16T21:02:06' -> 2026-09.jsonl)."""
+    pasta = pathlib.Path(pasta_relatorios or PASTA_RELATORIOS) / NOME_SUBPASTA_REGISTRO
+    return pasta / f"{str(quando_iso)[:7]}.jsonl"
+
+
+def _acrescentar_conferindo(destino, dados):
+    """
+    Acrescenta a linha no registro e CONFERE relendo o arquivo.
+
+    A releitura não é paranoia: gravar sem erro não provou nada nas
+    perdas de setembro/2026 — a linha saía do vigia e não estava lá
+    depois. Enquanto não for lida de volta, ela continua na fila local.
+    """
+    try:
+        destino.parent.mkdir(parents=True, exist_ok=True)
+        with open(destino, "a", encoding="utf-8") as f:
+            f.write(json.dumps(dados, ensure_ascii=False) + "\n")
+    except (OSError, TypeError, ValueError):
+        return False
+    return _chave_do_registro(dados) in {_chave_do_registro(d) for d in _ler_jsonl(destino)}
+
+
+def _data_da_linha(linha):
+    """A hora da entrega, ou None quando a linha não disser (nunca levanta)."""
+    try:
+        return datetime.datetime.fromisoformat(linha.get("quando"))
+    except (TypeError, ValueError):
+        return None
+
+
+def conciliar_registro(pasta_relatorios=None, caminho_pendente=None, logger=None, agora=None):
+    """
+    Confere a fila local contra o registro do OneDrive: reescreve o que
+    não estiver lá e só então marca a linha como conferida.
+
+    Roda a cada passada, não só quando chega arquivo. São duas defesas
+    numa só:
+
+      - a linha que NÃO conseguiu ser gravada entra sozinha na passada
+        seguinte, sem ninguém perceber que houve problema;
+      - a linha que foi gravada e SUMIU depois volta, porque a fila
+        continua conferindo ela por DIAS_GUARDA_REGISTRO dias. Em
+        setembro/2026 isso aconteceu de verdade, e gravar sem erro não
+        impediu a entrega de desaparecer do relatório.
+
+    Linha velha e já provada a fila larga. Linha que nunca entrou fica,
+    por mais antiga que seja: comprovação não caduca.
+
+    Devolve {'gravadas': n, 'pendentes': n}.
+    """
+    caminho_pendente = pathlib.Path(caminho_pendente or CAMINHO_REGISTRO_PENDENTE)
+    entradas = _ler_diario(caminho_pendente)
+    if not entradas:
+        return {"gravadas": 0, "pendentes": 0}
+
+    agora = agora or datetime.datetime.now()
+    velho_demais = agora - datetime.timedelta(days=DIAS_GUARDA_REGISTRO)
+    gravadas, pendentes, ficam, chaves_por_mes = 0, 0, [], {}
+
+    for entrada in entradas:
+        linha = entrada["linha"]
+        destino = _arquivo_do_mes(linha.get("quando"), pasta_relatorios)
+        if destino not in chaves_por_mes:
+            chaves_por_mes[destino] = {_chave_do_registro(d) for d in _ler_jsonl(destino)}
+        chaves = chaves_por_mes[destino]
+        chave = _chave_do_registro(linha)
+
+        if chave in chaves:
+            conferida = True
+        elif _acrescentar_conferindo(destino, linha):
+            chaves.add(chave)
+            gravadas += 1
+            conferida = True
+        else:
+            conferida = False
+            pendentes += 1
+
+        entrada["conferida_em"] = agora.strftime("%Y-%m-%dT%H:%M:%S") if conferida else None
+        entregue_em = _data_da_linha(linha)
+        if conferida and entregue_em is not None and entregue_em < velho_demais:
+            continue
+        ficam.append(entrada)
+
+    if ficam != entradas or gravadas:
+        _guardar_pendentes(ficam, caminho_pendente)
+    if pendentes and logger:
+        logger(
+            "warn",
+            f"{pendentes} entrega(s) ainda não entraram no registro de produção — ficaram "
+            f"guardadas em '{caminho_pendente.name}' e o vigia tenta de novo na próxima passada.",
+        )
+    return {"gravadas": gravadas, "pendentes": pendentes}
 
 
 def registrar_envio(maquina, arquivo, girado, pasta_relatorios=None, quando=None,
@@ -315,43 +531,48 @@ def registrar_envio(maquina, arquivo, girado, pasta_relatorios=None, quando=None
     que rodou de verdade na UJV. Com isso guardado, o relatório de
     qualquer dia futuro tem de onde tirar o m² quando o nome não disser.
 
-    Nunca levanta exceção: falha de registro não pode impedir a arte de
-    chegar na impressora. Mas AVISA no log quando falha — este arquivo é
-    a comprovação do que foi produzido, e falhar em silêncio significaria
-    descobrir o buraco só no dia em que o documento fizesse falta.
+    A linha vai primeiro pra fila LOCAL (ver CAMINHO_REGISTRO_PENDENTE)
+    e só de lá pro OneDrive. Devolve True quando chegou no registro,
+    False quando ficou na fila — e nesse caso nada se perdeu, a passada
+    seguinte leva. Nunca levanta exceção: falha de registro não pode
+    impedir a arte de chegar na impressora.
     """
     quando = quando or datetime.datetime.now()
-    destino = pathlib.Path(pasta_relatorios or PASTA_RELATORIOS) / NOME_SUBPASTA_REGISTRO
     try:
-        pasta = destino
-        pasta.mkdir(parents=True, exist_ok=True)
-        try:
-            tamanho = arquivo.stat().st_size
-        except OSError:
-            tamanho = None
-        dados = {
-            "quando": quando.strftime("%Y-%m-%dT%H:%M:%S"),
-            "maquina": maquina,
-            "arquivo": arquivo.name,
-            "bytes": tamanho,
-            "girado": bool(girado),
-        }
-        if pagina:
-            largura_m, altura_m, paginas = pagina
-            dados["pagina_m"] = [round(largura_m, 4), round(altura_m, 4)]
-            dados["paginas"] = paginas
-        linha = json.dumps(dados, ensure_ascii=False)
-        with open(pasta / f"{quando:%Y-%m}.jsonl", "a", encoding="utf-8") as f:
-            f.write(linha + "\n")
-        return True
-    except (OSError, TypeError, ValueError) as e:
-        if logger:
-            logger(
-                "warn",
-                f"NÃO consegui registrar '{arquivo.name}' no histórico de produção ({destino}): {e}. "
-                f"O arquivo foi enviado pra impressão normalmente, mas não vai aparecer no relatório do dia.",
-            )
-        return False
+        tamanho = arquivo.stat().st_size
+    except OSError:
+        tamanho = None
+
+    dados = {
+        "quando": quando.strftime("%Y-%m-%dT%H:%M:%S"),
+        "maquina": maquina,
+        "arquivo": arquivo.name,
+        "bytes": tamanho,
+        "girado": bool(girado),
+    }
+    if pagina:
+        largura_m, altura_m, paginas = pagina
+        dados["pagina_m"] = [round(largura_m, 4), round(altura_m, 4)]
+        dados["paginas"] = paginas
+
+    caminho_pendente = pathlib.Path(CAMINHO_REGISTRO_PENDENTE)
+    _guardar_pendentes([*_ler_diario(caminho_pendente), dados], caminho_pendente)
+    conciliar_registro(pasta_relatorios, caminho_pendente)
+
+    ficou_pendente = any(
+        not entrada["conferida_em"]
+        and _chave_do_registro(entrada["linha"]) == _chave_do_registro(dados)
+        for entrada in _ler_diario(caminho_pendente)
+    )
+    if ficou_pendente and logger:
+        logger(
+            "warn",
+            f"NÃO consegui gravar '{arquivo.name}' no registro de produção "
+            f"({_arquivo_do_mes(dados['quando'], pasta_relatorios)}). O arquivo foi enviado pra "
+            f"impressão normalmente e a linha ficou guardada em '{caminho_pendente.name}' — "
+            f"ela entra sozinha numa próxima passada, nada sai do relatório do dia.",
+        )
+    return not ficou_pendente
 
 
 def limpar_enviados_antigos(pasta_enviados, dias=None, logger=print, agora=None):
@@ -982,7 +1203,13 @@ def vigiar_fila_uma_vez(pasta_fila=None, maquinas=None, logger=print, pasta_rela
         else:
             _avisar_erro_de_maquina(nome_maquina, None, logger)
 
-    registrar_sinal_de_vida(pasta_raiz, resultado_por_maquina, posto=posto)
+    # Toda passada tenta fechar o que ficou pendente no registro, mesmo
+    # quando não chegou arquivo nenhum agora: é assim que uma linha que
+    # não passou entra sozinha no minuto seguinte, sem ninguém precisar
+    # perceber que houve problema.
+    pendencia = conciliar_registro(pasta_relatorios, logger=logger)
+    registrar_sinal_de_vida(pasta_raiz, resultado_por_maquina, posto=posto,
+                            registro_pendente=pendencia["pendentes"])
 
     if pasta_raiz.is_dir():
         for item in pasta_raiz.iterdir():
