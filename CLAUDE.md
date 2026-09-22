@@ -5,15 +5,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## O que é este projeto
 
 Sistema de produção da **Uny CV / Unyco Cenografia** (estandes, cenografia e comunicação visual
-em grande formato). Começou como gerador de etiquetas e hoje cobre quatro coisas que compartilham
+em grande formato). Começou como gerador de etiquetas e hoje cobre cinco coisas que compartilham
 o mesmo `config.json` e o mesmo leitor de nome de arquivo:
 
 1. **Etiquetas / OS / checklist** — `main.py` → `gui.py` → `processamento.py`
 2. **Envio para as impressoras** — `producao.py` → `envio_impressao.py` → `rasterlink_hotfolder.py`
 3. **Comprovação do que foi produzido** — registro permanente → `relatorio_producao.py`
 4. **Corte na fresa CNC** — `corte_parametros.py` → gadget Lua dentro do Aspire
+5. **Recebimento das artes** — `gui_receber.py` → `origem_artes.py` → `receber_artes.py`
 
-O `README.md` descreve as quatro frentes para quem vai *usar* o sistema. Este arquivo é o mapa
+O `README.md` descreve as quatro primeiras frentes para quem vai *usar* o sistema. Este arquivo é o mapa
 fundo: arquitetura, decisões e as armadilhas que já custaram material.
 
 **Tudo aqui é escrito em português** — código, comentários, docstrings, mensagens de tela,
@@ -92,6 +93,31 @@ morria. Gravar sem erro não é prova. A prova de que uma entrega aconteceu é o
 Arquivo nunca é escrito dentro da hot folder: é montado na pasta-mãe (`~montando~*.parcial`) e entra
 por `os.replace`. O RIP vigia ativamente e ripa arquivo pela metade se deixar. Uma faxina remove
 montagens abandonadas.
+
+### Recebimento: a origem não importa, a arte manda
+
+Arte chega com caderno (`caderno_arte` → `receber_artes.baixar_lote`) ou sem ele — só o link ou o
+arquivo. Sem caderno é a tela `gui_receber.py`, em dois passos: **prévia com caixinhas antes de
+baixar** e conferência antes de arquivar. Cada origem de `origem_artes.py` responde igual
+(`listar`, `miniatura`, `baixar`): Drive (API, com a miniatura que o Google gera), **WeTransfer**,
+pasta local e ZIP. O WeTransfer não tem API de download: usamos os endereços que o próprio site usa
+(`prepare-download`, `download`), e o servidor aceita Range, então `ArquivoHttp` deixa o `zipfile`
+ler o índice de um ZIP remoto sem baixá-lo. Não é oficial e pode mudar — o plano B é baixar o ZIP no
+navegador e abrir como ZIP.
+
+Regras do usuário (2026-09-21), que o código segue sem perguntar: **a medida vale sempre a da
+arte**, nunca a do nome; o que o nome do arquivo especificar (`10UN`, `LONA`) vale; sem
+especificação, **1 unidade e `A DEFINIR`**. `1UN` é resposta; `A DEFINIR` é pendência — fica em
+`falta_confirmar` no registro, porque o material escolhe a máquina.
+
+O que baixa espera em `caminhos.PASTA_RECEBENDO`, **local e fora do OneDrive**: arte que ele ainda
+pode recusar não sincroniza, e cliente novo só nasce ao arquivar. O Illustrator e o Photoshop
+trabalham lá também, nunca dentro de ARTES. PDF com páginas de **tamanhos diferentes** vira uma peça
+por página (o TOTEM do Mandarin escondia um quadrado de 0,50 m na página 2 — a máquina imprime só a
+primeira). Numa **imagem**, a marca de corte não é declarada: `marcas_de_corte.detectar_corte_em_imagem`
+acha a linha pelas marcas cruzando margens opostas (é isso que limpa a tarja do Illustrator), e a
+medida da arte passa a ser a distância entre as marcas, não a imagem inteira. O corte só acontece
+depois que ele aprova, no Photoshop, conferido — mantendo a sangria, como no PDF.
 
 ### Corte CNC: uma fonte só de parâmetros
 

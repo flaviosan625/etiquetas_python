@@ -103,10 +103,33 @@ def _unidade(doc, pagina):
         return 1.0
 
 
-def medidas(caminho):
+def medidas_da_pagina(doc, indice=0):
+    """
+    As medidas de UMA página de um documento já aberto. Existe separado
+    porque PDF pode trazer peças diferentes em cada página: o TOTEM do
+    Mandarin Sessions (2026-09-21) tinha 0,80x1,90 m na página 1 e um
+    quadrado de 0,50x0,50 m na página 2 — medir só a primeira escondia a
+    segunda peça.
+    """
+    pagina = doc[indice]
+    unidade = _unidade(doc, pagina)
+    fora = {"unidade": unidade, "paginas": doc.page_count, "pagina": indice}
+    for nome in ("MediaBox", "CropBox", "TrimBox", "BleedBox"):
+        caixa = _caixa(doc, pagina, nome)
+        fora[nome] = caixa
+        if caixa:
+            fora[nome + "_pt"] = ((caixa[2] - caixa[0]) * unidade,
+                                  (caixa[3] - caixa[1]) * unidade)
+    fora["tem_texto"] = bool(pagina.get_text().strip())
+    fora["rect"] = (pagina.rect.width, pagina.rect.height)
+    return fora
+
+
+def medidas(caminho, indice=0):
     """
     O que interessa saber de um PDF antes e depois: caixas, unidade e se
     tem tarja de informação. Devolve dicionário, ou None se não abrir.
+    Por padrão a primeira página; 'indice' escolhe outra.
     """
     pymupdf = _pymupdf()
     try:
@@ -114,18 +137,7 @@ def medidas(caminho):
     except Exception:
         return None
     try:
-        pagina = doc[0]
-        unidade = _unidade(doc, pagina)
-        fora = {"unidade": unidade, "paginas": doc.page_count}
-        for nome in ("MediaBox", "CropBox", "TrimBox", "BleedBox"):
-            caixa = _caixa(doc, pagina, nome)
-            fora[nome] = caixa
-            if caixa:
-                fora[nome + "_pt"] = ((caixa[2] - caixa[0]) * unidade,
-                                      (caixa[3] - caixa[1]) * unidade)
-        fora["tem_texto"] = bool(pagina.get_text().strip())
-        fora["rect"] = (pagina.rect.width, pagina.rect.height)
-        return fora
+        return medidas_da_pagina(doc, indice)
     finally:
         doc.close()
 
@@ -403,7 +415,10 @@ def _conferir_e_trocar(original, novo, antes):
 # desistir. Ele já travou de vez no meio do 'salvar' (2026-09-11) e
 # pendurou o processo inteiro. Num lote de 93 artes, uma trava não pode
 # parar as outras — passado este limite, aborta esta arte e segue.
-_LIMITE_ILLUSTRATOR_S = 150
+# Era 150 s até 2026-09-21: a parede externa do EIXO PRINCIPAL (3,7 MB)
+# estourou os 150 s no lote de 20/09 e passou em 2 s na segunda tentativa.
+# Travar de vez continua pego; arte grande num Illustrator lento, não.
+_LIMITE_ILLUSTRATOR_S = 300
 
 
 def remover_marcas_com_limite(caminho_pdf, timeout_s=_LIMITE_ILLUSTRATOR_S, logger=None):
@@ -448,6 +463,391 @@ def remover_marcas_com_limite(caminho_pdf, timeout_s=_LIMITE_ILLUSTRATOR_S, logg
     if logger and not ok:
         logger("warn", "Não removi a marca: %s" % mensagem)
     return ok, mensagem
+
+
+# ======================================================================
+# IMAGEM (TIFF, JPG, PNG, PSD): não declara onde a arte acaba
+# ======================================================================
+#
+# No PDF a arte se DECLARA (TrimBox, BleedBox). Numa imagem, a marca de
+# corte é só pixel preto no canto — pra tirar, é preciso ACHAR a linha de
+# corte. Provado em 2026-09-21 com gabarito (um PDF que declara o TrimBox,
+# rasterizado e lido só por pixel): erro de 0,3 mm numa peça de 5,20 m.
+#
+# O que faz funcionar é cruzar margens opostas: a marca de corte de
+# verdade aparece em cima E embaixo na mesma posição; a tarja de
+# informação do Illustrator (nome do arquivo, data), que mora só em cima,
+# não tem par e cai fora sozinha — no teste eram 19 falsos positivos.
+#
+# E aqui a detecção vale mais que o corte: numa imagem com marca, o
+# tamanho pelo DPI é o da imagem INTEIRA, com moldura. A medida da arte —
+# a que vai no nome — é a distância entre as marcas.
+#
+# Regra do usuário (2026-09-21): o sistema PROPÕE, ele APROVA. Nada é
+# cortado sem o OK, e o corte mantém a sangria, como no PDF.
+
+# Acima disto o Pillow não abre a imagem inteira com folga (TIFF de GB já
+# travou o PyMuPDF por minutos, 2026-08-31): o Photoshop reduz antes.
+LIMITE_DETECCAO_PIXELS = 90_000_000
+# Resolução em que a detecção trabalha. Numa peça de 5,7 m dá ~1 mm por
+# pixel — foi nessa que o erro medido foi 0,3 mm.
+LARGURA_DETECCAO = 6000
+_LIMIAR_TINTA = 245
+# Margens opostas discordando mais que isto: a detecção não é confiável.
+_DESACORDO_MAXIMO_MM = 3.0
+_LIMITE_PHOTOSHOP_S = 600
+# Comparar pixel a pixel carrega a imagem inteira em RGB (3 bytes/pixel):
+# até aqui cabe com folga; acima, confere tamanho e resolução.
+_LIMITE_COMPARACAO_PIXELS = 40_000_000
+_EXTENSOES_IMAGEM = (".tif", ".tiff", ".jpg", ".jpeg", ".png", ".psd")
+
+
+def _valores(imagem):
+    """Os pixels numa lista — getdata() foi descontinuado no Pillow novo."""
+    ler = getattr(imagem, "get_flattened_data", None) or imagem.getdata
+    return list(ler())
+
+
+def _maior_bloco(perfil, limiar):
+    """Maior faixa contígua acima do limiar — o bloco da arte com sangria."""
+    melhor, inicio = (0, -1), None
+    for i, v in enumerate(perfil):
+        if v > limiar and inicio is None:
+            inicio = i
+        elif v <= limiar and inicio is not None:
+            if i - 1 - inicio > melhor[1] - melhor[0]:
+                melhor = (inicio, i - 1)
+            inicio = None
+    if inicio is not None and len(perfil) - 1 - inicio > melhor[1] - melhor[0]:
+        melhor = (inicio, len(perfil) - 1)
+    return melhor
+
+
+def _grupos(indices, folga=4):
+    """Índices vizinhos juntos: cada grupo é uma linha de marca."""
+    if not indices:
+        return []
+    saida, atual = [], [indices[0]]
+    for i in indices[1:]:
+        if i - atual[-1] <= folga:
+            atual.append(i)
+        else:
+            saida.append(atual)
+            atual = [i]
+    saida.append(atual)
+    return [(g[0] + g[-1]) / 2 for g in saida]
+
+
+def _cruzar(a, b, tolerancia):
+    """Só o que aparece nas duas margens opostas, na mesma posição."""
+    pares = []
+    for va in a:
+        perto = [vb for vb in b if abs(va - vb) <= tolerancia]
+        if perto:
+            vb = min(perto, key=lambda v: abs(va - v))
+            pares.append(((va + vb) / 2, abs(va - vb)))
+    return pares
+
+
+def detectar_corte_em_imagem(cinza):
+    """
+    Onde está a linha de corte numa imagem (Pillow, modo 'L'), só olhando
+    pixel. Devolve dict com 'corte' (x0, y0, x1, y1), 'bloco' (a arte com
+    sangria), 'desacordo_px' e 'notas'; ou None + notas quando não acha
+    exatamente um par de marcas por eixo.
+    """
+    from PIL import Image
+    tinta = cinza.point(lambda v: 255 if v < _LIMIAR_TINTA else 0, mode="L")
+    largura, altura = tinta.size
+    notas = []
+
+    # média de tinta por coluna e por linha, numa passada só (reamostra por área)
+    colunas = _valores(tinta.resize((largura, 1), Image.Resampling.BOX))
+    linhas = _valores(tinta.resize((1, altura), Image.Resampling.BOX))
+    bx0, bx1 = _maior_bloco(colunas, 255 * 0.30)
+    by0, by1 = _maior_bloco(linhas, 255 * 0.30)
+    if bx1 <= bx0 or by1 <= by0:
+        return None, ["não achei o bloco da arte"]
+
+    faixa = max(5, int(0.012 * largura))
+
+    def com_tinta(caixa, eixo):
+        recorte = tinta.crop(caixa)
+        if recorte.width <= 0 or recorte.height <= 0:
+            return []
+        px, py = recorte.getprojection()
+        return [i for i, v in enumerate(py if eixo == "y" else px) if v]
+
+    ys_esq = _grupos(com_tinta((max(0, bx0 - faixa), 0, max(1, bx0 - 2), altura), "y"))
+    ys_dir = _grupos(com_tinta((min(largura - 1, bx1 + 2), 0, min(largura, bx1 + faixa), altura), "y"))
+    xs_cima = _grupos(com_tinta((0, max(0, by0 - faixa), largura, max(1, by0 - 2)), "x"))
+    xs_baixo = _grupos(com_tinta((0, min(altura - 1, by1 + 2), largura, min(altura, by1 + faixa)), "x"))
+
+    tolerancia = max(3, int(0.002 * largura))
+    pares_y = _cruzar(ys_esq, ys_dir, tolerancia)
+    pares_x = _cruzar(xs_cima, xs_baixo, tolerancia)
+    notas.append("marcas que batem nas margens opostas: %d na vertical, %d na horizontal"
+                 % (len(pares_y), len(pares_x)))
+    if len(pares_y) != 2 or len(pares_x) != 2:
+        return None, notas + ["esperava 2 marcas em cada eixo — sem isso não dá pra confiar"]
+
+    return {
+        "corte": (pares_x[0][0], pares_y[0][0], pares_x[1][0], pares_y[1][0]),
+        "bloco": (bx0, by0, bx1 + 1, by1 + 1),
+        "desacordo_px": max(d for _, d in pares_y + pares_x),
+        "notas": notas,
+    }, notas
+
+
+def _reduzir_pelo_photoshop(origem, destino_png, largura):
+    """Imagem grande demais pro Pillow: o Photoshop abre e salva uma cópia reduzida."""
+    import subprocess
+    import sys
+    codigo = ("import sys, marcas_de_corte as m;"
+              "m._reduzir_no_photoshop(sys.argv[1], sys.argv[2], int(sys.argv[3]));"
+              "print('OK')")
+    ambiente = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUTF8="1")
+    saida = subprocess.run([sys.executable, "-c", codigo, str(origem), str(destino_png), str(largura)],
+                           cwd=str(pathlib.Path(__file__).parent), env=ambiente, capture_output=True,
+                           text=True, encoding="utf-8", errors="replace", timeout=_LIMITE_PHOTOSHOP_S)
+    if "OK" not in (saida.stdout or ""):
+        raise RuntimeError((saida.stderr or "o Photoshop não reduziu a imagem").strip()[-300:])
+    return destino_png
+
+
+def _reduzir_no_photoshop(origem, destino_png, largura):
+    pythoncom.CoInitialize()
+    app = win32com.client.Dispatch("Photoshop.Application")
+    app.DisplayDialogs = 3                      # psDisplayNoDialogs
+    unidades = app.Preferences.RulerUnits
+    app.Preferences.RulerUnits = 1              # psPixels
+    try:
+        doc = app.Open(str(origem))
+        try:
+            altura = float(doc.Height) * largura / float(doc.Width)
+            doc.ResizeImage(largura, altura)
+            doc.SaveAs(str(destino_png), win32com.client.Dispatch("Photoshop.PNGSaveOptions"), True)
+        finally:
+            doc.Close(2)                        # psDoNotSaveChanges: o original não muda
+    finally:
+        app.Preferences.RulerUnits = unidades
+
+
+def propor_corte_imagem(caminho, reduzir=None, pasta_temporaria=None):
+    """
+    A proposta de corte de uma imagem com marca, pra ele aprovar.
+
+    Devolve dict: 'ok' (achou e confia), 'motivo', 'largura_px',
+    'altura_px', 'dpi', 'corte_px' (a linha de corte, na resolução do
+    arquivo), 'sangria_px' (quanto de sangria fica em cada lado, em
+    pixel do arquivo), 'desacordo_mm', 'previa' (imagem reduzida pra
+    mostrar) e 'escala_previa' (px da prévia por px do arquivo).
+    """
+    from PIL import Image
+    caminho = pathlib.Path(caminho)
+    fora = {"ok": False, "motivo": "", "corte_px": None, "sangria_px": 0, "previa": None}
+    try:
+        with Image.open(str(caminho)) as img:
+            largura, altura = img.size
+            dpi = img.info.get("dpi")
+            fora.update(largura_px=largura, altura_px=altura,
+                        dpi=float(dpi[0]) if dpi and dpi[0] else None)
+            previa_cor = None
+            if largura * altura <= LIMITE_DETECCAO_PIXELS:
+                if img.format == "JPEG" and largura > LARGURA_DETECCAO:
+                    img.draft("RGB", (LARGURA_DETECCAO, int(altura * LARGURA_DETECCAO / largura)))
+                img.load()
+                trabalho = img.convert("L")
+                # a prévia que ele olha é EM COR — a cinza é só pra achar a marca
+                fator = max(1, -(-max(img.size) // 1400))
+                try:
+                    previa_cor = img.reduce(fator).convert("RGB")
+                except ValueError:
+                    # reduce() não aceita todo modo (TIFF CMYK de impressão)
+                    previa_cor = img.convert("RGB").reduce(fator)
+            else:
+                trabalho = None
+    except Exception as e:
+        fora["motivo"] = "a imagem não abriu: %s" % e
+        return fora
+
+    if trabalho is None:
+        # grande demais pro Pillow: o Photoshop reduz uma cópia
+        import tempfile
+        reduzir = reduzir or _reduzir_pelo_photoshop
+        pasta = pathlib.Path(pasta_temporaria or tempfile.gettempdir())
+        png = pasta / ("~deteccao~%s.png" % caminho.stem)
+        try:
+            reduzir(caminho, png, LARGURA_DETECCAO)
+            with Image.open(str(png)) as reduzida:
+                trabalho = reduzida.convert("L")
+                previa_cor = reduzida.convert("RGB")
+        except Exception as e:
+            fora["motivo"] = "o Photoshop não conseguiu reduzir a imagem pra procurar a marca: %s" % e
+            return fora
+        finally:
+            png.unlink(missing_ok=True)
+
+    if trabalho.width > LARGURA_DETECCAO:
+        trabalho = trabalho.resize(
+            (LARGURA_DETECCAO, max(1, round(trabalho.height * LARGURA_DETECCAO / trabalho.width))),
+            Image.Resampling.BOX)
+    # medida NO FIM: o JPEG já pode ter aberto reduzido (modo rascunho) e o
+    # Photoshop entrega a cópia reduzida — a escala é sempre detecção ÷ arquivo
+    escala = trabalho.width / largura
+
+    previa = previa_cor if previa_cor is not None else trabalho.convert("RGB")
+    previa.thumbnail((1400, 1400))
+    fora["previa"] = previa
+    fora["escala_previa"] = previa.width / largura
+
+    achado, notas = detectar_corte_em_imagem(trabalho)
+    if not achado:
+        fora["motivo"] = "; ".join(notas)
+        return fora
+
+    x0, y0, x1, y1 = (v / escala for v in achado["corte"])
+    b0, c0, b1, c1 = (v / escala for v in achado["bloco"])
+    # sangria que fica: o menor lado em que a arte chega até a borda — lado
+    # com fundo branco encolhe o bloco e não pode ditar a sangria
+    lados = [x0 - b0, y0 - c0, b1 - x1, c1 - y1]
+    positivos = [v for v in lados if v > 1]
+    sangria = min(positivos) if positivos else 0.0
+    mm_por_px = (25.4 / fora["dpi"]) if fora["dpi"] else None
+    desacordo_mm = achado["desacordo_px"] / escala * mm_por_px if mm_por_px else None
+
+    fora.update(corte_px=(round(x0), round(y0), round(x1), round(y1)),
+                sangria_px=round(sangria), desacordo_mm=desacordo_mm, notas=notas)
+    if desacordo_mm is not None and desacordo_mm > _DESACORDO_MAXIMO_MM:
+        fora["motivo"] = ("as marcas de lados opostos discordam em %.1f mm — confira antes de aprovar"
+                          % desacordo_mm)
+        return fora
+    fora["ok"] = True
+    fora["motivo"] = "marcas encontradas nos quatro lados, batendo entre si"
+    return fora
+
+
+def retangulo_do_corte(proposta, sangria_px=None):
+    """
+    O retângulo que FICA: a linha de corte mais a sangria de cada lado,
+    sem passar da imagem. É o que vai pro Photoshop.
+    """
+    x0, y0, x1, y1 = proposta["corte_px"]
+    s = proposta["sangria_px"] if sangria_px is None else sangria_px
+    return (max(0, int(x0 - s)), max(0, int(y0 - s)),
+            min(proposta["largura_px"], int(round(x1 + s))), min(proposta["altura_px"], int(round(y1 + s))))
+
+
+def medidas_da_proposta(proposta, sangria_px=None):
+    """(arte_m, sangria_m) da proposta: a arte é entre as marcas; a sangria, o que fica."""
+    dpi = proposta.get("dpi")
+    if not dpi or not proposta.get("corte_px"):
+        return None, None
+    m_por_px = 0.0254 / dpi
+    x0, y0, x1, y1 = proposta["corte_px"]
+    r = retangulo_do_corte(proposta, sangria_px)
+    return ((x1 - x0) * m_por_px, (y1 - y0) * m_por_px), ((r[2] - r[0]) * m_por_px, (r[3] - r[1]) * m_por_px)
+
+
+def _cortar_no_photoshop(origem, destino, x0, y0, x1, y1):
+    """Corta no Photoshop e salva uma CÓPIA no mesmo formato. Roda no processo filho."""
+    pythoncom.CoInitialize()
+    app = win32com.client.Dispatch("Photoshop.Application")
+    app.DisplayDialogs = 3
+    unidades = app.Preferences.RulerUnits
+    app.Preferences.RulerUnits = 1              # psPixels
+    try:
+        doc = app.Open(str(origem))
+        try:
+            doc.Crop([x0, y0, x1, y1])
+            ext = pathlib.Path(destino).suffix.lower()
+            if ext in (".tif", ".tiff"):
+                opcoes = win32com.client.Dispatch("Photoshop.TiffSaveOptions")
+                opcoes.ImageCompression = 2     # LZW: sem perda
+            elif ext in (".jpg", ".jpeg"):
+                opcoes = win32com.client.Dispatch("Photoshop.JPEGSaveOptions")
+                opcoes.Quality = 12             # máxima: salvar JPG recomprime
+            elif ext == ".png":
+                opcoes = win32com.client.Dispatch("Photoshop.PNGSaveOptions")
+            else:
+                opcoes = win32com.client.Dispatch("Photoshop.PhotoshopSaveOptions")
+            doc.SaveAs(str(destino), opcoes, True)
+        finally:
+            doc.Close(2)
+    finally:
+        app.Preferences.RulerUnits = unidades
+
+
+def _cortar_pelo_photoshop(origem, destino, retangulo, timeout_s=_LIMITE_PHOTOSHOP_S):
+    """O Photoshop num processo à parte, com tempo-limite — como o Illustrator."""
+    import subprocess
+    import sys
+    codigo = ("import sys, marcas_de_corte as m;"
+              "m._cortar_no_photoshop(sys.argv[1], sys.argv[2], *map(int, sys.argv[3:7]));"
+              "print('OK')")
+    ambiente = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUTF8="1")
+    try:
+        saida = subprocess.run([sys.executable, "-c", codigo, str(origem), str(destino), *map(str, retangulo)],
+                               cwd=str(pathlib.Path(__file__).parent), env=ambiente, capture_output=True,
+                               text=True, encoding="utf-8", errors="replace", timeout=timeout_s)
+    except subprocess.TimeoutExpired:
+        raise RuntimeError("o Photoshop não respondeu em %ds" % timeout_s)
+    if "OK" not in (saida.stdout or ""):
+        raise RuntimeError((saida.stderr or "o Photoshop não cortou").strip()[-300:])
+
+
+def cortar_imagem(caminho, retangulo, logger=None, cortador=None):
+    """
+    Corta a imagem em 'caminho' pro 'retangulo' (x0, y0, x1, y1, em pixel
+    do arquivo) — no lugar, mas só depois de conferir. Quem chama passa a
+    CÓPIA de trabalho: o original recebido nunca é tocado.
+
+    Confere antes de trocar: o tamanho em pixel tem que ser o do corte, a
+    resolução (DPI) tem que continuar a mesma, e — quando a imagem cabe no
+    Pillow — o miolo cortado tem que desenhar igual ao mesmo pedaço do
+    original. 'cortador' existe pro teste não precisar do Photoshop.
+    Devolve (ok, mensagem).
+    """
+    from PIL import Image
+    caminho = pathlib.Path(caminho)
+    cortador = cortador or _cortar_pelo_photoshop
+    novo = caminho.with_name("~cortada~" + caminho.name)
+    x0, y0, x1, y1 = map(int, retangulo)
+    try:
+        cortador(caminho, novo, (x0, y0, x1, y1))
+    except Exception as e:
+        novo.unlink(missing_ok=True)
+        return False, str(e)
+    if not novo.is_file():
+        return False, "o arquivo cortado não apareceu"
+    try:
+        with Image.open(str(caminho)) as antes, Image.open(str(novo)) as depois:
+            tamanho_ok = abs(depois.width - (x1 - x0)) <= 1 and abs(depois.height - (y1 - y0)) <= 1
+            dpi_a, dpi_d = antes.info.get("dpi"), depois.info.get("dpi")
+            dpi_ok = not dpi_a or (dpi_d and abs(float(dpi_a[0]) - float(dpi_d[0])) < 0.5)
+            igual, explicacao = True, "imagem grande demais pra comparar pixel a pixel; conferido o tamanho"
+            if tamanho_ok and antes.width * antes.height <= _LIMITE_COMPARACAO_PIXELS:
+                pedaco = antes.convert("RGB").crop((x0, y0, x1, y1))
+                pedaco.thumbnail((_LARGURA_CONFERENCIA, _LARGURA_CONFERENCIA))
+                cortada = depois.convert("RGB")
+                cortada.thumbnail((_LARGURA_CONFERENCIA, _LARGURA_CONFERENCIA))
+                igual, explicacao = arte_esta_igual(pedaco, cortada)
+    except Exception as e:
+        novo.unlink(missing_ok=True)
+        return False, "não consegui conferir o corte: %s" % e
+    if not tamanho_ok:
+        novo.unlink(missing_ok=True)
+        return False, "o corte saiu com outro tamanho. NÃO troquei — o original continua lá."
+    if not dpi_ok:
+        novo.unlink(missing_ok=True)
+        return False, "a resolução mudou no corte (%s -> %s dpi). NÃO troquei." % (dpi_a, dpi_d)
+    if not igual:
+        novo.unlink(missing_ok=True)
+        return False, "%s. NÃO troquei — o original continua lá." % explicacao
+    os.replace(str(novo), str(caminho))
+    if logger:
+        logger("ok", "marca de corte cortada de '%s': %s" % (caminho.name, explicacao))
+    return True, explicacao
 
 
 if __name__ == "__main__":

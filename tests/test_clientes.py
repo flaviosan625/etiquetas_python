@@ -178,3 +178,64 @@ def test_so_prontos_e_gravado_e_lido_do_cliente_json(onedrive_de_mentira):
 
     assert cl.obter("Mercado Livre").so_prontos is True
     assert json.loads((c.pasta / cl.NOME_CONFIG).read_text(encoding="utf-8"))["so_prontos"] is True
+
+
+# ------------------------------------------- nome digitado na tela de receber
+
+def test_nome_vazio(onedrive_de_mentira):
+    assert cl.situacao_do_nome("   ") == ("vazio", None)
+
+
+def test_nome_que_ja_existe_mesmo_com_outra_grafia(onedrive_de_mentira):
+    """'MERCADO LIVRE' digitado não pode criar um segundo cliente ao lado de 'Mercado Livre'."""
+    cl.criar("Mercado Livre")
+    for digitado in ("Mercado Livre", "MERCADO LIVRE", "mercadolivre", "  Mercado  Livre "):
+        situacao, cliente = cl.situacao_do_nome(digitado)
+        assert situacao == "existe" and cliente.nome == "Mercado Livre", digitado
+
+
+def test_nome_sem_acento_acha_o_cliente_com_acento(onedrive_de_mentira):
+    cl.criar("Túnel Eventos")
+    assert cl.situacao_do_nome("TUNEL EVENTOS")[0] == "existe"
+
+
+def test_nome_parecido_pede_confirmacao(onedrive_de_mentira):
+    cl.criar("Mercado Livre")
+    situacao, cliente = cl.situacao_do_nome("Mercado")
+    assert situacao == "parecido" and cliente.nome == "Mercado Livre"
+
+
+def test_nome_curto_demais_nao_vira_parecido_de_tudo(onedrive_de_mentira):
+    """'ML' está dentro de muita coisa; parecido só com 4+ letras."""
+    cl.criar("Mercado Livre")
+    assert cl.situacao_do_nome("ML")[0] == "novo"
+
+
+def test_nome_novo(onedrive_de_mentira):
+    cl.criar("Mercado Livre")
+    assert cl.situacao_do_nome("Mandarin Sessions") == ("novo", None)
+
+
+def test_nome_invalido_explica(onedrive_de_mentira):
+    situacao, mensagem = cl.situacao_do_nome("Cliente A/B")
+    assert situacao == "invalido" and "Cliente A_B" in mensagem
+
+
+def test_obter_ou_criar_usa_o_que_existe(onedrive_de_mentira):
+    original = cl.criar("Mercado Livre")
+    cliente, criado = cl.obter_ou_criar("MERCADO LIVRE")
+    assert not criado and cliente.pasta == original.pasta
+
+
+def test_obter_ou_criar_nasce_a_pasta_do_nome_digitado(onedrive_de_mentira):
+    """Pedido de 21/09: a pasta do cliente nasce do nome informado na tela."""
+    cliente, criado = cl.obter_ou_criar("Mandarin Sessions")
+    assert criado
+    assert cliente.pasta == caminhos.RECEBIMENTO_DE_ARTES / "Mandarin Sessions"
+    assert (cliente.pasta / "ARTES").is_dir()
+
+
+def test_obter_ou_criar_recusa_vazio_e_invalido(onedrive_de_mentira):
+    for ruim in ("", "a/b", "_sistema"):
+        with pytest.raises(cl.ErroCliente):
+            cl.obter_ou_criar(ruim)

@@ -248,7 +248,7 @@ def categoria_do_material(texto_material, config=None):
     return categoria
 
 
-def _descricao_limpa(descricao, config):
+def descricao_limpa(descricao, config):
     """
     A descrição sem nenhuma palavra que seja categoria ou sinônimo.
 
@@ -263,12 +263,29 @@ def _descricao_limpa(descricao, config):
     return " ".join(sobra).strip(" -;,")
 
 
-def _medida_metros_para_nome(medida_m):
+def medida_metros_para_nome(medida_m):
     """(6.0, 3.0) -> '6,00X3,00M'. É a medida MEDIDA na arte, não do nome."""
     if not medida_m:
         return None
     return "%sX%sM" % (("%.2f" % medida_m[0]).replace(".", ","),
                        ("%.2f" % medida_m[1]).replace(".", ","))
+
+
+def montar_nome(quantidade, categoria, medida, descricao, sangria=None):
+    """
+    O nome no padrão da casa, com as partes já decididas:
+
+        <QTD>UN <CATEGORIA> <LARGURA>X<ALTURA>M_<DESCRIÇÃO>_sangria <LxA>
+
+    Um lugar só pra esse formato: o caderno (nome_no_padrao) e o
+    recebimento sem caderno (receber_artes) passam por aqui, e um nome
+    nunca sai diferente do outro por um detalhe de espaço ou vírgula.
+    'medida' e 'sangria' já vêm no formato '6,00X3,00M'.
+    """
+    nome = "%dUN %s %s_%s" % (int(quantidade), categoria, medida, descricao)
+    if sangria:
+        nome += "_sangria %s" % sangria
+    return sanitizar_nome_arquivo(nome)
 
 
 def nome_no_padrao(ficha, config=None, medida_arte=None):
@@ -290,7 +307,7 @@ def nome_no_padrao(ficha, config=None, medida_arte=None):
     """
     config = config or carregar_config()
 
-    medida = medida_para_nome(ficha.get("medidas")) or _medida_metros_para_nome(medida_arte)
+    medida = medida_para_nome(ficha.get("medidas")) or medida_metros_para_nome(medida_arte)
     if not medida:
         return None, "medida '%s' não está no formato largura x altura" % (ficha.get("medidas") or "",)
 
@@ -298,20 +315,16 @@ def nome_no_padrao(ficha, config=None, medida_arte=None):
     if not categoria:
         return None, "material '%s' não cai em nenhuma categoria cadastrada" % (ficha.get("material") or "",)
 
-    descricao = _descricao_limpa(ficha.get("nome") or "", config)
+    descricao = descricao_limpa(ficha.get("nome") or "", config)
     if not descricao:
         # Nome da peça é só uma palavra de material que contradiz o campo
         # MATERIAL. A etiqueta do link costuma ser mais descritiva.
         etiqueta = re.sub(r"^\s*AF\s*[-–]\s*", "", ficha.get("etiqueta_link") or "")
-        descricao = _descricao_limpa(etiqueta, config) or "PECA SLIDE %s" % ficha.get("slide")
+        descricao = descricao_limpa(etiqueta, config) or "PECA SLIDE %s" % ficha.get("slide")
 
     quantidade = re.sub(r"\D", "", str(ficha.get("quantidade") or "1")) or "1"
-    nome = "%dUN %s %s_%s" % (int(quantidade), categoria, medida, descricao)
-
     sangria = medida_para_nome(ficha.get("medidas_sangria"))
-    if sangria:
-        nome += "_sangria %s" % sangria
-    return sanitizar_nome_arquivo(nome), None
+    return montar_nome(quantidade, categoria, medida, descricao, sangria), None
 
 
 def fichas_com_nome(caminho, config=None):

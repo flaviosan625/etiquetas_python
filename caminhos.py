@@ -17,8 +17,10 @@ pasta real — ver CLAUDE.md.
 FICA DE FORA: rasterlink_hotfolder.py. Ele é levado sozinho pro PC do RIP,
 que não tem o resto do projeto, e por isso monta os caminhos dele.
 """
+import os
 import pathlib
 import sys
+import tempfile
 
 
 def _pasta_do_programa():
@@ -44,6 +46,13 @@ EVENTOS = ONEDRIVE_UNY / "EVENTOS"
 # Onde saem OS, checklist e etiquetas. Ao lado do programa, sempre — nunca
 # relativo à pasta onde alguém abriu o atalho.
 ETIQUETAS_GERADAS = PASTA_PROGRAMA / "etiquetas_geradas"
+
+# Onde a tela de receber artes deixa o que baixou ANTES de ele confirmar
+# (2026-09-21). Local e fora do OneDrive de propósito: arte que ele ainda
+# pode recusar não deve ficar sincronizando, e cliente novo só nasce na
+# hora de arquivar. É espera, não guarda — lote velho é apagado sozinho.
+PASTA_RECEBENDO = (pathlib.Path(os.environ.get("LOCALAPPDATA") or tempfile.gettempdir())
+                   / "UnyCV" / "recebendo")
 
 
 def relativo_ao_onedrive(caminho):

@@ -30,7 +30,7 @@ import json
 import pathlib
 
 import caminhos
-from utils import sanitizar_nome_arquivo
+from utils import chave_comparacao_cliente, remover_acentos, sanitizar_nome_arquivo
 
 NOME_CONFIG = "cliente.json"
 
@@ -148,20 +148,28 @@ def salvar(cliente):
     return cliente
 
 
+def _problema_no_nome(bruto):
+    """O que o Windows ou o sistema não aceitam num nome de pasta; None se nada."""
+    limpo = sanitizar_nome_arquivo(bruto)
+    if limpo != bruto:
+        return ('O nome tem caractere que o Windows não aceita em pasta (\\ / : * ? " < > |). '
+                'Sugestão: "%s".' % limpo)
+    if limpo.startswith(("_", ".")):
+        return "O nome não pode começar com _ ou . — pasta assim o sistema ignora."
+    return None
+
+
 def validar_nome(nome, raiz=None):
     """Devolve o nome limpo, ou levanta ErroCliente dizendo o que está errado."""
     bruto = (nome or "").strip()
     if not bruto:
         raise ErroCliente("Digite o nome do cliente.")
-    limpo = sanitizar_nome_arquivo(bruto)
-    if limpo != bruto:
-        raise ErroCliente('O nome tem caractere que o Windows não aceita em pasta (\\ / : * ? " < > |). '
-                          'Sugestão: "%s".' % limpo)
-    if limpo.startswith(("_", ".")):
-        raise ErroCliente("O nome não pode começar com _ ou . — pasta assim o sistema ignora.")
-    if obter(limpo, raiz):
-        raise ErroCliente('Já existe um cliente "%s".' % limpo)
-    return limpo
+    problema = _problema_no_nome(bruto)
+    if problema:
+        raise ErroCliente(problema)
+    if obter(bruto, raiz):
+        raise ErroCliente('Já existe um cliente "%s".' % bruto)
+    return bruto
 
 
 def criar(nome, pasta_producao=None, checklist_ativo=True, nome_documento="", raiz=None):
@@ -184,6 +192,62 @@ def criar(nome, pasta_producao=None, checklist_ativo=True, nome_documento="", ra
     cliente = Cliente(nome=nome, pasta=pasta, pasta_producao=producao,
                       checklist_ativo=bool(checklist_ativo and producao), nome_documento=nome_documento)
     return salvar(cliente)
+
+
+def _chave(nome):
+    """Pra COMPARAR nomes: sem espaço, sem acento, maiúsculo."""
+    return chave_comparacao_cliente(remover_acentos(str(nome or "")))
+
+
+def situacao_do_nome(nome, raiz=None):
+    """
+    O que vai acontecer com o nome que ele digitou na tela de receber
+    artes — a pasta do cliente nasce desse nome (pedido de 2026-09-21).
+
+        ("vazio", None)          nada digitado
+        ("invalido", mensagem)   o Windows não aceita esse nome de pasta
+        ("existe", cliente)      é um cliente que já existe — mesmo com
+                                 maiúscula, espaço ou acento diferente
+        ("parecido", cliente)    um contém o outro: perguntar se é ele
+        ("novo", None)           cria Recebimento de Artes\\<nome>
+
+    Sem o "existe" tolerante, "MERCADO LIVRE" digitado criaria um segundo
+    cliente ao lado de "Mercado Livre"; sem o "parecido", "Mercado" também.
+    """
+    bruto = (nome or "").strip()
+    if not bruto:
+        return "vazio", None
+    problema = _problema_no_nome(bruto)
+    if problema:
+        return "invalido", problema
+
+    chave = _chave(bruto)
+    existentes = listar(raiz)
+    for c in existentes:
+        if _chave(c.nome) == chave:
+            return "existe", c
+    if len(chave) >= 4:
+        for c in existentes:
+            outra = _chave(c.nome)
+            if len(outra) >= 4 and (chave in outra or outra in chave):
+                return "parecido", c
+    return "novo", None
+
+
+def obter_ou_criar(nome, raiz=None):
+    """
+    O cliente pro nome digitado: o que já existe (tolerante a grafia), ou
+    um novo criado agora. Devolve (cliente, criado). "Parecido" não decide
+    sozinho — quem chama já perguntou; aqui ele vira cliente novo.
+    """
+    situacao, dado = situacao_do_nome(nome, raiz)
+    if situacao == "vazio":
+        raise ErroCliente("Digite o nome do cliente.")
+    if situacao == "invalido":
+        raise ErroCliente(dado)
+    if situacao == "existe":
+        return dado, False
+    return criar(nome.strip(), raiz=raiz), True
 
 
 def sugerir_pasta_producao(nome):

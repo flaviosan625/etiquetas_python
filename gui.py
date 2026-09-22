@@ -185,6 +185,11 @@ class JanelaPrincipal(tk.Tk):
         ).pack(anchor="w", padx=16, pady=(0, 2))
 
         tk.Button(
+            self, text="📥 Receber artes — Drive, WeTransfer, pasta ou ZIP...", relief="flat",
+            fg=COR_ACENTO, cursor="hand2", command=self._abrir_receber,
+        ).pack(anchor="w", padx=16, pady=(0, 2))
+
+        tk.Button(
             self, text="🤖 Agentes — o que roda sozinho...", relief="flat",
             fg=COR_ACENTO, cursor="hand2", command=self._abrir_agentes,
         ).pack(anchor="w", padx=16, pady=(0, 2))
@@ -297,6 +302,17 @@ class JanelaPrincipal(tk.Tk):
             janela.focus_force()
             return
         self._janela_clientes = JanelaClientes(self)
+
+    def _abrir_receber(self):
+        # import aqui dentro pelo mesmo motivo de _abrir_agentes
+        from gui_receber import JanelaReceber
+
+        janela = getattr(self, "_janela_receber", None)
+        if janela is not None and janela.winfo_exists():
+            janela.lift()
+            janela.focus_force()
+            return
+        self._janela_receber = JanelaReceber(self)
 
     def _abrir_agentes(self):
         # import aqui dentro: gui_agentes importa as cores deste módulo, e

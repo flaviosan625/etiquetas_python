@@ -27,6 +27,7 @@ import unicodedata
 
 import caderno_arte
 import marcas_de_corte
+from utils import sanitizar_nome_arquivo
 
 NOME_ESTADO = "_baixados.json"
 NOME_ENTRADA = "_entrada"
@@ -130,20 +131,26 @@ def _gravar_baixados(pasta, estado):
 
 
 def processar_pdf(caminho_pdf, caminho_caderno, pasta, quando=None, logger=None,
-                  remover_marcas=True, ficha=None):
+                  remover_marcas=True, ficha=None, subpasta=None):
     """
     Uma arte, de ponta a ponta:
 
       1. sabe qual peça é (pela 'ficha' dada, ou identifica pela medida)
       2. tira a marca de corte, se houver, sem tocar na arte
       3. renomeia no nosso padrão
-      4. move pra ARTES/
+      4. move pra ARTES/ (ou pra ARTES/<subpasta>/, quando dada)
       5. registra em _baixados.json (peça, arquivo, quando, medida conferida)
 
     'ficha' é a peça JÁ conhecida — passada pelo lote, que baixou da pasta
     do link dela. Com ela, a medida serve só pra conferir, nunca pra
     escolher: duas peças do mesmo tamanho não se trocam. Sem ela (download
     manual, sem saber de qual peça é), identifica pela medida.
+
+    'subpasta' é a ÁREA do caderno ("EIXO PRINCIPAL", "LANDMARK"): a arte
+    cai em ARTES/<área>/ em vez de solta na raiz. Quem não passa nada não
+    vê diferença nenhuma — continua caindo em ARTES/, como sempre. Foi
+    pedido em 2026-09-20 ("separar pasta por área"), e é o mesmo arranjo
+    que as áreas já organizadas na mão têm.
 
     Devolve (ok, mensagem, detalhe). Não move nada quando a peça não é
     identificada com segurança — devolve as candidatas em 'detalhe'.
@@ -197,7 +204,10 @@ def processar_pdf(caminho_pdf, caminho_caderno, pasta, quando=None, logger=None,
         aviso("info", "'%s': o caderno não deu medida; usei a medida da arte (%s)."
                       % (ficha["nome"], nome_arquivo))
 
-    destino = pasta / NOME_ARTES / (nome_arquivo + ".pdf")
+    guarda = pasta / NOME_ARTES
+    if subpasta:
+        guarda = guarda / sanitizar_nome_arquivo(str(subpasta))
+    destino = guarda / (nome_arquivo + ".pdf")
     destino.parent.mkdir(parents=True, exist_ok=True)
 
     # A marca sai ENQUANTO a arte ainda está em _entrada. Só depois de
@@ -221,7 +231,7 @@ def processar_pdf(caminho_pdf, caminho_caderno, pasta, quando=None, logger=None,
     conferida = medir_arte(destino)
     estado = ler_baixados(pasta)
     caderno = pathlib.Path(caminho_caderno).stem
-    estado[_chave_peca(caderno, ficha)] = {
+    registro = {
         "peca": ficha["nome"],
         "slide": ficha["slide"],
         "arquivo": destino.name,
@@ -229,6 +239,9 @@ def processar_pdf(caminho_pdf, caminho_caderno, pasta, quando=None, logger=None,
         "medida_conferida_m": [round(conferida[0], 3), round(conferida[1], 3)] if conferida else None,
         "marca_removida": marca_removida,
     }
+    if subpasta:
+        registro["area"] = str(subpasta)
+    estado[_chave_peca(caderno, ficha)] = registro
     _gravar_baixados(pasta, estado)
 
     mp_txt = ""
