@@ -93,6 +93,9 @@ CONFIG_PADRAO = {
     "ultimo_gerente": "",
     "ultimo_produtor": "",
     "ultima_impressora": "",
+    # "escuro" ou "claro" — o botãozinho do canto da tela principal
+    # escreve aqui (ver tema.py). Padrão escuro, pedido de 22/09.
+    "tema": "escuro",
 }
 
 

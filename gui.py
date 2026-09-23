@@ -26,7 +26,6 @@ from tkinter import filedialog, messagebox, ttk
 # arquivamento.py não é mais importado aqui: o checkbox que enviava a
 # OS pro OneDrive foi removido (2026-09-05). O módulo continua no
 # projeto, testado, caso o envio volte em outro formato.
-from branding import CAMINHO_LOGO_GUI
 from config import atualizar_ultimo_uso, atualizar_ultima_impressora, carregar_config, salvar_config
 from dimensoes import formatar_variante
 from documento_enviados import (
@@ -49,27 +48,60 @@ from impressao import imprimir_pdf, impressora_padrao, listar_impressoras
 from processamento import processar_etiquetas
 from rasterlink import rastrear as rastrear_rip
 from rasterlink_hotfolder import MAQUINAS as MAQUINAS_RIP
+import tema
+from tema import cores
 from utils import sanitizar_nome_arquivo
 
 # Onde o seletor de pasta da tela de envio começa quando ainda não há
 # uma última pasta usada — mesma raiz que o monitor de pastas vigia.
 PASTA_EVENTOS = pathlib.Path.home() / "OneDrive" / "UNYCOMUNICACAO" / "EVENTOS"
 
-COR_ACENTO = "#0067c0"
-COR_FUNDO_JANELA = "#f5f6f8"
-COR_CARTAO = "#ffffff"
-COR_BORDA_CARTAO = "#e3e4e8"
-COR_TEXTO = "#1c1c1f"
-COR_TEXTO_SECUNDARIO = "#6b7280"
-COR_ALERTA = "#b45309"
-COR_ALERTA_FUNDO = "#fdf1e0"
-COR_POSITIVO = "#0f7a3d"
-# Vermelho de "parou de verdade". Separado do COR_ALERTA (âmbar), que
-# quer dizer "olhe isto": os dois aparecem lado a lado na linha do RIP,
-# e se fossem a mesma cor não daria pra distinguir "está devagar" de
-# "não vai andar" — que é justamente a distinção que a linha existe pra
-# fazer.
-COR_RIP_PARADO = "#b32d24"
+# As cores moram em tema.py — lá dentro está o porquê de cada uma,
+# e é de lá que sai a troca claro/escuro (pedido de 22/09).
+
+
+class BarraProgresso(tk.Canvas):
+    """
+    Barra de progresso desenhada à mão, pro tema escuro.
+
+    Existe porque o ttk.Progressbar no tema nativo do Windows IGNORA as
+    cores que a gente pede: ele sai branco, e branco no fundo escuro vira
+    uma tarja no meio da tela. (tema.aplicar_padroes hoje troca o ttk pro
+    'clam', que aceita cor — mas só no escuro; esta barra é a mesma nos
+    dois temas, que é o que a tela principal precisa.)
+
+    Aceita os mesmos ["maximum"] e ["value"] do ttk.Progressbar, então
+    quem usa não muda.
+    """
+
+    def __init__(self, pai, altura=5, **kw):
+        super().__init__(pai, height=altura, highlightthickness=0, bd=0,
+                         bg=cores.campo, **kw)
+        self._maximo = 1
+        self._valor = 0
+        self._barra = self.create_rectangle(0, 0, 0, altura, fill=cores.acento, width=0)
+        self.bind("<Configure>", lambda e: self._desenhar())
+
+    def __setitem__(self, chave, valor):
+        if chave == "maximum":
+            self._maximo = max(1, float(valor))
+        elif chave == "value":
+            self._valor = max(0.0, float(valor))
+        else:
+            super().__setitem__(chave, valor)
+            return
+        self._desenhar()
+
+    def __getitem__(self, chave):
+        if chave == "maximum":
+            return self._maximo
+        if chave == "value":
+            return self._valor
+        return super().__getitem__(chave)
+
+    def _desenhar(self):
+        fracao = min(1.0, self._valor / self._maximo)
+        self.coords(self._barra, 0, 0, self.winfo_width() * fracao, self.winfo_height())
 
 
 def _rotulo_variantes(variantes):
@@ -102,12 +134,22 @@ class JanelaPrincipal(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Gerador de Etiquetas — UNY CV")
-        self.geometry("640x600")
-        self.minsize(560, 520)
+        # cabe inteira na tela: antes o botão de processar ficava ABAIXO
+        # da dobra, e a ação principal do programa era a que não aparecia
+        self.geometry("980x%d" % min(780, self.winfo_screenheight() - 90))
+        self.minsize(820, 600)
 
         self.config_dados = carregar_config()
+        # A cor vem ANTES de qualquer widget: aplicar_padroes só alcança o
+        # que for criado depois dela (é assim que as outras janelas, que
+        # não pedem cor nenhuma, nascem escuras sem serem reescritas).
+        tema.carregar(self.config_dados)
+        tema.aplicar_padroes(self)
+        self.configure(bg=cores.fundo)
+
         self.fila_eventos = queue.Queue()
         self.processando = False
+        self.historico_log = []
 
         self._montar_layout()
         self.after(100, self._checar_fila)
@@ -129,149 +171,222 @@ class JanelaPrincipal(tk.Tk):
     # ---------- montagem da tela ----------
 
     def _montar_layout(self):
-        pad = {"padx": 16, "pady": 6}
-
+        """
+        Três blocos: GERAR (os campos e o botão), ATALHOS (as outras
+        janelas) e o LOG. Redesenhada em 2026-09-22 a pedido dele — "está
+        ficando muito poluído... deixar tudo mais clean" — depois de um
+        modelo aprovado. O que mudou: os campos de impressora saíram, os
+        7 links empilhados viraram uma faixa de atalhos, e o botão de
+        processar subiu (ele ficava abaixo da dobra).
+        """
         self._montar_cabecalho()
+        self._montar_gerar()
+        self._montar_atalhos()
+        self._montar_log()
 
-        tk.Label(self, text="Gerar etiquetas e OS", font=("Segoe UI", 13, "bold")).pack(anchor="w", padx=16, pady=(14, 4))
-
-        frame_pasta = tk.Frame(self)
-        frame_pasta.pack(fill="x", **pad)
-        tk.Label(frame_pasta, text="Pasta de entrada (PDFs)").pack(anchor="w")
-        sub = tk.Frame(frame_pasta)
-        sub.pack(fill="x")
-        self.var_pasta = tk.StringVar(value=str(pathlib.Path("entrada").resolve()))
-        tk.Entry(sub, textvariable=self.var_pasta).pack(side="left", fill="x", expand=True)
-        tk.Button(sub, text="Procurar...", command=self._escolher_pasta).pack(side="left", padx=(6, 0))
-
-        self._campo(pad, "Cliente", "var_cliente")
-
-        frame_pessoas = tk.Frame(self)
-        frame_pessoas.pack(fill="x", **pad)
-        col1 = tk.Frame(frame_pessoas)
-        col1.pack(side="left", fill="x", expand=True)
-        col2 = tk.Frame(frame_pessoas)
-        col2.pack(side="left", fill="x", expand=True, padx=(10, 0))
-        tk.Label(col1, text="Gerente operacional").pack(anchor="w")
-        self.var_gerente = tk.StringVar(value=self.config_dados.get("ultimo_gerente", ""))
-        tk.Entry(col1, textvariable=self.var_gerente).pack(fill="x")
-        tk.Label(col2, text="Produtor responsável").pack(anchor="w")
-        self.var_produtor = tk.StringVar(value=self.config_dados.get("ultimo_produtor", ""))
-        tk.Entry(col2, textvariable=self.var_produtor).pack(fill="x")
-
-        tk.Button(
-            self, text="⚙ Configurar medidas de rolos e chapas...", relief="flat",
-            fg=COR_ACENTO, cursor="hand2", command=self._abrir_configuracoes,
-        ).pack(anchor="w", padx=16, pady=(4, 2))
-
-        tk.Button(
-            self, text="📦 Controle de Estoque...", relief="flat",
-            fg=COR_ACENTO, cursor="hand2", command=self._abrir_estoque,
-        ).pack(anchor="w", padx=16, pady=(0, 2))
-
-        tk.Button(
-            self, text="🖨 Imprimir OS/Checklist de um pedido...", relief="flat",
-            fg=COR_ACENTO, cursor="hand2", command=self._abrir_impressao_manual,
-        ).pack(anchor="w", padx=16, pady=(0, 2))
-
-        tk.Button(
-            self, text="📤 Enviar para impressão...", relief="flat",
-            fg=COR_ACENTO, cursor="hand2", command=self._abrir_envio_impressao,
-        ).pack(anchor="w", padx=16, pady=(0, 2))
-
-        tk.Button(
-            self, text="👥 Clientes — recebimento de artes...", relief="flat",
-            fg=COR_ACENTO, cursor="hand2", command=self._abrir_clientes,
-        ).pack(anchor="w", padx=16, pady=(0, 2))
-
-        tk.Button(
-            self, text="📥 Receber artes — Drive, WeTransfer, pasta ou ZIP...", relief="flat",
-            fg=COR_ACENTO, cursor="hand2", command=self._abrir_receber,
-        ).pack(anchor="w", padx=16, pady=(0, 2))
-
-        tk.Button(
-            self, text="🤖 Agentes — o que roda sozinho...", relief="flat",
-            fg=COR_ACENTO, cursor="hand2", command=self._abrir_agentes,
-        ).pack(anchor="w", padx=16, pady=(0, 2))
-
-        # DESATIVADO a pedido do usuário (2026-09-05): "ficou muito
-        # complicado de operar, vou pensar em alguma coisa melhor pra
-        # essa função". O botão saiu da tela, mas JanelaCruzarRIP e
-        # rasterlink.py continuam inteiros (e testados) — pra religar,
-        # é só devolver este tk.Button:
-        #     tk.Button(
-        #         self, text="🔀 Cruzar pasta com lista do RIP...", relief="flat",
-        #         fg=COR_ACENTO, cursor="hand2", command=self._abrir_cruzamento_rip,
-        #     ).pack(anchor="w", padx=16, pady=(0, 2))
-
-        ttk.Separator(self).pack(fill="x", padx=16, pady=(0, 10))
-
-        # O checkbox "Enviar a OS pro OneDrive depois de gerar" foi
-        # removido a pedido do usuário (2026-09-05): o recurso não era
-        # usado, e a pasta de destino no OneDrive foi apagada junto.
-        # arquivamento.py continua existindo e testado, só não tem mais
-        # nada na interface que dispare o envio.
-
-        frame_impressao = tk.Frame(self)
-        frame_impressao.pack(fill="x", padx=16, pady=(0, 6))
-        linha_impressora = tk.Frame(frame_impressao)
-        linha_impressora.pack(fill="x")
-        tk.Label(linha_impressora, text="Impressora:").pack(side="left")
+        # Continuam existindo pro resto do código, sem aparecer na tela:
+        # a impressão direta saiu a pedido dele (22/09) — "faço tudo pelo
+        # PDF que foi gerado, fica mais fácil".
         self.var_impressora = tk.StringVar()
-        self.combo_impressora = ttk.Combobox(
-            linha_impressora, textvariable=self.var_impressora, state="readonly", width=32,
-        )
-        self.combo_impressora.pack(side="left", padx=(6, 6), fill="x", expand=True)
-        self.combo_impressora.bind("<<ComboboxSelected>>", self._impressora_selecionada)
-        tk.Button(linha_impressora, text="↻", width=3, command=self._atualizar_impressoras).pack(side="left")
-        self._atualizar_impressoras(selecionar_salva=True)
-
         self.var_imprimir_ao_gerar = tk.BooleanVar(value=False)
-        tk.Checkbutton(
-            frame_impressao, text="🖨 Imprimir OS e Checklist assim que gerar", variable=self.var_imprimir_ao_gerar,
-        ).pack(anchor="w")
 
+    # ---------- montagem da tela: blocos ----------
+
+    def _cartao(self, titulo, expandir=False):
+        """Um bloco escuro com o rótulo pequeno em cima."""
+        caixa = tk.Frame(self, bg=cores.cartao, highlightbackground=cores.borda,
+                         highlightthickness=1)
+        caixa.pack(fill="both" if expandir else "x", expand=expandir, padx=22, pady=(0, 12))
+        tk.Label(caixa, text=titulo, font=("Segoe UI", 8, "bold"), bg=cores.cartao,
+                 fg=cores.texto2).pack(anchor="w", padx=16, pady=(10, 6))
+        return caixa
+
+    def _campo(self, pai, rotulo, nome_var, largura=26, valor="", botao=None):
+        """Rótulo pequeno em cima, campo escuro embaixo. Guarda a var em self."""
+        col = tk.Frame(pai, bg=cores.cartao)
+        col.pack(side="left", padx=(0, 14))
+        tk.Label(col, text=rotulo, font=("Segoe UI", 8), bg=cores.cartao,
+                 fg=cores.texto2).pack(anchor="w")
+        linha = tk.Frame(col, bg=cores.cartao)
+        linha.pack(anchor="w")
+        var = tk.StringVar(value=valor)
+        setattr(self, nome_var, var)
+        tk.Entry(linha, textvariable=var, font=("Segoe UI", 10), width=largura, relief="flat",
+                 bg=cores.campo, fg=cores.texto, insertbackground=cores.texto,
+                 highlightthickness=1, highlightbackground=cores.borda,
+                 highlightcolor=cores.acento).pack(side="left", ipady=4)
+        if botao:
+            texto, comando = botao
+            tk.Button(linha, text=texto, font=("Segoe UI", 9), bg=cores.cartao,
+                      fg=cores.texto, relief="solid", bd=1, padx=10, pady=2, cursor="hand2",
+                      command=comando, activebackground=cores.borda,
+                      activeforeground=cores.texto).pack(side="left", padx=6)
+        return col
+
+    def _montar_gerar(self):
+        caixa = self._cartao("GERAR")
+        l1 = tk.Frame(caixa, bg=cores.cartao)
+        l1.pack(fill="x", padx=16, pady=(0, 8))
+        self._campo(l1, "Pasta de entrada (PDFs)", "var_pasta", largura=52,
+                    valor=str(pathlib.Path("entrada").resolve()),
+                    botao=("Procurar...", self._escolher_pasta))
+
+        l2 = tk.Frame(caixa, bg=cores.cartao)
+        l2.pack(fill="x", padx=16, pady=(0, 12))
+        self._campo(l2, "Cliente", "var_cliente", largura=26)
+        self._campo(l2, "Gerente operacional", "var_gerente", largura=22,
+                    valor=self.config_dados.get("ultimo_gerente", ""))
+        self._campo(l2, "Produtor responsável", "var_produtor", largura=22,
+                    valor=self.config_dados.get("ultimo_produtor", ""))
+
+        acao = tk.Frame(caixa, bg=cores.cartao)
+        acao.pack(fill="x", padx=16, pady=(0, 14))
         self.btn_processar = tk.Button(
-            self, text="▶  Processar Etiquetas", bg=COR_ACENTO, fg="white",
-            font=("Segoe UI", 11, "bold"), relief="flat", command=self._iniciar_processamento,
-        )
-        self.btn_processar.pack(fill="x", padx=16, pady=12, ipady=8)
+            acao, text="▶   Processar etiquetas", bg=cores.acento, fg=cores.sobre_acento,
+            font=("Segoe UI", 12, "bold"), relief="flat", padx=26, pady=9, cursor="hand2",
+            activebackground=cores.acento_claro, command=self._iniciar_processamento)
+        self.btn_processar.pack(side="left")
+        tk.Label(acao, text="gera etiquetas, OS e checklist da pasta acima",
+                 font=("Segoe UI", 8), bg=cores.cartao,
+                 fg=cores.texto2).pack(side="left", padx=12)
 
+    def _montar_atalhos(self):
+        """
+        As outras janelas, em cartões com uma linha dizendo o que cada
+        uma faz. Saíram daqui, a pedido dele (22/09): "Enviar para
+        impressão" e "Reimprimir OS/Checklist" — ele faz os dois abrindo
+        o PDF já gerado. As duas janelas continuam inteiras no código
+        (JanelaEnviarImpressao, JanelaImprimirPedido) e a um passo de
+        voltar: é só devolver a linha na lista abaixo. Cuidado ao
+        decidir: a tela de envio é a única que alimenta o documento
+        "Enviados" do cliente; arrastando o arquivo pra fila na mão, a
+        entrega entra no relatório mas não nesse documento.
+        """
+        atalhos = [
+            ("📥", "Receber artes", "Drive, WeTransfer, pasta ou ZIP", self._abrir_receber),
+            ("👥", "Clientes", "recebimento de artes por cliente", self._abrir_clientes),
+            ("📦", "Controle de estoque", "material, entradas e saídas", self._abrir_estoque),
+            ("🤖", "Agentes", "o que roda sozinho", self._abrir_agentes),
+            ("⚙", "Medidas de rolos e chapas", "configuração", self._abrir_configuracoes),
+            # ("📤", "Enviar para impressão", "da produção para a fila", self._abrir_envio_impressao),
+            # ("🖨", "Reimprimir OS/Checklist", "de um pedido já gerado", self._abrir_impressao_manual),
+            # ("🔀", "Cruzar pasta com lista do RIP", "", self._abrir_cruzamento_rip),
+        ]
+        colunas = 3
+        caixa = self._cartao("ATALHOS")
+        grade = tk.Frame(caixa, bg=cores.cartao)
+        grade.pack(fill="x", padx=12, pady=(0, 12))
+        for i, (icone, nome, descricao, comando) in enumerate(atalhos):
+            item = tk.Frame(grade, bg=cores.cartao, highlightbackground=cores.borda,
+                            highlightthickness=1, cursor="hand2")
+            item.grid(row=i // colunas, column=i % colunas, sticky="nsew", padx=4, pady=4)
+            linha = tk.Frame(item, bg=cores.cartao)
+            linha.pack(fill="x", padx=10, pady=(8, 0))
+            tk.Label(linha, text=icone, font=("Segoe UI Emoji", 11), bg=cores.cartao,
+                     fg=cores.acento).pack(side="left")
+            tk.Label(linha, text=nome, font=("Segoe UI", 10, "bold"), bg=cores.cartao,
+                     fg=cores.texto, anchor="w", justify="left",
+                     wraplength=230).pack(side="left", padx=6, fill="x")
+            tk.Label(item, text=descricao, font=("Segoe UI", 8), bg=cores.cartao,
+                     fg=cores.texto2, anchor="w", justify="left",
+                     wraplength=260).pack(fill="x", padx=10, pady=(0, 9))
+            self._clicavel(item, comando)
+        for c in range(colunas):
+            grade.columnconfigure(c, weight=1, uniform="atalho")
+
+    def _clicavel(self, cartao, comando):
+        """O cartão inteiro clica, não só o texto — inclusive os filhos."""
+        def ao_clicar(_evento=None):
+            comando()
+        for w in [cartao] + list(cartao.winfo_children()):
+            w.bind("<Button-1>", ao_clicar)
+            for neto in w.winfo_children():
+                neto.bind("<Button-1>", ao_clicar)
+
+    def _montar_log(self):
+        caixa = tk.Frame(self, bg=cores.cartao, highlightbackground=cores.borda,
+                         highlightthickness=1)
+        caixa.pack(fill="both", expand=True, padx=22, pady=(0, 16))
+        topo = tk.Frame(caixa, bg=cores.cartao)
+        topo.pack(fill="x", padx=16, pady=(10, 4))
+        tk.Label(topo, text="O QUE ESTÁ ACONTECENDO", font=("Segoe UI", 8, "bold"),
+                 bg=cores.cartao, fg=cores.texto2).pack(side="left")
         self.var_progresso_texto = tk.StringVar(value="")
-        tk.Label(self, textvariable=self.var_progresso_texto, fg="#555555").pack(anchor="w", padx=16)
-        self.barra_progresso = ttk.Progressbar(self, mode="determinate")
-        self.barra_progresso.pack(fill="x", padx=16, pady=(2, 10))
+        tk.Label(topo, textvariable=self.var_progresso_texto, font=("Segoe UI", 8),
+                 bg=cores.cartao, fg=cores.texto2).pack(side="right")
 
-        self.texto_log = tk.Text(self, height=12, bg="#0f1116", fg="#d6d9e0", font=("Consolas", 9), state="disabled")
-        self.texto_log.pack(fill="both", expand=True, padx=16, pady=(0, 16))
-        self.texto_log.tag_config("ok", foreground="#7ee787")
-        self.texto_log.tag_config("warn", foreground="#f0b854")
-        self.texto_log.tag_config("err", foreground="#ff7b72")
-        self.texto_log.tag_config("info", foreground="#9aa4b2")
+        self.barra_progresso = BarraProgresso(caixa)
+        self.barra_progresso.pack(fill="x", padx=16, pady=(0, 8))
+
+        # o log é escuro NOS DOIS TEMAS: o verde/âmbar/vermelho dele são
+        # os mesmos desde sempre e não leem em cima de branco
+        self.texto_log = tk.Text(caixa, height=10, bg=cores.log_fundo, fg=cores.log_texto,
+                                 font=("Consolas", 9), state="disabled", relief="flat",
+                                 padx=10, pady=8, highlightthickness=1,
+                                 highlightbackground=cores.borda)
+        self.texto_log.pack(fill="both", expand=True, padx=16, pady=(0, 14))
+        self.texto_log.tag_config("ok", foreground=cores.ok)
+        self.texto_log.tag_config("warn", foreground=cores.aviso)
+        self.texto_log.tag_config("err", foreground=cores.erro)
+        self.texto_log.tag_config("info", foreground=cores.texto2)
 
     def _montar_cabecalho(self):
         """
-        Mostra o logo da Uny CV no topo da janela, se o arquivo existir
-        (CAMINHO_LOGO_GUI, em assets/). Se não existir — por exemplo,
-        clonando o repositório numa máquina onde a pasta assets ainda
-        não foi copiada — a tela simplesmente abre sem o logo, sem
-        travar o programa.
+        O logo da Uny CV no topo, numa plaquinha CLARA: o desenho tem
+        preto e some num fundo escuro. Sem o arquivo (assets/ não veio
+        num clone novo), a tela abre sem ele em vez de quebrar.
         """
-        if not CAMINHO_LOGO_GUI.exists():
-            return
-        try:
-            self.imagem_logo = tk.PhotoImage(file=str(CAMINHO_LOGO_GUI))
-        except tk.TclError:
-            return
-        tk.Label(self, image=self.imagem_logo).pack(anchor="w", padx=16, pady=(14, 0))
+        topo = tk.Frame(self, bg=cores.fundo)
+        topo.pack(fill="x", padx=22, pady=(12, 8))
+        # metade do tamanho (o arquivo tem 230px): inteiro ele comia quase
+        # 170px de altura, que é espaço das funções — pedido dele em 22/09,
+        # "pode deixar o logo menor, importante é as funções".
+        placa = tema.placa_logo(topo)
+        if placa:
+            placa.pack(side="left", padx=(0, 14))
+        caixa = tk.Frame(topo, bg=cores.fundo)
+        caixa.pack(side="left")
+        tk.Label(caixa, text="Gerador de etiquetas", font=("Segoe UI", 15, "bold"),
+                 bg=cores.fundo, fg=cores.texto).pack(anchor="w")
+        tk.Label(caixa, text="Etiquetas, OS e checklist a partir de uma pasta de artes",
+                 font=("Segoe UI", 9), bg=cores.fundo,
+                 fg=cores.texto2).pack(anchor="w")
+        self.btn_tema = tk.Button(
+            topo, text="☀  claro" if cores.escuro else "🌙  escuro",
+            font=("Segoe UI", 8), bg=cores.cartao, fg=cores.texto2, relief="solid", bd=1,
+            padx=10, pady=3, cursor="hand2", activebackground=cores.borda,
+            activeforeground=cores.texto, command=self._trocar_tema)
+        self.btn_tema.pack(side="right", anchor="n")
 
-    def _campo(self, pad, rotulo, nome_var):
-        frame = tk.Frame(self)
-        frame.pack(fill="x", **pad)
-        tk.Label(frame, text=rotulo).pack(anchor="w")
-        var = tk.StringVar()
-        setattr(self, nome_var, var)
-        tk.Entry(frame, textvariable=var).pack(fill="x")
+    def _trocar_tema(self):
+        """
+        O botãozinho do canto ("mudar a cor quando eu desejar", 22/09).
+
+        Widget do Tk não troca de cor depois de criado — então a tela é
+        REMONTADA. O que estava digitado e o log voltam: trocar a cor no
+        meio do trabalho não pode custar o que já foi preenchido. As
+        outras janelas pegam a cor nova quando forem abertas, e a escolha
+        fica gravada no config.json pra próxima vez que ele abrir.
+        """
+        if self.processando:
+            messagebox.showinfo("Trocar a cor",
+                                "Estou no meio de uma rodada. Termina e troca depois.")
+            return
+        campos = {nome: getattr(self, nome).get()
+                  for nome in ("var_pasta", "var_cliente", "var_gerente", "var_produtor")}
+        linhas, self.historico_log = self.historico_log, []
+
+        tema.alternar(self.config_dados)
+        tema.aplicar_padroes(self)
+        self.configure(bg=cores.fundo)
+        for filho in self.winfo_children():
+            filho.destroy()
+        self._montar_layout()
+
+        for nome, valor in campos.items():
+            getattr(self, nome).set(valor)
+        for nivel, mensagem in linhas:
+            self._registrar_log(nivel, mensagem)
 
     # ---------- ações ----------
 
@@ -341,9 +456,15 @@ class JanelaPrincipal(tk.Tk):
         Na primeira chamada (selecionar_salva=True), tenta manter a
         última impressora escolhida; senão cai pra impressora padrão do
         Windows, ou a primeira da lista se nem isso houver.
+
+        Desde 2026-09-22 a tela principal não mostra mais a caixa de
+        impressora, então aqui pode não haver combo nenhum pra preencher
+        — a função continua servindo pra escolher a impressora do
+        var_impressora, que a janela de reimpressão usa quando volta.
         """
         impressoras = listar_impressoras()
-        self.combo_impressora["values"] = impressoras
+        if getattr(self, "combo_impressora", None) is not None:
+            self.combo_impressora["values"] = impressoras
         if not impressoras:
             self.var_impressora.set("")
             return
@@ -359,6 +480,11 @@ class JanelaPrincipal(tk.Tk):
         self.config_dados = atualizar_ultima_impressora(self.config_dados, self.var_impressora.get())
 
     def _registrar_log(self, nivel, mensagem):
+        # guardado também em lista: a troca de tema remonta a tela, e o
+        # log escrito direto no widget morreria junto (as últimas 500
+        # linhas bastam — o que interessa é a rodada de agora)
+        self.historico_log.append((nivel, mensagem))
+        del self.historico_log[:-500]
         prefixos = {"ok": "✅ ", "warn": "⚠️ ", "err": "❌ ", "info": "ℹ️ "}
         self.texto_log.configure(state="normal")
         self.texto_log.insert("end", prefixos.get(nivel, "") + mensagem + "\n", nivel)
@@ -566,7 +692,7 @@ class JanelaEscolherPedido(tk.Toplevel):
             self, text="Já existem pedidos desse cliente", font=("Segoe UI", 12, "bold"),
         ).pack(anchor="w", padx=16, pady=(14, 2))
         tk.Label(
-            self, fg="#666666", justify="left", wraplength=420,
+            self, fg=cores.texto2, justify="left", wraplength=420,
             text="Escolha qual pedido atualizar (só os arquivos novos da pasta de entrada entram) "
                  "ou crie um pedido novo.",
         ).pack(anchor="w", padx=16, pady=(0, 10))
@@ -581,7 +707,7 @@ class JanelaEscolherPedido(tk.Toplevel):
         frame_botoes.pack(fill="x", padx=16, pady=14)
         tk.Button(frame_botoes, text="Criar pedido novo", command=self._criar_novo).pack(side="left")
         tk.Button(
-            frame_botoes, text="Atualizar selecionado", bg=COR_ACENTO, fg="white", relief="flat",
+            frame_botoes, text="Atualizar selecionado", bg=cores.acento, fg=cores.sobre_acento, relief="flat",
             command=self._atualizar_selecionado,
         ).pack(side="right")
 
@@ -644,7 +770,7 @@ class JanelaImprimirPedido(tk.Toplevel):
         ).pack(side="left", padx=(6, 0), fill="x", expand=True)
 
         self.var_status = tk.StringVar(value="")
-        tk.Label(self, textvariable=self.var_status, fg="#666666", wraplength=440, justify="left").pack(
+        tk.Label(self, textvariable=self.var_status, fg=cores.texto2, wraplength=440, justify="left").pack(
             anchor="w", padx=16,
         )
 
@@ -652,12 +778,12 @@ class JanelaImprimirPedido(tk.Toplevel):
         frame_botoes.pack(fill="x", padx=16, pady=14)
         tk.Button(frame_botoes, text="Fechar", command=self.destroy).pack(side="left")
         self.btn_imprimir = tk.Button(
-            frame_botoes, text="🖨 Imprimir", bg=COR_ACENTO, fg="white", relief="flat", command=self._imprimir,
+            frame_botoes, text="🖨 Imprimir", bg=cores.acento, fg=cores.sobre_acento, relief="flat", command=self._imprimir,
         )
         self.btn_imprimir.pack(side="right")
 
         if not self.pedidos:
-            tk.Label(self, text="Nenhum pedido com OS ou Checklist encontrado.", fg=COR_ALERTA).pack(padx=16)
+            tk.Label(self, text="Nenhum pedido com OS ou Checklist encontrado.", fg=cores.alerta).pack(padx=16)
             self.btn_imprimir.configure(state="disabled")
 
         self.grab_set()
@@ -741,12 +867,12 @@ class JanelaCruzarRIP(tk.Toplevel):
         self.texto_lista.pack(fill="both", padx=16)
 
         self.btn_cruzar = tk.Button(
-            self, text="🔀 Cruzar", bg=COR_ACENTO, fg="white", relief="flat", command=self._cruzar,
+            self, text="🔀 Cruzar", bg=cores.acento, fg=cores.sobre_acento, relief="flat", command=self._cruzar,
         )
         self.btn_cruzar.pack(anchor="e", padx=16, pady=(10, 6))
 
         tk.Label(self, text="Resultado", font=("Segoe UI", 11, "bold")).pack(anchor="w", padx=16)
-        self.texto_resultado = tk.Text(self, height=12, state="disabled", wrap="word", bg="#fafafa")
+        self.texto_resultado = tk.Text(self, height=12, state="disabled", wrap="word", bg=cores.campo)
         self.texto_resultado.pack(fill="both", expand=True, padx=16, pady=(2, 14))
 
         self.grab_set()
@@ -864,7 +990,7 @@ class JanelaConfiguracoes(tk.Toplevel):
     def _montar_layout(self):
         tk.Label(self, text="Rolos e chapas cadastrados", font=("Segoe UI", 12, "bold")).pack(anchor="w", padx=16, pady=(14, 2))
         tk.Label(
-            self, fg="#666666",
+            self, fg=cores.texto2,
             text="Edite as medidas existentes ou adicione um material novo. As mudanças valem para o cálculo\n"
                  "de desperdício e para o reconhecimento de categoria pelo nome do arquivo. \"Min/m²\" é\n"
                  "opcional — quantos minutos a máquina leva pra imprimir/cortar 1m² dessa categoria; se\n"
@@ -880,7 +1006,7 @@ class JanelaConfiguracoes(tk.Toplevel):
             ("Categoria", 16), ("Tipo", 10), ("Largura (cm)", 12), ("Compr. (cm)", 12),
             ("Min/m² (opcional)", 15), ("R$/m² (gerência)", 14), ("", 3),
         ]:
-            tk.Label(cabecalho, text=texto, fg="#666666", width=largura, anchor="w").pack(side="left")
+            tk.Label(cabecalho, text=texto, fg=cores.texto2, width=largura, anchor="w").pack(side="left")
 
         # A lista mora num quadro próprio. Empacotada direto na janela com
         # side="left", tudo que vinha depois (Adicionar, Salvar) ia pro LADO
@@ -906,14 +1032,14 @@ class JanelaConfiguracoes(tk.Toplevel):
             )
 
         tk.Button(
-            self, text="➕ Adicionar novo material", relief="flat", fg=COR_ACENTO, cursor="hand2",
+            self, text="➕ Adicionar novo material", relief="flat", fg=cores.acento, cursor="hand2",
             command=lambda: self._adicionar_linha("", "rolo", "", "", [], "", ""),
         ).pack(anchor="w", padx=16, pady=8)
 
         frame_botoes = tk.Frame(self)
         frame_botoes.pack(fill="x", padx=16, pady=14)
         tk.Button(frame_botoes, text="Cancelar", command=self.destroy).pack(side="right", padx=(6, 0))
-        tk.Button(frame_botoes, text="Salvar", bg=COR_ACENTO, fg="white", relief="flat", command=self._salvar).pack(side="right")
+        tk.Button(frame_botoes, text="Salvar", bg=cores.acento, fg=cores.sobre_acento, relief="flat", command=self._salvar).pack(side="right")
 
     def _adicionar_linha(self, categoria, tipo, largura, comprimento, variantes, minutos_por_m2="", preco_m2=""):
         linha = tk.Frame(self.frame_linhas)
@@ -947,7 +1073,7 @@ class JanelaConfiguracoes(tk.Toplevel):
             JanelaVariantes(self, var_categoria.get(), registro["variantes"], salvar_variantes)
 
         btn_variantes = tk.Button(
-            linha, text=_rotulo_variantes(registro["variantes"]), relief="flat", fg=COR_ACENTO, cursor="hand2",
+            linha, text=_rotulo_variantes(registro["variantes"]), relief="flat", fg=cores.acento, cursor="hand2",
             command=abrir_variantes,
         )
         btn_variantes.pack(side="left", padx=4)
@@ -956,7 +1082,7 @@ class JanelaConfiguracoes(tk.Toplevel):
             linha.destroy()
             self.linhas.remove(registro)
 
-        tk.Button(linha, text="🗑", relief="flat", fg="#c92a2a", cursor="hand2", command=remover).pack(side="left", padx=4)
+        tk.Button(linha, text="🗑", relief="flat", fg=cores.parado, cursor="hand2", command=remover).pack(side="left", padx=4)
 
         self.linhas.append(registro)
 
@@ -1052,7 +1178,7 @@ class JanelaVariantes(tk.Toplevel):
     def _montar_layout(self, variantes_atuais):
         tk.Label(self, text="Espessura e cor de cada variante", font=("Segoe UI", 12, "bold")).pack(anchor="w", padx=16, pady=(14, 2))
         tk.Label(
-            self, fg="#666666", justify="left",
+            self, fg=cores.texto2, justify="left",
             text="O tamanho da chapa é o mesmo já cadastrado para a categoria.\n"
                  "Cor é opcional — deixe em branco pra uma variante que só depende\n"
                  "da espessura (ex: MDF cru). Rótulo é opcional, pra quando o nome\n"
@@ -1065,7 +1191,7 @@ class JanelaVariantes(tk.Toplevel):
         cabecalho = tk.Frame(self)
         cabecalho.pack(fill="x", padx=16)
         for texto, largura in [("Espessura", 12), ("Cor (opcional)", 12), ("Rótulo (opcional)", 14), ("R$/m²", 10)]:
-            tk.Label(cabecalho, text=texto, fg="#666666", width=largura, anchor="w").pack(side="left")
+            tk.Label(cabecalho, text=texto, fg=cores.texto2, width=largura, anchor="w").pack(side="left")
 
         # A lista mora num quadro próprio. Empacotada direto na janela com
         # side="left", tudo que vinha depois (Adicionar, Salvar) ia pro LADO
@@ -1089,14 +1215,14 @@ class JanelaVariantes(tk.Toplevel):
                                            variante.get("rotulo", ""), variante.get("preco_m2", ""))
 
         tk.Button(
-            self, text="➕ Adicionar variante", relief="flat", fg=COR_ACENTO, cursor="hand2",
+            self, text="➕ Adicionar variante", relief="flat", fg=cores.acento, cursor="hand2",
             command=lambda: self._adicionar_linha_variante("", "", "", ""),
         ).pack(anchor="w", padx=16, pady=8)
 
         frame_botoes = tk.Frame(self)
         frame_botoes.pack(fill="x", padx=16, pady=14)
         tk.Button(frame_botoes, text="Cancelar", command=self.destroy).pack(side="right", padx=(6, 0))
-        tk.Button(frame_botoes, text="Salvar", bg=COR_ACENTO, fg="white", relief="flat", command=self._salvar).pack(side="right")
+        tk.Button(frame_botoes, text="Salvar", bg=cores.acento, fg=cores.sobre_acento, relief="flat", command=self._salvar).pack(side="right")
 
     def _adicionar_linha_variante(self, espessura, cor, rotulo, preco_m2=""):
         linha = tk.Frame(self.frame_linhas)
@@ -1119,7 +1245,7 @@ class JanelaVariantes(tk.Toplevel):
             linha.destroy()
             self.linhas_variantes.remove(registro)
 
-        tk.Button(linha, text="🗑", relief="flat", fg="#c92a2a", cursor="hand2", command=remover).pack(side="left", padx=4)
+        tk.Button(linha, text="🗑", relief="flat", fg=cores.parado, cursor="hand2", command=remover).pack(side="left", padx=4)
 
         self.linhas_variantes.append(registro)
 
@@ -1174,7 +1300,7 @@ class JanelaEstoque(tk.Toplevel):
         self.title("Controle de Estoque — UNY CV")
         self.geometry("860x660")
         self.minsize(740, 520)
-        self.configure(bg=COR_FUNDO_JANELA)
+        self.configure(bg=cores.fundo)
         self.transient(mestre)
         self.config_dados = config_dados
         self.estoque = carregar_estoque()
@@ -1187,20 +1313,16 @@ class JanelaEstoque(tk.Toplevel):
 
     def _montar_layout(self):
         linha = 0
-        if CAMINHO_LOGO_GUI.exists():
-            try:
-                self.imagem_logo = tk.PhotoImage(file=str(CAMINHO_LOGO_GUI))
-                tk.Label(self, image=self.imagem_logo, bg=COR_FUNDO_JANELA).grid(
-                    row=linha, column=0, sticky="w", padx=20, pady=(16, 0))
-                linha += 1
-            except tk.TclError:
-                pass
+        placa = tema.placa_logo(self)
+        if placa:
+            placa.grid(row=linha, column=0, sticky="w", padx=20, pady=(16, 4))
+            linha += 1
 
-        tk.Label(self, text="Saldo atual", font=("Segoe UI", 14, "bold"), bg=COR_FUNDO_JANELA, fg=COR_TEXTO).grid(
+        tk.Label(self, text="Saldo atual", font=("Segoe UI", 14, "bold"), bg=cores.fundo, fg=cores.texto).grid(
             row=linha, column=0, sticky="w", padx=20, pady=(14, 2))
         linha += 1
         tk.Label(
-            self, fg=COR_TEXTO_SECUNDARIO, bg=COR_FUNDO_JANELA, justify="left", wraplength=780,
+            self, fg=cores.texto2, bg=cores.fundo, justify="left", wraplength=780,
             text="Clique duas vezes num produto pra editar seus dados. Toda entrada/saída fica registrada "
                  "no histórico e pode ser desfeita.",
         ).grid(row=linha, column=0, sticky="w", padx=20, pady=(0, 10))
@@ -1209,14 +1331,14 @@ class JanelaEstoque(tk.Toplevel):
         linha_conteudo = linha
         linha += 1
 
-        frame_canvas = tk.Frame(self, bg=COR_FUNDO_JANELA)
+        frame_canvas = tk.Frame(self, bg=cores.fundo)
         frame_canvas.grid(row=linha_conteudo, column=0, sticky="nsew", padx=20)
         frame_canvas.columnconfigure(0, weight=1)
         frame_canvas.rowconfigure(0, weight=1)
 
-        canvas = tk.Canvas(frame_canvas, highlightthickness=0, bg=COR_FUNDO_JANELA)
+        canvas = tk.Canvas(frame_canvas, highlightthickness=0, bg=cores.fundo)
         scrollbar = ttk.Scrollbar(frame_canvas, orient="vertical", command=canvas.yview)
-        self.frame_lista = tk.Frame(canvas, bg=COR_FUNDO_JANELA)
+        self.frame_lista = tk.Frame(canvas, bg=cores.fundo)
         janela_interna = canvas.create_window((0, 0), window=self.frame_lista, anchor="nw")
         self.frame_lista.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
         # a lista precisa acompanhar a largura real do canvas (não só a
@@ -1229,14 +1351,14 @@ class JanelaEstoque(tk.Toplevel):
         canvas.grid(row=0, column=0, sticky="nsew")
         scrollbar.grid(row=0, column=1, sticky="ns")
 
-        frame_botoes = tk.Frame(self, bg=COR_FUNDO_JANELA)
+        frame_botoes = tk.Frame(self, bg=cores.fundo)
         frame_botoes.grid(row=linha, column=0, sticky="ew", padx=20, pady=14)
         for col in range(4):
             frame_botoes.columnconfigure(col, weight=1, uniform="botoes")
 
         tk.Button(
-            frame_botoes, text="➕ Entrada", relief="flat", bg=COR_ACENTO, fg="white",
-            activebackground=COR_ACENTO, cursor="hand2", command=lambda: self._abrir_movimento("entrada"),
+            frame_botoes, text="➕ Entrada", relief="flat", bg=cores.acento, fg=cores.sobre_acento,
+            activebackground=cores.acento, cursor="hand2", command=lambda: self._abrir_movimento("entrada"),
         ).grid(row=0, column=0, sticky="ew", padx=(0, 4), pady=(0, 4), ipady=3)
         tk.Button(
             frame_botoes, text="➖ Saída manual", relief="flat", cursor="hand2",
@@ -1274,7 +1396,7 @@ class JanelaEstoque(tk.Toplevel):
                 continue
             tk.Label(
                 self.frame_lista, text=self._NOMES_TIPO[tipo].upper(), font=("Segoe UI", 9, "bold"),
-                fg=COR_ACENTO, bg=COR_FUNDO_JANELA,
+                fg=cores.acento, bg=cores.fundo,
             ).grid(row=len(self.frame_lista.grid_slaves()), column=0, sticky="w", pady=(12, 4))
             for codigo, produto in itens_tipo:
                 self._linha_produto(codigo, produto)
@@ -1285,7 +1407,7 @@ class JanelaEstoque(tk.Toplevel):
 
         linha_idx = len(self.frame_lista.grid_slaves())
         cartao = tk.Frame(
-            self.frame_lista, bg=COR_CARTAO, highlightbackground=COR_BORDA_CARTAO,
+            self.frame_lista, bg=cores.cartao, highlightbackground=cores.borda,
             highlightthickness=1, cursor="hand2",
         )
         cartao.grid(row=linha_idx, column=0, sticky="ew", pady=3)
@@ -1293,7 +1415,7 @@ class JanelaEstoque(tk.Toplevel):
 
         clicaveis = [cartao]
 
-        frame_esq = tk.Frame(cartao, bg=COR_CARTAO)
+        frame_esq = tk.Frame(cartao, bg=cores.cartao)
         frame_esq.grid(row=0, column=0, sticky="ew", padx=(12, 4), pady=9)
         clicaveis.append(frame_esq)
 
@@ -1301,20 +1423,20 @@ class JanelaEstoque(tk.Toplevel):
         if produto.get("variante_vinculada"):
             texto_desc += f"  ·  {formatar_variante(produto['variante_vinculada'])}"
         rotulo_desc = tk.Label(
-            frame_esq, text=texto_desc, anchor="w", bg=COR_CARTAO, fg=COR_TEXTO, wraplength=420, justify="left",
+            frame_esq, text=texto_desc, anchor="w", bg=cores.cartao, fg=cores.texto, wraplength=420, justify="left",
         )
         rotulo_desc.pack(anchor="w")
         clicaveis.append(rotulo_desc)
 
         if abaixo_minimo:
             rotulo_badge = tk.Label(
-                frame_esq, text="ABAIXO DO MÍNIMO", bg=COR_ALERTA_FUNDO, fg=COR_ALERTA,
+                frame_esq, text="ABAIXO DO MÍNIMO", bg=cores.alerta_fundo, fg=cores.alerta,
                 font=("Segoe UI", 7, "bold"), padx=6, pady=1,
             )
             rotulo_badge.pack(anchor="w", pady=(4, 0))
             clicaveis.append(rotulo_badge)
 
-        frame_dir = tk.Frame(cartao, bg=COR_CARTAO)
+        frame_dir = tk.Frame(cartao, bg=cores.cartao)
         frame_dir.grid(row=0, column=1, sticky="e", padx=(4, 10), pady=9)
         clicaveis.append(frame_dir)
 
@@ -1322,15 +1444,15 @@ class JanelaEstoque(tk.Toplevel):
         acumulado = produto.get("acumulado_m", 0.0)
         if produto["tipo"] == "rolo" and acumulado > 0:
             texto_saldo += f"  (+{acumulado:.2f}m ac.)"
-        rotulo_saldo = tk.Label(frame_dir, text=texto_saldo, bg=COR_CARTAO, fg=COR_TEXTO, font=("Segoe UI", 10, "bold"))
+        rotulo_saldo = tk.Label(frame_dir, text=texto_saldo, bg=cores.cartao, fg=cores.texto, font=("Segoe UI", 10, "bold"))
         rotulo_saldo.pack(side="left")
         clicaveis.append(rotulo_saldo)
 
         tem_movimento = any(m["produto"] == codigo for m in self.estoque["movimentos"])
         if not tem_movimento:
             tk.Button(
-                frame_dir, text="🗑", relief="flat", bg=COR_CARTAO, fg="#b0b0b8", cursor="hand2",
-                activebackground=COR_CARTAO, command=lambda: self._remover_produto(codigo, produto),
+                frame_dir, text="🗑", relief="flat", bg=cores.cartao, fg=cores.texto2, cursor="hand2",
+                activebackground=cores.cartao, command=lambda: self._remover_produto(codigo, produto),
             ).pack(side="left", padx=(10, 0))
 
         for widget in clicaveis:
@@ -1397,7 +1519,7 @@ class JanelaMovimentoManual(tk.Toplevel):
         frame_botoes.pack(fill="x", padx=16, pady=16)
         tk.Button(frame_botoes, text="Cancelar", command=self.destroy).pack(side="right", padx=(6, 0))
         tk.Button(
-            frame_botoes, text="Salvar", bg=COR_ACENTO, fg="white", relief="flat", command=self._salvar,
+            frame_botoes, text="Salvar", bg=cores.acento, fg=cores.sobre_acento, relief="flat", command=self._salvar,
         ).pack(side="right")
 
         self.grab_set()
@@ -1462,18 +1584,18 @@ class JanelaSaidaOS(tk.Toplevel):
         pad = {"padx": 16, "pady": 6}
         tk.Label(self, text="Escolha o arquivo da OS", font=("Segoe UI", 11, "bold")).pack(anchor="w", **pad)
         tk.Label(
-            self, fg="#666666", justify="left", wraplength=520,
+            self, fg=cores.texto2, justify="left", wraplength=520,
             text='Esse arquivo fica na mesma pasta do PDF da OS ("OS - CLIENTE.json"). A escolha é sempre '
                  "manual, pra evitar dar baixa com o pedido errado.",
         ).pack(anchor="w", padx=16)
 
         tk.Button(
-            self, text="📂 Escolher arquivo...", relief="flat", fg=COR_ACENTO, cursor="hand2",
+            self, text="📂 Escolher arquivo...", relief="flat", fg=cores.acento, cursor="hand2",
             command=self._escolher_arquivo,
         ).pack(anchor="w", padx=16, pady=8)
 
         self.var_arquivo = tk.StringVar(value="Nenhum arquivo escolhido.")
-        tk.Label(self, textvariable=self.var_arquivo, fg="#333333", wraplength=520, justify="left").pack(anchor="w", padx=16)
+        tk.Label(self, textvariable=self.var_arquivo, fg=cores.texto, wraplength=520, justify="left").pack(anchor="w", padx=16)
 
         canvas = tk.Canvas(self, highlightthickness=0)
         scrollbar = ttk.Scrollbar(self, orient="vertical", command=canvas.yview)
@@ -1488,7 +1610,7 @@ class JanelaSaidaOS(tk.Toplevel):
         frame_botoes.pack(fill="x", padx=16, pady=12)
         tk.Button(frame_botoes, text="Cancelar", command=self.destroy).pack(side="right", padx=(6, 0))
         self.btn_confirmar = tk.Button(
-            frame_botoes, text="Confirmar baixa", bg=COR_ACENTO, fg="white", relief="flat",
+            frame_botoes, text="Confirmar baixa", bg=cores.acento, fg=cores.sobre_acento, relief="flat",
             state="disabled", command=self._confirmar,
         )
         self.btn_confirmar.pack(side="right")
@@ -1540,7 +1662,7 @@ class JanelaSaidaOS(tk.Toplevel):
             tk.Label(
                 self.frame_previa,
                 text="⚠ Esse pedido já teve baixa registrada antes. Confirmar de novo vai DOBRAR o consumo.",
-                fg=COR_ALERTA, bg=COR_ALERTA_FUNDO, anchor="w", justify="left", wraplength=500,
+                fg=cores.alerta, bg=cores.alerta_fundo, anchor="w", justify="left", wraplength=500,
                 font=("Segoe UI", 9, "bold"), padx=8, pady=4,
             ).pack(anchor="w", pady=(0, 8), fill="x")
 
@@ -1554,7 +1676,7 @@ class JanelaSaidaOS(tk.Toplevel):
                 frame_item.pack(anchor="w", fill="x", pady=4)
                 tk.Label(
                     frame_item, text=f"{linha['categoria']}{variante_txt} — mais de um produto possível, escolha qual baixar:",
-                    anchor="w", fg=COR_ALERTA, justify="left", wraplength=500,
+                    anchor="w", fg=cores.alerta, justify="left", wraplength=500,
                 ).pack(anchor="w")
 
                 var_escolha = tk.StringVar()
@@ -1575,13 +1697,13 @@ class JanelaSaidaOS(tk.Toplevel):
             if linha["produto"] is None:
                 motivo = "mais de um produto possível, dê baixa manual" if linha.get("ambiguo") else "sem produto vinculado no estoque"
                 texto = f"{linha['categoria']}{variante_txt} — {motivo}"
-                cor = COR_ALERTA
+                cor = cores.alerta
             else:
                 texto = (
                     f"{linha['produto']} — baixa de {linha['descontado']:g} {linha['unidade']} "
                     f"(saldo ficaria: {linha['saldo_resultante']:g})"
                 )
-                cor = COR_TEXTO
+                cor = cores.texto
             tk.Label(
                 self.frame_previa, text=texto, anchor="w", fg=cor, justify="left", wraplength=500,
             ).pack(anchor="w", pady=2)
@@ -1651,7 +1773,7 @@ class JanelaHistorico(tk.Toplevel):
         ids_estornados = {m["estorno_de"] for m in self.estoque["movimentos"] if m.get("estorno_de")}
 
         if not movimentos:
-            tk.Label(self.frame_lista, text="Nenhum movimento registrado ainda.", fg="#666666").pack(anchor="w", pady=10)
+            tk.Label(self.frame_lista, text="Nenhum movimento registrado ainda.", fg=cores.texto2).pack(anchor="w", pady=10)
             return
 
         for mov in movimentos:
@@ -1663,7 +1785,7 @@ class JanelaHistorico(tk.Toplevel):
             linha.pack(fill="x", pady=3)
 
             sinal = "+" if mov["quantidade"] > 0 else ""
-            cor = COR_POSITIVO if mov["quantidade"] > 0 else COR_TEXTO
+            cor = cores.positivo if mov["quantidade"] > 0 else cores.texto
             texto = f"{mov['data']} · {nome_produto} · {sinal}{mov['quantidade']:g} {unidade}"
             if mov.get("observacao"):
                 texto += f" · {mov['observacao']}"
@@ -1676,7 +1798,7 @@ class JanelaHistorico(tk.Toplevel):
             ja_estornado = mov["id"] in ids_estornados
             if not e_estorno and not ja_estornado:
                 tk.Button(
-                    linha, text="Desfazer", relief="flat", fg="#c92a2a", cursor="hand2",
+                    linha, text="Desfazer", relief="flat", fg=cores.parado, cursor="hand2",
                     command=lambda mid=mov["id"]: self._desfazer(mid),
                 ).pack(side="right")
 
@@ -1712,7 +1834,7 @@ class JanelaNovoProduto(tk.Toplevel):
         self.title("Editar produto" if codigo_edicao else "Cadastrar produto novo")
         self.geometry("460x580")
         self.minsize(420, 500)
-        self.configure(bg=COR_FUNDO_JANELA)
+        self.configure(bg=cores.fundo)
         self.transient(mestre)
         self.estoque = estoque
         self.config_dados = config_dados
@@ -1725,11 +1847,11 @@ class JanelaNovoProduto(tk.Toplevel):
         pad = {"padx": 16, "pady": 6}
         p = self.produto_original
 
-        tk.Label(self, text="Descrição do produto", bg=COR_FUNDO_JANELA).pack(anchor="w", **pad)
+        tk.Label(self, text="Descrição do produto", bg=cores.fundo).pack(anchor="w", **pad)
         self.var_descricao = tk.StringVar(value=p["descricao"] if p else "")
         tk.Entry(self, textvariable=self.var_descricao).pack(fill="x", padx=16)
 
-        tk.Label(self, text="Tipo", bg=COR_FUNDO_JANELA).pack(anchor="w", **pad)
+        tk.Label(self, text="Tipo", bg=cores.fundo).pack(anchor="w", **pad)
         self.var_tipo = tk.StringVar(value=p["tipo"] if p else "chapa")
         combo_tipo = ttk.Combobox(
             self, textvariable=self.var_tipo, values=["rolo", "chapa", "insumo"], state="readonly",
@@ -1737,7 +1859,7 @@ class JanelaNovoProduto(tk.Toplevel):
         combo_tipo.pack(fill="x", padx=16)
         combo_tipo.bind("<<ComboboxSelected>>", lambda e: self._atualizar_campos_por_tipo())
 
-        tk.Label(self, text="Categoria vinculada (pra baixa automática pela OS)", bg=COR_FUNDO_JANELA).pack(
+        tk.Label(self, text="Categoria vinculada (pra baixa automática pela OS)", bg=cores.fundo).pack(
             anchor="w", **pad)
         categorias = ["(sem vínculo — insumo avulso)"] + list(self.config_dados["materiais"].keys())
         valor_categoria = (p["categoria_vinculada"] if p and p.get("categoria_vinculada") else categorias[0])
@@ -1746,7 +1868,7 @@ class JanelaNovoProduto(tk.Toplevel):
 
         # área que muda de acordo com o tipo escolhido — os "espaços pra
         # variação" (espessura/cor) pra chapa, ou a metragem do rolo
-        self.frame_dinamico = tk.Frame(self, bg=COR_FUNDO_JANELA)
+        self.frame_dinamico = tk.Frame(self, bg=cores.fundo)
         self.frame_dinamico.pack(fill="x", padx=16, pady=(8, 0))
 
         variante_atual = (p.get("variante_vinculada") or {}) if p else {}
@@ -1755,39 +1877,39 @@ class JanelaNovoProduto(tk.Toplevel):
         self.var_comprimento_rolo = tk.StringVar(value=str(p["comprimento_rolo_m"]) if p and p.get("tipo") == "rolo" else "50")
         self.var_unidade = tk.StringVar(value=p["unidade"] if p else "un")
 
-        frame_min_max = tk.Frame(self, bg=COR_FUNDO_JANELA)
+        frame_min_max = tk.Frame(self, bg=cores.fundo)
         frame_min_max.pack(fill="x", padx=16, pady=(10, 6))
-        col1 = tk.Frame(frame_min_max, bg=COR_FUNDO_JANELA)
+        col1 = tk.Frame(frame_min_max, bg=cores.fundo)
         col1.pack(side="left", fill="x", expand=True)
-        col2 = tk.Frame(frame_min_max, bg=COR_FUNDO_JANELA)
+        col2 = tk.Frame(frame_min_max, bg=cores.fundo)
         col2.pack(side="left", fill="x", expand=True, padx=(10, 0))
-        tk.Label(col1, text="Estoque mínimo", bg=COR_FUNDO_JANELA).pack(anchor="w")
+        tk.Label(col1, text="Estoque mínimo", bg=cores.fundo).pack(anchor="w")
         self.var_minimo = tk.StringVar(value=str(p["minimo"]) if p else "0")
         tk.Entry(col1, textvariable=self.var_minimo).pack(fill="x")
-        tk.Label(col2, text="Estoque máximo", bg=COR_FUNDO_JANELA).pack(anchor="w")
+        tk.Label(col2, text="Estoque máximo", bg=cores.fundo).pack(anchor="w")
         self.var_maximo = tk.StringVar(value=str(p["maximo"]) if p else "0")
         tk.Entry(col2, textvariable=self.var_maximo).pack(fill="x")
 
-        tk.Label(self, text="Código da planilha (opcional)", bg=COR_FUNDO_JANELA).pack(anchor="w", padx=16, pady=(4, 2))
+        tk.Label(self, text="Código da planilha (opcional)", bg=cores.fundo).pack(anchor="w", padx=16, pady=(4, 2))
         self.var_codigo_planilha = tk.StringVar(value=(p.get("codigo_planilha") or "") if p else "")
         tk.Entry(self, textvariable=self.var_codigo_planilha).pack(fill="x", padx=16)
 
         if p:
             saldo_atual = saldo_produto(self.estoque, self.codigo_edicao)
             tk.Label(
-                self, bg=COR_FUNDO_JANELA, fg=COR_TEXTO_SECUNDARIO,
+                self, bg=cores.fundo, fg=cores.texto2,
                 text=f"Saldo atual: {saldo_atual:g} {p['unidade']} (editar aqui não muda o saldo — "
                      f"use entrada/saída/histórico pra isso).",
                 justify="left", wraplength=420,
             ).pack(anchor="w", padx=16, pady=(6, 0))
 
-        frame_botoes = tk.Frame(self, bg=COR_FUNDO_JANELA)
+        frame_botoes = tk.Frame(self, bg=cores.fundo)
         frame_botoes.pack(fill="x", padx=16, pady=16)
         tk.Button(frame_botoes, text="Cancelar", relief="flat", cursor="hand2", command=self.destroy).pack(
             side="right", padx=(6, 0))
         tk.Button(
             frame_botoes, text="Salvar alterações" if self.codigo_edicao else "Cadastrar",
-            bg=COR_ACENTO, fg="white", relief="flat", cursor="hand2", command=self._salvar,
+            bg=cores.acento, fg=cores.sobre_acento, relief="flat", cursor="hand2", command=self._salvar,
         ).pack(side="right")
 
         self._atualizar_campos_por_tipo()
@@ -1799,7 +1921,7 @@ class JanelaNovoProduto(tk.Toplevel):
         tipo = self.var_tipo.get()
         if tipo == "chapa":
             tk.Label(
-                self.frame_dinamico, text="Variação (opcional)", font=("Segoe UI", 9, "bold"), fg="#666666",
+                self.frame_dinamico, text="Variação (opcional)", font=("Segoe UI", 9, "bold"), fg=cores.texto2,
             ).pack(anchor="w")
             linha = tk.Frame(self.frame_dinamico)
             linha.pack(fill="x", pady=2)
@@ -1808,7 +1930,7 @@ class JanelaNovoProduto(tk.Toplevel):
             tk.Label(linha, text="Cor").pack(side="left")
             tk.Entry(linha, textvariable=self.var_cor, width=12).pack(side="left", padx=4)
             tk.Label(
-                self.frame_dinamico, fg="#888888", wraplength=400, justify="left",
+                self.frame_dinamico, fg=cores.texto2, wraplength=400, justify="left",
                 text="Preenchendo espessura/cor, esse produto casa automaticamente com a variante equivalente "
                      "das etiquetas (ex: 10MM + BRANCO) na hora da baixa pela OS.",
             ).pack(anchor="w", pady=(2, 0))
@@ -1907,7 +2029,7 @@ class JanelaDashboard(tk.Toplevel):
         self.title("Dashboard de Estoque — UNY CV")
         self.geometry("880x680")
         self.minsize(720, 520)
-        self.configure(bg=COR_FUNDO_JANELA)
+        self.configure(bg=cores.fundo)
         self.transient(mestre)
         self.estoque = estoque
 
@@ -1923,45 +2045,41 @@ class JanelaDashboard(tk.Toplevel):
 
     def _montar_layout(self):
         linha = 0
-        if CAMINHO_LOGO_GUI.exists():
-            try:
-                self.imagem_logo = tk.PhotoImage(file=str(CAMINHO_LOGO_GUI))
-                tk.Label(self, image=self.imagem_logo, bg=COR_FUNDO_JANELA).grid(
-                    row=linha, column=0, sticky="w", padx=20, pady=(16, 0))
-                linha += 1
-            except tk.TclError:
-                pass
+        placa = tema.placa_logo(self)
+        if placa:
+            placa.grid(row=linha, column=0, sticky="w", padx=20, pady=(16, 4))
+            linha += 1
 
         tk.Label(
-            self, text="Dashboard de Estoque", font=("Segoe UI", 14, "bold"), bg=COR_FUNDO_JANELA, fg=COR_TEXTO,
+            self, text="Dashboard de Estoque", font=("Segoe UI", 14, "bold"), bg=cores.fundo, fg=cores.texto,
         ).grid(row=linha, column=0, sticky="w", padx=20, pady=(14, 6))
         linha += 1
 
-        frame_mes = tk.Frame(self, bg=COR_FUNDO_JANELA)
+        frame_mes = tk.Frame(self, bg=cores.fundo)
         frame_mes.grid(row=linha, column=0, sticky="w", padx=20, pady=(0, 10))
         tk.Button(frame_mes, text="◀", relief="flat", cursor="hand2", command=self._mes_anterior).pack(side="left")
         self.var_mes_label = tk.StringVar()
         tk.Label(
-            frame_mes, textvariable=self.var_mes_label, font=("Segoe UI", 11, "bold"), bg=COR_FUNDO_JANELA,
-            fg=COR_TEXTO, width=16, anchor="center",
+            frame_mes, textvariable=self.var_mes_label, font=("Segoe UI", 11, "bold"), bg=cores.fundo,
+            fg=cores.texto, width=16, anchor="center",
         ).pack(side="left", padx=6)
         tk.Button(frame_mes, text="▶", relief="flat", cursor="hand2", command=self._mes_seguinte).pack(side="left")
         linha += 1
 
-        self.frame_cards = tk.Frame(self, bg=COR_FUNDO_JANELA)
+        self.frame_cards = tk.Frame(self, bg=cores.fundo)
         self.frame_cards.grid(row=linha, column=0, sticky="ew", padx=20, pady=(0, 10))
         linha += 1
 
         linha_conteudo = linha
         linha += 1
 
-        frame_canvas = tk.Frame(self, bg=COR_FUNDO_JANELA)
+        frame_canvas = tk.Frame(self, bg=cores.fundo)
         frame_canvas.grid(row=linha_conteudo, column=0, sticky="nsew", padx=20)
         frame_canvas.columnconfigure(0, weight=1)
         frame_canvas.rowconfigure(0, weight=1)
-        canvas = tk.Canvas(frame_canvas, highlightthickness=0, bg=COR_FUNDO_JANELA)
+        canvas = tk.Canvas(frame_canvas, highlightthickness=0, bg=cores.fundo)
         scrollbar = ttk.Scrollbar(frame_canvas, orient="vertical", command=canvas.yview)
-        self.frame_conteudo = tk.Frame(canvas, bg=COR_FUNDO_JANELA)
+        self.frame_conteudo = tk.Frame(canvas, bg=cores.fundo)
         janela_interna = canvas.create_window((0, 0), window=self.frame_conteudo, anchor="nw")
         self.frame_conteudo.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
         canvas.bind("<Configure>", lambda e: canvas.itemconfig(janela_interna, width=e.width))
@@ -1970,7 +2088,7 @@ class JanelaDashboard(tk.Toplevel):
         canvas.grid(row=0, column=0, sticky="nsew")
         scrollbar.grid(row=0, column=1, sticky="ns")
 
-        frame_botoes = tk.Frame(self, bg=COR_FUNDO_JANELA)
+        frame_botoes = tk.Frame(self, bg=cores.fundo)
         frame_botoes.grid(row=linha, column=0, sticky="e", padx=20, pady=14)
         tk.Button(frame_botoes, text="Fechar", relief="flat", cursor="hand2", command=self.destroy).pack()
 
@@ -1999,20 +2117,20 @@ class JanelaDashboard(tk.Toplevel):
             widget.destroy()
 
         cards = [
-            ("Lançamentos no mês", str(resumo["total_lancamentos"]), COR_TEXTO),
-            ("Entradas", str(resumo["total_entradas_lancamentos"]), COR_POSITIVO),
-            ("Saídas", str(resumo["total_saidas_lancamentos"]), COR_TEXTO),
-            ("Abaixo do mínimo (hoje)", str(len(resumo["produtos_abaixo_minimo"])), COR_ALERTA),
+            ("Lançamentos no mês", str(resumo["total_lancamentos"]), cores.texto),
+            ("Entradas", str(resumo["total_entradas_lancamentos"]), cores.positivo),
+            ("Saídas", str(resumo["total_saidas_lancamentos"]), cores.texto),
+            ("Abaixo do mínimo (hoje)", str(len(resumo["produtos_abaixo_minimo"])), cores.alerta),
         ]
         for i, (rotulo, valor, cor) in enumerate(cards):
             self.frame_cards.columnconfigure(i, weight=1)
             cartao = tk.Frame(
-                self.frame_cards, bg=COR_CARTAO, highlightbackground=COR_BORDA_CARTAO, highlightthickness=1,
+                self.frame_cards, bg=cores.cartao, highlightbackground=cores.borda, highlightthickness=1,
             )
             cartao.grid(row=0, column=i, sticky="ew", padx=(0 if i == 0 else 8, 0))
-            tk.Label(cartao, text=valor, font=("Segoe UI", 18, "bold"), bg=COR_CARTAO, fg=cor).pack(
+            tk.Label(cartao, text=valor, font=("Segoe UI", 18, "bold"), bg=cores.cartao, fg=cor).pack(
                 anchor="w", padx=12, pady=(10, 0))
-            tk.Label(cartao, text=rotulo, font=("Segoe UI", 8), bg=COR_CARTAO, fg=COR_TEXTO_SECUNDARIO).pack(
+            tk.Label(cartao, text=rotulo, font=("Segoe UI", 8), bg=cores.cartao, fg=cores.texto2).pack(
                 anchor="w", padx=12, pady=(0, 10))
 
     def _preencher_conteudo(self, resumo, rendimento):
@@ -2021,22 +2139,22 @@ class JanelaDashboard(tk.Toplevel):
 
         self._secao_ranking(
             "📦 Volume de entrada no mês — todos os produtos, do maior pro menor",
-            resumo["ranking_entradas"], COR_POSITIVO,
+            resumo["ranking_entradas"], cores.positivo,
         )
         self._secao_ranking(
             "📤 Volume de saída no mês — todos os produtos, do maior pro menor",
-            resumo["ranking_saidas"], COR_ACENTO,
+            resumo["ranking_saidas"], cores.acento,
         )
         self._secao_rendimento_tinta(rendimento)
 
         if resumo["produtos_abaixo_minimo"]:
             tk.Label(
                 self.frame_conteudo, text="ABAIXO DO MÍNIMO AGORA", font=("Segoe UI", 9, "bold"),
-                fg=COR_ALERTA, bg=COR_FUNDO_JANELA,
+                fg=cores.alerta, bg=cores.fundo,
             ).grid(row=len(self.frame_conteudo.grid_slaves()), column=0, sticky="w", pady=(16, 4))
             nomes = ", ".join(self.estoque["produtos"][c]["descricao"] for c in resumo["produtos_abaixo_minimo"])
             tk.Label(
-                self.frame_conteudo, text=nomes, fg=COR_TEXTO_SECUNDARIO, bg=COR_FUNDO_JANELA,
+                self.frame_conteudo, text=nomes, fg=cores.texto2, bg=cores.fundo,
                 wraplength=800, justify="left",
             ).grid(row=len(self.frame_conteudo.grid_slaves()), column=0, sticky="w")
 
@@ -2052,43 +2170,43 @@ class JanelaDashboard(tk.Toplevel):
         """
         tk.Label(
             self.frame_conteudo, text="🖨️ Rendimento de tinta por máquina",
-            font=("Segoe UI", 10, "bold"), fg=COR_TEXTO, bg=COR_FUNDO_JANELA,
+            font=("Segoe UI", 10, "bold"), fg=cores.texto, bg=cores.fundo,
         ).grid(row=len(self.frame_conteudo.grid_slaves()), column=0, sticky="w", pady=(14, 6))
 
         for maquina, dados in rendimento.items():
             linha = tk.Frame(
-                self.frame_conteudo, bg=COR_CARTAO, highlightbackground=COR_BORDA_CARTAO, highlightthickness=1,
+                self.frame_conteudo, bg=cores.cartao, highlightbackground=cores.borda, highlightthickness=1,
             )
             linha.grid(row=len(self.frame_conteudo.grid_slaves()), column=0, sticky="ew", pady=3)
             linha.columnconfigure(0, weight=1)
 
             tk.Label(
-                linha, text=f"{maquina}  ·  {dados['categoria']}", anchor="w", bg=COR_CARTAO, fg=COR_TEXTO,
+                linha, text=f"{maquina}  ·  {dados['categoria']}", anchor="w", bg=cores.cartao, fg=cores.texto,
             ).grid(row=0, column=0, sticky="w", padx=12, pady=(8, 0))
 
             if dados["rendimento_ml_m2"] is not None:
                 texto_valor = f"{dados['rendimento_ml_m2']:.1f} mL/m²"
-                cor_valor = COR_TEXTO
+                cor_valor = cores.texto
             else:
                 texto_valor = "dados insuficientes ainda"
-                cor_valor = COR_TEXTO_SECUNDARIO
+                cor_valor = cores.texto2
             tk.Label(
-                linha, text=texto_valor, anchor="e", bg=COR_CARTAO, fg=cor_valor, font=("Segoe UI", 10, "bold"),
+                linha, text=texto_valor, anchor="e", bg=cores.cartao, fg=cor_valor, font=("Segoe UI", 10, "bold"),
             ).grid(row=0, column=1, sticky="e", padx=12, pady=(8, 0))
 
             tk.Label(
                 linha, text=f"{dados['tinta_ml']:.0f} mL de tinta consumida  ·  {dados['area_m2']:.2f} m² produzidos no mês",
-                anchor="w", bg=COR_CARTAO, fg=COR_TEXTO_SECUNDARIO, font=("Segoe UI", 8),
+                anchor="w", bg=cores.cartao, fg=cores.texto2, font=("Segoe UI", 8),
             ).grid(row=1, column=0, columnspan=2, sticky="w", padx=12, pady=(0, 8))
 
     def _secao_ranking(self, titulo, ranking, cor_barra):
         tk.Label(
-            self.frame_conteudo, text=titulo, font=("Segoe UI", 10, "bold"), fg=COR_TEXTO, bg=COR_FUNDO_JANELA,
+            self.frame_conteudo, text=titulo, font=("Segoe UI", 10, "bold"), fg=cores.texto, bg=cores.fundo,
         ).grid(row=len(self.frame_conteudo.grid_slaves()), column=0, sticky="w", pady=(6, 6))
 
         if not ranking:
             tk.Label(
-                self.frame_conteudo, text="Nenhum movimento nesse mês.", fg=COR_TEXTO_SECUNDARIO, bg=COR_FUNDO_JANELA,
+                self.frame_conteudo, text="Nenhum movimento nesse mês.", fg=cores.texto2, bg=cores.fundo,
             ).grid(row=len(self.frame_conteudo.grid_slaves()), column=0, sticky="w", pady=(0, 8))
             return
 
@@ -2099,18 +2217,18 @@ class JanelaDashboard(tk.Toplevel):
             if not produto:
                 continue
 
-            linha = tk.Frame(self.frame_conteudo, bg=COR_FUNDO_JANELA)
+            linha = tk.Frame(self.frame_conteudo, bg=cores.fundo)
             linha.grid(row=len(self.frame_conteudo.grid_slaves()), column=0, sticky="ew", pady=(2, 0))
             linha.columnconfigure(0, weight=1)
-            tk.Label(linha, text=produto["descricao"], anchor="w", bg=COR_FUNDO_JANELA, fg=COR_TEXTO).grid(
+            tk.Label(linha, text=produto["descricao"], anchor="w", bg=cores.fundo, fg=cores.texto).grid(
                 row=0, column=0, sticky="ew")
             tk.Label(
-                linha, text=f"{valor:g} {produto['unidade']}", anchor="e", bg=COR_FUNDO_JANELA, fg=COR_TEXTO,
+                linha, text=f"{valor:g} {produto['unidade']}", anchor="e", bg=cores.fundo, fg=cores.texto,
                 font=("Segoe UI", 9, "bold"), width=14,
             ).grid(row=0, column=1, sticky="e", padx=(8, 0))
 
             largura = max(4, int((valor / valor_maximo) * largura_max)) if valor_maximo > 0 else 4
-            barra_fundo = tk.Frame(self.frame_conteudo, bg="#e9eaee", height=6, width=largura_max)
+            barra_fundo = tk.Frame(self.frame_conteudo, bg=cores.borda, height=6, width=largura_max)
             barra_fundo.grid_propagate(False)
             barra_fundo.grid(row=len(self.frame_conteudo.grid_slaves()), column=0, sticky="w", pady=(0, 7))
             tk.Frame(barra_fundo, bg=cor_barra, height=6, width=largura).place(x=0, y=0)
@@ -2136,7 +2254,7 @@ class JanelaEnviarImpressao(tk.Toplevel):
         self.title("Enviar para impressão — UNY CV")
         self.geometry("1120x680")
         self.minsize(900, 520)
-        self.configure(bg=COR_FUNDO_JANELA)
+        self.configure(bg=cores.fundo)
         self.transient(mestre)
 
         self.config_dados = config_dados
@@ -2157,16 +2275,16 @@ class JanelaEnviarImpressao(tk.Toplevel):
     def _montar_layout(self):
         tk.Label(
             self, text="Enviar para impressão", font=("Segoe UI", 14, "bold"),
-            bg=COR_FUNDO_JANELA, fg=COR_TEXTO,
+            bg=cores.fundo, fg=cores.texto,
         ).grid(row=0, column=0, sticky="w", padx=20, pady=(16, 2))
 
-        barra = tk.Frame(self, bg=COR_FUNDO_JANELA)
+        barra = tk.Frame(self, bg=cores.fundo)
         barra.grid(row=1, column=0, sticky="ew", padx=20, pady=(4, 8))
         barra.columnconfigure(0, weight=1)
 
         self.var_pasta = tk.StringVar(value="Nenhuma pasta escolhida")
         tk.Label(
-            barra, textvariable=self.var_pasta, bg=COR_CARTAO, fg=COR_TEXTO, anchor="w",
+            barra, textvariable=self.var_pasta, bg=cores.cartao, fg=cores.texto, anchor="w",
             relief="solid", bd=1, padx=8, pady=4, font=("Consolas", 9),
         ).grid(row=0, column=0, sticky="ew")
         tk.Button(barra, text="📁 Trocar pasta...", relief="flat", cursor="hand2",
@@ -2175,7 +2293,7 @@ class JanelaEnviarImpressao(tk.Toplevel):
                   command=self._recarregar).grid(row=0, column=2, padx=(4, 0))
 
         self.var_contagem = tk.StringVar(value="")
-        tk.Label(barra, textvariable=self.var_contagem, bg=COR_FUNDO_JANELA, fg=COR_TEXTO_SECUNDARIO).grid(
+        tk.Label(barra, textvariable=self.var_contagem, bg=cores.fundo, fg=cores.texto2).grid(
             row=0, column=3, padx=(10, 0))
 
         # Estado do RIP, SEMPRE visível — inclusive quando está tudo
@@ -2184,7 +2302,7 @@ class JanelaEnviarImpressao(tk.Toplevel):
         # ela precisa ser respondida ANTES de mandar, não depois de dar
         # errado. Antes disso, a única forma de saber era atravessar a
         # sala e olhar "Última execução" no Agendador da outra máquina.
-        linha_rip = tk.Frame(barra, bg=COR_FUNDO_JANELA)
+        linha_rip = tk.Frame(barra, bg=cores.fundo)
         linha_rip.grid(row=1, column=0, columnspan=4, sticky="w", pady=(6, 0))
 
         # A bolinha é "●" (U+25CF), NÃO emoji. O Tk do Windows não tem
@@ -2194,13 +2312,13 @@ class JanelaEnviarImpressao(tk.Toplevel):
         # (visto pelo usuário, 2026-09-05: "ficou opaca branca"). Com um
         # caractere comum, quem pinta é o fg do widget, e aí funciona.
         # Por isso são DOIS rótulos: um Label só tem uma cor de frente.
-        self.ponto_rip = tk.Label(linha_rip, text="", bg=COR_FUNDO_JANELA, font=("Segoe UI", 11))
+        self.ponto_rip = tk.Label(linha_rip, text="", bg=cores.fundo, font=("Segoe UI", 11))
         self.ponto_rip.grid(row=0, column=0, sticky="w")
 
         self.var_rip = tk.StringVar(value="")
         self.rotulo_rip = tk.Label(
-            linha_rip, textvariable=self.var_rip, bg=COR_FUNDO_JANELA,
-            fg=COR_TEXTO_SECUNDARIO, anchor="w", justify="left", font=("Segoe UI", 9),
+            linha_rip, textvariable=self.var_rip, bg=cores.fundo,
+            fg=cores.texto2, anchor="w", justify="left", font=("Segoe UI", 9),
             wraplength=1000,  # o texto explica o que o estado significa; sem isso ele alargaria a janela
         )
         self.rotulo_rip.grid(row=0, column=1, sticky="w", padx=(6, 0))
@@ -2211,18 +2329,18 @@ class JanelaEnviarImpressao(tk.Toplevel):
         # aviso ninguém percebe a diferença.
         self.var_fila = tk.StringVar(value="")
         self.faixa_fila = tk.Label(
-            self, textvariable=self.var_fila, bg=COR_ALERTA_FUNDO, fg=COR_ALERTA,
+            self, textvariable=self.var_fila, bg=cores.alerta_fundo, fg=cores.alerta,
             anchor="w", justify="left", padx=10, pady=6, wraplength=1000,
         )
 
-        frame_canvas = tk.Frame(self, bg=COR_FUNDO_JANELA)
+        frame_canvas = tk.Frame(self, bg=cores.fundo)
         frame_canvas.grid(row=2, column=0, sticky="nsew", padx=20)
         frame_canvas.columnconfigure(0, weight=1)
         frame_canvas.rowconfigure(0, weight=1)
 
-        canvas = tk.Canvas(frame_canvas, highlightthickness=0, bg=COR_FUNDO_JANELA)
+        canvas = tk.Canvas(frame_canvas, highlightthickness=0, bg=cores.fundo)
         scrollbar = ttk.Scrollbar(frame_canvas, orient="vertical", command=canvas.yview)
-        self.frame_lista = tk.Frame(canvas, bg=COR_FUNDO_JANELA)
+        self.frame_lista = tk.Frame(canvas, bg=cores.fundo)
         janela_interna = canvas.create_window((0, 0), window=self.frame_lista, anchor="nw")
         self.frame_lista.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
         canvas.bind("<Configure>", lambda e: canvas.itemconfig(janela_interna, width=e.width))
@@ -2231,21 +2349,21 @@ class JanelaEnviarImpressao(tk.Toplevel):
         canvas.grid(row=0, column=0, sticky="nsew")
         scrollbar.grid(row=0, column=1, sticky="ns")
 
-        rodape = tk.Frame(self, bg=COR_FUNDO_JANELA)
+        rodape = tk.Frame(self, bg=cores.fundo)
         rodape.grid(row=3, column=0, sticky="ew", padx=20, pady=14)
         rodape.columnconfigure(0, weight=1)
 
         self.var_subtotais = tk.StringVar(value="")
         tk.Label(
-            rodape, textvariable=self.var_subtotais, bg=COR_FUNDO_JANELA, fg=COR_TEXTO,
+            rodape, textvariable=self.var_subtotais, bg=cores.fundo, fg=cores.texto,
             font=("Segoe UI", 9, "bold"), anchor="w", justify="left",
         ).grid(row=0, column=0, sticky="w")
 
-        tk.Button(rodape, text="📄 Abrir o Enviados", relief="flat", fg=COR_ACENTO, cursor="hand2",
+        tk.Button(rodape, text="📄 Abrir o Enviados", relief="flat", fg=cores.acento, cursor="hand2",
                   command=self._abrir_documento).grid(row=0, column=1, padx=(0, 8))
         self.btn_enviar = tk.Button(
-            rodape, text="Enviar", relief="flat", bg=COR_ACENTO, fg="white",
-            activebackground=COR_ACENTO, cursor="hand2", font=("Segoe UI", 10, "bold"),
+            rodape, text="Enviar", relief="flat", bg=cores.acento, fg=cores.sobre_acento,
+            activebackground=cores.acento, cursor="hand2", font=("Segoe UI", 10, "bold"),
             command=self._conferir_e_enviar, state="disabled",
         )
         self.btn_enviar.grid(row=0, column=2, ipadx=14, ipady=4)
@@ -2306,12 +2424,12 @@ class JanelaEnviarImpressao(tk.Toplevel):
         # deliberado: branco sobre fundo branco não se vê, e "não sei"
         # não pode gritar mais alto que "está parado".
         cores = {
-            "ok": (COR_POSITIVO, COR_TEXTO_SECUNDARIO),
-            "atencao": (COR_ALERTA, COR_TEXTO),
-            "parado": (COR_RIP_PARADO, COR_RIP_PARADO),
-            "sem_sinal": (COR_TEXTO_SECUNDARIO, COR_TEXTO_SECUNDARIO),
+            "ok": (cores.positivo, cores.texto2),
+            "atencao": (cores.alerta, cores.texto),
+            "parado": (cores.parado, cores.parado),
+            "sem_sinal": (cores.texto2, cores.texto2),
         }
-        cor_ponto, cor_texto = cores.get(estado["nivel"], (COR_TEXTO_SECUNDARIO, COR_TEXTO_SECUNDARIO))
+        cor_ponto, cor_texto = cores.get(estado["nivel"], (cores.texto2, cores.texto2))
         self.ponto_rip.configure(text="●", fg=cor_ponto)
         self.var_rip.set(estado["texto"])
         self.rotulo_rip.configure(fg=cor_texto)
@@ -2395,7 +2513,7 @@ class JanelaEnviarImpressao(tk.Toplevel):
 
         if not self.itens:
             tk.Label(
-                self.frame_lista, bg=COR_FUNDO_JANELA, fg=COR_ALERTA, justify="left", wraplength=800,
+                self.frame_lista, bg=cores.fundo, fg=cores.alerta, justify="left", wraplength=800,
                 text="Nenhum arquivo de arte nesta pasta.\n\n"
                      "Lembrando: CORTES não aparece aqui (não passa por impressora) e Prontos nunca é lido.",
             ).grid(row=0, column=0, columnspan=6, sticky="w", pady=20)
@@ -2410,15 +2528,15 @@ class JanelaEnviarImpressao(tk.Toplevel):
         for nome_pasta in sorted(por_pasta):
             grupo = por_pasta[nome_pasta]
             nunca_enviados = [i for i, item in grupo if not item["envios_anteriores"]]
-            cabecalho = tk.Frame(self.frame_lista, bg="#e9ebef")
+            cabecalho = tk.Frame(self.frame_lista, bg=cores.borda)
             cabecalho.grid(row=linha, column=0, columnspan=6, sticky="ew", pady=(12, 0))
             tk.Button(
-                cabecalho, text=f"marcar todos  ·  {nome_pasta}", relief="flat", bg="#e9ebef", fg=COR_TEXTO,
+                cabecalho, text=f"marcar todos  ·  {nome_pasta}", relief="flat", bg=cores.borda, fg=cores.texto,
                 font=("Segoe UI", 9, "bold"), cursor="hand2", anchor="w",
                 command=lambda ids=nunca_enviados: self._marcar_todos(ids),
             ).pack(side="left", padx=6, pady=3)
             tk.Label(
-                cabecalho, text=f"{len(grupo)} arquivo(s)", bg="#e9ebef", fg=COR_TEXTO_SECUNDARIO,
+                cabecalho, text=f"{len(grupo)} arquivo(s)", bg=cores.borda, fg=cores.texto2,
             ).pack(side="left")
             linha += 1
 
@@ -2432,16 +2550,16 @@ class JanelaEnviarImpressao(tk.Toplevel):
 
     def _linha_item(self, linha, indice, item):
         ja_foi = bool(item["envios_anteriores"])
-        cor_texto = COR_TEXTO_SECUNDARIO if ja_foi else COR_TEXTO
+        cor_texto = cores.texto2 if ja_foi else cores.texto
 
         var = tk.BooleanVar(value=False)
         var.trace_add("write", lambda *_: self._atualizar_rodape())
         self.marcados[indice] = var
-        tk.Checkbutton(self.frame_lista, variable=var, bg=COR_FUNDO_JANELA).grid(
+        tk.Checkbutton(self.frame_lista, variable=var, bg=cores.fundo).grid(
             row=linha, column=0, sticky="w", padx=(2, 4))
 
         tk.Label(
-            self.frame_lista, text=item["arquivo"], bg=COR_FUNDO_JANELA, fg=cor_texto,
+            self.frame_lista, text=item["arquivo"], bg=cores.fundo, fg=cor_texto,
             font=("Consolas", 8), anchor="w", justify="left", wraplength=400,
         ).grid(row=linha, column=1, sticky="w", pady=1)
 
@@ -2452,7 +2570,7 @@ class JanelaEnviarImpressao(tk.Toplevel):
             ).replace(".", ",")
         else:
             medida = f'sem medida no nome  ·  {item["quantidade"]} un'
-        tk.Label(self.frame_lista, text=medida, bg=COR_FUNDO_JANELA, fg=cor_texto, anchor="w").grid(
+        tk.Label(self.frame_lista, text=medida, bg=cores.fundo, fg=cor_texto, anchor="w").grid(
             row=linha, column=2, sticky="w", padx=8)
 
         # Só o nome da máquina no combo, nunca medida junto: "não colocar
@@ -2467,8 +2585,8 @@ class JanelaEnviarImpressao(tk.Toplevel):
         combo.bind("<<ComboboxSelected>>", lambda e, i=indice: self._trocar_maquina(i))
 
         tk.Label(
-            self.frame_lista, text=self._observacao(item), bg=COR_FUNDO_JANELA,
-            fg=COR_ALERTA if (ja_foi or not item["cabe"]) else (COR_POSITIVO if item["giro"] else COR_TEXTO_SECUNDARIO),
+            self.frame_lista, text=self._observacao(item), bg=cores.fundo,
+            fg=cores.alerta if (ja_foi or not item["cabe"]) else (cores.positivo if item["giro"] else cores.texto2),
             anchor="w", justify="left", wraplength=270,
         ).grid(row=linha, column=4, sticky="w", padx=(4, 2))
 
@@ -2622,26 +2740,26 @@ class JanelaConferenciaEnvio(tk.Toplevel):
         super().__init__(mestre)
         self.title("Conferência antes de enviar")
         self.geometry("740x560")
-        self.configure(bg=COR_FUNDO_JANELA)
+        self.configure(bg=cores.fundo)
         self.transient(mestre)
         self.confirmado = False
 
         total = len(resultado["bloqueados"]) + len(resultado["atencao"]) + len(resultado["limpos"])
         tk.Label(
             self, text=f"Conferência — {total} arquivo(s) marcado(s)", font=("Segoe UI", 12, "bold"),
-            bg=COR_FUNDO_JANELA, fg=COR_TEXTO,
+            bg=cores.fundo, fg=cores.texto,
         ).pack(anchor="w", padx=18, pady=(16, 2))
         tk.Label(
-            self, text="Nada foi copiado nem alterado ainda.", bg=COR_FUNDO_JANELA, fg=COR_TEXTO_SECUNDARIO,
+            self, text="Nada foi copiado nem alterado ainda.", bg=cores.fundo, fg=cores.texto2,
         ).pack(anchor="w", padx=18, pady=(0, 10))
 
-        texto = tk.Text(self, wrap="word", bg=COR_CARTAO, relief="solid", bd=1, padx=10, pady=8)
+        texto = tk.Text(self, wrap="word", bg=cores.cartao, relief="solid", bd=1, padx=10, pady=8)
         texto.pack(fill="both", expand=True, padx=18)
-        texto.tag_config("bloq", foreground="#9b2117", font=("Segoe UI", 9, "bold"))
-        texto.tag_config("atn", foreground=COR_ALERTA, font=("Segoe UI", 9, "bold"))
-        texto.tag_config("ok", foreground=COR_POSITIVO, font=("Segoe UI", 9, "bold"))
+        texto.tag_config("bloq", foreground=cores.parado, font=("Segoe UI", 9, "bold"))
+        texto.tag_config("atn", foreground=cores.alerta, font=("Segoe UI", 9, "bold"))
+        texto.tag_config("ok", foreground=cores.positivo, font=("Segoe UI", 9, "bold"))
         texto.tag_config("arquivo", font=("Consolas", 8))
-        texto.tag_config("motivo", foreground="#444444")
+        texto.tag_config("motivo", foreground=cores.texto2)
 
         if resultado["bloqueados"]:
             texto.insert("end", f"TRAVA O ENVIO — {len(resultado['bloqueados'])}\n\n", "bloq")
@@ -2664,12 +2782,12 @@ class JanelaConferenciaEnvio(tk.Toplevel):
         texto.config(state="disabled")
 
         liberados = len(resultado["limpos"]) + len(resultado["atencao"])
-        botoes = tk.Frame(self, bg=COR_FUNDO_JANELA)
+        botoes = tk.Frame(self, bg=cores.fundo)
         botoes.pack(fill="x", padx=18, pady=14)
         tk.Button(botoes, text="Cancelar", relief="flat", cursor="hand2", command=self.destroy).pack(side="left")
         tk.Button(
-            botoes, text=f"Enviar {liberados} arquivo(s)", relief="flat", bg=COR_ACENTO, fg="white",
-            activebackground=COR_ACENTO, cursor="hand2", font=("Segoe UI", 10, "bold"),
+            botoes, text=f"Enviar {liberados} arquivo(s)", relief="flat", bg=cores.acento, fg=cores.sobre_acento,
+            activebackground=cores.acento, cursor="hand2", font=("Segoe UI", 10, "bold"),
             state="normal" if liberados else "disabled", command=self._confirmar,
         ).pack(side="right", ipadx=12, ipady=3)
 
@@ -2693,21 +2811,21 @@ class JanelaResultadoEnvio(tk.Toplevel):
         super().__init__(mestre)
         self.title("Resultado do envio")
         self.geometry("740x520")
-        self.configure(bg=COR_FUNDO_JANELA)
+        self.configure(bg=cores.fundo)
         self.transient(mestre)
 
         tk.Label(
             self, text="Resultado do envio", font=("Segoe UI", 12, "bold"),
-            bg=COR_FUNDO_JANELA, fg=COR_TEXTO,
+            bg=cores.fundo, fg=cores.texto,
         ).pack(anchor="w", padx=18, pady=(16, 8))
 
-        texto = tk.Text(self, wrap="word", bg=COR_CARTAO, relief="solid", bd=1, padx=10, pady=8)
+        texto = tk.Text(self, wrap="word", bg=cores.cartao, relief="solid", bd=1, padx=10, pady=8)
         texto.pack(fill="both", expand=True, padx=18)
-        texto.tag_config("ok", foreground=COR_POSITIVO, font=("Segoe UI", 9, "bold"))
-        texto.tag_config("bloq", foreground="#9b2117", font=("Segoe UI", 9, "bold"))
-        texto.tag_config("atn", foreground=COR_ALERTA, font=("Segoe UI", 9, "bold"))
+        texto.tag_config("ok", foreground=cores.positivo, font=("Segoe UI", 9, "bold"))
+        texto.tag_config("bloq", foreground=cores.parado, font=("Segoe UI", 9, "bold"))
+        texto.tag_config("atn", foreground=cores.alerta, font=("Segoe UI", 9, "bold"))
         texto.tag_config("arquivo", font=("Consolas", 8))
-        texto.tag_config("motivo", foreground="#444444")
+        texto.tag_config("motivo", foreground=cores.texto2)
 
         if resultado["enviados"]:
             texto.insert("end", f"ENVIADOS E ANOTADOS — {len(resultado['enviados'])}\n\n", "ok")
@@ -2747,7 +2865,7 @@ class JanelaResultadoEnvio(tk.Toplevel):
             texto.insert("end", f"\nDocumento atualizado: {caminho_documento.name}\n", "motivo")
         texto.config(state="disabled")
 
-        tk.Button(self, text="Fechar", relief="flat", bg=COR_ACENTO, fg="white",
-                  activebackground=COR_ACENTO, cursor="hand2", command=self.destroy).pack(pady=14, ipadx=16, ipady=3)
+        tk.Button(self, text="Fechar", relief="flat", bg=cores.acento, fg=cores.sobre_acento,
+                  activebackground=cores.acento, cursor="hand2", command=self.destroy).pack(pady=14, ipadx=16, ipady=3)
 
         self.grab_set()

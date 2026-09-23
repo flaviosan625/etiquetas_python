@@ -39,16 +39,11 @@ import caminhos
 import clientes
 import origem_artes as oa
 import receber_artes as ra
-from branding import CAMINHO_LOGO_GUI
 from config import carregar_config
-from gui import (
-    COR_ACENTO, COR_ALERTA, COR_ALERTA_FUNDO, COR_BORDA_CARTAO, COR_CARTAO, COR_FUNDO_JANELA,
-    COR_POSITIVO, COR_RIP_PARADO, COR_TEXTO, COR_TEXTO_SECUNDARIO,
-)
+import tema
+from tema import cores
 from utils import sanitizar_nome_arquivo
 
-COR_MARCADO = "#e8f1fb"
-COR_PREVIA_FUNDO = "#eef1f4"
 TAMANHO_TILE = (150, 92)
 TAMANHO_LINHA = (72, 50)
 COLUNAS_GRUPOS = 2
@@ -95,7 +90,7 @@ class JanelaReceber(tk.Toplevel):
     def __init__(self, master):
         super().__init__(master)
         self.title("Receber artes — UNY CV")
-        self.configure(bg=COR_FUNDO_JANELA)
+        self.configure(bg=cores.fundo)
         altura = min(900, self.winfo_screenheight() - 90)
         largura = min(1280, self.winfo_screenwidth() - 40)
         self.geometry("%dx%d+20+10" % (largura, altura))
@@ -120,7 +115,7 @@ class JanelaReceber(tk.Toplevel):
 
         self._montar_topo()
         self._montar_origem()
-        self.area = tk.Frame(self, bg=COR_FUNDO_JANELA)
+        self.area = tk.Frame(self, bg=cores.fundo)
         self.area.pack(fill="both", expand=True)
         self._mostrar_inicio()
 
@@ -193,7 +188,7 @@ class JanelaReceber(tk.Toplevel):
             with Image.open(io.BytesIO(dados)) as im:
                 img = im.convert("RGB")
             img.thumbnail(tamanho)
-            fundo = Image.new("RGB", tamanho, COR_PREVIA_FUNDO)
+            fundo = Image.new("RGB", tamanho, cores.previa)
             fundo.paste(img, ((tamanho[0] - img.width) // 2, (tamanho[1] - img.height) // 2))
             foto = ImageTk.PhotoImage(fundo)
             self._imagens.append(foto)
@@ -204,78 +199,72 @@ class JanelaReceber(tk.Toplevel):
     # ========================================================= parte fixa
 
     def _montar_topo(self):
-        topo = tk.Frame(self, bg=COR_FUNDO_JANELA)
+        topo = tk.Frame(self, bg=cores.fundo)
         topo.pack(fill="x", padx=18, pady=(12, 4))
-        if CAMINHO_LOGO_GUI.exists():
-            try:
-                from PIL import Image, ImageTk
-                im = Image.open(CAMINHO_LOGO_GUI)
-                im.thumbnail((110, 36))
-                self._logo = ImageTk.PhotoImage(im)
-                tk.Label(topo, image=self._logo, bg=COR_FUNDO_JANELA).pack(side="left", padx=(0, 12))
-            except Exception:
-                pass
-        caixa = tk.Frame(topo, bg=COR_FUNDO_JANELA)
+        placa = tema.placa_logo(topo)
+        if placa:
+            placa.pack(side="left", padx=(0, 12))
+        caixa = tk.Frame(topo, bg=cores.fundo)
         caixa.pack(side="left")
         tk.Label(caixa, text="Receber artes", font=("Segoe UI", 15, "bold"),
-                 bg=COR_FUNDO_JANELA, fg=COR_TEXTO).pack(anchor="w")
+                 bg=cores.fundo, fg=cores.texto).pack(anchor="w")
         self.var_passo = tk.StringVar(value="Cole o link ou escolha a pasta/ZIP, e clique em Ler origem.")
         tk.Label(caixa, textvariable=self.var_passo, font=("Segoe UI", 9),
-                 bg=COR_FUNDO_JANELA, fg=COR_TEXTO_SECUNDARIO).pack(anchor="w")
+                 bg=cores.fundo, fg=cores.texto2).pack(anchor="w")
 
     def _montar_origem(self):
-        c = tk.Frame(self, bg=COR_CARTAO, highlightbackground=COR_BORDA_CARTAO, highlightthickness=1)
+        c = tk.Frame(self, bg=cores.cartao, highlightbackground=cores.borda, highlightthickness=1)
         c.pack(fill="x", padx=18, pady=(4, 6))
 
-        l0 = tk.Frame(c, bg=COR_CARTAO)
+        l0 = tk.Frame(c, bg=cores.cartao)
         l0.pack(fill="x", padx=14, pady=(10, 2))
-        tk.Label(l0, text="Cliente", font=("Segoe UI", 9, "bold"), bg=COR_CARTAO,
-                 fg=COR_TEXTO, width=10, anchor="w").pack(side="left")
+        tk.Label(l0, text="Cliente", font=("Segoe UI", 9, "bold"), bg=cores.cartao,
+                 fg=cores.texto, width=10, anchor="w").pack(side="left")
         self.var_cliente = tk.StringVar()
         nomes = [cl.nome for cl in clientes.listar()]
         self.combo_cliente = ttk.Combobox(l0, textvariable=self.var_cliente, values=nomes,
                                           width=30, font=("Segoe UI", 10))
         self.combo_cliente.pack(side="left", padx=(0, 10))
         self._sem_rodinha(self.combo_cliente)
-        self.lbl_cliente = tk.Label(l0, text="", font=("Segoe UI", 8, "bold"), bg=COR_CARTAO, anchor="w")
+        self.lbl_cliente = tk.Label(l0, text="", font=("Segoe UI", 8, "bold"), bg=cores.cartao, anchor="w")
         self.lbl_cliente.pack(side="left")
 
-        l1 = tk.Frame(c, bg=COR_CARTAO)
+        l1 = tk.Frame(c, bg=cores.cartao)
         l1.pack(fill="x", padx=14, pady=(6, 4))
-        tk.Label(l1, text="Origem", font=("Segoe UI", 9, "bold"), bg=COR_CARTAO,
-                 fg=COR_TEXTO, width=10, anchor="w").pack(side="left")
+        tk.Label(l1, text="Origem", font=("Segoe UI", 9, "bold"), bg=cores.cartao,
+                 fg=cores.texto, width=10, anchor="w").pack(side="left")
         self.var_origem = tk.StringVar()
         e = tk.Entry(l1, textvariable=self.var_origem, font=("Segoe UI", 9), width=70,
                      relief="solid", bd=1)
         e.pack(side="left", ipady=3)
         e.bind("<Return>", lambda ev: self._ler_origem())
-        tk.Button(l1, text="Pasta...", font=("Segoe UI", 9), relief="solid", bd=1, bg=COR_CARTAO,
-                  fg=COR_TEXTO, padx=8, pady=1, cursor="hand2",
+        tk.Button(l1, text="Pasta...", font=("Segoe UI", 9), relief="solid", bd=1, bg=cores.cartao,
+                  fg=cores.texto, padx=8, pady=1, cursor="hand2",
                   command=self._escolher_pasta).pack(side="left", padx=(6, 2))
-        tk.Button(l1, text="ZIP...", font=("Segoe UI", 9), relief="solid", bd=1, bg=COR_CARTAO,
-                  fg=COR_TEXTO, padx=8, pady=1, cursor="hand2",
+        tk.Button(l1, text="ZIP...", font=("Segoe UI", 9), relief="solid", bd=1, bg=cores.cartao,
+                  fg=cores.texto, padx=8, pady=1, cursor="hand2",
                   command=self._escolher_zip).pack(side="left", padx=2)
-        self.btn_ler = tk.Button(l1, text="Ler origem", bg=COR_ACENTO, fg="white",
+        self.btn_ler = tk.Button(l1, text="Ler origem", bg=cores.acento, fg=cores.sobre_acento,
                                  font=("Segoe UI", 10, "bold"), relief="flat", padx=16, pady=3,
                                  cursor="hand2", command=self._ler_origem)
         self.btn_ler.pack(side="left", padx=6)
         tk.Label(c, text="   Google Drive e WeTransfer pelo link  ·  OneDrive sincronizado, pendrive e "
                          "ZIP baixado pelo navegador, por Pasta... ou ZIP...",
-                 font=("Segoe UI", 7), bg=COR_CARTAO, fg=COR_TEXTO_SECUNDARIO).pack(anchor="w", padx=14)
+                 font=("Segoe UI", 7), bg=cores.cartao, fg=cores.texto2).pack(anchor="w", padx=14)
 
-        l2 = tk.Frame(c, bg=COR_CARTAO)
+        l2 = tk.Frame(c, bg=cores.cartao)
         l2.pack(fill="x", padx=14, pady=(6, 10))
-        tk.Label(l2, text="Área", font=("Segoe UI", 9, "bold"), bg=COR_CARTAO,
-                 fg=COR_TEXTO, width=10, anchor="w").pack(side="left")
+        tk.Label(l2, text="Área", font=("Segoe UI", 9, "bold"), bg=cores.cartao,
+                 fg=cores.texto, width=10, anchor="w").pack(side="left")
         self.var_area = tk.StringVar()
         tk.Entry(l2, textvariable=self.var_area, font=("Segoe UI", 9), width=24,
                  relief="solid", bd=1).pack(side="left", ipady=3)
         tk.Label(l2, text="  vai na pasta e na frente do nome   Guardar em ", font=("Segoe UI", 8),
-                 bg=COR_CARTAO, fg=COR_TEXTO_SECUNDARIO).pack(side="left")
-        self.lbl_destino = tk.Label(l2, text="", font=("Segoe UI", 9), bg=COR_CARTAO, fg=COR_TEXTO)
+                 bg=cores.cartao, fg=cores.texto2).pack(side="left")
+        self.lbl_destino = tk.Label(l2, text="", font=("Segoe UI", 9), bg=cores.cartao, fg=cores.texto)
         self.lbl_destino.pack(side="left")
-        tk.Button(l2, text="Mudar...", font=("Segoe UI", 8), relief="solid", bd=1, bg=COR_CARTAO,
-                  fg=COR_TEXTO, padx=8, pady=1, cursor="hand2",
+        tk.Button(l2, text="Mudar...", font=("Segoe UI", 8), relief="solid", bd=1, bg=cores.cartao,
+                  fg=cores.texto, padx=8, pady=1, cursor="hand2",
                   command=self._mudar_destino).pack(side="left", padx=8)
 
         self.var_cliente.trace_add("write", lambda *a: self._atualizar_cliente())
@@ -287,15 +276,15 @@ class JanelaReceber(tk.Toplevel):
     def _atualizar_cliente(self):
         situacao, dado = clientes.situacao_do_nome(self.var_cliente.get())
         textos = {
-            "vazio": ("digite o nome do cliente — a pasta dele nasce desse nome", COR_ALERTA),
-            "invalido": (dado, COR_RIP_PARADO),
+            "vazio": ("digite o nome do cliente — a pasta dele nasce desse nome", cores.alerta),
+            "invalido": (dado, cores.parado),
             "existe": ('cliente já cadastrado — usa a pasta dele' if dado and dado.nome == self.var_cliente.get().strip()
                        else 'é o cliente "%s" (já existe) — usa a pasta dele' % (dado.nome if dado else ""),
-                       COR_POSITIVO),
+                       cores.positivo),
             "parecido": ('parece com "%s", que já existe — vou perguntar antes de arquivar'
-                         % (dado.nome if dado else ""), COR_ALERTA),
+                         % (dado.nome if dado else ""), cores.alerta),
             "novo": ("cliente NOVO — a pasta Recebimento de Artes\\%s nasce ao arquivar"
-                     % self.var_cliente.get().strip(), COR_ACENTO),
+                     % self.var_cliente.get().strip(), cores.acento),
         }
         texto, cor = textos[situacao]
         self.lbl_cliente.configure(text=texto, fg=cor)
@@ -354,8 +343,8 @@ class JanelaReceber(tk.Toplevel):
         self._imagens = []
 
     def _status(self, texto, nivel="info"):
-        cor = {"info": COR_TEXTO_SECUNDARIO, "ok": COR_POSITIVO, "aviso": COR_ALERTA,
-               "erro": COR_RIP_PARADO}[nivel]
+        cor = {"info": cores.texto2, "ok": cores.positivo, "aviso": cores.alerta,
+               "erro": cores.parado}[nivel]
         if hasattr(self, "lbl_status") and self.lbl_status.winfo_exists():
             self.lbl_status.configure(text=texto, fg=cor)
         else:
@@ -367,16 +356,16 @@ class JanelaReceber(tk.Toplevel):
 
     def _mostrar_inicio(self):
         self._limpar_area()
-        caixa = tk.Frame(self.area, bg=COR_FUNDO_JANELA)
+        caixa = tk.Frame(self.area, bg=cores.fundo)
         caixa.pack(fill="both", expand=True, padx=18)
-        self.lbl_status = tk.Label(caixa, text="", font=("Segoe UI", 10), bg=COR_FUNDO_JANELA,
-                                   fg=COR_TEXTO_SECUNDARIO, wraplength=900, justify="left")
+        self.lbl_status = tk.Label(caixa, text="", font=("Segoe UI", 10), bg=cores.fundo,
+                                   fg=cores.texto2, wraplength=900, justify="left")
         self.lbl_status.pack(anchor="w", pady=(20, 6))
         tk.Label(caixa, text=(
             "1. Digite o cliente (existe ou novo — a pasta nasce do nome).\n"
             "2. Cole o link do Drive ou do WeTransfer, ou escolha uma pasta ou um ZIP.\n"
             "3. Ler origem: aparece a prévia de cada arte. Nada é baixado antes de você marcar."),
-            font=("Segoe UI", 10), bg=COR_FUNDO_JANELA, fg=COR_TEXTO, justify="left").pack(anchor="w")
+            font=("Segoe UI", 10), bg=cores.fundo, fg=cores.texto, justify="left").pack(anchor="w")
 
     # ============================================================ passo 1
 
@@ -418,12 +407,12 @@ class JanelaReceber(tk.Toplevel):
         situacao, dado = clientes.situacao_do_nome(self.var_cliente.get())
         self.recebidos = ra.ja_recebidos(dado) if situacao == "existe" else {}
 
-        cab = tk.Frame(self.area, bg=COR_FUNDO_JANELA)
+        cab = tk.Frame(self.area, bg=cores.fundo)
         cab.pack(fill="x", padx=18, pady=(2, 2))
         grupos = oa.agrupar(self.itens)
         tk.Label(cab, text="%s     %d arquivos em %d pasta%s" % (
             self.origem.rotulo, len(self.itens), len(grupos), "s" if len(grupos) != 1 else ""),
-            font=("Segoe UI", 10, "bold"), bg=COR_FUNDO_JANELA, fg=COR_TEXTO,
+            font=("Segoe UI", 10, "bold"), bg=cores.fundo, fg=cores.texto,
             anchor="w", wraplength=1150, justify="left").pack(fill="x")
         extras = []
         if self.origem.aviso:
@@ -432,15 +421,15 @@ class JanelaReceber(tk.Toplevel):
             extras.append("%d item(ns) ficaram de fora: %s" % (
                 len(self.origem.ignorados), ", ".join("%s (%s)" % i for i in self.origem.ignorados[:3])))
         for texto in extras:
-            tk.Label(cab, text=texto, font=("Segoe UI", 8), bg=COR_FUNDO_JANELA, fg=COR_ALERTA,
+            tk.Label(cab, text=texto, font=("Segoe UI", 8), bg=cores.fundo, fg=cores.alerta,
                      anchor="w", wraplength=1150, justify="left").pack(fill="x")
         if not self.itens:
             tk.Label(self.area, text="A origem não tem arquivo nenhum.", font=("Segoe UI", 11),
-                     bg=COR_FUNDO_JANELA, fg=COR_ALERTA).pack(pady=40)
+                     bg=cores.fundo, fg=cores.alerta).pack(pady=40)
             return
 
         self._montar_rodape_passo1()
-        self._rolavel = _Rolavel(self.area, COR_FUNDO_JANELA)
+        self._rolavel = _Rolavel(self.area, cores.fundo)
         self._rolavel.pack(fill="both", expand=True, padx=18, pady=(2, 4))
         grade = self._rolavel.dentro
         # uma pasta só (o ZIP do Mandarin): ela usa a largura toda; várias
@@ -460,8 +449,8 @@ class JanelaReceber(tk.Toplevel):
         self._pedir_previas()
 
     def _cartao_grupo(self, pai, grupo, arquivos):
-        cartao = tk.Frame(pai, bg=COR_CARTAO, highlightbackground=COR_BORDA_CARTAO, highlightthickness=1)
-        topo = tk.Frame(cartao, bg=COR_CARTAO)
+        cartao = tk.Frame(pai, bg=cores.cartao, highlightbackground=cores.borda, highlightthickness=1)
+        topo = tk.Frame(cartao, bg=cores.cartao)
         topo.pack(fill="x", padx=10, pady=(7, 3))
         var_pasta = tk.BooleanVar()
         membros = []
@@ -472,14 +461,14 @@ class JanelaReceber(tk.Toplevel):
                 self._pintar_tile(a.id)
             self._atualizar_total()
 
-        tk.Checkbutton(topo, variable=var_pasta, bg=COR_CARTAO, activebackground=COR_CARTAO,
+        tk.Checkbutton(topo, variable=var_pasta, bg=cores.cartao, activebackground=cores.cartao,
                        cursor="hand2", command=marcar_pasta).pack(side="left")
         tk.Label(topo, text=grupo or "(raiz da origem)", font=("Segoe UI", 10, "bold"),
-                 bg=COR_CARTAO, fg=COR_TEXTO, anchor="w").pack(side="left")
+                 bg=cores.cartao, fg=cores.texto, anchor="w").pack(side="left")
         tk.Label(topo, text="  %d arquivo%s" % (len(arquivos), "s" if len(arquivos) != 1 else ""),
-                 font=("Segoe UI", 8), bg=COR_CARTAO, fg=COR_TEXTO_SECUNDARIO).pack(side="left")
+                 font=("Segoe UI", 8), bg=cores.cartao, fg=cores.texto2).pack(side="left")
 
-        corpo = tk.Frame(cartao, bg=COR_CARTAO)
+        corpo = tk.Frame(cartao, bg=cores.cartao)
         corpo.pack(fill="x", padx=10, pady=(0, 9))
         ordem = sorted(arquivos, key=lambda a: (_ORDEM_EXT.index(a.ext) if a.ext in _ORDEM_EXT else 99,
                                                 a.nome.lower()))
@@ -500,43 +489,43 @@ class JanelaReceber(tk.Toplevel):
         return cartao
 
     def _tile(self, pai, arquivo, irmaos, var, ja_recebido):
-        tile = tk.Frame(pai, bg=COR_CARTAO, highlightthickness=1, highlightbackground=COR_BORDA_CARTAO)
-        previa = tk.Label(tile, text="carregando...", width=20, height=5, bg=COR_PREVIA_FUNDO,
-                          fg=COR_TEXTO_SECUNDARIO, font=("Segoe UI", 7))
+        tile = tk.Frame(pai, bg=cores.cartao, highlightthickness=1, highlightbackground=cores.borda)
+        previa = tk.Label(tile, text="carregando...", width=20, height=5, bg=cores.previa,
+                          fg=cores.texto2, font=("Segoe UI", 7))
         previa.pack(padx=4, pady=(4, 2))
-        base = tk.Frame(tile, bg=COR_CARTAO)
+        base = tk.Frame(tile, bg=cores.cartao)
         base.pack(fill="x", padx=4)
 
         def trocou():
             self._pintar_tile(arquivo.id)
             self._atualizar_total()
 
-        chk = tk.Checkbutton(base, variable=var, bg=COR_CARTAO, activebackground=COR_CARTAO,
+        chk = tk.Checkbutton(base, variable=var, bg=cores.cartao, activebackground=cores.cartao,
                              cursor="hand2", command=trocou)
         chk.pack(side="left")
-        tk.Label(base, text=arquivo.ext or "?", font=("Segoe UI", 9, "bold"), bg=COR_CARTAO,
-                 fg=COR_ACENTO).pack(side="left")
-        tk.Label(base, text=" " + _mb(arquivo.bytes), font=("Segoe UI", 8), bg=COR_CARTAO,
-                 fg=COR_TEXTO_SECUNDARIO).pack(side="left")
+        tk.Label(base, text=arquivo.ext or "?", font=("Segoe UI", 9, "bold"), bg=cores.cartao,
+                 fg=cores.acento).pack(side="left")
+        tk.Label(base, text=" " + _mb(arquivo.bytes), font=("Segoe UI", 8), bg=cores.cartao,
+                 fg=cores.texto2).pack(side="left")
         fonte, emprestada = oa.fonte_da_previa(arquivo, irmaos)
         papel = {"arte": "arte", "trabalho": "trabalho (.ai)", "previa": "prévia exportada",
                  "outro": "outro formato"}[oa.papel(arquivo, irmaos)]
         if emprestada:
             papel += " · prévia do " + fonte.ext
-        rodape = tk.Label(tile, text=papel, font=("Segoe UI", 7), bg=COR_CARTAO,
-                          fg=COR_ALERTA if emprestada else COR_TEXTO_SECUNDARIO, anchor="w")
+        rodape = tk.Label(tile, text=papel, font=("Segoe UI", 7), bg=cores.cartao,
+                          fg=cores.alerta if emprestada else cores.texto2, anchor="w")
         rodape.pack(fill="x", padx=6)
         # largura fixa: nome comprido não pode alargar o cartão e empurrar o vizinho pra fora
         nome = tk.Label(tile, text=arquivo.nome if len(arquivo.nome) <= 26 else arquivo.nome[:24] + "…",
-                        font=("Segoe UI", 7), bg=COR_CARTAO, fg=COR_TEXTO_SECUNDARIO, anchor="w", width=26)
+                        font=("Segoe UI", 7), bg=cores.cartao, fg=cores.texto2, anchor="w", width=26)
         nome.pack(fill="x", padx=6, pady=(0, 2))
         if ja_recebido:
-            tk.Label(tile, text="já recebido", font=("Segoe UI", 7, "bold"), bg=COR_CARTAO,
-                     fg=COR_POSITIVO, anchor="w").pack(fill="x", padx=6)
+            tk.Label(tile, text="já recebido", font=("Segoe UI", 7, "bold"), bg=cores.cartao,
+                     fg=cores.positivo, anchor="w").pack(fill="x", padx=6)
         if arquivo.na_nuvem:
-            tk.Label(tile, text="só na nuvem — baixa se marcar", font=("Segoe UI", 7), bg=COR_CARTAO,
-                     fg=COR_TEXTO_SECUNDARIO, anchor="w").pack(fill="x", padx=6)
-        tk.Frame(tile, bg=COR_CARTAO, height=3).pack()
+            tk.Label(tile, text="só na nuvem — baixa se marcar", font=("Segoe UI", 7), bg=cores.cartao,
+                     fg=cores.texto2, anchor="w").pack(fill="x", padx=6)
+        tk.Frame(tile, bg=cores.cartao, height=3).pack()
 
         self._tiles[arquivo.id] = (tile, previa, [base, rodape, nome, chk])
         self._pedidos_de_previa.setdefault(fonte.id, (fonte, []))[1].append(previa)
@@ -546,11 +535,11 @@ class JanelaReceber(tk.Toplevel):
     def _pintar_tile(self, id_arquivo):
         tile, _, filhos = self._tiles[id_arquivo]
         marcado = self.marcas[id_arquivo].get()
-        cor = COR_MARCADO if marcado else COR_CARTAO
-        tile.configure(bg=cor, highlightbackground=COR_ACENTO if marcado else COR_BORDA_CARTAO)
+        cor = cores.marcado if marcado else cores.cartao
+        tile.configure(bg=cor, highlightbackground=cores.acento if marcado else cores.borda)
         for w in filhos + [w for f in filhos for w in f.winfo_children()] + tile.winfo_children():
             try:
-                if w.cget("bg") in (COR_MARCADO, COR_CARTAO):
+                if w.cget("bg") in (cores.marcado, cores.cartao):
                     w.configure(bg=cor)
                 if isinstance(w, tk.Checkbutton):
                     w.configure(activebackground=cor)
@@ -576,23 +565,23 @@ class JanelaReceber(tk.Toplevel):
                            executor=self._miniaturas)
 
     def _montar_rodape_passo1(self):
-        pe = tk.Frame(self.area, bg=COR_CARTAO, highlightbackground=COR_BORDA_CARTAO, highlightthickness=1)
+        pe = tk.Frame(self.area, bg=cores.cartao, highlightbackground=cores.borda, highlightthickness=1)
         pe.pack(side="bottom", fill="x", padx=18, pady=(2, 12))
-        esq = tk.Frame(pe, bg=COR_CARTAO)
+        esq = tk.Frame(pe, bg=cores.cartao)
         esq.pack(side="left", padx=14, pady=9)
-        tk.Label(esq, text="Marcar:", font=("Segoe UI", 9, "bold"), bg=COR_CARTAO,
-                 fg=COR_TEXTO).pack(side="left")
+        tk.Label(esq, text="Marcar:", font=("Segoe UI", 9, "bold"), bg=cores.cartao,
+                 fg=cores.texto).pack(side="left")
         for rotulo, regra in (("Só PDF", "pdf"), ("Tudo que é arte", "arte"), ("Tudo", "tudo"), ("Nada", "nada")):
-            tk.Button(esq, text=rotulo, font=("Segoe UI", 8), relief="solid", bd=1, bg=COR_CARTAO,
-                      fg=COR_ACENTO, padx=9, pady=2, cursor="hand2",
+            tk.Button(esq, text=rotulo, font=("Segoe UI", 8), relief="solid", bd=1, bg=cores.cartao,
+                      fg=cores.acento, padx=9, pady=2, cursor="hand2",
                       command=lambda r=regra: self._marcar(r)).pack(side="left", padx=2)
-        self.lbl_total = tk.Label(esq, text="", font=("Segoe UI", 9, "bold"), bg=COR_CARTAO, fg=COR_TEXTO)
+        self.lbl_total = tk.Label(esq, text="", font=("Segoe UI", 9, "bold"), bg=cores.cartao, fg=cores.texto)
         self.lbl_total.pack(side="left", padx=14)
-        self.lbl_status = tk.Label(esq, text="", font=("Segoe UI", 8), bg=COR_CARTAO, fg=COR_TEXTO_SECUNDARIO)
+        self.lbl_status = tk.Label(esq, text="", font=("Segoe UI", 8), bg=cores.cartao, fg=cores.texto2)
         self.lbl_status.pack(side="left")
-        dr = tk.Frame(pe, bg=COR_CARTAO)
+        dr = tk.Frame(pe, bg=cores.cartao)
         dr.pack(side="right", padx=14, pady=8)
-        self.btn_baixar = tk.Button(dr, text="Baixar os marcados  >", bg=COR_ACENTO, fg="white",
+        self.btn_baixar = tk.Button(dr, text="Baixar os marcados  >", bg=cores.acento, fg=cores.sobre_acento,
                                     font=("Segoe UI", 10, "bold"), relief="flat", padx=18, pady=6,
                                     cursor="hand2", command=self._baixar_marcados)
         self.btn_baixar.pack(side="left")
@@ -654,50 +643,50 @@ class JanelaReceber(tk.Toplevel):
         artes = [p for p in self.pecas if p.leva_nome_do_padrao or p.papel == "arte"]
         apoio = [p for p in self.pecas if p not in artes]
 
-        cab = tk.Frame(self.area, bg=COR_CARTAO, highlightbackground=COR_BORDA_CARTAO, highlightthickness=1)
+        cab = tk.Frame(self.area, bg=cores.cartao, highlightbackground=cores.borda, highlightthickness=1)
         cab.pack(fill="x", padx=18, pady=(2, 6))
         tk.Label(cab, text="%d peça%s pra arquivar, %d arquivo%s de apoio — nada entrou em ARTES ainda" % (
             len(artes), "s" if len(artes) != 1 else "", len(apoio), "s" if len(apoio) != 1 else ""),
-            font=("Segoe UI", 10, "bold"), bg=COR_CARTAO, fg=COR_TEXTO).pack(anchor="w", padx=14, pady=(8, 0))
+            font=("Segoe UI", 10, "bold"), bg=cores.cartao, fg=cores.texto).pack(anchor="w", padx=14, pady=(8, 0))
         tk.Label(cab, text="A medida foi lida da arte. Sem especificação: 1 unidade e A DEFINIR — mude aqui "
                            "se souber. O [+] faz a mesma arte servir outra peça.",
-                 font=("Segoe UI", 8), bg=COR_CARTAO, fg=COR_TEXTO_SECUNDARIO).pack(anchor="w", padx=14)
-        massa = tk.Frame(cab, bg=COR_CARTAO)
+                 font=("Segoe UI", 8), bg=cores.cartao, fg=cores.texto2).pack(anchor="w", padx=14)
+        massa = tk.Frame(cab, bg=cores.cartao)
         massa.pack(fill="x", padx=14, pady=(6, 9))
-        tk.Label(massa, text="Material de todas:", font=("Segoe UI", 9, "bold"), bg=COR_CARTAO,
-                 fg=COR_TEXTO).pack(side="left")
+        tk.Label(massa, text="Material de todas:", font=("Segoe UI", 9, "bold"), bg=cores.cartao,
+                 fg=cores.texto).pack(side="left")
         for m in self.materiais:
-            tk.Button(massa, text=m, font=("Segoe UI", 8), relief="solid", bd=1, bg=COR_CARTAO,
-                      fg=COR_ACENTO, padx=7, pady=1, cursor="hand2",
+            tk.Button(massa, text=m, font=("Segoe UI", 8), relief="solid", bd=1, bg=cores.cartao,
+                      fg=cores.acento, padx=7, pady=1, cursor="hand2",
                       command=lambda mm=m: self._material_de_todas(mm)).pack(side="left", padx=2)
 
         self._montar_rodape_passo2()
-        self._rolavel = _Rolavel(self.area, COR_FUNDO_JANELA)
+        self._rolavel = _Rolavel(self.area, cores.fundo)
         self._rolavel.pack(fill="both", expand=True, padx=18, pady=(0, 4))
         self._linhas = {}
         for p in artes:
             self._linha(self._rolavel.dentro, p)
         if apoio:
-            caixa = tk.Frame(self._rolavel.dentro, bg=COR_CARTAO, highlightbackground=COR_BORDA_CARTAO,
+            caixa = tk.Frame(self._rolavel.dentro, bg=cores.cartao, highlightbackground=cores.borda,
                              highlightthickness=1)
             caixa.pack(fill="x", pady=(8, 2))
             tk.Label(caixa, text="Vão junto, com o nome do cliente (%d):" % len(apoio),
-                     font=("Segoe UI", 9, "bold"), bg=COR_CARTAO, fg=COR_TEXTO).pack(anchor="w", padx=10, pady=(6, 2))
+                     font=("Segoe UI", 9, "bold"), bg=cores.cartao, fg=cores.texto).pack(anchor="w", padx=10, pady=(6, 2))
             nomes = ra.nomes_do_lote(apoio)
             for p in apoio:
                 tipo = {"trabalho": ".ai de trabalho", "previa": "prévia", "outro": "outro formato"}.get(p.papel, p.papel)
                 tk.Label(caixa, text="   %s   (%s)" % (nomes[id(p)], tipo), font=("Segoe UI", 8),
-                         bg=COR_CARTAO, fg=COR_TEXTO_SECUNDARIO, anchor="w").pack(fill="x", padx=10)
-            tk.Frame(caixa, bg=COR_CARTAO, height=6).pack()
+                         bg=cores.cartao, fg=cores.texto2, anchor="w").pack(fill="x", padx=10)
+            tk.Frame(caixa, bg=cores.cartao, height=6).pack()
         self._verificar_nomes()
 
     def _linha(self, pai, peca):
-        cartao = tk.Frame(pai, bg=COR_CARTAO, highlightbackground=COR_BORDA_CARTAO, highlightthickness=1)
+        cartao = tk.Frame(pai, bg=cores.cartao, highlightbackground=cores.borda, highlightthickness=1)
         cartao.pack(fill="x", pady=2)
-        c = tk.Frame(cartao, bg=COR_CARTAO)
+        c = tk.Frame(cartao, bg=cores.cartao)
         c.pack(fill="x", padx=6, pady=5)
 
-        previa = tk.Label(c, text="...", width=10, height=3, bg=COR_PREVIA_FUNDO, fg=COR_TEXTO_SECUNDARIO,
+        previa = tk.Label(c, text="...", width=10, height=3, bg=cores.previa, fg=cores.texto2,
                           font=("Segoe UI", 7))
         previa.pack(side="left")
 
@@ -714,47 +703,47 @@ class JanelaReceber(tk.Toplevel):
                 previa.configure(text=peca.arquivo.ext)
         self._no_fundo(buscar, chegou, ao_falhar=lambda e: None, executor=self._miniaturas)
 
-        col = tk.Frame(c, bg=COR_CARTAO)
+        col = tk.Frame(c, bg=cores.cartao)
         col.pack(side="left", padx=(8, 0), fill="x", expand=True)
         var_desc = tk.StringVar(value=peca.descricao)
         tk.Entry(col, textvariable=var_desc, font=("Segoe UI", 9), width=44, relief="solid", bd=1).pack(anchor="w")
-        lbl_nome = tk.Label(col, text="", font=("Segoe UI", 7), bg=COR_CARTAO, fg=COR_TEXTO_SECUNDARIO, anchor="w")
+        lbl_nome = tk.Label(col, text="", font=("Segoe UI", 7), bg=cores.cartao, fg=cores.texto2, anchor="w")
         lbl_nome.pack(anchor="w", pady=(2, 0))
         origem_txt = peca.arquivo.nome + ("  ·  página %d de %d" % (peca.pagina, peca.paginas) if peca.pagina
                                           else ("  ·  %d páginas" % peca.paginas if peca.paginas > 1 else ""))
-        tk.Label(col, text="de: " + origem_txt, font=("Segoe UI", 7), bg=COR_CARTAO,
-                 fg=COR_TEXTO_SECUNDARIO, anchor="w").pack(anchor="w")
+        tk.Label(col, text="de: " + origem_txt, font=("Segoe UI", 7), bg=cores.cartao,
+                 fg=cores.texto2, anchor="w").pack(anchor="w")
 
-        dados = tk.Frame(c, bg=COR_CARTAO)
+        dados = tk.Frame(c, bg=cores.cartao)
         dados.pack(side="left", padx=6)
         tk.Label(dados, text=ra.formatar_medida(peca.arte_m) if peca.arte_m else "sem medida",
-                 font=("Segoe UI", 9, "bold"), bg=COR_CARTAO,
-                 fg=COR_TEXTO if peca.arte_m else COR_ALERTA, width=15, anchor="w").grid(row=0, column=0, sticky="w")
+                 font=("Segoe UI", 9, "bold"), bg=cores.cartao,
+                 fg=cores.texto if peca.arte_m else cores.alerta, width=15, anchor="w").grid(row=0, column=0, sticky="w")
         sangria = ("sangria " + ra.formatar_medida(peca.sangria_m)) if (
             peca.sangria_m and peca.arte_m and peca.sangria_m != peca.arte_m) else "sem sangria"
-        tk.Label(dados, text=sangria, font=("Segoe UI", 7), bg=COR_CARTAO, fg=COR_TEXTO_SECUNDARIO,
+        tk.Label(dados, text=sangria, font=("Segoe UI", 7), bg=cores.cartao, fg=cores.texto2,
                  anchor="w").grid(row=1, column=0, sticky="w")
 
-        marca = tk.Frame(c, bg=COR_CARTAO)
+        marca = tk.Frame(c, bg=cores.cartao)
         marca.pack(side="left", padx=6)
         imagem = peca.arquivo.ext in ("TIF", "TIFF", "JPG", "JPEG", "PNG", "PSD")
         if peca.corte_px:
-            texto, cor = "imagem: corte\naprovado", COR_POSITIVO
+            texto, cor = "imagem: corte\naprovado", cores.positivo
         elif imagem and peca.marca == "tem":
-            texto, cor = "imagem com marca:\naprove o corte", COR_RIP_PARADO
+            texto, cor = "imagem com marca:\naprove o corte", cores.parado
         elif imagem and peca.marca == "a verificar":
-            texto, cor = "imagem: marca\na verificar", COR_ALERTA
+            texto, cor = "imagem: marca\na verificar", cores.alerta
         else:
             texto, cor = {
-                "tem": ("marca de corte: tem\nIllustrator tira", COR_ALERTA),
-                "nao tem": ("sem marca de corte", COR_POSITIVO),
-                "nao sei": ("marca: não dá\npra saber", COR_TEXTO_SECUNDARIO),
-            }.get(peca.marca, ("", COR_TEXTO_SECUNDARIO))
-        tk.Label(marca, text=texto, font=("Segoe UI", 7), bg=COR_CARTAO, fg=cor, width=16,
+                "tem": ("marca de corte: tem\nIllustrator tira", cores.alerta),
+                "nao tem": ("sem marca de corte", cores.positivo),
+                "nao sei": ("marca: não dá\npra saber", cores.texto2),
+            }.get(peca.marca, ("", cores.texto2))
+        tk.Label(marca, text=texto, font=("Segoe UI", 7), bg=cores.cartao, fg=cor, width=16,
                  anchor="w", justify="left").pack(anchor="w")
         if imagem and peca.marca in ("tem", "a verificar"):
-            tk.Button(marca, text="ver corte", font=("Segoe UI", 7), relief="solid", bd=1, bg=COR_CARTAO,
-                      fg=COR_ACENTO, cursor="hand2", command=lambda p=peca: self._ver_corte(p)).pack(anchor="w")
+            tk.Button(marca, text="ver corte", font=("Segoe UI", 7), relief="solid", bd=1, bg=cores.cartao,
+                      fg=cores.acento, cursor="hand2", command=lambda p=peca: self._ver_corte(p)).pack(anchor="w")
 
         var_mat = tk.StringVar(value=peca.material)
         combo = ttk.Combobox(c, textvariable=var_mat, values=self.materiais, width=11,
@@ -766,17 +755,17 @@ class JanelaReceber(tk.Toplevel):
                           relief="solid", bd=1, justify="center")
         spin.pack(side="left", padx=6)
         self._sem_rodinha(spin)
-        tk.Label(c, text="un", font=("Segoe UI", 8), bg=COR_CARTAO, fg=COR_TEXTO_SECUNDARIO).pack(side="left")
-        tk.Button(c, text="+", font=("Segoe UI", 9, "bold"), relief="solid", bd=1, bg=COR_CARTAO,
-                  fg=COR_ACENTO, width=2, cursor="hand2",
+        tk.Label(c, text="un", font=("Segoe UI", 8), bg=cores.cartao, fg=cores.texto2).pack(side="left")
+        tk.Button(c, text="+", font=("Segoe UI", 9, "bold"), relief="solid", bd=1, bg=cores.cartao,
+                  fg=cores.acento, width=2, cursor="hand2",
                   command=lambda p=peca: self._duplicar(p)).pack(side="left", padx=(8, 2))
         if peca.copia > 1:
-            tk.Button(c, text="−", font=("Segoe UI", 9, "bold"), relief="solid", bd=1, bg=COR_CARTAO,
-                      fg=COR_RIP_PARADO, width=2, cursor="hand2",
+            tk.Button(c, text="−", font=("Segoe UI", 9, "bold"), relief="solid", bd=1, bg=cores.cartao,
+                      fg=cores.parado, width=2, cursor="hand2",
                       command=lambda p=peca: self._remover(p)).pack(side="left", padx=2)
         if peca.paginas > 1 and not peca.pagina:
-            tk.Button(c, text="separar\npáginas", font=("Segoe UI", 7), relief="solid", bd=1, bg=COR_CARTAO,
-                      fg=COR_ACENTO, cursor="hand2",
+            tk.Button(c, text="separar\npáginas", font=("Segoe UI", 7), relief="solid", bd=1, bg=cores.cartao,
+                      fg=cores.acento, cursor="hand2",
                       command=lambda p=peca: self._separar(p)).pack(side="left", padx=4)
 
         avisos = list(peca.avisos)
@@ -786,7 +775,7 @@ class JanelaReceber(tk.Toplevel):
             if peca.de_onde.get(campo):
                 avisos.append("%s veio do %s" % (campo, peca.de_onde[campo]))
         for texto in avisos:
-            tk.Label(cartao, text="   " + texto, font=("Segoe UI", 8), bg=COR_ALERTA_FUNDO, fg=COR_ALERTA,
+            tk.Label(cartao, text="   " + texto, font=("Segoe UI", 8), bg=cores.alerta_fundo, fg=cores.alerta,
                      anchor="w").pack(fill="x", padx=6, pady=(0, 3))
 
         def mudou(*_):
@@ -834,11 +823,11 @@ class JanelaReceber(tk.Toplevel):
             if not linha or not linha["nome"].winfo_exists():
                 continue   # linha de uma tela que já foi trocada
             if id(p) in ruins:
-                linha["nome"].configure(text="NOME REPETIDO — mude a descrição:  " + nomes[id(p)], fg=COR_RIP_PARADO)
-                linha["cartao"].configure(highlightbackground=COR_RIP_PARADO)
+                linha["nome"].configure(text="NOME REPETIDO — mude a descrição:  " + nomes[id(p)], fg=cores.parado)
+                linha["cartao"].configure(highlightbackground=cores.parado)
             else:
-                linha["nome"].configure(text="vai se chamar:  " + nomes[id(p)], fg=COR_TEXTO_SECUNDARIO)
-                linha["cartao"].configure(highlightbackground=COR_BORDA_CARTAO)
+                linha["nome"].configure(text="vai se chamar:  " + nomes[id(p)], fg=cores.texto2)
+                linha["cartao"].configure(highlightbackground=cores.borda)
 
         # m² sempre POR MATERIAL — nunca um total somando materiais diferentes
         por_material = {}
@@ -860,34 +849,34 @@ class JanelaReceber(tk.Toplevel):
                 self._status("")
 
     def _montar_rodape_passo2(self):
-        pe = tk.Frame(self.area, bg=COR_CARTAO, highlightbackground=COR_BORDA_CARTAO, highlightthickness=1)
+        pe = tk.Frame(self.area, bg=cores.cartao, highlightbackground=cores.borda, highlightthickness=1)
         pe.pack(side="bottom", fill="x", padx=18, pady=(2, 12))
-        esq = tk.Frame(pe, bg=COR_CARTAO)
+        esq = tk.Frame(pe, bg=cores.cartao)
         esq.pack(side="left", padx=14, pady=8, fill="x", expand=True)
-        linha = tk.Frame(esq, bg=COR_CARTAO)
+        linha = tk.Frame(esq, bg=cores.cartao)
         linha.pack(anchor="w")
         self.var_tirar_marca = tk.BooleanVar(value=True)
         tk.Checkbutton(linha, text="Tirar a marca de corte (Illustrator — não use ele enquanto arquiva)",
-                       variable=self.var_tirar_marca, font=("Segoe UI", 9), bg=COR_CARTAO, fg=COR_TEXTO,
-                       activebackground=COR_CARTAO).pack(side="left")
+                       variable=self.var_tirar_marca, font=("Segoe UI", 9), bg=cores.cartao, fg=cores.texto,
+                       activebackground=cores.cartao).pack(side="left")
         descartavel = self.origem is not None and self.origem.tipo in ("wetransfer", "zip")
         self.var_guardar = tk.BooleanVar(value=descartavel)
         if descartavel:
             tk.Checkbutton(linha, text="Guardar o que chegou, como chegou (_sistema\\recebidos)",
-                           variable=self.var_guardar, font=("Segoe UI", 9), bg=COR_CARTAO, fg=COR_TEXTO,
-                           activebackground=COR_CARTAO).pack(side="left", padx=(16, 0))
-        self.lbl_totais = tk.Label(esq, text="", font=("Segoe UI", 9, "bold"), bg=COR_CARTAO, fg=COR_TEXTO,
+                           variable=self.var_guardar, font=("Segoe UI", 9), bg=cores.cartao, fg=cores.texto,
+                           activebackground=cores.cartao).pack(side="left", padx=(16, 0))
+        self.lbl_totais = tk.Label(esq, text="", font=("Segoe UI", 9, "bold"), bg=cores.cartao, fg=cores.texto,
                                    anchor="w")
         self.lbl_totais.pack(anchor="w", pady=(4, 0))
-        self.lbl_status = tk.Label(esq, text="", font=("Segoe UI", 8), bg=COR_CARTAO, fg=COR_TEXTO_SECUNDARIO,
+        self.lbl_status = tk.Label(esq, text="", font=("Segoe UI", 8), bg=cores.cartao, fg=cores.texto2,
                                    anchor="w", wraplength=760, justify="left")
         self.lbl_status.pack(anchor="w")
-        dr = tk.Frame(pe, bg=COR_CARTAO)
+        dr = tk.Frame(pe, bg=cores.cartao)
         dr.pack(side="right", padx=14, pady=8)
-        tk.Button(dr, text="<  Voltar", font=("Segoe UI", 10), relief="solid", bd=1, bg=COR_CARTAO,
-                  fg=COR_TEXTO, padx=14, pady=5, cursor="hand2",
+        tk.Button(dr, text="<  Voltar", font=("Segoe UI", 10), relief="solid", bd=1, bg=cores.cartao,
+                  fg=cores.texto, padx=14, pady=5, cursor="hand2",
                   command=self._mostrar_passo1).pack(side="left", padx=4)
-        self.btn_arquivar = tk.Button(dr, text="Arquivar", bg=COR_ACENTO, fg="white",
+        self.btn_arquivar = tk.Button(dr, text="Arquivar", bg=cores.acento, fg=cores.sobre_acento,
                                       font=("Segoe UI", 10, "bold"), relief="flat", padx=18, pady=6,
                                       cursor="hand2", command=self._arquivar)
         self.btn_arquivar.pack(side="left")
@@ -969,11 +958,11 @@ class JanelaReceber(tk.Toplevel):
         self._ocupado(False)
         self._limpar_area()
         self.var_passo.set("Pronto.")
-        caixa = tk.Frame(self.area, bg=COR_CARTAO, highlightbackground=COR_BORDA_CARTAO, highlightthickness=1)
+        caixa = tk.Frame(self.area, bg=cores.cartao, highlightbackground=cores.borda, highlightthickness=1)
         caixa.pack(fill="x", padx=18, pady=10)
         ok = len(resumo.arquivadas) + len(resumo.ja_estavam)
         tk.Label(caixa, text="%d arquivo(s) em %s" % (ok, destino), font=("Segoe UI", 11, "bold"),
-                 bg=COR_CARTAO, fg=COR_POSITIVO if not resumo.falharam else COR_ALERTA,
+                 bg=cores.cartao, fg=cores.positivo if not resumo.falharam else cores.alerta,
                  anchor="w", wraplength=1150, justify="left").pack(fill="x", padx=14, pady=(10, 4))
         linhas = []
         if criado:
@@ -986,25 +975,25 @@ class JanelaReceber(tk.Toplevel):
         if resumo.originais:
             linhas.append("O que chegou foi guardado como chegou em %s" % resumo.originais[0].parent)
         for texto in linhas + resumo.avisos:
-            tk.Label(caixa, text=texto, font=("Segoe UI", 9), bg=COR_CARTAO, fg=COR_TEXTO,
+            tk.Label(caixa, text=texto, font=("Segoe UI", 9), bg=cores.cartao, fg=cores.texto,
                      anchor="w", wraplength=1150, justify="left").pack(fill="x", padx=14)
         for peca, motivo in resumo.falharam:
             tk.Label(caixa, text="NÃO entrou: %s — %s" % (peca.arquivo.nome, motivo), font=("Segoe UI", 9),
-                     bg=COR_ALERTA_FUNDO, fg=COR_RIP_PARADO, anchor="w", wraplength=1150,
+                     bg=cores.alerta_fundo, fg=cores.parado, anchor="w", wraplength=1150,
                      justify="left").pack(fill="x", padx=14, pady=1)
-        botoes = tk.Frame(caixa, bg=COR_CARTAO)
+        botoes = tk.Frame(caixa, bg=cores.cartao)
         botoes.pack(anchor="w", padx=14, pady=10)
-        tk.Button(botoes, text="Abrir a pasta", bg=COR_ACENTO, fg="white", font=("Segoe UI", 10, "bold"),
+        tk.Button(botoes, text="Abrir a pasta", bg=cores.acento, fg=cores.sobre_acento, font=("Segoe UI", 10, "bold"),
                   relief="flat", padx=16, pady=5, cursor="hand2",
                   command=lambda: _abrir(destino)).pack(side="left", padx=(0, 8))
         if resumo.falharam:
             tk.Button(botoes, text="Voltar pro passo 2", font=("Segoe UI", 10), relief="solid", bd=1,
-                      bg=COR_CARTAO, fg=COR_TEXTO, padx=14, pady=4, cursor="hand2",
+                      bg=cores.cartao, fg=cores.texto, padx=14, pady=4, cursor="hand2",
                       command=self._voltar_com_as_que_falharam(resumo)).pack(side="left", padx=4)
         tk.Button(botoes, text="Receber outra origem", font=("Segoe UI", 10), relief="solid", bd=1,
-                  bg=COR_CARTAO, fg=COR_TEXTO, padx=14, pady=4, cursor="hand2",
+                  bg=cores.cartao, fg=cores.texto, padx=14, pady=4, cursor="hand2",
                   command=self._recomecar).pack(side="left", padx=4)
-        self.lbl_status = tk.Label(caixa, text="", bg=COR_CARTAO)
+        self.lbl_status = tk.Label(caixa, text="", bg=cores.cartao)
 
     def _voltar_com_as_que_falharam(self, resumo):
         def voltar():

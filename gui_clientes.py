@@ -28,10 +28,7 @@ from tkinter import filedialog, messagebox, ttk
 
 import caminhos
 import clientes
-from gui import (
-    COR_ACENTO, COR_ALERTA, COR_BORDA_CARTAO, COR_CARTAO, COR_FUNDO_JANELA,
-    COR_POSITIVO, COR_TEXTO, COR_TEXTO_SECUNDARIO,
-)
+from tema import cores
 
 _INTERVALO_RELEITURA_MS = 15000
 
@@ -47,9 +44,9 @@ def _abrir(caminho):
 def _ligar_botao(botao, ligado):
     """Botão cheio desligado continua parecendo clicável no Tk — apaga a cor junto."""
     if ligado:
-        botao.configure(state="normal", bg=COR_ACENTO, fg="white", cursor="hand2")
+        botao.configure(state="normal", bg=cores.acento, fg=cores.sobre_acento, cursor="hand2")
     else:
-        botao.configure(state="disabled", bg=COR_BORDA_CARTAO, disabledforeground=COR_TEXTO_SECUNDARIO,
+        botao.configure(state="disabled", bg=cores.borda, disabledforeground=cores.texto2,
                         cursor="arrow")
 
 
@@ -57,7 +54,7 @@ class JanelaClientes(tk.Toplevel):
     def __init__(self, master):
         super().__init__(master)
         self.title("Clientes — UNY CV")
-        self.configure(bg=COR_FUNDO_JANELA)
+        self.configure(bg=cores.fundo)
         self.geometry("820x700")
         self.minsize(600, 420)
 
@@ -75,35 +72,35 @@ class JanelaClientes(tk.Toplevel):
     # ------------------------------------------------------------ montagem
 
     def _montar_cabecalho(self):
-        topo = tk.Frame(self, bg=COR_FUNDO_JANELA)
+        topo = tk.Frame(self, bg=cores.fundo)
         topo.grid(row=0, column=0, sticky="ew", padx=20, pady=(16, 10))
         topo.columnconfigure(0, weight=1)
 
         tk.Label(topo, text="Clientes", font=("Segoe UI", 15, "bold"),
-                 bg=COR_FUNDO_JANELA, fg=COR_TEXTO).grid(row=0, column=0, sticky="w")
+                 bg=cores.fundo, fg=cores.texto).grid(row=0, column=0, sticky="w")
         tk.Label(topo, text="Cada cliente é uma pasta em Recebimento de Artes. Vários ao mesmo tempo.",
-                 font=("Segoe UI", 9), bg=COR_FUNDO_JANELA, fg=COR_TEXTO_SECUNDARIO,
+                 font=("Segoe UI", 9), bg=cores.fundo, fg=cores.texto2,
                  ).grid(row=1, column=0, sticky="w")
 
-        acoes = tk.Frame(topo, bg=COR_FUNDO_JANELA)
+        acoes = tk.Frame(topo, bg=cores.fundo)
         acoes.grid(row=0, column=1, rowspan=2, sticky="e")
-        tk.Button(acoes, text="➕  Novo cliente", bg=COR_ACENTO, fg="white",
-                  activebackground=COR_ACENTO, activeforeground="white", relief="flat",
+        tk.Button(acoes, text="➕  Novo cliente", bg=cores.acento, fg=cores.sobre_acento,
+                  activebackground=cores.acento, activeforeground=cores.sobre_acento, relief="flat",
                   font=("Segoe UI", 10, "bold"), cursor="hand2", padx=12, pady=4,
                   command=self._novo_cliente).pack(anchor="e")
-        tk.Button(acoes, text="📂 Abrir Recebimento de Artes", relief="flat", bg=COR_FUNDO_JANELA,
-                  fg=COR_ACENTO, cursor="hand2", font=("Segoe UI", 8),
+        tk.Button(acoes, text="📂 Abrir Recebimento de Artes", relief="flat", bg=cores.fundo,
+                  fg=cores.acento, cursor="hand2", font=("Segoe UI", 8),
                   command=lambda: _abrir(caminhos.RECEBIMENTO_DE_ARTES)).pack(anchor="e", pady=(4, 0))
 
     def _montar_lista(self):
         # mesmo esquema do Controle de Estoque e dos Agentes
-        frame_canvas = tk.Frame(self, bg=COR_FUNDO_JANELA)
+        frame_canvas = tk.Frame(self, bg=cores.fundo)
         frame_canvas.grid(row=1, column=0, sticky="nsew", padx=20, pady=(0, 16))
         frame_canvas.columnconfigure(0, weight=1)
         frame_canvas.rowconfigure(0, weight=1)
-        canvas = tk.Canvas(frame_canvas, highlightthickness=0, bg=COR_FUNDO_JANELA)
+        canvas = tk.Canvas(frame_canvas, highlightthickness=0, bg=cores.fundo)
         scrollbar = ttk.Scrollbar(frame_canvas, orient="vertical", command=canvas.yview)
-        self.frame_lista = tk.Frame(canvas, bg=COR_FUNDO_JANELA)
+        self.frame_lista = tk.Frame(canvas, bg=cores.fundo)
         janela_interna = canvas.create_window((0, 0), window=self.frame_lista, anchor="nw")
         self.frame_lista.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
         canvas.bind("<Configure>", lambda e: canvas.itemconfig(janela_interna, width=e.width))
@@ -121,7 +118,7 @@ class JanelaClientes(tk.Toplevel):
                 filho.destroy()
             self._cartoes = {}
             if not lista:
-                tk.Label(self.frame_lista, bg=COR_FUNDO_JANELA, fg=COR_TEXTO_SECUNDARIO,
+                tk.Label(self.frame_lista, bg=cores.fundo, fg=cores.texto2,
                          font=("Segoe UI", 10), justify="left",
                          text="Nenhum cliente ainda.\n\nClique em \"Novo cliente\", ou crie uma pasta com o "
                               "nome do cliente dentro de Recebimento de Artes.",
@@ -133,55 +130,55 @@ class JanelaClientes(tk.Toplevel):
         self._job = self.after(_INTERVALO_RELEITURA_MS, self._reler)
 
     def _montar_cartao(self, cliente):
-        cartao = tk.Frame(self.frame_lista, bg=COR_CARTAO,
-                          highlightbackground=COR_BORDA_CARTAO, highlightthickness=1)
+        cartao = tk.Frame(self.frame_lista, bg=cores.cartao,
+                          highlightbackground=cores.borda, highlightthickness=1)
         cartao.grid(row=len(self._cartoes), column=0, sticky="ew", pady=(0, 10))
         cartao.columnconfigure(0, weight=1)
 
-        tk.Label(cartao, text=cliente.nome, font=("Segoe UI", 12, "bold"), bg=COR_CARTAO,
-                 fg=COR_TEXTO, anchor="w").grid(row=0, column=0, sticky="w", padx=16, pady=(12, 0))
+        tk.Label(cartao, text=cliente.nome, font=("Segoe UI", 12, "bold"), bg=cores.cartao,
+                 fg=cores.texto, anchor="w").grid(row=0, column=0, sticky="w", padx=16, pady=(12, 0))
 
-        links = tk.Frame(cartao, bg=COR_CARTAO)
+        links = tk.Frame(cartao, bg=cores.cartao)
         links.grid(row=0, column=1, sticky="e", padx=14, pady=(12, 0))
-        tk.Button(links, text="📂 Pasta do cliente", relief="flat", bg=COR_CARTAO, fg=COR_ACENTO,
+        tk.Button(links, text="📂 Pasta do cliente", relief="flat", bg=cores.cartao, fg=cores.acento,
                   cursor="hand2", font=("Segoe UI", 8),
                   command=lambda n=cliente.nome: self._abrir_pasta_cliente(n)).pack(side="left")
-        btn_os = tk.Button(links, text="📄 OS atual", relief="flat", bg=COR_CARTAO, fg=COR_ACENTO,
+        btn_os = tk.Button(links, text="📄 OS atual", relief="flat", bg=cores.cartao, fg=cores.acento,
                            cursor="hand2", font=("Segoe UI", 8),
                            command=lambda n=cliente.nome: self._abrir_os(n))
         btn_os.pack(side="left", padx=(6, 0))
 
         var_producao = tk.StringVar()
-        lbl_producao = tk.Label(cartao, textvariable=var_producao, font=("Segoe UI", 9), bg=COR_CARTAO,
-                                fg=COR_TEXTO_SECUNDARIO, anchor="w", justify="left", wraplength=620)
+        lbl_producao = tk.Label(cartao, textvariable=var_producao, font=("Segoe UI", 9), bg=cores.cartao,
+                                fg=cores.texto2, anchor="w", justify="left", wraplength=620)
         lbl_producao.grid(row=1, column=0, sticky="w", padx=16, pady=(4, 0))
-        tk.Button(cartao, text="Escolher pasta de produção...", relief="flat", bg=COR_CARTAO,
-                  fg=COR_ACENTO, cursor="hand2", font=("Segoe UI", 8),
+        tk.Button(cartao, text="Escolher pasta de produção...", relief="flat", bg=cores.cartao,
+                  fg=cores.acento, cursor="hand2", font=("Segoe UI", 8),
                   command=lambda n=cliente.nome: self._escolher_producao(n),
                   ).grid(row=1, column=1, sticky="e", padx=14, pady=(4, 0))
 
         var_checklist = tk.BooleanVar()
         chk = tk.Checkbutton(cartao, text="Checklist automático — a OS se atualiza sozinha a cada movimento",
-                             variable=var_checklist, bg=COR_CARTAO, activebackground=COR_CARTAO,
-                             fg=COR_TEXTO, font=("Segoe UI", 9), anchor="w",
+                             variable=var_checklist, bg=cores.cartao, activebackground=cores.cartao,
+                             fg=cores.texto, font=("Segoe UI", 9), anchor="w",
                              command=lambda n=cliente.nome: self._alternar_checklist(n))
         chk.grid(row=2, column=0, columnspan=2, sticky="w", padx=12, pady=(6, 0))
 
         var_prontos = tk.BooleanVar()
         chk_prontos = tk.Checkbutton(cartao, text="Só o que está em Prontos entra na OS e nas etiquetas",
-                                     variable=var_prontos, bg=COR_CARTAO, activebackground=COR_CARTAO,
-                                     fg=COR_TEXTO, font=("Segoe UI", 9), anchor="w",
+                                     variable=var_prontos, bg=cores.cartao, activebackground=cores.cartao,
+                                     fg=cores.texto, font=("Segoe UI", 9), anchor="w",
                                      command=lambda n=cliente.nome: self._alternar_prontos(n))
         chk_prontos.grid(row=3, column=0, columnspan=2, sticky="w", padx=12)
 
         ttk.Separator(cartao).grid(row=4, column=0, columnspan=2, sticky="ew", padx=16, pady=(8, 0))
 
         var_etiquetas = tk.StringVar()
-        lbl_etiquetas = tk.Label(cartao, textvariable=var_etiquetas, font=("Segoe UI", 10), bg=COR_CARTAO,
-                                 fg=COR_TEXTO, anchor="w", justify="left", wraplength=560)
+        lbl_etiquetas = tk.Label(cartao, textvariable=var_etiquetas, font=("Segoe UI", 10), bg=cores.cartao,
+                                 fg=cores.texto, anchor="w", justify="left", wraplength=560)
         lbl_etiquetas.grid(row=5, column=0, sticky="w", padx=16, pady=(8, 12))
-        btn_lote = tk.Button(cartao, text="🏷  Gerar checklist das novas", bg=COR_ACENTO, fg="white",
-                             activebackground=COR_ACENTO, activeforeground="white", relief="flat",
+        btn_lote = tk.Button(cartao, text="🏷  Gerar checklist das novas", bg=cores.acento, fg=cores.sobre_acento,
+                             activebackground=cores.acento, activeforeground=cores.sobre_acento, relief="flat",
                              font=("Segoe UI", 9, "bold"), cursor="hand2", padx=10, pady=3,
                              command=lambda n=cliente.nome: self._gerar_lote(n))
         btn_lote.grid(row=5, column=1, sticky="e", padx=14, pady=(8, 12))
@@ -203,14 +200,14 @@ class JanelaClientes(tk.Toplevel):
 
         if cliente.pasta_producao is None:
             c["var_producao"].set("⚠ Sem pasta de produção — escolha pra poder ligar o checklist e gerar etiquetas.")
-            c["lbl_producao"].configure(fg=COR_ALERTA)
+            c["lbl_producao"].configure(fg=cores.alerta)
         elif not cliente.producao_existe:
             c["var_producao"].set("⚠ A pasta de produção não existe mais: %s"
                                   % caminhos.relativo_ao_onedrive(cliente.pasta_producao))
-            c["lbl_producao"].configure(fg=COR_ALERTA)
+            c["lbl_producao"].configure(fg=cores.alerta)
         else:
             c["var_producao"].set("Produção: %s" % caminhos.relativo_ao_onedrive(cliente.pasta_producao))
-            c["lbl_producao"].configure(fg=COR_TEXTO_SECUNDARIO)
+            c["lbl_producao"].configure(fg=cores.texto2)
 
         c["var_checklist"].set(cliente.checklist_ativo)
         c["chk"].configure(state="normal" if cliente.producao_existe else "disabled")
@@ -222,7 +219,7 @@ class JanelaClientes(tk.Toplevel):
             return                          # o cartão está mostrando o andamento do lote
         if not cliente.producao_existe:
             c["var_etiquetas"].set("Etiquetas: sem pasta de produção.")
-            c["lbl_etiquetas"].configure(fg=COR_TEXTO_SECUNDARIO)
+            c["lbl_etiquetas"].configure(fg=cores.texto2)
             _ligar_botao(c["btn_lote"], False)
             return
         novas = len(checklist_etiquetas.artes_novas_do_cliente(cliente))
@@ -230,12 +227,12 @@ class JanelaClientes(tk.Toplevel):
         if novas:
             qual = ("pronta%s" % s) if cliente.so_prontos else ("nova%s" % s)
             c["var_etiquetas"].set("🏷 %d arte%s %s sem etiqueta desde o último checklist." % (novas, s, qual))
-            c["lbl_etiquetas"].configure(fg=COR_ALERTA)
+            c["lbl_etiquetas"].configure(fg=cores.alerta)
             _ligar_botao(c["btn_lote"], True)
         else:
             c["var_etiquetas"].set("✓ Todas as artes %s já têm etiqueta."
                                    % ("prontas" if cliente.so_prontos else "da produção"))
-            c["lbl_etiquetas"].configure(fg=COR_POSITIVO)
+            c["lbl_etiquetas"].configure(fg=cores.positivo)
             _ligar_botao(c["btn_lote"], False)
 
     # ------------------------------------------------------------- ações
@@ -313,7 +310,7 @@ class JanelaClientes(tk.Toplevel):
         c = self._cartoes[nome]
         _ligar_botao(c["btn_lote"], False)
         c["var_etiquetas"].set("Gerando o checklist de %d etiqueta%s..." % (novas, "s" if novas != 1 else ""))
-        c["lbl_etiquetas"].configure(fg=COR_ACENTO)
+        c["lbl_etiquetas"].configure(fg=cores.acento)
 
         def andamento(nivel, texto):
             if nivel in ("ok", "info") and texto:
@@ -364,51 +361,51 @@ class JanelaNovoCliente(tk.Toplevel):
     def __init__(self, master, ao_criar):
         super().__init__(master)
         self.title("Novo cliente")
-        self.configure(bg=COR_FUNDO_JANELA)
+        self.configure(bg=cores.fundo)
         self.resizable(False, False)
         self.transient(master)
         self._ao_criar = ao_criar
         self._producao_sugerida = False
         self._job_sugestao = None
 
-        corpo = tk.Frame(self, bg=COR_FUNDO_JANELA)
+        corpo = tk.Frame(self, bg=cores.fundo)
         corpo.pack(fill="both", expand=True, padx=20, pady=16)
 
-        tk.Label(corpo, text="Nome do cliente", bg=COR_FUNDO_JANELA, fg=COR_TEXTO,
+        tk.Label(corpo, text="Nome do cliente", bg=cores.fundo, fg=cores.texto,
                  font=("Segoe UI", 9, "bold")).pack(anchor="w")
         self.var_nome = tk.StringVar()
         entrada = tk.Entry(corpo, textvariable=self.var_nome, width=52, font=("Segoe UI", 10))
         entrada.pack(anchor="w", fill="x", pady=(2, 0))
-        tk.Label(corpo, text="Vira a pasta em Recebimento de Artes.", bg=COR_FUNDO_JANELA,
-                 fg=COR_TEXTO_SECUNDARIO, font=("Segoe UI", 8)).pack(anchor="w")
+        tk.Label(corpo, text="Vira a pasta em Recebimento de Artes.", bg=cores.fundo,
+                 fg=cores.texto2, font=("Segoe UI", 8)).pack(anchor="w")
         self.var_nome.trace_add("write", lambda *_: self._agendar_sugestao())
 
-        tk.Label(corpo, text="Pasta de produção", bg=COR_FUNDO_JANELA, fg=COR_TEXTO,
+        tk.Label(corpo, text="Pasta de produção", bg=cores.fundo, fg=cores.texto,
                  font=("Segoe UI", 9, "bold")).pack(anchor="w", pady=(12, 0))
-        linha = tk.Frame(corpo, bg=COR_FUNDO_JANELA)
+        linha = tk.Frame(corpo, bg=cores.fundo)
         linha.pack(anchor="w", fill="x", pady=(2, 0))
         self.var_producao = tk.StringVar()
         tk.Entry(linha, textvariable=self.var_producao, width=42, font=("Segoe UI", 9)).pack(
             side="left", fill="x", expand=True)
         tk.Button(linha, text="Procurar...", command=self._procurar).pack(side="left", padx=(6, 0))
         self.var_dica = tk.StringVar(value="Opcional agora — dá pra escolher depois no cartão do cliente.")
-        tk.Label(corpo, textvariable=self.var_dica, bg=COR_FUNDO_JANELA, fg=COR_TEXTO_SECUNDARIO,
+        tk.Label(corpo, textvariable=self.var_dica, bg=cores.fundo, fg=cores.texto2,
                  font=("Segoe UI", 8)).pack(anchor="w")
 
         self.var_checklist = tk.BooleanVar(value=True)
         tk.Checkbutton(corpo, text="Ligar o checklist automático (OS atualizada a cada movimento)",
-                       variable=self.var_checklist, bg=COR_FUNDO_JANELA, activebackground=COR_FUNDO_JANELA,
+                       variable=self.var_checklist, bg=cores.fundo, activebackground=cores.fundo,
                        font=("Segoe UI", 9)).pack(anchor="w", pady=(12, 0))
 
         self.var_erro = tk.StringVar()
-        tk.Label(corpo, textvariable=self.var_erro, bg=COR_FUNDO_JANELA, fg=COR_ALERTA,
+        tk.Label(corpo, textvariable=self.var_erro, bg=cores.fundo, fg=cores.alerta,
                  font=("Segoe UI", 9), wraplength=420, justify="left").pack(anchor="w", pady=(10, 0))
 
-        botoes = tk.Frame(corpo, bg=COR_FUNDO_JANELA)
+        botoes = tk.Frame(corpo, bg=cores.fundo)
         botoes.pack(anchor="e", pady=(10, 0))
         tk.Button(botoes, text="Cancelar", relief="flat", command=self.destroy).pack(side="left")
-        tk.Button(botoes, text="Criar cliente", bg=COR_ACENTO, fg="white", activebackground=COR_ACENTO,
-                  activeforeground="white", relief="flat", font=("Segoe UI", 9, "bold"), padx=12, pady=3,
+        tk.Button(botoes, text="Criar cliente", bg=cores.acento, fg=cores.sobre_acento, activebackground=cores.acento,
+                  activeforeground=cores.sobre_acento, relief="flat", font=("Segoe UI", 9, "bold"), padx=12, pady=3,
                   cursor="hand2", command=self._criar).pack(side="left", padx=(8, 0))
 
         self.bind("<Return>", lambda e: self._criar())

@@ -20,10 +20,7 @@ import queue
 import tkinter as tk
 
 import marcas_de_corte as mc
-from gui import (
-    COR_ACENTO, COR_ALERTA, COR_BORDA_CARTAO, COR_CARTAO, COR_FUNDO_JANELA, COR_POSITIVO,
-    COR_RIP_PARADO, COR_TEXTO, COR_TEXTO_SECUNDARIO,
-)
+from tema import cores
 
 AREA_MAXIMA = (1000, 600)
 
@@ -40,45 +37,45 @@ class JanelaCorteImagem(tk.Toplevel):
         self.ao_aprovar = ao_aprovar
         self.proposta = peca.proposta_corte
         self.title("Marca de corte na imagem — %s" % peca.arquivo.nome)
-        self.configure(bg=COR_FUNDO_JANELA)
+        self.configure(bg=cores.fundo)
         self.transient(master)
         self._fila = queue.Queue()
         self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
         self._foto = None
 
-        tk.Label(self, text=peca.arquivo.nome, font=("Segoe UI", 12, "bold"), bg=COR_FUNDO_JANELA,
-                 fg=COR_TEXTO).pack(anchor="w", padx=16, pady=(12, 0))
+        tk.Label(self, text=peca.arquivo.nome, font=("Segoe UI", 12, "bold"), bg=cores.fundo,
+                 fg=cores.texto).pack(anchor="w", padx=16, pady=(12, 0))
         tk.Label(self, text="Vermelho: o que FICA (arte + sangria).   Tracejado azul: a linha de corte — "
                             "a medida que vai no nome.",
-                 font=("Segoe UI", 8), bg=COR_FUNDO_JANELA, fg=COR_TEXTO_SECUNDARIO).pack(anchor="w", padx=16)
-        self.canvas = tk.Canvas(self, width=AREA_MAXIMA[0], height=AREA_MAXIMA[1], bg="#dfe3e8",
-                                highlightthickness=1, highlightbackground=COR_BORDA_CARTAO)
+                 font=("Segoe UI", 8), bg=cores.fundo, fg=cores.texto2).pack(anchor="w", padx=16)
+        self.canvas = tk.Canvas(self, width=AREA_MAXIMA[0], height=AREA_MAXIMA[1], bg=cores.previa,
+                                highlightthickness=1, highlightbackground=cores.borda)
         self.canvas.pack(padx=16, pady=8)
 
-        info = tk.Frame(self, bg=COR_CARTAO, highlightbackground=COR_BORDA_CARTAO, highlightthickness=1)
+        info = tk.Frame(self, bg=cores.cartao, highlightbackground=cores.borda, highlightthickness=1)
         info.pack(fill="x", padx=16)
         self.lbl_info = tk.Label(info, text="Procurando a marca de corte...", font=("Segoe UI", 10, "bold"),
-                                 bg=COR_CARTAO, fg=COR_TEXTO, anchor="w", justify="left")
+                                 bg=cores.cartao, fg=cores.texto, anchor="w", justify="left")
         self.lbl_info.pack(fill="x", padx=12, pady=(8, 2))
-        self.lbl_detalhe = tk.Label(info, text="", font=("Segoe UI", 9), bg=COR_CARTAO,
-                                    fg=COR_TEXTO_SECUNDARIO, anchor="w", justify="left", wraplength=980)
+        self.lbl_detalhe = tk.Label(info, text="", font=("Segoe UI", 9), bg=cores.cartao,
+                                    fg=cores.texto2, anchor="w", justify="left", wraplength=980)
         self.lbl_detalhe.pack(fill="x", padx=12)
-        linha = tk.Frame(info, bg=COR_CARTAO)
+        linha = tk.Frame(info, bg=cores.cartao)
         linha.pack(fill="x", padx=12, pady=(4, 8))
         tk.Label(linha, text="Sangria que fica, em cada lado:", font=("Segoe UI", 9, "bold"),
-                 bg=COR_CARTAO, fg=COR_TEXTO).pack(side="left")
+                 bg=cores.cartao, fg=cores.texto).pack(side="left")
         self.var_sangria = tk.StringVar(value="0")
         self.spin = tk.Spinbox(linha, from_=0, to=200, increment=1, width=5, textvariable=self.var_sangria,
                                font=("Segoe UI", 9), relief="solid", bd=1, justify="center", state="disabled")
         self.spin.pack(side="left", padx=6)
-        tk.Label(linha, text="mm", font=("Segoe UI", 9), bg=COR_CARTAO, fg=COR_TEXTO).pack(side="left")
+        tk.Label(linha, text="mm", font=("Segoe UI", 9), bg=cores.cartao, fg=cores.texto).pack(side="left")
         self.var_sangria.trace_add("write", lambda *a: self._desenhar())
 
-        botoes = tk.Frame(self, bg=COR_FUNDO_JANELA)
+        botoes = tk.Frame(self, bg=cores.fundo)
         botoes.pack(fill="x", padx=16, pady=12)
-        tk.Button(botoes, text="Não cortar", font=("Segoe UI", 10), relief="solid", bd=1, bg=COR_CARTAO,
-                  fg=COR_TEXTO, padx=14, pady=5, cursor="hand2", command=self._fechar).pack(side="left")
-        self.btn_aprovar = tk.Button(botoes, text="Aprovar o corte", bg=COR_ACENTO, fg="white",
+        tk.Button(botoes, text="Não cortar", font=("Segoe UI", 10), relief="solid", bd=1, bg=cores.cartao,
+                  fg=cores.texto, padx=14, pady=5, cursor="hand2", command=self._fechar).pack(side="left")
+        self.btn_aprovar = tk.Button(botoes, text="Aprovar o corte", bg=cores.acento, fg=cores.sobre_acento,
                                      font=("Segoe UI", 10, "bold"), relief="flat", padx=18, pady=6,
                                      cursor="hand2", state="disabled", command=self._aprovar)
         self.btn_aprovar.pack(side="right")
@@ -125,14 +122,14 @@ class JanelaCorteImagem(tk.Toplevel):
             self.canvas.create_image(0, 0, image=self._foto, anchor="nw")
         if not p.get("corte_px"):
             self.lbl_info.configure(text="Não achei marca de corte nesta imagem — ela entra como veio.",
-                                    fg=COR_POSITIVO)
+                                    fg=cores.positivo)
             self.lbl_detalhe.configure(text=p.get("motivo") or "")
             return
         dpi = p.get("dpi")
         if dpi:
             self.var_sangria.set(str(round(p["sangria_px"] * 25.4 / dpi)))
             self.spin.configure(state="normal")
-        cor = COR_POSITIVO if p["ok"] else COR_ALERTA
+        cor = cores.positivo if p["ok"] else cores.alerta
         self.lbl_info.configure(text=("Marca de corte encontrada — confira o retângulo e aprove." if p["ok"]
                                       else "Achei marcas, mas algo não bate — confira com cuidado."), fg=cor)
         self.btn_aprovar.configure(state="normal")
@@ -153,10 +150,10 @@ class JanelaCorteImagem(tk.Toplevel):
         self.canvas.delete("corte")
         e = self._escala
         x0, y0, x1, y1 = p["corte_px"]
-        self.canvas.create_rectangle(x0 * e, y0 * e, x1 * e, y1 * e, outline="#1f6feb", dash=(4, 3),
+        self.canvas.create_rectangle(x0 * e, y0 * e, x1 * e, y1 * e, outline=cores.acento, dash=(4, 3),
                                      width=1, tags="corte")
         r = mc.retangulo_do_corte(p, self._sangria_px())
-        self.canvas.create_rectangle(r[0] * e, r[1] * e, r[2] * e, r[3] * e, outline=COR_RIP_PARADO,
+        self.canvas.create_rectangle(r[0] * e, r[1] * e, r[2] * e, r[3] * e, outline=cores.parado,
                                      width=2, tags="corte")
         arte, fica = mc.medidas_da_proposta(p, self._sangria_px())
         partes = ["A arte (entre as marcas): %s" % _m(arte) if arte else "A imagem não tem DPI gravado",
