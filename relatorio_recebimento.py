@@ -19,6 +19,7 @@ import pymupdf
 import arte_recebida
 import caderno_arte
 import drive_artes
+import miniaturas
 from branding import CAMINHO_LOGO_GUI
 
 LARG, ALT, MARGEM = 595.27, 841.89, 40
@@ -26,6 +27,12 @@ _TEXTO, _SUAVE, _FRACA = "#12161d", "#5c6675", "#8a93a1"
 _ACENTO, _AVISO, _PERIGO, _VERDE = "#0b6b8a", "#8a5300", "#a3302a", "#2d6a45"
 _F_NOVO, _F_PEGO, _F_FALTA = "#e9f3f7", "#eaf4ec", "#fdf2e0"
 _LOGO = "logo_uny_cv_gui.png"
+
+
+# A prévia da arte em cada linha — mesmo tamanho da OS e do relatório
+# diário, pra a mesma peça aparecer igual nos três documentos.
+_LARGURA_PREVIA = 60
+_ALTURA_PREVIA = 42
 
 
 def _rgb(h):
@@ -56,8 +63,20 @@ def _quando_legivel(iso):
         return ""
 
 
-def _linha_peca(ficha, baixado, url):
-    situacao = ficha.get("situacao", "")
+def _previa(nome_imagem, tamanho=None):
+    """
+    A arte na coluna da esquerda — ou o quadrado cinza, como na OS.
+    "Somos uma gráfica, a arte é sempre muito importante" (23/09/2026):
+    documento que lista arte mostra a arte, não só o nome dela.
+    """
+    if not nome_imagem:
+        return ("<div style='width:%dpx;height:%dpx;background:#f0f1f3;"
+                "border:0.5px solid #dcdee3'></div>" % (_LARGURA_PREVIA, _ALTURA_PREVIA))
+    largura, altura = tamanho or (_LARGURA_PREVIA, _ALTURA_PREVIA)
+    return "<img src='%s' width='%d' height='%d'>" % (nome_imagem, largura, altura)
+
+
+def _linha_peca(ficha, baixado, url, previa=None, tamanho_previa=None):
     material = ficha.get("material") or "—"
     medida = ficha.get("medidas") or "—"
     nome_final = (baixado.get("arquivo") if baixado else None) or ficha.get("nome_arquivo") or ""
@@ -65,11 +84,14 @@ def _linha_peca(ficha, baixado, url):
     detalhe = ("<div style='font-size:7pt;color:%s;padding-top:1px'>%s</div>" % (_SUAVE, nome_final)
                if nome_final else "")
     return (
-        "<div style='%sborder-bottom:0.5px solid #dce0e7;padding:5px 4px'>"
+        "<table style='width:100%%;%sborder-bottom:0.5px solid #dce0e7'>"
+        "<tr><td width='%d' style='padding:5px 0'>%s</td>"
+        "<td style='padding:5px 4px'>"
         "<b style='font-size:8.5pt;color:%s'>%s</b> &nbsp; "
         "<span style='font-size:7.5pt;color:%s'>%s · %s</span> &nbsp; %s &nbsp; %s"
-        "%s</div>"
-        % (fundo, _TEXTO, _escapar(ficha.get("nome") or ""), _SUAVE, material, medida,
+        "%s</td></tr></table>"
+        % (fundo, _LARGURA_PREVIA + 8, _previa(previa, tamanho_previa),
+           _TEXTO, _escapar(ficha.get("nome") or ""), _SUAVE, material, medida,
            _selo(_quando_legivel(baixado.get("quando")) if baixado else None),
            _link("abrir no caderno", url, _ACENTO, "7pt"), detalhe))
 
@@ -85,7 +107,8 @@ def _escapar(t):
     return (str(t).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
 
 
-def montar_blocos(fichas, baixados, presentation_id, mapa_etiquetas, caderno_nome, agora):
+def montar_blocos(fichas, baixados, presentation_id, mapa_etiquetas, caderno_nome, agora,
+                  previas=None):
     aprovadas = [f for f in fichas if f.get("situacao") == "APROVADO"]
     pegas, faltando = [], []
     for f in aprovadas:
@@ -108,9 +131,12 @@ def montar_blocos(fichas, baixados, presentation_id, mapa_etiquetas, caderno_nom
            _SUAVE, _TEXTO, agora.strftime("%d/%m/%Y %H:%M")),
     ]
 
+    previas = previas or {}
     blocos.append(_titulo("JÁ PEGAMOS", "%d artes, prontas em ARTES/" % len(pegas)))
     for f, b in sorted(pegas, key=lambda x: x[0]["slide"]):
-        blocos.append(_linha_peca(f, b, drive_artes.link_da_peca(f, presentation_id, mapa_etiquetas)))
+        nome_imagem, tamanho = previas.get(arte_recebida._chave_peca(caderno_nome, f), (None, None))
+        blocos.append(_linha_peca(f, b, drive_artes.link_da_peca(f, presentation_id, mapa_etiquetas),
+                                  nome_imagem, tamanho))
 
     if faltando:
         blocos.append(_titulo("APROVADAS QUE AINDA FALTAM", "sem link, medida incompleta ou a conferir"))
@@ -139,6 +165,37 @@ def montar_blocos(fichas, baixados, presentation_id, mapa_etiquetas, caderno_nom
     return blocos
 
 
+def _previas_das_artes(pasta, baixados, arquivo):
+    """
+    Uma prévia por arte já baixada, posta no Archive do PDF.
+
+    A arte fica em ARTES/<área>/<nome>, e a área é opcional — em vez de
+    remontar o caminho (que mudaria junto com a organização das pastas),
+    procura o arquivo pelo nome uma vez só e usa o índice.
+    """
+    raiz = pathlib.Path(pasta)
+    indice = {}
+    try:
+        for caminho in raiz.rglob("*"):
+            if caminho.is_file():
+                indice.setdefault(caminho.name, caminho)
+    except OSError:
+        return {}
+
+    previas = {}
+    for chave, baixado in baixados.items():
+        caminho = indice.get((baixado or {}).get("arquivo") or "")
+        if not caminho:
+            continue
+        dados = miniaturas.de_arquivo(caminho)
+        if not dados:
+            continue
+        nome_imagem = "previa_%s.jpg" % len(previas)
+        arquivo.add(dados, nome_imagem)
+        previas[chave] = (nome_imagem, miniaturas.encaixar(dados, _LARGURA_PREVIA, _ALTURA_PREVIA))
+    return previas
+
+
 def gerar(destino, caminho_caderno, pasta, presentation_id, drive_slides=None,
           agora=None, config=None, nome_cliente=None):
     """
@@ -160,7 +217,10 @@ def gerar(destino, caminho_caderno, pasta, presentation_id, drive_slides=None,
     except Exception:
         mapa = {}
 
-    blocos = montar_blocos(fichas, baixados, presentation_id, mapa, caminho_caderno.stem, agora)
+    arquivo = pymupdf.Archive(str(pathlib.Path(__file__).parent / "assets"))
+    previas = _previas_das_artes(pasta, baixados, arquivo)
+    blocos = montar_blocos(fichas, baixados, presentation_id, mapa, caminho_caderno.stem, agora,
+                           previas)
 
     doc = pymupdf.open()
     pagina = doc.new_page(width=LARG, height=ALT)
@@ -179,8 +239,6 @@ def gerar(destino, caminho_caderno, pasta, presentation_id, drive_slides=None,
     pagina.draw_line(pymupdf.Point(MARGEM, MARGEM + 38), pymupdf.Point(LARG - MARGEM, MARGEM + 38),
                      color=_rgb(_TEXTO), width=1.2)
 
-    arquivo = pymupdf.Archive(str(pathlib.Path(__file__).parent / "assets"))
-
     def _altura(bloco):
         if "border-left:4px" in bloco:      # faixa de resumo do topo
             return 92
@@ -189,7 +247,8 @@ def gerar(destino, caminho_caderno, pasta, presentation_id, drive_slides=None,
         if "border-bottom:1px" in bloco:    # título de seção
             return 26
         base = 30                           # linha de peça
-        return base + (12 if "padding-top:1px" in bloco else 0)
+        altura = base + (12 if "padding-top:1px" in bloco else 0)
+        return max(_ALTURA_PREVIA + 12, altura) if "<table" in bloco else altura
 
     topo = MARGEM + 48
     y = topo

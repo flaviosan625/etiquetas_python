@@ -511,8 +511,22 @@ def conciliar_registro(pasta_relatorios=None, caminho_pendente=None, logger=None
     return {"gravadas": gravadas, "pendentes": pendentes}
 
 
+def medida_da_pagina(caminho):
+    """
+    (largura_m, altura_m, páginas) do arquivo, ou None.
+
+    É o mesmo número que o vigia guarda no registro quando entrega — vive
+    aqui pra quem precisa REFAZER uma linha perdida medir do mesmo jeito
+    que o vigia mediria (ver recuperar_registro.py).
+    """
+    pymupdf = _importar_pymupdf()
+    if pymupdf is None:
+        return None
+    return _largura_altura_m(pathlib.Path(caminho), pymupdf)
+
+
 def registrar_envio(maquina, arquivo, girado, pasta_relatorios=None, quando=None,
-                   logger=None, pagina=None):
+                   logger=None, pagina=None, recuperado=None):
     """
     Anota uma linha no registro permanente do mês: uma linha JSON por
     arquivo entregue à máquina. É de propósito que grave só FATO BRUTO
@@ -554,6 +568,12 @@ def registrar_envio(maquina, arquivo, girado, pasta_relatorios=None, quando=None
         largura_m, altura_m, paginas = pagina
         dados["pagina_m"] = [round(largura_m, 4), round(altura_m, 4)]
         dados["paginas"] = paginas
+    # Linha REFEITA depois, a partir do arquivo guardado em "Enviados",
+    # e não escrita na hora da entrega. Guarda o porquê junto: número
+    # deduzido nunca pode se passar por declarado, e o relatório é
+    # comprovação pro cliente. Ver recuperar_registro.py.
+    if recuperado:
+        dados["recuperado"] = recuperado
 
     caminho_pendente = pathlib.Path(CAMINHO_REGISTRO_PENDENTE)
     _guardar_pendentes([*_ler_diario(caminho_pendente), dados], caminho_pendente)

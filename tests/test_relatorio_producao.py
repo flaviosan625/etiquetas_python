@@ -418,3 +418,182 @@ def test_material_sem_nome_ganha_subtotal_proprio_em_vez_de_sumir(tmp_path):
 
     assert rp.MATERIAL_SEM_NOME in subtotais, "m2 real nao pode sumir do rodape por falta de material"
     assert not linha["categoria"]
+
+
+# --- nome que perdeu a virgula ("320M" por 3,20 m) -------------------
+# 18 e 22/09/2026: 8 arquivos assim entraram na recuperacao do registro.
+# Lidos ao pe da letra, uma lona de 26,5 m2 virava 2.649 m2 no relatorio.
+
+def test_nome_sem_virgula_e_corrigido_com_a_arte(tmp_path):
+    fila = tmp_path / "fila"
+    nome = "1UN LONA IMPRESSA 8.28X320M_MLXP26_CRED_PREMIUM.pdf"
+    _arte_em_enviados(fila, "SWJ320A", nome, largura_m=8.28, altura_m=3.20)
+
+    linha = _uma_linha(tmp_path, _envio("2026-09-18T10:00:00", "SWJ320A", nome), fila)
+
+    assert linha["origem_medida"] == "nome_sem_virgula"
+    assert round(linha["area_m2"], 2) == round(8.28 * 3.20, 2)
+
+
+def test_so_o_lado_errado_e_corrigido(tmp_path):
+    """Em '8.28X320M' o 8,28 ja estava certo: cada lado e conferido sozinho."""
+    fila = tmp_path / "fila"
+    nome = "1UN LONA IMPRESSA 8.28X320M_x.pdf"
+    _arte_em_enviados(fila, "SWJ320A", nome, largura_m=8.28, altura_m=3.20)
+
+    linha = _uma_linha(tmp_path, _envio("2026-09-18T10:00:00", "SWJ320A", nome), fila)
+
+    assert round(linha["dimensao"]["largura_m"], 2) == 8.28
+    assert round(linha["dimensao"]["altura_m"], 2) == 3.20
+
+
+def test_arte_girada_em_relacao_ao_nome_tambem_serve_de_prova(tmp_path):
+    fila = tmp_path / "fila"
+    nome = "1UN LONA IMPRESSA 8.28X320M_y.pdf"
+    _arte_em_enviados(fila, "SWJ320A", nome, largura_m=3.20, altura_m=8.28)
+
+    linha = _uma_linha(tmp_path, _envio("2026-09-18T10:00:00", "SWJ320A", nome), fila)
+
+    assert linha["origem_medida"] == "nome_sem_virgula"
+    assert round(linha["area_m2"], 2) == round(8.28 * 3.20, 2)
+
+
+def test_quantidade_continua_multiplicando_depois_da_correcao(tmp_path):
+    """A medida foi corrigida, mas continua sendo medida do NOME: 3 pecas sao 3."""
+    fila = tmp_path / "fila"
+    nome = "3UN LONA IMPRESSA 0.80X320M_MLXP26_AREA_PREMIUM_L03.pdf"
+    _arte_em_enviados(fila, "SWJ320A", nome, largura_m=0.80, altura_m=3.20)
+
+    linha = _uma_linha(tmp_path, _envio("2026-09-18T10:00:00", "SWJ320A", nome), fila)
+
+    assert linha["quantidade"] == 3
+    assert round(linha["area_m2"], 2) == round(0.80 * 3.20 * 3, 2)
+
+
+def test_sem_prova_no_arquivo_o_nome_fica_como_esta(tmp_path):
+    """Onde a virgula 'devia' estar nao se adivinha: sem os 100x, nao mexe."""
+    fila = tmp_path / "fila"
+    nome = "1UN LONA IMPRESSA 120X3.08M_z.pdf"
+    _arte_em_enviados(fila, "SWJ320A", nome, largura_m=4.00, altura_m=3.00)
+
+    linha = _uma_linha(tmp_path, _envio("2026-09-22T10:00:00", "SWJ320A", nome), fila)
+
+    assert linha["origem_medida"] != "nome_sem_virgula"
+    assert round(linha["area_m2"], 2) == round(120 * 3.08, 2)
+
+
+def test_folha_anotada_no_envio_serve_quando_o_arquivo_ja_sumiu(tmp_path):
+    """Passados os 15 dias de guarda nao ha arquivo pra abrir — sobra a folha."""
+    fila = tmp_path / "fila"
+    nome = "1UN LONA IMPRESSA 1.30X320M_sem_arquivo.pdf"
+    registro = {**_envio("2026-09-18T10:00:00", "SWJ320A", nome),
+                "pagina_m": [1.30, 3.20], "paginas": 1}
+
+    linha = _uma_linha(tmp_path, registro, fila)
+
+    assert linha["origem_medida"] == "nome_sem_virgula"
+    assert round(linha["area_m2"], 2) == round(1.30 * 3.20, 2)
+
+
+def test_peca_longa_de_verdade_nao_e_mexida(tmp_path):
+    """28 m e comprimento de lona normal aqui: abaixo do limite, nem confere."""
+    fila = tmp_path / "fila"
+    nome = "1UN LONA IMPRESSA 28.27X3.20M_MLXP26_CRED_GERAL_L04.pdf"
+    _arte_em_enviados(fila, "SWJ320A", nome, largura_m=28.27, altura_m=3.20)
+
+    linha = _uma_linha(tmp_path, _envio("2026-09-11T10:00:00", "SWJ320A", nome), fila)
+
+    assert round(linha["area_m2"], 2) == round(28.27 * 3.20, 2)
+    assert linha["origem_medida"] != "nome_sem_virgula"
+
+
+def test_linha_recuperada_sai_assinalada_no_relatorio(tmp_path):
+    """Entrega provada pelo arquivo, horario e giro deduzidos: tem que dizer."""
+    registro = {**_envio("2026-09-18T10:30:00", "SWJ320A", "sumiu.pdf"),
+                "recuperado": "hora = data do arquivo em Enviados; giro previsto."}
+
+    linha = _uma_linha(tmp_path, registro, tmp_path / "fila")
+
+    assert linha["recuperado"]
+
+
+def test_linha_normal_nao_tem_marca_de_recuperada(tmp_path):
+    linha = _uma_linha(tmp_path, _envio("2026-09-18T10:30:00", "SWJ320A", "normal.pdf"),
+                       tmp_path / "fila")
+
+    assert linha["recuperado"] is None
+
+
+# --- previa da arte em cada linha (pedido de 23/09/2026) -------------
+
+def test_relatorio_leva_a_arte_de_cada_linha(tmp_path):
+    """Somos uma grafica: o documento mostra a arte, nao so o nome dela."""
+    fila = tmp_path / "fila"
+    nome = "1UN LONA IMPRESSA 2.00X1.00M_peca.pdf"
+    _arte_em_enviados(fila, "SWJ320A", nome, largura_m=2.00, altura_m=1.00)
+    _escrever_registro(tmp_path, [_envio("2026-09-18T10:00:00", "SWJ320A", nome)])
+
+    caminho = rp.gerar_pdf(datetime.date(2026, 9, 18), pasta_relatorios=tmp_path,
+                           maquinas=MAQUINAS_TESTE, pasta_fila=fila)
+
+    doc = pymupdf.open(str(caminho))
+    try:
+        assert doc.load_page(0).get_images(), "a pagina tem que ter a previa da arte"
+    finally:
+        doc.close()
+
+
+def test_a_previa_fica_guardada_pra_quando_o_arquivo_sumir(tmp_path):
+    """
+    O arquivo so fica 15 dias em Enviados e o relatorio e refeito a
+    qualquer momento — sem guardar, o relatorio velho voltaria sem arte.
+    """
+    fila = tmp_path / "fila"
+    nome = "1UN LONA IMPRESSA 2.00X1.00M_peca.pdf"
+    _arte_em_enviados(fila, "SWJ320A", nome, largura_m=2.00, altura_m=1.00)
+    _escrever_registro(tmp_path, [_envio("2026-09-18T10:00:00", "SWJ320A", nome)])
+    dia = datetime.date(2026, 9, 18)
+
+    primeira = rp.previa_da_arte("SWJ320A", nome, dia, tmp_path, fila)
+    (fila / "SWJ320A" / "Enviados" / nome).unlink()
+    depois = rp.previa_da_arte("SWJ320A", nome, dia, tmp_path, fila)
+
+    assert primeira and depois == primeira
+
+
+def test_linha_sem_arte_nao_impede_o_relatorio(tmp_path):
+    """Arte ja apagada, EPS ou arquivo quebrado: sai o quadrado cinza."""
+    _escrever_registro(tmp_path, [_envio("2026-09-18T10:00:00", "SWJ320A", "sumido.pdf")])
+
+    caminho = rp.gerar_pdf(datetime.date(2026, 9, 18), pasta_relatorios=tmp_path,
+                           maquinas=MAQUINAS_TESTE, pasta_fila=tmp_path / "vazia")
+
+    assert caminho and caminho.is_file()
+
+
+def test_a_letra_do_relatorio_nao_encolhe_pra_caber(tmp_path):
+    """
+    insert_htmlbox encolhe a letra calado quando nao cabe. Com a previa
+    as linhas ficaram mais altas: se a conta de altura errar, o relatorio
+    sai ilegivel sem ninguem perceber.
+    """
+    fila = tmp_path / "fila"
+    linhas = []
+    for i in range(40):
+        nome = f"1UN LONA IMPRESSA 2.00X1.00M_peca_{i:02d}.pdf"
+        _arte_em_enviados(fila, "SWJ320A", nome, largura_m=2.00, altura_m=1.00)
+        linhas.append(_envio(f"2026-09-18T10:{i:02d}:00", "SWJ320A", nome))
+    _escrever_registro(tmp_path, linhas)
+
+    registros = rp.ler_registros_do_dia(datetime.date(2026, 9, 18), pasta_relatorios=tmp_path)
+    por_maquina = rp.interpretar(registros, maquinas=MAQUINAS_TESTE, pasta_fila=fila)
+    for nome_maquina, itens in por_maquina.items():
+        for item in itens:
+            item["previa"] = rp.previa_da_arte(nome_maquina, item["arquivo"],
+                                               datetime.date(2026, 9, 18), tmp_path, fila)
+    folha = rp._Folha(datetime.date(2026, 9, 18))
+    for item in list(por_maquina.values())[0]:
+        folha.bloco(52, f'<div>{item["arquivo"]}</div>')
+    folha.salvar(tmp_path / "x.pdf")
+
+    assert folha.menor_escala == 1.0

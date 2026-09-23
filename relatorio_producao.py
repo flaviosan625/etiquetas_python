@@ -34,6 +34,7 @@ import pymupdf
 
 from branding import CAMINHO_LOGO_GUI, inserir_logo
 from config import carregar_config
+import miniaturas
 from dimensoes import extrair_dimensoes, extrair_quantidade, identificar_categoria, medir_conteudo_pagina
 from rasterlink_hotfolder import (
     MAQUINAS, NOME_SUBPASTA_ENVIADOS, NOME_SUBPASTA_REGISTRO, PASTA_FILA_ONEDRIVE,
@@ -104,12 +105,29 @@ def ler_registros_do_dia(data, pasta_relatorios=None):
 # o que zerou a UJV no relatório de 08/09/2026.
 _LADO_MINIMO_M = 0.01
 
+# Lado MÁXIMO que uma peça pode ter. O rolo mais comprido da casa tem
+# 50 m: um lado maior que isso no nome não é medida, é a vírgula que
+# ficou pra trás — "8.28X320M" é 8,28 x 3,20 m. Ver
+# _nome_esqueceu_a_virgula.
+_LADO_MAXIMO_M = 55
+
 # Quanto a arte pode diferir da medida do nome pra ainda ser "a mesma
 # medida" — usado só pra reconhecer o nome que escreveu METRO e digitou
 # "cm" no fim ("5,65X1,80cm" numa lona de 5,65 x 1,80 m).
 _TOLERANCIA_IGUAL = 0.05
 
 MATERIAL_SEM_NOME = "MATERIAL NÃO IDENTIFICADO"
+
+# A PRÉVIA DA ARTE em cada linha (pedido do usuário, 2026-09-23: "somos
+# uma gráfica, a arte é sempre muito importante"). Pequena de propósito:
+# são até 60 numa página, e o documento precisa continuar cabendo um ano
+# inteiro na pasta. 150px desenhados em 46pt dão ~230dpi.
+_LADO_MINIATURA = 150
+_QUALIDADE_MINIATURA = 60
+# a mesma altura da miniatura da OS (relatorios.ALTURA_THUMB_OS), pra os
+# dois documentos da mesma peça mostrarem a arte do mesmo tamanho
+_LARGURA_PREVIA = 60
+_ALTURA_PREVIA = 42
 
 
 def caminho_do_enviado(nome_maquina, nome_arquivo, pasta_fila=None):
@@ -209,6 +227,63 @@ def _nome_escreveu_metro(dimensao, arte):
             "origem": "nome_em_metros"}
 
 
+def _lado_impossivel(dimensao):
+    """Um lado maior que o rolo mais comprido da casa — ninguém produziu isso."""
+    return bool(dimensao) and max(dimensao["largura_m"], dimensao["altura_m"]) > _LADO_MAXIMO_M
+
+
+def _lado_com_virgula(do_nome, medido):
+    """
+    O lado certo quando o nome pode ter perdido a vírgula, ou None
+    quando nem o número do nome nem ele dividido por 100 batem com o
+    arquivo. Cada lado é conferido sozinho: em "8.28X320M" o 8,28 já
+    estava certo e só o 320 perdeu a vírgula.
+    """
+    if not medido:
+        return None
+    if abs(do_nome - medido) <= medido * _TOLERANCIA_IGUAL:
+        return do_nome
+    if abs(do_nome / 100 - medido) <= medido * _TOLERANCIA_IGUAL:
+        return do_nome / 100
+    return None
+
+
+def _conferir_virgula(dimensao, medida):
+    if not medida:
+        return None
+    do_nome = (dimensao["largura_m"], dimensao["altura_m"])
+    # a arte pode estar girada em relação ao nome: as duas ordens valem
+    for medido in ((medida["largura_m"], medida["altura_m"]),
+                   (medida["altura_m"], medida["largura_m"])):
+        lados = [_lado_com_virgula(n, m) for n, m in zip(do_nome, medido)]
+        if all(lados) and list(do_nome) != lados:
+            largura_m, altura_m = lados
+            return {**dimensao, "largura_m": largura_m, "altura_m": altura_m,
+                    "area_m2": largura_m * altura_m, "origem": "nome_sem_virgula"}
+    return None
+
+
+def _nome_esqueceu_a_virgula(dimensao, medidas):
+    """
+    O contrário de _nome_escreveu_metro: o nome que escreveu METRO sem a
+    vírgula. "1UN LONA IMPRESSA 8.28X320M" é uma lona de 8,28 x 3,20 m
+    (26,5 m²) e, lida ao pé da letra, vira 2.649 m² no relatório.
+    Apareceu em 9 arquivos de 18 e 22/09/2026.
+
+    Mesma exigência de prova do caso contrário: só mexe com o arquivo
+    aberto e batendo nos DOIS lados. Sem prova, o número do nome fica —
+    escolher onde a vírgula "devia" estar é adivinhação, e este
+    documento é comprovação pro cliente.
+    """
+    if not _lado_impossivel(dimensao):
+        return None
+    for medida in medidas:
+        corrigida = _conferir_virgula(dimensao, medida)
+        if corrigida:
+            return corrigida
+    return None
+
+
 def _medida_utilizavel(dimensao):
     """Medida de peça que nenhuma máquina daqui produziria não é medida."""
     return bool(dimensao) and min(dimensao["largura_m"], dimensao["altura_m"]) >= _LADO_MINIMO_M
@@ -255,11 +330,15 @@ def interpretar(registros, config=None, maquinas=None, pasta_fila=None):
         # utilizável no nome, ou com medida em 'cm' que pode ser metro
         # escrito errado. Arquivo grande não é aberto à toa.
         arte = None
-        if not _medida_utilizavel(dimensao) or dimensao["unidade_usada"] == "CM":
+        if (not _medida_utilizavel(dimensao) or dimensao["unidade_usada"] == "CM"
+                or _lado_impossivel(dimensao)):
             arte = medir_arte_do_arquivo(registro["maquina"], nome, pasta_fila)
 
         if _medida_utilizavel(dimensao):
-            dimensao = _nome_escreveu_metro(dimensao, arte) or dimensao
+            dimensao = (_nome_escreveu_metro(dimensao, arte)
+                        or _nome_esqueceu_a_virgula(dimensao,
+                                                    (arte, _medida_do_registro(registro)))
+                        or dimensao)
             area_m2 = dimensao["area_m2"] * quantidade
         else:
             medida = arte or _medida_do_registro(registro)
@@ -281,6 +360,9 @@ def interpretar(registros, config=None, maquinas=None, pasta_fila=None):
             "area_m2": area_m2,
             "bytes": registro.get("bytes"),
             "girado": registro.get("girado", False),
+            # linha refeita depois, a partir do arquivo guardado em
+            # Enviados: o relatório tem que dizer isso (ver recuperar_registro)
+            "recuperado": registro.get("recuperado"),
             "repeticao": repeticao,
             "nao_cabe": nao_cabe,
             "largura_util": largura_util,
@@ -358,7 +440,18 @@ class _Folha:
         self.indice = -1
         self.y = 0
         self.buffer = []
+        # As prévias da arte entram no HTML por nome, e o Archive é quem
+        # liga o nome aos bytes — é assim que a imagem cabe na MESMA
+        # chamada de insert_htmlbox, sem desfazer a economia de fonte.
+        self.imagens = pymupdf.Archive()
+        self.menor_escala = 1.0
         self._nova_pagina()
+
+    def imagem(self, dados):
+        """Guarda a prévia e devolve o nome pra usar no <img src=...>."""
+        nome = f"previa{len(self.buffer)}_{self.indice}_{id(dados) % 100000}.jpg"
+        self.imagens.add(dados, nome)
+        return nome
 
     @property
     def pagina(self):
@@ -377,9 +470,15 @@ class _Folha:
             self.buffer = []
             return
         html = f'<div style="font-family:sans-serif">{"".join(self.buffer)}</div>'
-        self.pagina.insert_htmlbox(
+        _sobra, escala = self.pagina.insert_htmlbox(
             pymupdf.Rect(MARGEM, self.inicio_corpo, LARGURA_PAGINA - MARGEM, self.LIMITE_Y), html,
+            archive=self.imagens,
         )
+        # escala < 1 quer dizer que não coube e o PyMuPDF ENCOLHEU a
+        # letra pra caber, calado. Com a prévia da arte as linhas ficaram
+        # mais altas, então vale vigiar: relatório com letra miúda demais
+        # é relatório que ninguém lê.
+        self.menor_escala = min(self.menor_escala, escala or 1.0)
         self.buffer = []
 
     def bloco(self, altura, html):
@@ -421,6 +520,41 @@ def _hex_para_rgb(cor):
     return tuple(int(cor[i:i + 2], 16) / 255 for i in (0, 2, 4))
 
 
+def _previa_html(folha, dados):
+    """
+    A arte na coluna da esquerda — ou o quadrado cinza da OS quando não
+    dá pra mostrar (arte que já saiu dos 15 dias antes do relatório ser
+    gerado uma primeira vez, EPS, arquivo grande demais).
+    """
+    if not dados:
+        return (f'<div style="width:{_LARGURA_PREVIA}px;height:{_ALTURA_PREVIA}px;'
+                f'background:#f0f1f3;border:0.5px solid #dcdee3"></div>')
+    largura, altura = miniaturas.encaixar(dados, _LARGURA_PREVIA, _ALTURA_PREVIA)
+    return f'<img src="{folha.imagem(dados)}" width="{largura}" height="{altura}">'
+
+
+def previa_da_arte(nome_maquina, nome_arquivo, data, pasta_relatorios=None, pasta_fila=None):
+    """
+    A prévia de UMA entrega, do cache ou do arquivo guardado em
+    "Enviados" — guardando no cache quando vem do arquivo.
+
+    O cache é o que faz a arte durar: o arquivo sai de "Enviados" em 15
+    dias e o relatório é refeito a partir do registro a qualquer momento
+    (foi refeito o mês inteiro em 23/09). Sem guardar, o relatório de um
+    dia velho voltaria sem arte nenhuma.
+
+    A chave leva o DIA junto: o mesmo nome pode voltar noutro dia com
+    arte diferente, e nesse caso não é a mesma peça.
+    """
+    return miniaturas.obter(
+        caminho_do_enviado(nome_maquina, nome_arquivo, pasta_fila),
+        pasta_cache=pathlib.Path(pasta_relatorios or PASTA_RELATORIOS),
+        mes=f"{data:%Y-%m}",
+        chave=(f"{data:%Y-%m-%d}", nome_maquina, nome_arquivo),
+        lado=_LADO_MINIATURA, qualidade=_QUALIDADE_MINIATURA,
+    )
+
+
 def gerar_pdf(data, pasta_relatorios=None, config=None, maquinas=None, caminho_saida=None,
               pasta_fila=None):
     """
@@ -440,6 +574,10 @@ def gerar_pdf(data, pasta_relatorios=None, config=None, maquinas=None, caminho_s
         return None
 
     por_maquina = interpretar(registros, config, maquinas, pasta_fila)
+    for nome_maquina, linhas in por_maquina.items():
+        for linha in linhas:
+            linha["previa"] = previa_da_arte(nome_maquina, linha["arquivo"], data,
+                                             pasta_relatorios, pasta_fila)
     folha = _Folha(data)
 
     total_arquivos = sum(len(linhas) for linhas in por_maquina.values())
@@ -485,6 +623,12 @@ def gerar_pdf(data, pasta_relatorios=None, config=None, maquinas=None, caminho_s
                 ))
             if linha["girado"]:
                 avisos.append((_COR_SUAVE, "Girado 90° automaticamente para aproveitar melhor a bobina."))
+            if linha["recuperado"]:
+                avisos.append((
+                    _COR_AVISO,
+                    "Linha REFEITA do arquivo guardado em “Enviados”, que prova a entrega — o "
+                    "vigia não gravou na hora. Horário e giro são deduzidos; o material saiu.",
+                ))
             # De onde veio a medida tem que estar escrito. Este documento
             # serve de comprovação: número medido por nós e número
             # declarado pelo cliente não podem parecer a mesma coisa.
@@ -506,6 +650,12 @@ def gerar_pdf(data, pasta_relatorios=None, config=None, maquinas=None, caminho_s
                     "O nome termina em “cm” mas a medida está em METROS — conferido abrindo o "
                     "arquivo. Vale corrigir o nome na origem.",
                 ))
+            elif linha["origem_medida"] == "nome_sem_virgula":
+                avisos.append((
+                    _COR_AVISO,
+                    "O nome traz a medida sem a vírgula (“320M” por 3,20 m) — corrigido com o "
+                    "arquivo aberto, batendo nos dois lados. Vale corrigir o nome na origem.",
+                ))
 
             dim = linha["dimensao"]
             medida = f'{_num(dim["largura_m"])} × {_num(dim["altura_m"])} m' if dim else "medida não lida"
@@ -519,7 +669,10 @@ def gerar_pdf(data, pasta_relatorios=None, config=None, maquinas=None, caminho_s
                 fundo = ""
 
             corpo = (
-                f'<div style="{fundo}border-bottom:0.5px solid #dce0e7;padding:4px 3px;font-size:8pt;color:{_COR_TEXTO}">'
+                f'<table style="width:100%;{fundo}border-bottom:0.5px solid #dce0e7">'
+                f'<tr><td width="{_LARGURA_PREVIA + 8}" style="padding:4px 0">'
+                f'{_previa_html(folha, linha["previa"])}</td>'
+                f'<td style="padding:4px 3px;font-size:8pt;color:{_COR_TEXTO}">'
                 f'<span style="color:{_COR_SUAVE}">{linha["quando"]:%H:%M}</span> &nbsp; '
                 f'<b>{linha["quantidade"]}un</b> &nbsp; '
                 f'<span style="color:{_COR_SUAVE}">{_escapar(linha["categoria"] or "material não identificado")}</span> &nbsp; '
@@ -529,9 +682,10 @@ def gerar_pdf(data, pasta_relatorios=None, config=None, maquinas=None, caminho_s
             )
             for cor, texto in avisos:
                 corpo += f'<div style="font-size:7pt;color:{cor};padding-top:1px">{texto}</div>'
-            corpo += "</div>"
+            corpo += "</td></tr></table>"
 
-            folha.bloco(30 + 11 * len(avisos), corpo)
+            # a prévia sozinha já ocupa a altura de duas linhas de texto
+            folha.bloco(max(_ALTURA_PREVIA + 10, 30 + 11 * len(avisos)), corpo)
 
         subtotais = subtotais_por_material(linhas)
         if subtotais:

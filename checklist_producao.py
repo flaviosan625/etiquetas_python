@@ -30,6 +30,8 @@ import pathlib
 
 import pymupdf
 
+import miniaturas
+
 import dimensoes
 import relatorios
 from config import carregar_config
@@ -73,25 +75,11 @@ def _maquina_da_peca(subpastas):
 
 def miniatura(caminho_pdf, lado=_LADO_MINIATURA):
     """
-    JPG da primeira página, no maior lado 'lado'. Renderiza já na escala
-    final (e não em tamanho cheio pra depois reduzir): tem lona de 29 m
-    nessa pasta, e render cheio delas custaria caro à toa.
-
-    Devolve None se não der pra abrir — miniatura é conforto visual, nunca
-    motivo pra o documento não sair.
+    JPG da primeira página, no maior lado 'lado'. O desenho mora em
+    miniaturas.de_arquivo — é a mesma miniatura da OS, do documento de
+    Enviados e do relatório diário, e eram três cópias iguais até 23/09.
     """
-    try:
-        doc = pymupdf.open(str(caminho_pdf))
-        try:
-            pagina = doc[0]
-            maior = max(pagina.rect.width, pagina.rect.height) or 1
-            escala = min(lado / maior, 1.0)
-            px = pagina.get_pixmap(matrix=pymupdf.Matrix(escala, escala))
-            return px.tobytes("jpg", jpg_quality=_QUALIDADE_MINIATURA)
-        finally:
-            doc.close()
-    except Exception:
-        return None
+    return miniaturas.de_arquivo(caminho_pdf, lado=lado, qualidade=_QUALIDADE_MINIATURA)
 
 
 def esta_pronto(caminho, pasta_producao):

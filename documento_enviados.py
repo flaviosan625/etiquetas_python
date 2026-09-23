@@ -38,6 +38,8 @@ import pathlib
 
 import pymupdf
 
+import miniaturas
+
 from branding import inserir_logo, CAMINHO_LOGO_GUI
 from envio_impressao import NOME_PASTA_ENVIADOS
 from relatorios import _cor_categoria, _descricao_arquivo
@@ -178,21 +180,8 @@ def miniatura(caminho_arquivo):
     rasterizar isso inteiro pra fazer um quadradinho de 300 px derrubaria
     a memória da máquina.
     """
-    try:
-        doc = pymupdf.open(str(caminho_arquivo))
-    except Exception:
-        return None
-    try:
-        pagina = doc.load_page(0)
-        rect = pagina.rect
-        maior_lado = max(rect.width, rect.height) or 1
-        escala = min(_LADO_MAX_THUMB / maior_lado, 1.0)
-        pix = pagina.get_pixmap(matrix=pymupdf.Matrix(escala, escala))
-        return pix.tobytes("jpg", jpg_quality=_QUALIDADE_THUMB)
-    except Exception:
-        return None
-    finally:
-        doc.close()
+    return miniaturas.de_arquivo(caminho_arquivo, lado=_LADO_MAX_THUMB,
+                                 qualidade=_QUALIDADE_THUMB)
 
 
 def _salvar_para_recuperar(raiz_cliente, registros, miniaturas=None):
