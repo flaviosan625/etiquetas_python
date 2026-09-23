@@ -1,4 +1,5 @@
-﻿# SÓ OLHA. Não muda nada, não cria nada, não apaga nada.
+﻿try { [Console]::OutputEncoding = [Text.Encoding]::UTF8 } catch {}   # acentos na tela
+# SÓ OLHA. Não muda nada, não cria nada, não apaga nada.
 #
 # Serve pra responder três perguntas que daqui da máquina principal são
 # invisíveis:
@@ -93,11 +94,20 @@ if (Test-Path $SCRIPT) {
     $i = Get-Item $SCRIPT
     Write-Host "  $SCRIPT"
     Write-Host "  $($i.Length) bytes, de $($i.LastWriteTime)"
-    $temUmaVez = Select-String -Path $SCRIPT -Pattern "principal_uma_vez" -Quiet
-    if ($temUmaVez) {
-        Write-Host "  Versao NOVA (tem principal_uma_vez)." -ForegroundColor Green
-    } else {
-        Write-Host "  Versao VELHA (nao tem principal_uma_vez) — o instalador nao copiou." -ForegroundColor Red
+    # Uma marca por versao entregue. A de cima e a mais recente: e ela que
+    # diz se o ULTIMO deploy pegou. Acrescente uma linha a cada entrega.
+    $marcas = [ordered]@{
+        "conciliar_registro" = "registro que nao se perde (16/09/2026)"
+        "principal_uma_vez"  = "modo uma-passada-e-sai (05/09/2026)"
+    }
+    foreach ($m in $marcas.Keys) {
+        $tem = Select-String -Path $SCRIPT -Pattern $m -Quiet
+        $cor = if ($tem) { "Green" } else { "Red" }
+        $sim = if ($tem) { "TEM   " } else { "FALTA " }
+        Write-Host "  $sim $m  —  $($marcas[$m])" -ForegroundColor $cor
+    }
+    if (-not (Select-String -Path $SCRIPT -Pattern "conciliar_registro" -Quiet)) {
+        Write-Host "  >>> O deploy mais recente NAO pegou nesta maquina." -ForegroundColor Red
     }
 } else {
     Write-Host "  NAO EXISTE $SCRIPT" -ForegroundColor Red
@@ -162,7 +172,8 @@ if (Test-Path $crash) {
         $cor = "Red"
     } else {
         Write-Host ("  Existe arquivo de crash, mas o ultimo e ANTIGO: {0:dd/MM HH:mm} (ha {1:N0} dias). Nao e novidade." -f (Get-Item $crash).LastWriteTime, $idade.TotalDays) -ForegroundColor DarkGray
-        Write-Host "  (pode apagar C:\RasterLinkasterlink_hotfolder_crash.log pra limpar o aviso)" -ForegroundColor DarkGray
+        Write-Host "  (pode apagar C:\RasterLink
+asterlink_hotfolder_crash.log pra limpar o aviso)" -ForegroundColor DarkGray
         $cor = "DarkGray"
     }
     Get-Content $crash -Encoding UTF8 -Tail 12 | ForEach-Object { Write-Host "    $_" -ForegroundColor $cor }
