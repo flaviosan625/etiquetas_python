@@ -48,7 +48,7 @@ rem ---------------------------------------------------------------
 echo   Este PC: %COMPUTERNAME%
 
 set "SINAL="
-for /d %%D in ("%USERPROFILE%\OneDrive\UNYCOMUNICACAO\Fila*RasterLink") do set "SINAL=%%~fD\_sinal_de_vida.json"
+for /d %%D in ("%USERPROFILE%\OneDrive\UNYCOMUNICACAO\FILA*MAQUINAS") do set "SINAL=%%~fD\_sinal_de_vida.json"
 
 rem Sem pipe de proposito: dentro de aspas o ^ nao escapa nada, entao um
 rem "^|" chegaria literal no PowerShell e quebraria o comando calado.

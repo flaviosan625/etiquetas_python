@@ -13,7 +13,7 @@ $NOME_TAREFA = "RasterLink Hotfolder"
 $PASTA       = "C:\RasterLink"
 $SCRIPT      = Join-Path $PASTA "rasterlink_hotfolder.py"
 $LOG         = Join-Path $PASTA "rasterlink_hotfolder.log"
-$FILA        = "$env:USERPROFILE\OneDrive\UNYCOMUNICACAO\Fila de Impressao RasterLink"
+$FILA        = "$env:USERPROFILE\OneDrive\UNYCOMUNICACAO\FILA PARA IMPRESSÃO MAQUINAS"
 
 function Titulo($texto) {
     Write-Host ""

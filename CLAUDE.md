@@ -95,6 +95,14 @@ morria. Gravar sem erro não é prova. A prova de que uma entrega aconteceu é o
 `recuperar_registro.py` — marcando a linha com `recuperado`, que o relatório mostra na linha
 (horário e giro de linha refeita são deduzidos, e isso tem que estar escrito).
 
+**O nome em "Enviados" não é sempre o nome registrado.** O vigia registra o nome que o arquivo tem
+na FILA e só depois move; se em "Enviados" já houver um com esse nome (a mesma arte entregue de
+novo), o que entra ganha um `_<epoch>` no fim. Comparar as duas listas por nome cru faz a segunda
+entrega parecer não registrada, e "recuperar" ela grava linha DUPLICADA — material contado duas
+vezes na comprovação do cliente. Aconteceu em 23/09/2026: 21 das 108 linhas recuperadas eram
+duplicatas, achadas na conferência do dia seguinte. `recuperar_registro.nome_no_registro` desfaz o
+sufixo, e o casamento é em **duas voltas**: nome exato primeiro, sobra tenta sem o sufixo.
+
 **Dois vigias no mesmo arquivo perdem linha sem dar erro.** De 17 a 22/09/2026 sumiram mais 108
 entregas: o PC do RIP tinha DOIS loops antigos `.pyw` rodando junto com a tarefa agendada, e os
 três gravavam no mesmo `.jsonl` do OneDrive. O OneDrive resolve conflito ficando com UMA versão —

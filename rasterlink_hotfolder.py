@@ -63,7 +63,18 @@ import time
 # tenha o OneDrive dessa conta sincronizado, por isso usa Path.home()
 # em vez de um caminho fixo com o nome do usuário (mesma convenção já
 # usada em rasterlink.py/RAIZ_BUSCA_OUTROS_CLIENTES).
-PASTA_FILA_ONEDRIVE = pathlib.Path.home() / "OneDrive" / "UNYCOMUNICACAO" / "Fila de Impressao RasterLink"
+#
+# Chamava-se "Fila de Impressao RasterLink" até 23/09/2026. O nome
+# mudou a pedido dele — "vamos concentrar no mesmo lugar as impressoras,
+# que fica bem mais fácil": a fila deixou de ser só das Mimaki quando a
+# DOCAN entrou, e RasterLink no nome fazia parecer que ela não cabia
+# aqui. É UMA subpasta por máquina, e o posto de cada uma diz qual PC a
+# atende.
+#
+# Trocar este nome muda as DUAS máquinas: o PC do RIP só passa a olhar
+# a pasta nova depois do maquina_rip/atualizar.bat rodar lá.
+PASTA_FILA_ONEDRIVE = (pathlib.Path.home() / "OneDrive" / "UNYCOMUNICACAO"
+                       / "FILA PARA IMPRESSÃO MAQUINAS")
 NOME_SUBPASTA_ENVIADOS = "Enviados"
 
 # Posto = o PC onde mora a hot folder de uma máquina, ou seja, quem
