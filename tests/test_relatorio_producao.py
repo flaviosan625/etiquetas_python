@@ -597,3 +597,38 @@ def test_a_letra_do_relatorio_nao_encolhe_pra_caber(tmp_path):
     folha.salvar(tmp_path / "x.pdf")
 
     assert folha.menor_escala == 1.0
+
+
+def test_relatorio_vale_para_a_docan(tmp_path):
+    """
+    A DOCAN entra no relatorio como as Mimaki (pedido de 23/09/2026:
+    "relatorio precisa valer para DOCAN"). Sem 'maquinas=' de proposito:
+    o teste confere a configuracao DE VERDADE, nao uma de mentira.
+    """
+    _escrever_registro(tmp_path, [_envio("2026-09-24T09:00:00", "DOCAN",
+                                         "1UN LONA IMPRESSA 4.00X3.00M_painel.pdf")])
+
+    registros = rp.ler_registros_do_dia(datetime.date(2026, 9, 24), pasta_relatorios=tmp_path)
+    por_maquina = rp.interpretar(registros, pasta_fila=tmp_path / "fila")
+
+    assert "DOCAN" in por_maquina
+    linha = por_maquina["DOCAN"][0]
+    assert linha["largura_util"] == 5.0, "5,00 util; a midia de 5,20 nao imprime inteira"
+    assert round(linha["area_m2"], 2) == 12.0
+    assert not linha["nao_cabe"]
+
+
+def test_relatorio_da_docan_sai_em_pdf(tmp_path):
+    _escrever_registro(tmp_path, [_envio("2026-09-24T09:00:00", "DOCAN",
+                                         "1UN LONA IMPRESSA 4.00X3.00M_painel.pdf")])
+
+    caminho = rp.gerar_pdf(datetime.date(2026, 9, 24), pasta_relatorios=tmp_path,
+                           pasta_fila=tmp_path / "fila")
+
+    doc = pymupdf.open(str(caminho))
+    try:
+        texto = doc.load_page(0).get_text()
+    finally:
+        doc.close()
+    assert "DOCAN" in texto
+    assert "12,00 m" in texto, "o subtotal da DOCAN tem que aparecer"
