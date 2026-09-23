@@ -30,12 +30,35 @@ import collections
 import datetime
 import json
 import pathlib
+import re
 
 import envio_impressao
 import rasterlink_hotfolder as vigia
 
 NOTA = ("hora = data do arquivo em Enviados (entrada na fila); giro previsto pela medida. "
         "Entrega comprovada pelo arquivo, sem linha no registro.")
+
+
+# O vigia registra o arquivo com o nome que ele tem na FILA e só depois
+# move pra "Enviados"; se lá já houver um com esse nome (a mesma arte
+# entregue de novo), o que entra ganha um _<epoch> no fim
+# (rasterlink_hotfolder._processar_arquivo_da_fila). Quem compara as duas
+# listas tem que desfazer isso.
+_SUFIXO_DE_COLISAO = re.compile(r"^(.*)_\d{10}(\.[^.]+)$")
+
+
+def nome_no_registro(nome):
+    """
+    O nome com que a entrega deste arquivo FOI registrada, quando ele
+    ganhou o sufixo ao entrar em "Enviados" — ou None quando não ganhou.
+
+    Sem isto, a segunda entrega de um mesmo nome parece nunca ter sido
+    registrada, e "recuperar" ela grava uma linha DUPLICADA: no relatório
+    isso é material contado duas vezes, num documento que é comprovação
+    pro cliente. Aconteceu em 23/09/2026, com 21 linhas.
+    """
+    achado = _SUFIXO_DE_COLISAO.match(nome)
+    return achado.group(1) + achado.group(2) if achado else None
 
 
 def _meses_dos_arquivos(arquivos):
@@ -89,20 +112,33 @@ def entregas_sem_registro(pasta_fila=None, pasta_relatorios=None, maquinas=None)
     todos = [a for lista in por_maquina.values() for a in lista]
     se_tem = _ja_registradas(_meses_dos_arquivos(todos), pasta_relatorios)
 
-    faltando = []
+    # DUAS VOLTAS. Na primeira, cada arquivo consome a linha do seu nome
+    # exato; só o que sobra tenta o nome sem o sufixo de colisão. Numa
+    # volta só, um arquivo com sufixo podia tomar a linha do arquivo de
+    # nome igual que ainda vinha depois, e o de nome igual — que tem
+    # linha — apareceria como perdido.
+    sobrou = []
     for maquina, arquivos in por_maquina.items():
         for arquivo in arquivos:
             chave = (maquina, arquivo.name)
             if se_tem[chave]:
                 se_tem[chave] -= 1          # essa entrega já tem a linha dela
                 continue
-            faltando.append({
-                "maquina": maquina,
-                "caminho": arquivo,
-                "quando": datetime.datetime.fromtimestamp(arquivo.stat().st_mtime).replace(
-                    microsecond=0),
-                "bytes": arquivo.stat().st_size,
-            })
+            sobrou.append((maquina, arquivo))
+
+    faltando = []
+    for maquina, arquivo in sobrou:
+        sem_sufixo = nome_no_registro(arquivo.name)
+        if sem_sufixo and se_tem[(maquina, sem_sufixo)]:
+            se_tem[(maquina, sem_sufixo)] -= 1
+            continue
+        faltando.append({
+            "maquina": maquina,
+            "caminho": arquivo,
+            "quando": datetime.datetime.fromtimestamp(arquivo.stat().st_mtime).replace(
+                microsecond=0),
+            "bytes": arquivo.stat().st_size,
+        })
     faltando.sort(key=lambda e: (e["quando"], e["maquina"]))
     return faltando
 

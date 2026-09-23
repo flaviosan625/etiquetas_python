@@ -157,3 +157,53 @@ def test_giro_e_previsto_pela_medida_da_folha(tmp_path):
 
     assert resultado["linhas"][0]["girado"] is True
     assert _linhas_gravadas(rel)[0]["girado"] is True
+
+
+# --- sufixo de colisao em Enviados (23/09/2026) ----------------------
+# O vigia registra o nome que o arquivo tem na FILA e so depois move pra
+# Enviados; la, nome repetido ganha _<epoch>. Sem desfazer isso, a segunda
+# entrega parece nunca registrada e "recuperar" grava linha DUPLICADA --
+# no relatorio, material contado duas vezes. Aconteceu com 21 linhas.
+
+def test_nome_no_registro_desfaz_o_sufixo():
+    assert rr.nome_no_registro("arte_1790174003.pdf") == "arte.pdf"
+    assert rr.nome_no_registro("arte.pdf") is None
+    assert rr.nome_no_registro("arte_123.pdf") is None, "so o carimbo de 10 digitos"
+
+
+def test_arquivo_com_sufixo_ja_registrado_nao_e_recuperado(tmp_path):
+    fila, rel = tmp_path / "fila", tmp_path / "rel"
+    _enviado(fila, "SWJ320A", "arte_1790174003.pdf", datetime.datetime(2026, 9, 23, 11, 11))
+    _registro(rel, [{"quando": "2026-09-23T11:33:23", "maquina": "SWJ320A",
+                     "arquivo": "arte.pdf", "bytes": 10, "girado": False}])
+
+    assert rr.recuperar(fila, rel, MAQUINAS_TESTE)["encontradas"] == 0
+
+
+def test_a_segunda_entrega_perdida_continua_sendo_recuperada(tmp_path):
+    """Duas entregas, uma linha so: falta UMA — nao zero, nao duas."""
+    fila, rel = tmp_path / "fila", tmp_path / "rel"
+    _enviado(fila, "SWJ320A", "arte.pdf", datetime.datetime(2026, 9, 23, 9, 0))
+    _enviado(fila, "SWJ320A", "arte_1790174003.pdf", datetime.datetime(2026, 9, 23, 11, 11))
+    _registro(rel, [{"quando": "2026-09-23T09:00:00", "maquina": "SWJ320A",
+                     "arquivo": "arte.pdf", "bytes": 10, "girado": False}])
+
+    faltando = rr.entregas_sem_registro(fila, rel, MAQUINAS_TESTE)
+
+    assert [e["caminho"].name for e in faltando] == ["arte_1790174003.pdf"]
+
+
+def test_o_arquivo_com_o_nome_exato_consome_a_linha_primeiro(tmp_path):
+    """
+    Com uma linha so e os dois arquivos, quem fica com ela e o de nome
+    igual — senao o sufixo a consumiria e o original viraria duplicata.
+    """
+    fila, rel = tmp_path / "fila", tmp_path / "rel"
+    _enviado(fila, "SWJ320A", "arte_1790174003.pdf", datetime.datetime(2026, 9, 23, 8, 0))
+    _enviado(fila, "SWJ320A", "arte.pdf", datetime.datetime(2026, 9, 23, 9, 0))
+    _registro(rel, [{"quando": "2026-09-23T09:00:00", "maquina": "SWJ320A",
+                     "arquivo": "arte.pdf", "bytes": 10, "girado": False}])
+
+    faltando = rr.entregas_sem_registro(fila, rel, MAQUINAS_TESTE)
+
+    assert [e["caminho"].name for e in faltando] == ["arte_1790174003.pdf"]
