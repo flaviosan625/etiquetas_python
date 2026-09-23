@@ -58,6 +58,12 @@ Duas regras já fixadas: com **duas medidas no nome, vale a PRIMEIRA** (é a do 
 acréscimo da produção). Sem medida utilizável no nome, `relatorio_producao` abre o arquivo e mede
 **a arte** (não a folha do gabarito) — e aí o m² **não** é multiplicado pela quantidade.
 
+Medida do nome que é impossível o relatório **não usa, e só corrige com o arquivo aberto na mão**:
+lado pequeno demais (`0.77X0.15CM`) vira a arte medida, e lado grande demais é vírgula perdida
+(`8.28X320M` é 8,28 x 3,20 m — lido ao pé da letra virava 2.649 m² no lugar de 26,5 m², em 18 e
+22/09/2026). Nos dois casos a prova é o arquivo batendo 100×, nunca palpite, e a linha sai
+assinalada no PDF: `_nome_escreveu_metro` e `_nome_esqueceu_a_virgula`.
+
 ### Duas máquinas, um código, "postos"
 
 O vigia roda em dois PCs diferentes, com o mesmo arquivo:
@@ -85,8 +91,16 @@ principal, que tem `config.json` e `dimensoes.py`.
 conferir**, seguindo conferindo por 20 dias. Aconteceu de 09 a 16/09/2026: 61 entregas (1.311 m² de
 lona) sumiram do relatório — a gravação falhava, o aviso ficava no log do PC do RIP e a linha
 morria. Gravar sem erro não é prova. A prova de que uma entrega aconteceu é o arquivo em
-`Fila\<máquina>\Enviados` (guardado 15 dias); é dali que se recupera, marcando a linha com
-`recuperado`.
+`Fila\<máquina>\Enviados` (guardado 15 dias); é dali que se recupera, e quem faz isso é
+`recuperar_registro.py` — marcando a linha com `recuperado`, que o relatório mostra na linha
+(horário e giro de linha refeita são deduzidos, e isso tem que estar escrito).
+
+**Dois vigias no mesmo arquivo perdem linha sem dar erro.** De 17 a 22/09/2026 sumiram mais 108
+entregas: o PC do RIP tinha DOIS loops antigos `.pyw` rodando junto com a tarefa agendada, e os
+três gravavam no mesmo `.jsonl` do OneDrive. O OneDrive resolve conflito ficando com UMA versão —
+as linhas dos outros evaporam, sem erro em log nenhum. Antes de investigar registro faltando,
+confira **quantos processos** estão vigiando (`maquina_rip/parar_loop_antigo.bat`). A fila local
+protege contra escrita falhada, não contra outro processo sobrescrevendo o arquivo inteiro.
 
 ### Entrega atômica na hot folder
 
@@ -126,6 +140,32 @@ Ele exporta para `aspire/parametros_corte.lua`, que `aspire/corte_nucleo.lua` (o
 `.lua` à mão não adianta: a próxima exportação apaga. A ordem **CORTE INTERNO antes de CORTE
 EXTERNO** não é estética — quando o contorno externo fecha, a peça solta da chapa e qualquer furo
 feito depois sai torto.
+
+## Documento que lista arte MOSTRA a arte
+
+Regra do usuário (2026-09-23): *"relatório de produção e impressão, todos precisam conter prévia
+da arte — afinal somos uma gráfica, o nome é a arte, é sempre muito importante"*. Nome de arquivo
+não identifica peça; a arte identifica.
+
+A miniatura é uma função só, `miniaturas.de_arquivo` — eram três cópias iguais espalhadas
+(OS, checklist, documento de Enviados) até virarem uma. Quem desenha usa `miniaturas.encaixar`
+pra **nunca esticar** a arte, e mostra o quadrado cinza quando não dá pra abrir (EPS, arquivo
+corrompido, arquivo grande demais): miniatura é conforto visual e nunca impede o documento de sair.
+
+Dois detalhes que custaram tempo:
+
+- **Renderize já na escala final.** Tem TIF de 1,8 GB e lona de 29 m nessas pastas; rasterizar
+  inteiro pra fazer um quadradinho derruba a máquina. Acima de `miniaturas.LIMITE_BYTES` nem abre.
+- **O relatório diário GUARDA a miniatura** (`Relatório de Impressão Diária/_miniaturas/AAAA-MM/`).
+  O arquivo da arte sai de "Enviados" em 15 dias e o relatório é refeito a partir do registro a
+  qualquer momento — sem guardar, refazer o relatório de um dia velho devolveria um documento sem
+  arte nenhuma. São ~4 KB por peça.
+
+No PDF a prévia entra por `<img src=...>` dentro do **mesmo** `insert_htmlbox` da página, com um
+`pymupdf.Archive` ligando nome a bytes — não como `insert_image` separado, que desfaria a economia
+de uma caixa de HTML por página. Uma `<table>` de duas colunas dá a coluna da arte; e vigie o
+segundo valor devolvido pelo `insert_htmlbox` (`_Folha.menor_escala`): abaixo de 1 ele ENCOLHEU a
+letra calado pra fazer caber.
 
 ## OS e Checklist são MODELOS PADRÃO — nunca redesenhe
 
@@ -169,6 +209,14 @@ Decisões do usuário de 2026-09-13, que valem pro sistema inteiro:
   o programa foi aberto (era assim com `etiquetas_geradas`, e num .exe isso quebra). Ler sempre
   como `caminhos.X` na hora do uso, pra teste conseguir apontar pra `tmp_path`. Exceção:
   `rasterlink_hotfolder.py`, que vai sozinho pro PC do RIP.
+- **Toda cor vem de `tema.py`** (decisão de 2026-09-22: *"mudar todas as telas para fundo escuro,
+  colocar um botão pequeno na primeira página para mudar a cor quando eu desejar"*). Escuro é o
+  padrão; o botãozinho do cabeçalho troca e grava em `config["tema"]`. Nunca escreva `#rrggbb` numa
+  tela — é `cores.<coisa>`, lido **na hora de criar o widget**, porque widget do Tk não muda de cor
+  depois de pronto: quem troca o tema **remonta** a tela principal (guardando o que estava digitado
+  e o log) e as outras janelas nascem na cor nova quando abrem. As telas que não pedem cor nenhuma
+  ficam certas por `tema.aplicar_padroes` (o `option_add` da aplicação + tema `clam` no ttk, que é
+  o único que aceita cor) — chamado **antes** do primeiro widget, senão não vale pra nada.
 - **Cliente = uma pasta em `OneDrive/UNYCOMUNICACAO/Recebimento de Artes/`** (`clientes.py`). Não
   existe lista central: a pasta é o cadastro, o `cliente.json` dentro dela é a configuração.
   Vários clientes em paralelo; nenhum nome de cliente escrito no código.
@@ -201,6 +249,15 @@ Decisões do usuário de 2026-09-13, que valem pro sistema inteiro:
 - **`.ps1` precisa de BOM UTF-8.** Sem BOM o PowerShell 5.1 lê acento como ANSI, o travessão vira
   aspa curva e o script quebra numa linha inocente. **`.bat` tem que ser ASCII puro.** Os dois estão
   travados por `tests/test_scripts_powershell.py`.
+- **`.bat` engole `)` e `^`.** Um `)` dentro de um `echo` fecha o bloco do `if` antes da hora e os
+  DOIS ramos rodam; e dentro de aspas o `^` não escapa nada, então um `^|` chega literal no comando
+  e ele quebra calado. As duas coisas quebraram a trava de máquina do `atualizar.bat` em 22/09 —
+  e só apareceram porque o `.bat` foi RODADO. Rode antes de dizer que funciona:
+  `MSYS_NO_PATHCONV=1 cmd.exe /c "echo. | maquina_rip\atualizar.bat"`.
+- **Deploy no PC errado não dá erro.** O `atualizar.bat` copia pra `C:\RasterLink` da máquina onde
+  roda, e no PC errado ele ainda diz "TUDO CERTO" — aconteceu em 22/09, e a UJV e a SWJ seguiram um
+  dia a mais com a versão antiga. Hoje ele compara `%COMPUTERNAME%` com o nome que o próprio vigia
+  grava no sinal de vida. Quem confirma um deploy é o **sinal de vida**, não a mensagem do script.
 - **Não escreva `.lua` nem `.ps1` por heredoc do shell.** Cada camada come um nível de escape — já
   quebrou o mesmo Lua quatro vezes e um `\r` de caminho virou quebra de linha. Use a ferramenta de
   escrita de arquivo e depois `ferramentas/conferir_lua.py`.
@@ -209,5 +266,11 @@ Decisões do usuário de 2026-09-13, que valem pro sistema inteiro:
   a página inteira numa chamada só); `page.set_rotation(90)` só marca `/Rotate` e **distorce a arte**
   em quem lê a MediaBox junto — use `rasterlink_hotfolder._assar_giro`.
 - **Fontes base-14 só falam Latin-1**: travessão, bullet e en-dash viram `·` silenciosamente.
+- **No ttk, `map` ganha de `configure`** — e o tema `clam` já vem com mapas de estado próprios, em
+  cinza claro de fábrica. Pintar só com `configure` deixa o widget certo parado e ERRADO quando
+  muda de estado: a barra de rolagem sem nada pra rolar fica `disabled` e voltava branca no meio da
+  tela escura; o mesmo vale pra botão apertado, aba não selecionada e Treeview. Ver
+  `tema._estilo_ttk`. E cuidado: `style.map(...)` **substitui a lista inteira** daquela opção, o que
+  aqui é bom — é assim que o cinza de fábrica sai.
 - **O Aspire 8.5 não tem documentação pública de API.** O que se sabe foi sondado ao vivo; veja
   `aspire/api_8_5*.txt`. `MessageBox` do Aspire só aceita ASCII.
