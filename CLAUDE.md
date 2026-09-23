@@ -110,6 +110,16 @@ as linhas dos outros evaporam, sem erro em log nenhum. Antes de investigar regis
 confira **quantos processos** estão vigiando (`maquina_rip/parar_loop_antigo.bat`). A fila local
 protege contra escrita falhada, não contra outro processo sobrescrevendo o arquivo inteiro.
 
+**Quem descobre o problema não pode ser só a tela.** Em 23/09/2026 o vigia do PC do RIP deu o
+último sinal às 15:03 e isso só apareceu às 19:22, quando alguém abriu o painel de agentes — a
+tela de envio e o painel diziam a coisa certa desde as 15:15, mas ninguém estava olhando. Daquele
+dia nasceu `aviso_fila.py`: notificação do Windows quando tem arquivo parado na fila há mais de
+20 min, chamada no fim de cada passada do `rasterlink_hotfolder` (import tardio dentro de
+try/except, porque lá no PC do RIP esse módulo viaja sozinho e o resto do projeto não existe).
+Ele mede o FATO — arquivo parado —, não a causa, e por isso serve igual pro vigia derrubado, pro
+OneDrive travado e pra hot folder sumida. Fila vazia não avisa nada, e o mesmo aviso não repete
+antes de uma hora: alarme que toca sessenta vezes por hora vira alarme que se aprende a ignorar.
+
 ### Entrega atômica na hot folder
 
 Arquivo nunca é escrito dentro da hot folder: é montado na pasta-mãe (`~montando~*.parcial`) e entra

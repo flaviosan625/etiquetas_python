@@ -1446,8 +1446,35 @@ def principal_uma_vez(posto=None):
     finally:
         salvar_estado_avisos()
 
+    _avisar_fila_parada()
+
     for linha in resumo_da_passada(resultado):
         _falar(linha)
+
+
+def _avisar_fila_parada():
+    """
+    Notifica o Windows quando tem arquivo parado na fila há tempo demais.
+
+    Fica DEPOIS do finally de propósito: passada que deu errado é
+    justamente quando mais importa alguém ficar sabendo.
+
+    O import é tardio e o erro é engolido porque este módulo viaja
+    sozinho pro PC do RIP, sem o resto do projeto — lá `aviso_fila` não
+    existe e a passada tem que seguir igual. Aviso é conforto: nunca
+    pode atrapalhar a entrega de arquivo, que é o trabalho de verdade.
+    """
+    try:
+        import aviso_fila
+
+        avisadas = aviso_fila.conferir()
+    except Exception as erro:  # noqa: BLE001 - ver docstring
+        logger_arquivo("warn", f"aviso de fila parada não saiu: {erro}")
+        return
+    for maquina, (quantos, minutos) in sorted(avisadas.items()):
+        logger_arquivo(
+            "warn", f"AVISADO na tela: {maquina} com {quantos} arquivo(s) "
+                    f"parado(s) há {minutos} min")
 
 
 def _tem_saida():
