@@ -23,12 +23,28 @@ O QUE NÃO FAZ
 Não decide sozinho quando a pasta tem mais de um PDF, e não baixa nada que
 não seja PDF. Pasta ambígua vira aviso pra decidir, nunca palpite.
 """
+import datetime
+import json
 import pathlib
 import re
 
 PASTA_SEGREDOS = pathlib.Path(__file__).parent / ".google"
 CAMINHO_CREDENCIAL = PASTA_SEGREDOS / "credenciais.json"
 CAMINHO_TOKEN = PASTA_SEGREDOS / "token.json"
+
+# Quantos dias o Google deixa o refresh token viver enquanto o app está
+# em "Testing" no Google Cloud. Publicar o app tira esse prazo, mas o
+# botão de publicar depende de campos do console que nem sempre liberam
+# (23/09/2026: ficou travado). Enquanto isso, o sistema avisa o prazo e
+# refaz o login num clique, em vez de morrer com erro no meio do
+# trabalho. Ver reautorizar() e estado_do_token().
+DIAS_DO_MODO_TESTE = 7
+
+# Nosso, não do Google: quando a autorização foi feita de verdade (o
+# login no navegador), pra saber quanto falta dos 7 dias. O arquivo do
+# token é reescrito a cada renovação de acesso, então a data do arquivo
+# não serve — ela é sempre "agora".
+CHAVE_AUTORIZADO_EM = "autorizado_em"
 
 # Só leitura. Lê a ficha do arquivo e baixa o conteúdo; não cria, não
 # apaga, não move nada no Drive. É o mínimo que o trabalho pede.
@@ -90,9 +106,96 @@ def autenticar(abrir_navegador=True):
             credenciais = _fluxo_oauth().run_local_server(port=0)
         else:
             raise RuntimeError("token ausente ou expirado e abrir_navegador=False")
-        PASTA_SEGREDOS.mkdir(parents=True, exist_ok=True)
-        CAMINHO_TOKEN.write_text(credenciais.to_json(), encoding="utf-8")
+        _gravar_token(credenciais)
     return credenciais
+
+
+def _gravar_token(credenciais, autorizado_em=None):
+    """
+    Grava o token guardando junto QUANDO a autorização foi feita.
+
+    Renovar o acesso reescreve o arquivo, então sem guardar essa data não
+    há como saber quanto falta dos 7 dias do modo de teste — a data do
+    arquivo diz sempre "agora". Numa renovação a data antiga é
+    preservada; só um login novo troca ela.
+    """
+    dados = json.loads(credenciais.to_json())
+    if autorizado_em is None and CAMINHO_TOKEN.is_file():
+        try:
+            antigo = json.loads(CAMINHO_TOKEN.read_text(encoding="utf-8"))
+            autorizado_em = antigo.get(CHAVE_AUTORIZADO_EM)
+        except (json.JSONDecodeError, OSError):
+            autorizado_em = None
+    if isinstance(autorizado_em, datetime.datetime):
+        autorizado_em = autorizado_em.replace(microsecond=0).isoformat()
+    if autorizado_em:
+        dados[CHAVE_AUTORIZADO_EM] = autorizado_em
+    PASTA_SEGREDOS.mkdir(parents=True, exist_ok=True)
+    CAMINHO_TOKEN.write_text(json.dumps(dados, ensure_ascii=False, indent=1), encoding="utf-8")
+    return CAMINHO_TOKEN
+
+
+def reautorizar(agora=None):
+    """
+    Refaz o login do Google do zero — é o que o botão da tela chama.
+
+    Guarda o token velho como '.vencido' em vez de apagar: se o login
+    novo for cancelado no meio, dá pra voltar. Devolve as credenciais.
+
+    Abre o navegador, então NÃO serve pra rodar sozinho numa tarefa
+    agendada — é ação de quem está na frente da tela.
+    """
+    if CAMINHO_TOKEN.is_file():
+        CAMINHO_TOKEN.replace(CAMINHO_TOKEN.with_suffix(".json.vencido"))
+    credenciais = _fluxo_oauth().run_local_server(port=0)
+    _gravar_token(credenciais, autorizado_em=agora or datetime.datetime.now())
+    return credenciais
+
+
+def estado_do_token(agora=None):
+    """
+    Como está a ligação com o Google, pra mostrar na tela.
+
+    Devolve {"situacao", "texto", "dias": int|None}, onde situacao é
+    "sem_credencial", "sem_token", "vencido", "vence_logo" ou "ok".
+
+    Não abre navegador e não levanta exceção: é consulta de painel.
+    """
+    agora = agora or datetime.datetime.now()
+    if not CAMINHO_CREDENCIAL.is_file():
+        return {"situacao": "sem_credencial", "dias": None,
+                "texto": "Falta a credencial do Google Cloud em .google/credenciais.json."}
+    if not CAMINHO_TOKEN.is_file():
+        return {"situacao": "sem_token", "dias": None,
+                "texto": "Nunca foi autorizado neste computador — clique em Reconectar."}
+    try:
+        autenticar(abrir_navegador=False)
+    except Exception:                                    # noqa: BLE001
+        return {"situacao": "vencido", "dias": 0,
+                "texto": "A autorização venceu. Clique em Reconectar — leva dez segundos."}
+
+    dias = dias_ate_vencer(agora)
+    if dias is None:
+        return {"situacao": "ok", "dias": None,
+                "texto": "Ligado ao Google. Não sei de quando é a autorização; "
+                         "no primeiro Reconectar o prazo passa a aparecer aqui."}
+    if dias <= 2:
+        return {"situacao": "vence_logo", "dias": dias,
+                "texto": "Ligado, mas a autorização vence em %d dia(s) — o Google derruba "
+                         "a cada %d enquanto o app estiver em Testing." % (dias, DIAS_DO_MODO_TESTE)}
+    return {"situacao": "ok", "dias": dias,
+            "texto": "Ligado ao Google. A autorização vale por mais %d dia(s)." % dias}
+
+
+def dias_ate_vencer(agora=None):
+    """Dias que faltam dos DIAS_DO_MODO_TESTE, ou None se não dá pra saber."""
+    try:
+        dados = json.loads(CAMINHO_TOKEN.read_text(encoding="utf-8"))
+        quando = datetime.datetime.fromisoformat(dados[CHAVE_AUTORIZADO_EM])
+    except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError):
+        return None
+    falta = (quando + datetime.timedelta(days=DIAS_DO_MODO_TESTE)) - (agora or datetime.datetime.now())
+    return max(0, falta.days)
 
 
 def servico(credenciais=None):

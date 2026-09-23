@@ -164,3 +164,133 @@ def test_credencial_ausente_da_instrucao_clara(tmp_path, monkeypatch):
         assert False, "devia ter levantado FileNotFoundError"
     except FileNotFoundError as e:
         assert "Google Cloud" in str(e)
+
+
+# ------------------------------------------- prazo da autorizacao (23/09/2026)
+# O app esta em "Testing" no Google Cloud e o Google derruba o refresh
+# token a cada 7 dias. Publicar tiraria o prazo, mas o botao do console
+# ficou travado -- entao o sistema avisa o prazo e refaz o login num
+# clique. Ver drive_artes.reautorizar / estado_do_token.
+
+import datetime
+import json
+
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _isolar_segredos(tmp_path, monkeypatch):
+    """
+    O .google/ de VERDADE mora ao lado do modulo. Um teste distraido
+    apagaria o token que o usuario usa pra trabalhar -- e refazer exige
+    ele na frente do navegador.
+    """
+    monkeypatch.setattr(da, "PASTA_SEGREDOS", tmp_path / ".google")
+    monkeypatch.setattr(da, "CAMINHO_CREDENCIAL", tmp_path / ".google" / "credenciais.json")
+    monkeypatch.setattr(da, "CAMINHO_TOKEN", tmp_path / ".google" / "token.json")
+
+
+class _CredencialFalsa:
+    def to_json(self):
+        return json.dumps({"token": "abc", "refresh_token": "xyz"})
+
+
+def _escrever_token(dados):
+    da.CAMINHO_TOKEN.parent.mkdir(parents=True, exist_ok=True)
+    da.CAMINHO_TOKEN.write_text(json.dumps(dados), encoding="utf-8")
+
+
+def test_login_novo_grava_a_data_da_autorizacao():
+    quando = datetime.datetime(2026, 9, 23, 19, 0, 0)
+
+    da._gravar_token(_CredencialFalsa(), autorizado_em=quando)
+
+    dados = json.loads(da.CAMINHO_TOKEN.read_text(encoding="utf-8"))
+    assert dados[da.CHAVE_AUTORIZADO_EM] == "2026-09-23T19:00:00"
+
+
+def test_renovar_o_acesso_preserva_a_data_do_login():
+    """
+    Sem isto o prazo nunca venceria na conta: o arquivo e reescrito a
+    cada renovacao, e a data viraria sempre 'agora'.
+    """
+    _escrever_token({"token": "velho", da.CHAVE_AUTORIZADO_EM: "2026-09-20T08:00:00"})
+
+    da._gravar_token(_CredencialFalsa())
+
+    dados = json.loads(da.CAMINHO_TOKEN.read_text(encoding="utf-8"))
+    assert dados[da.CHAVE_AUTORIZADO_EM] == "2026-09-20T08:00:00"
+    assert dados["token"] == "abc", "o token novo tem que entrar"
+
+
+def test_dias_ate_vencer_conta_os_sete_dias():
+    _escrever_token({da.CHAVE_AUTORIZADO_EM: "2026-09-20T08:00:00"})
+
+    assert da.dias_ate_vencer(datetime.datetime(2026, 9, 20, 9, 0)) == 6
+    assert da.dias_ate_vencer(datetime.datetime(2026, 9, 26, 9, 0)) == 0
+    assert da.dias_ate_vencer(datetime.datetime(2026, 9, 30, 9, 0)) == 0, "nunca negativo"
+
+
+def test_token_antigo_sem_a_data_nao_quebra():
+    """Token de antes desta mudanca: nao da pra saber, e tudo bem."""
+    _escrever_token({"token": "sem data"})
+
+    assert da.dias_ate_vencer(datetime.datetime(2026, 9, 23)) is None
+
+
+def test_estado_sem_credencial_explica_o_que_falta():
+    estado = da.estado_do_token()
+
+    assert estado["situacao"] == "sem_credencial"
+    assert "credenciais.json" in estado["texto"]
+
+
+def test_estado_sem_token_manda_reconectar():
+    da.CAMINHO_CREDENCIAL.parent.mkdir(parents=True, exist_ok=True)
+    da.CAMINHO_CREDENCIAL.write_text("{}", encoding="utf-8")
+
+    estado = da.estado_do_token()
+
+    assert estado["situacao"] == "sem_token"
+    assert "Reconectar" in estado["texto"]
+
+
+def test_estado_avisa_quando_esta_perto_de_vencer(monkeypatch):
+    da.CAMINHO_CREDENCIAL.parent.mkdir(parents=True, exist_ok=True)
+    da.CAMINHO_CREDENCIAL.write_text("{}", encoding="utf-8")
+    _escrever_token({da.CHAVE_AUTORIZADO_EM: "2026-09-20T08:00:00"})
+    monkeypatch.setattr(da, "autenticar", lambda abrir_navegador=True: object())
+
+    estado = da.estado_do_token(datetime.datetime(2026, 9, 25, 9, 0))
+
+    assert estado["situacao"] == "vence_logo"
+    assert estado["dias"] == 1
+
+
+def test_estado_vencido_quando_a_autenticacao_falha(monkeypatch):
+    da.CAMINHO_CREDENCIAL.parent.mkdir(parents=True, exist_ok=True)
+    da.CAMINHO_CREDENCIAL.write_text("{}", encoding="utf-8")
+    _escrever_token({"token": "qualquer"})
+
+    def _explode(abrir_navegador=True):
+        raise RuntimeError("token expirado")
+    monkeypatch.setattr(da, "autenticar", _explode)
+
+    estado = da.estado_do_token()
+
+    assert estado["situacao"] == "vencido"
+    assert "Reconectar" in estado["texto"]
+
+
+def test_reautorizar_guarda_o_token_velho_antes_de_trocar(monkeypatch):
+    """Se o login novo for cancelado no meio, o velho ainda esta la."""
+    _escrever_token({"token": "o velho"})
+    monkeypatch.setattr(da, "_fluxo_oauth",
+                        lambda: type("F", (), {"run_local_server": lambda s, port=0: _CredencialFalsa()})())
+
+    da.reautorizar(agora=datetime.datetime(2026, 9, 23, 20, 0))
+
+    guardado = da.CAMINHO_TOKEN.with_suffix(".json.vencido")
+    assert json.loads(guardado.read_text(encoding="utf-8"))["token"] == "o velho"
+    novo = json.loads(da.CAMINHO_TOKEN.read_text(encoding="utf-8"))
+    assert novo[da.CHAVE_AUTORIZADO_EM] == "2026-09-23T20:00:00"

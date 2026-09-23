@@ -24,7 +24,7 @@ import datetime
 import os
 import threading
 import tkinter as tk
-from tkinter import ttk
+from tkinter import messagebox, ttk
 
 import agentes
 from tema import cores
@@ -78,6 +78,7 @@ class JanelaAgentes(tk.Toplevel):
         self._montar_lista()
         for ag in agentes.AGENTES:
             self._montar_cartao(ag)
+        self._montar_cartao_google()
 
         self.bind("<Destroy>", self._ao_fechar)
         self._atualizar()
@@ -196,6 +197,69 @@ class JanelaAgentes(tk.Toplevel):
 
     # ------------------------------------------------------------- ciclo
 
+    def _montar_cartao_google(self):
+        """
+        A conta do Google não é um agente — não roda sozinha — mas é
+        infraestrutura que VENCE, e o painel é onde se olha o que está
+        vivo. Enquanto o app estiver em "Testing" no Google Cloud, o
+        Google derruba a autorização a cada 7 dias; o botão aqui refaz o
+        login em dez segundos, sem depender de ninguém.
+        """
+        cartao = tk.Frame(self.frame_lista, bg=cores.cartao,
+                          highlightbackground=cores.borda, highlightthickness=1)
+        cartao.grid(row=len(self._cartoes) + 1, column=0, sticky="ew", pady=(0, 10))
+        cartao.columnconfigure(1, weight=1)
+
+        self._simbolo_google = tk.Label(cartao, text="●", font=("Segoe UI", 16),
+                                        bg=cores.cartao, fg=cores.texto2)
+        self._simbolo_google.grid(row=0, column=0, rowspan=2, sticky="n", padx=(14, 8), pady=(10, 0))
+        tk.Label(cartao, text="Conta do Google", font=("Segoe UI", 11, "bold"), bg=cores.cartao,
+                 fg=cores.texto, anchor="w").grid(row=0, column=1, sticky="w", pady=(12, 0))
+        tk.Label(cartao, text="Usada pra ler o Drive na tela de receber artes.",
+                 font=("Segoe UI", 9), bg=cores.cartao, fg=cores.texto2, anchor="w",
+                 justify="left", wraplength=520).grid(row=1, column=1, sticky="w")
+
+        self.var_google = tk.StringVar(value="lendo...")
+        self.lbl_google = tk.Label(cartao, textvariable=self.var_google, font=("Segoe UI", 10),
+                                   bg=cores.cartao, fg=cores.texto, anchor="w", justify="left",
+                                   wraplength=560)
+        self.lbl_google.grid(row=2, column=1, columnspan=2, sticky="w", padx=(0, 14), pady=(6, 12))
+
+        self.btn_google = tk.Button(
+            cartao, text="🔑  Reconectar", bg=cores.acento, fg=cores.sobre_acento,
+            activebackground=cores.acento, activeforeground=cores.sobre_acento, relief="flat",
+            font=("Segoe UI", 9, "bold"), cursor="hand2", padx=10, pady=3,
+            command=self._reconectar_google)
+        self.btn_google.grid(row=0, column=2, rowspan=2, sticky="ne", padx=14, pady=(10, 0))
+
+    def _reconectar_google(self):
+        """Abre o navegador pra autorizar de novo. Trava o botão enquanto isso."""
+        import drive_artes
+
+        self.btn_google.configure(state="disabled", text="abrindo o navegador...")
+        self.var_google.set("Confirme a conta no navegador. Se aparecer “o Google não verificou "
+                            "este app”, clique em Avançado e siga — o app é nosso.")
+        self.update_idletasks()
+        try:
+            drive_artes.reautorizar()
+        except Exception as e:                           # noqa: BLE001
+            messagebox.showerror("Reconectar", "Não consegui autorizar:\n\n%s" % e, parent=self)
+        finally:
+            self.btn_google.configure(state="normal", text="🔑  Reconectar")
+        self._atualizar_google()
+
+    def _atualizar_google(self):
+        import drive_artes
+
+        try:
+            estado = drive_artes.estado_do_token()
+        except Exception as e:                           # noqa: BLE001
+            estado = {"situacao": "vencido", "texto": "Não consegui ler: %s" % e}
+        cor = {"ok": cores.ok, "vence_logo": cores.aviso}.get(estado["situacao"], cores.erro)
+        self._simbolo_google.configure(fg=cor)
+        self.lbl_google.configure(fg=cores.texto if estado["situacao"] == "ok" else cor)
+        self.var_google.set(estado["texto"])
+
     def _atualizar(self):
         agora = datetime.datetime.now()
         ler_acao = (self._ultima_leitura_acao is None
@@ -219,6 +283,7 @@ class JanelaAgentes(tk.Toplevel):
 
         if ler_acao:
             self._ultima_leitura_acao = agora
+            self._atualizar_google()
         self.var_rodape.set("Atualiza sozinho a cada 3 s  ·  última leitura %s" % agora.strftime("%H:%M:%S"))
         self._job = self.after(_INTERVALO_ESTADO_MS, self._atualizar)
 
