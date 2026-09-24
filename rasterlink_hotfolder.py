@@ -107,6 +107,13 @@ POSTO_PADRAO = POSTO_RIP
 # que isso. É opcional: uma máquina configurada só com o caminho da
 # hot folder (string) continua funcionando, só não ganha o giro
 # automático.
+#
+# 'mesa_util_m' é (x, y) e substitui a largura em máquina PLANA, que
+# imprime em chapa: ali os dois lados são teto, e girar serve só pra
+# encaixar — nunca pra economizar bobina, que não existe. Declarar uma
+# plana com 'largura_util_m' deixaria passar arte comprida demais pra
+# mesa; por isso 'mesa_util_m' ganha quando as duas aparecem. Quem
+# aplica a diferença é LimiteDaMaquina, e não um 'if' espalhado.
 MAQUINAS = {
     "UJV 100 UNY CV": {
         "hot_folder": r"C:\MijCtrl\Hot\UJV 100 UNY CV",
@@ -698,6 +705,116 @@ def _config_maquina(valor):
     return valor, None
 
 
+class LimiteDaMaquina:
+    """
+    O que a máquina consegue imprimir — e, por consequência, quando a
+    arte tem que girar. Existem duas naturezas aqui, e tratar uma como
+    a outra produz peça errada:
+
+    ROLO (UJV, SWJ, DOCAN R5200) — uma medida só é teto, a largura
+    útil; o comprimento é a bobina, que anda. Por isso girar tem um
+    SEGUNDO motivo além de caber: ECONOMIA. Deitar uma arte alta e
+    estreita faz o lado maior atravessar a bobina e sobra material
+    (regra do usuário, 2026-09-05: "reaproveitar o máximo de material").
+
+    MESA (DOCAN H2525, plana) — as duas medidas são teto, porque a
+    chapa é finita nos dois sentidos. Não existe bobina pra economizar:
+    ou cabe, ou não cabe. Girar aqui serve só pra ENCAIXAR o que não
+    entrou na orientação original. Girar por "economia" numa plana não
+    economizaria nada e ainda brigaria com quem posicionou a chapa na
+    mesa — por isso a mesa nunca gira por esse motivo.
+
+    A regra mora aqui, num lugar só, porque ela é respondida em três
+    momentos diferentes: na tela antes de mandar (prever_giro), no
+    vigia na hora de copiar (_montar_para_hot_folder) e no relatório
+    depois (nao_cabe). Já esteve escrita três vezes.
+    """
+
+    def __init__(self, largura_util_m=None, mesa_util_m=None):
+        self.largura_util_m = largura_util_m
+        self.mesa_util_m = tuple(mesa_util_m) if mesa_util_m else None
+
+    @property
+    def plana(self):
+        return self.mesa_util_m is not None
+
+    def _tetos(self):
+        """(teto do eixo X, teto do eixo Y) já com a tolerância. Y é None no rolo."""
+        if self.plana:
+            x, y = self.mesa_util_m
+            return x + _TOLERANCIA_LARGURA_M, y + _TOLERANCIA_LARGURA_M
+        return self.largura_util_m + _TOLERANCIA_LARGURA_M, None
+
+    def cabe_em_pe(self, largura_m, altura_m):
+        x, y = self._tetos()
+        return largura_m <= x and (y is None or altura_m <= y)
+
+    def cabe_deitado(self, largura_m, altura_m):
+        x, y = self._tetos()
+        return altura_m <= x and (y is None or largura_m <= y)
+
+    def cabe(self, largura_m, altura_m):
+        return self.cabe_em_pe(largura_m, altura_m) or self.cabe_deitado(largura_m, altura_m)
+
+    def decidir_giro(self, largura_m, altura_m):
+        """
+        None quando não gira. Senão {"motivo", "economia_m"}, com motivo
+        em 'nao_cabe' (girou porque não entrava em pé) ou 'economia' (já
+        cabia, gira pra gastar menos bobina — só existe em rolo).
+        """
+        em_pe = self.cabe_em_pe(largura_m, altura_m)
+        deitado = self.cabe_deitado(largura_m, altura_m)
+
+        if em_pe and self.plana:
+            return None  # numa mesa, o que já cabe fica como está
+        if not deitado:
+            return None  # girar não resolveria: ou já cabe em pé, ou não cabe de jeito nenhum
+        if not em_pe:
+            return {"motivo": "nao_cabe", "economia_m": max(0.0, altura_m - largura_m)}
+        if largura_m >= altura_m:
+            return None
+        return {"motivo": "economia", "economia_m": altura_m - largura_m}
+
+    def descricao(self):
+        if self.plana:
+            x, y = self.mesa_util_m
+            return f"mesa de {x:.2f} × {y:.2f} m".replace(".", ",")
+        return f"{self.largura_util_m:.2f} m úteis".replace(".", ",")
+
+    def porque_nao_cabe(self):
+        """A frase que explica a recusa — o rolo mede um lado, a mesa mede os dois."""
+        if self.plana:
+            return f"não entra na {self.descricao()} nem girada"
+        return f"menor lado maior que a largura útil ({self.descricao()})"
+
+
+def limite_da_maquina(valor):
+    """
+    O LimiteDaMaquina de uma entrada de MAQUINAS, ou None quando a
+    máquina não declara medida nenhuma — nesse caso nada gira sozinho e
+    nada é recusado, que é o comportamento de sempre.
+
+    'mesa_util_m' ganha de 'largura_util_m' quando as duas aparecem: uma
+    plana com largura solta na configuração seria lida como rolo e
+    passaria arte comprida demais pra mesa.
+    """
+    if not isinstance(valor, dict):
+        return None
+    mesa = valor.get("mesa_util_m")
+    if mesa:
+        return LimiteDaMaquina(mesa_util_m=(float(mesa[0]), float(mesa[1])))
+    largura = valor.get("largura_util_m")
+    if largura:
+        return LimiteDaMaquina(largura_util_m=float(largura))
+    return None
+
+
+def limite_de(nome_maquina, maquinas=None):
+    """O limite da máquina pelo nome — o mesmo que a fila usa como subpasta."""
+    maquinas = MAQUINAS if maquinas is None else maquinas
+    return limite_da_maquina(maquinas.get(nome_maquina))
+
+
 def _importar_pymupdf():
     """
     Devolve o módulo pymupdf, ou None se não estiver instalado. A
@@ -908,7 +1025,7 @@ def _limpar_montagens_abandonadas(hot_folder, horas=6, logger=print, agora=None)
     return apagados
 
 
-def _copiar_para_hot_folder(arquivo, destino, largura_util_m, logger):
+def _copiar_para_hot_folder(arquivo, destino, limite, logger):
     """
     Põe 'arquivo' na hot folder do RIP — montando fora dela e entrando
     com um rename atômico, pra o RIP nunca ver arquivo pela metade (ver
@@ -917,10 +1034,10 @@ def _copiar_para_hot_folder(arquivo, destino, largura_util_m, logger):
     """
     montagem = _caminho_de_montagem(destino)
     if montagem is None:
-        return _montar_para_hot_folder(arquivo, destino, largura_util_m, logger)
+        return _montar_para_hot_folder(arquivo, destino, limite, logger)
 
     try:
-        girado, pagina = _montar_para_hot_folder(arquivo, montagem, largura_util_m, logger)
+        girado, pagina = _montar_para_hot_folder(arquivo, montagem, limite, logger)
         os.replace(montagem, destino)
     except BaseException:
         # inclui a morte por limite de tempo da tarefa: o resto não pode
@@ -933,7 +1050,7 @@ def _copiar_para_hot_folder(arquivo, destino, largura_util_m, logger):
     return girado, pagina
 
 
-def _montar_para_hot_folder(arquivo, destino, largura_util_m, logger):
+def _montar_para_hot_folder(arquivo, destino, limite, logger):
     """
     Escreve a cópia em 'destino', girando 90° quando for um PDF mais
     largo que a máquina que caberia deitado. O giro é sempre só na
@@ -948,7 +1065,7 @@ def _montar_para_hot_folder(arquivo, destino, largura_util_m, logger):
     (escolha do usuário, 2026-09-05: prefere decidir dentro do
     RasterLink a ter arquivo represado sem ele ver).
     """
-    if not largura_util_m or arquivo.suffix.lower() != ".pdf":
+    if not limite or arquivo.suffix.lower() != ".pdf":
         shutil.copy2(arquivo, destino)
         return False, None
 
@@ -968,32 +1085,27 @@ def _montar_para_hot_folder(arquivo, destino, largura_util_m, logger):
         return False, None
 
     largura_m, altura_m, _paginas = medida
-    # Tolerância de 1mm: uma arte fechada exatamente na largura da
-    # bobina vira 3.2000000038m depois da conversão de pontos pra
-    # metros, e sem folga ela seria recusada por erro de arredondamento.
-    limite = largura_util_m + _TOLERANCIA_LARGURA_M
-    cabe_em_pe = largura_m <= limite
-    cabe_deitado = altura_m <= limite
 
-    if not cabe_em_pe and not cabe_deitado:
+    # Quem decide é o LimiteDaMaquina, com a tolerância de 1mm dentro
+    # dele: uma arte fechada exatamente na largura da bobina vira
+    # 3.2000000038m depois da conversão de pontos pra metros, e sem
+    # folga seria recusada por erro de arredondamento. É a MESMA regra
+    # que a tela usa antes de mandar — o que muda é a fonte da medida.
+    if not limite.cabe(largura_m, altura_m):
         logger(
             "warn",
             f"'{arquivo.name}' tem {largura_m:.2f}x{altura_m:.2f}m e não cabe nem girado na "
-            f"máquina ({largura_util_m:.2f}m úteis) — enviado assim mesmo, confira no RasterLink.",
+            f"máquina ({limite.descricao()}) — enviado assim mesmo, confira no RIP.",
         )
         shutil.copy2(arquivo, destino)
         return False, medida
 
-    # O que gasta bobina é o lado que corre no comprimento: em pé
-    # gasta 'altura_m', deitado gasta 'largura_m'. Então deitar só
-    # compensa quando a arte é mais alta do que larga — aí o lado
-    # maior atravessa a bobina e sobra material (pedido do usuário,
-    # 2026-09-05: "a ideia é reaproveitar o máximo de material").
-    if not cabe_deitado or (cabe_em_pe and largura_m >= altura_m):
+    giro = limite.decidir_giro(largura_m, altura_m)
+    if giro is None:
         shutil.copy2(arquivo, destino)
         return False, medida
 
-    economia_m = altura_m - largura_m
+    economia_m = giro["economia_m"]
 
     try:
         doc = pymupdf.open(str(arquivo))
@@ -1008,17 +1120,20 @@ def _montar_para_hot_folder(arquivo, destino, largura_util_m, logger):
         shutil.copy2(arquivo, destino)
         return False, medida
 
-    if cabe_em_pe:
+    if giro["motivo"] == "economia":
         motivo = f"economiza {economia_m:.2f}m de bobina ({altura_m:.2f}m em pé contra {largura_m:.2f}m deitado)"
+    elif limite.plana:
+        motivo = f"em pé ({largura_m:.2f}x{altura_m:.2f}m) não entrava na {limite.descricao()}"
     else:
-        motivo = f"tinha {largura_m:.2f}m de largura, mais que os {largura_util_m:.2f}m úteis da máquina"
+        motivo = f"tinha {largura_m:.2f}m de largura, mais que os {limite.descricao()} da máquina"
     logger("ok", f"'{arquivo.name}' girado 90° automaticamente: {motivo}.")
     return True, medida
 
 
 def _vigiar_uma_maquina(pasta_maquina, config_maquina, logger, pasta_relatorios=None, dias_retencao=None):
     """Um ciclo, só pra UMA máquina/hot folder — ver vigiar_fila_uma_vez."""
-    hot_folder_str, largura_util_m = _config_maquina(config_maquina)
+    hot_folder_str, _ = _config_maquina(config_maquina)
+    limite = limite_da_maquina(config_maquina)
     hot_folder = pathlib.Path(hot_folder_str)
     if not hot_folder.is_dir():
         raise FileNotFoundError(f"Hot folder do RasterLink7 não encontrada: {hot_folder}")
@@ -1050,7 +1165,7 @@ def _vigiar_uma_maquina(pasta_maquina, config_maquina, logger, pasta_relatorios=
         try:
             _processar_arquivo_da_fila(
                 arquivo, hot_folder, pasta_enviados, pasta_maquina.name,
-                largura_util_m, logger, pasta_relatorios,
+                limite, logger, pasta_relatorios,
             )
         except Exception as e:
             resultado["falharam"].append(arquivo.name)
@@ -1065,10 +1180,10 @@ def _vigiar_uma_maquina(pasta_maquina, config_maquina, logger, pasta_relatorios=
 
 
 def _processar_arquivo_da_fila(arquivo, hot_folder, pasta_enviados, nome_maquina,
-                               largura_util_m, logger, pasta_relatorios):
+                               limite, logger, pasta_relatorios):
     """Um arquivo: copia pra hot folder, registra e tira da fila."""
     destino_hot_folder = hot_folder / arquivo.name
-    girado, pagina = _copiar_para_hot_folder(arquivo, destino_hot_folder, largura_util_m, logger)
+    girado, pagina = _copiar_para_hot_folder(arquivo, destino_hot_folder, limite, logger)
 
     # registra ANTES de mover: depois do rename o caminho muda, e o
     # que interessa guardar é o nome com que o arquivo entrou na fila

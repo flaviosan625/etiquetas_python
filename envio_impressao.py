@@ -42,7 +42,7 @@ import shutil
 from dimensoes import extrair_dimensoes, extrair_quantidade, identificar_categoria, identificar_categoria_extra
 from producao import NOME_PASTA_PRODUCAO, NOME_SUBPASTA_PRONTOS, PASTA_CORTE, _pasta_de_trabalho_para
 from rasterlink_hotfolder import (
-    EXTENSOES_ACEITAS, MAQUINAS, PASTA_FILA_ONEDRIVE, _config_maquina, enviar_para_fila,
+    EXTENSOES_ACEITAS, MAQUINAS, PASTA_FILA_ONEDRIVE, enviar_para_fila, limite_de,
     ler_sinal_de_vida,
 )
 
@@ -63,10 +63,9 @@ MAQUINA_ADESIVO = "UJV 100 UNY CV"
 # QUAL das duas máquinas de lona, que é a única coisa que as distingue.
 MAQUINA_DOCAN = "DOCAN"
 
-# Mesma folga de 1mm do vigia: arte fechada exatamente na largura da
-# bobina vira 3.2000000038m depois da conversão e seria recusada por um
-# décimo de milímetro que não existe no material.
-_FOLGA_LARGURA_M = 0.001
+# A folga de 1mm (arte fechada exatamente na largura da bobina vira
+# 3.2000000038m depois da conversão de pontos pra metros) mora dentro do
+# LimiteDaMaquina, junto com a regra de girar — aqui não se repete mais.
 
 # Categoria que manda pra UJV. Não é só a categoria "ADESIVO" pura: o
 # config.json já mapeia VINIL como sinônimo de ADESIVO e ADESIVADO como
@@ -134,28 +133,20 @@ def prever_giro(dimensao, nome_maquina, maquinas=None):
     muda é a fonte da medida.
 
     Devolve None quando não dá pra prever (sem medida no nome, máquina
-    sem largura útil configurada) ou quando não gira. Senão devolve
+    sem medida útil configurada) ou quando não gira. Senão devolve
     {"motivo": "economia"|"nao_cabe", "economia_m": float}.
+
+    Quem responde é o LimiteDaMaquina, e é por isso que máquina de ROLO
+    e máquina PLANA respondem diferente sem um `if` aqui: na plana o
+    que já cabe na mesa nunca gira, porque não existe bobina pra
+    economizar.
     """
     if not dimensao:
         return None
-    largura_util_m = _largura_util(nome_maquina, maquinas)
-    if not largura_util_m:
+    limite = limite_de(nome_maquina, maquinas)
+    if not limite:
         return None
-
-    largura_m = dimensao["largura_m"]
-    altura_m = dimensao["altura_m"]
-    limite = largura_util_m + _FOLGA_LARGURA_M
-    cabe_em_pe = largura_m <= limite
-    cabe_deitado = altura_m <= limite
-
-    if not cabe_deitado:
-        return None
-    if not cabe_em_pe:
-        return {"motivo": "nao_cabe", "economia_m": max(0.0, altura_m - largura_m)}
-    if largura_m >= altura_m:
-        return None
-    return {"motivo": "economia", "economia_m": altura_m - largura_m}
+    return limite.decidir_giro(dimensao["largura_m"], dimensao["altura_m"])
 
 
 def cabe_na_maquina(dimensao, nome_maquina, maquinas=None):
@@ -167,16 +158,10 @@ def cabe_na_maquina(dimensao, nome_maquina, maquinas=None):
     """
     if not dimensao:
         return True
-    largura_util_m = _largura_util(nome_maquina, maquinas)
-    if not largura_util_m:
+    limite = limite_de(nome_maquina, maquinas)
+    if not limite:
         return True
-    limite = largura_util_m + _FOLGA_LARGURA_M
-    return dimensao["largura_m"] <= limite or dimensao["altura_m"] <= limite
-
-
-def _largura_util(nome_maquina, maquinas=None):
-    maquinas = MAQUINAS if maquinas is None else maquinas
-    return _config_maquina(maquinas.get(nome_maquina))[1]
+    return limite.cabe(dimensao["largura_m"], dimensao["altura_m"])
 
 
 # Já existiu aqui um onde_cabe(), que no aviso de "não cabe" dizia em

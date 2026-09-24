@@ -78,6 +78,31 @@ Consequência prática: **editar `rasterlink_hotfolder.py` muda a DOCAN na hora*
 do repositório), mas **não muda a UJV nem a SWJ** — aquelas só mudam quando o arquivo é levado pro
 PC do RIP. Ver `maquina_rip/atualizar.bat`.
 
+### Máquina de rolo e máquina plana decidem o giro por regras diferentes
+
+`LimiteDaMaquina` (em `rasterlink_hotfolder.py`) é a **fonte única** de "cabe?" e "gira?" — a
+mesma resposta serve a tela antes de mandar (`prever_giro`), o vigia na hora de copiar
+(`_montar_para_hot_folder`) e o relatório depois (`nao_cabe`). A regra já esteve escrita nesses
+três lugares, cada um com seu arredondamento.
+
+- **Rolo** (`largura_util_m`: UJV, SWJ, DOCAN R5200) — uma medida é teto; o comprimento é a
+  bobina, que anda. Por isso girar tem um segundo motivo além de caber: **economia**, deitar a
+  arte alta e estreita pra sobrar material.
+- **Mesa** (`mesa_util_m`: DOCAN H2525, plana) — os **dois** lados são teto, porque a chapa é
+  finita nos dois sentidos. Girar serve só pra **encaixar** o que não entrou em pé; o que já
+  cabe nunca gira, porque não há bobina pra economizar e girar brigaria com quem posicionou a
+  chapa. Uma plana declarada com `largura_util_m` deixaria passar arte comprida demais pra mesa
+  — daí `mesa_util_m` ganhar quando as duas aparecem.
+
+O caso que separa as duas: 2,00 × 4,00 m passa deitado num rolo de 3,20 e imprime; numa mesa de
+2,50 os 4,00 m não têm pra onde ir.
+
+**A hot folder do SAi nunca é escrita de cabeça** — sai do `PMSetups.ini` por `sai_setups.py`,
+porque o SAi corta o nome da pasta em 12 letras (`XLF_HS_NET_EPS3200UV_LM` → `XLF_HS_NET_E`).
+Caminho montado pelo nome do setup erra calado: o vigia diz "enviado" e a máquina nunca recebe.
+`sai_setups.conferir_maquinas` compara o cadastro com o `.ini` e tem teste rodando contra o
+arquivo real desta máquina.
+
 ### O registro guarda fato bruto, não interpretação
 
 `registrar_envio` grava uma linha JSON por arquivo entregue em

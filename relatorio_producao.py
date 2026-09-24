@@ -38,7 +38,7 @@ import miniaturas
 from dimensoes import extrair_dimensoes, extrair_quantidade, identificar_categoria, medir_conteudo_pagina
 from rasterlink_hotfolder import (
     MAQUINAS, NOME_SUBPASTA_ENVIADOS, NOME_SUBPASTA_REGISTRO, PASTA_FILA_ONEDRIVE,
-    PASTA_RELATORIOS, _config_maquina,
+    PASTA_RELATORIOS, limite_da_maquina,
 )
 
 LARGURA_PAGINA = 595.27  # A4
@@ -289,11 +289,16 @@ def _medida_utilizavel(dimensao):
     return bool(dimensao) and min(dimensao["largura_m"], dimensao["altura_m"]) >= _LADO_MINIMO_M
 
 
-def _largura_util(nome_maquina, maquinas=None):
+def _limite_da_maquina(nome_maquina, maquinas=None):
+    """
+    O que a máquina imprime — largura útil de bobina ou mesa de plana.
+    É o mesmo objeto que a tela e o vigia usam, pra que o relatório não
+    tenha uma segunda opinião sobre o que coube na máquina.
+    """
     maquinas = MAQUINAS if maquinas is None else maquinas
     if nome_maquina not in maquinas:
         return None
-    return _config_maquina(maquinas[nome_maquina])[1]
+    return limite_da_maquina(maquinas[nome_maquina])
 
 
 def interpretar(registros, config=None, maquinas=None, pasta_fila=None):
@@ -344,11 +349,14 @@ def interpretar(registros, config=None, maquinas=None, pasta_fila=None):
             medida = arte or _medida_do_registro(registro)
             dimensao = medida
             area_m2 = medida["area_m2"] if medida else None
-        largura_util = _largura_util(registro["maquina"], maquinas)
+        limite = _limite_da_maquina(registro["maquina"], maquinas)
+        largura_util = limite.largura_util_m if limite else None
         nao_cabe = False
-        if dimensao and largura_util:
-            menor_lado = min(dimensao["largura_m"], dimensao["altura_m"])
-            nao_cabe = menor_lado > largura_util + 0.001
+        nao_cabe_porque = None
+        if dimensao and limite:
+            nao_cabe = not limite.cabe(dimensao["largura_m"], dimensao["altura_m"])
+            if nao_cabe:
+                nao_cabe_porque = limite.porque_nao_cabe()
 
         por_maquina.setdefault(registro["maquina"], []).append({
             "quando": registro["_quando"],
@@ -365,6 +373,7 @@ def interpretar(registros, config=None, maquinas=None, pasta_fila=None):
             "recuperado": registro.get("recuperado"),
             "repeticao": repeticao,
             "nao_cabe": nao_cabe,
+            "nao_cabe_porque": nao_cabe_porque,
             "largura_util": largura_util,
         })
     return por_maquina
@@ -618,8 +627,8 @@ def gerar_pdf(data, pasta_relatorios=None, config=None, maquinas=None, caminho_s
             if linha["nao_cabe"]:
                 avisos.append((
                     _COR_AVISO,
-                    f"Não cabe nesta máquina: menor lado maior que {_num(linha['largura_util'])} m "
-                    f"de largura útil. Conferir se o destino certo não era outra máquina.",
+                    f"Não cabe nesta máquina: {linha['nao_cabe_porque']}. "
+                    f"Conferir se o destino certo não era outra máquina.",
                 ))
             if linha["girado"]:
                 avisos.append((_COR_SUAVE, "Girado 90° automaticamente para aproveitar melhor a bobina."))
