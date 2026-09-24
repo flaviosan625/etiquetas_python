@@ -102,8 +102,22 @@ onde o `.prt` nasce é a **porta** do setup no Production Manager (porta `FILE:`
 Em 23/09/2026 a pasta velha (`Desktop\Ripados`) foi apagada por estar vazia, dez minutos antes de
 dois testes: os dois morreram com **"Não foi possível abrir a porta"** e 3 GB de dados ripados
 ficaram presos nos temporários do SAi. A porta não avisa que perdeu o destino — ela só não abre.
-Hoje `Desktop\Ripados` é uma **junção** (`mklink /J`) apontando pro `D:\RIPADOS`, então o caminho
-antigo continua válido sem mexer no setup; não apague nenhuma das duas pontas.
+**Onde a porta aponta** está enterrado em UTF-16 dentro do binário `Jobs and Settings\SETTINGS.PRF`
+(em 23/09/2026: `C:\Users\flavi\Desktop\Ripados`) — não está no registro, nem no `PMConfig.xml`,
+nem no `PMSetups.ini`, e não se edita por fora, porque o Production Manager reescreve o arquivo ao
+fechar. Hoje `Desktop\Ripados` é uma **junção** (`mklink /J`) apontando pra `D:\RIPADOS\DOCAN
+R5200`, então o caminho velho grava direto na pasta certa sem tocar no setup; não apague nenhuma
+das duas pontas. Junção é um destino só, então **a segunda máquina não tem esse truque**: a porta
+dela se configura na tela, apontando pra pasta dela.
+
+**Cada máquina grava na SUA pasta** (`D:\RIPADOS\<nome da máquina>`, o mesmo nome da fila).
+Duas na mesma pasta misturariam os `.prt`, e um ripado de plana mandado pra máquina de rolo é
+chapa perdida. `ripados_para_nuvem.garantir_pastas()` cria as duas, porque a porta do SAi não cria
+pasta — destino faltando mata o trabalho **depois** de ripado.
+
+**O SAi cospe `.prt` E `.prn`.** O teste de 07/09 saiu `.prt`; o de 23/09, na mesma máquina, saiu
+`.prn` — 9,4 GB que `listar()` ignorava por procurar só uma extensão. Quem manda na extensão é o
+nome de saída da porta, então as duas contam.
 
 **O ripado mora no D:, e a entrega atravessa disco.** Um `.prt` acompanha a ÁREA impressa, não o
 PDF — já medimos 13,8 GB saindo de um PDF de 582 KB. Desde 23/09/2026 `ripados_para_nuvem.

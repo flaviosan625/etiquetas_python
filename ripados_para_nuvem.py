@@ -67,10 +67,19 @@ import caminhos
 # deixando 3 GB de dados ripados parados nos temporários do SAi. A porta
 # não avisa que perdeu o destino: ela só não abre.
 #
-# Conserto que não depende de reconfigurar o SAi: `Desktop\Ripados` hoje
-# é uma JUNÇÃO (mklink /J) apontando pra cá. Quem grava lá grava aqui.
-# Se um dia a porta do setup for apontada direto pro D:, a junção pode
-# sair — mas enquanto existir, não apague nenhuma das duas.
+# ONDE A PORTA APONTA, de verdade: o caminho está enterrado em UTF-16
+# dentro do binário `Jobs and Settings\SETTINGS.PRF`, e em 23/09/2026 era
+# `C:\Users\flavi\Desktop\Ripados`. Não está no registro, nem no
+# PMConfig.xml, nem no PMSetups.ini — procurei nos quatro. E não se
+# edita por fora: o formato é desconhecido e o Production Manager
+# reescreve o arquivo ao fechar.
+#
+# Conserto que não depende de reconfigurar o SAi: `Desktop\Ripados` é uma
+# JUNÇÃO (mklink /J) apontando pra pasta da R5200 aqui dentro. Quem grava
+# no caminho velho grava direto na pasta certa, sem tocar no setup.
+# A H2525 não tem como usar o mesmo truque — junção é um destino só —,
+# então a porta DELA se configura na tela, apontando pra pasta dela.
+# Não apague nenhuma das duas pontas da junção.
 PASTA_RIPADOS = pathlib.Path(r"D:\RIPADOS")
 
 # A pasta sincronizada que a máquina do outro lado vigia. Fica ao LADO
