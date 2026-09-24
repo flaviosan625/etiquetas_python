@@ -56,6 +56,15 @@ import caminhos
 # o PDF — já medimos um de 13,8 GB vindo de um PDF de 582 KB. O C: é o
 # disco do sistema e tem 183 GB livres; o D: tem 462. Encher o disco do
 # Windows trava a máquina inteira, não só o RIP.
+#
+# ESTE É O LADO QUE LÊ. Mudar esta constante NÃO faz o SAi gravar aqui —
+# quem decide onde o .prt nasce é a PORTA do setup no Production
+# Manager (porta FILE:), configurada na tela dele. Mudar só aqui e
+# achar que acabou custou dois testes em 23/09/2026: o RIP terminou com
+# sucesso (o RIPLOG confirma), 3 GB de dados ripados ficaram parados nos
+# temporários do SAi e nenhum .prt apareceu nesta pasta. Os dois lados
+# têm que apontar pro mesmo lugar, e o de lá não se configura por
+# arquivo.
 PASTA_RIPADOS = pathlib.Path(r"D:\RIPADOS")
 
 # A pasta sincronizada que a máquina do outro lado vigia. Fica ao LADO
