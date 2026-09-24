@@ -97,6 +97,14 @@ três lugares, cada um com seu arredondamento.
 O caso que separa as duas: 2,00 × 4,00 m passa deitado num rolo de 3,20 e imprime; numa mesa de
 2,50 os 4,00 m não têm pra onde ir.
 
+**A saída do SAi não se configura por arquivo, e apagar a pasta dela derruba o RIP.** Quem decide
+onde o `.prt` nasce é a **porta** do setup no Production Manager (porta `FILE:`), ajustada na tela.
+Em 23/09/2026 a pasta velha (`Desktop\Ripados`) foi apagada por estar vazia, dez minutos antes de
+dois testes: os dois morreram com **"Não foi possível abrir a porta"** e 3 GB de dados ripados
+ficaram presos nos temporários do SAi. A porta não avisa que perdeu o destino — ela só não abre.
+Hoje `Desktop\Ripados` é uma **junção** (`mklink /J`) apontando pro `D:\RIPADOS`, então o caminho
+antigo continua válido sem mexer no setup; não apague nenhuma das duas pontas.
+
 **O ripado mora no D:, e a entrega atravessa disco.** Um `.prt` acompanha a ÁREA impressa, não o
 PDF — já medimos 13,8 GB saindo de um PDF de 582 KB. Desde 23/09/2026 `ripados_para_nuvem.
 PASTA_RIPADOS` é `D:\RIPADOS` (462 GB livres contra 183 do C:, e encher o disco do Windows trava a

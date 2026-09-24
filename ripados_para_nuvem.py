@@ -57,14 +57,20 @@ import caminhos
 # disco do sistema e tem 183 GB livres; o D: tem 462. Encher o disco do
 # Windows trava a máquina inteira, não só o RIP.
 #
-# ESTE É O LADO QUE LÊ. Mudar esta constante NÃO faz o SAi gravar aqui —
-# quem decide onde o .prt nasce é a PORTA do setup no Production
-# Manager (porta FILE:), configurada na tela dele. Mudar só aqui e
-# achar que acabou custou dois testes em 23/09/2026: o RIP terminou com
-# sucesso (o RIPLOG confirma), 3 GB de dados ripados ficaram parados nos
-# temporários do SAi e nenhum .prt apareceu nesta pasta. Os dois lados
-# têm que apontar pro mesmo lugar, e o de lá não se configura por
-# arquivo.
+# ESTE É O LADO QUE LÊ. Mudar esta constante NÃO faz o SAi gravar aqui:
+# quem decide onde o .prt nasce é a PORTA do setup no Production Manager
+# (porta FILE:), que só se configura na tela dele.
+#
+# E APAGAR A PASTA ANTIGA DERRUBA O RIP. Em 23/09/2026 a pasta velha
+# (`Desktop\Ripados`) foi removida por estar vazia, dez minutos antes de
+# dois testes — e os dois falharam com "Não foi possível abrir a porta",
+# deixando 3 GB de dados ripados parados nos temporários do SAi. A porta
+# não avisa que perdeu o destino: ela só não abre.
+#
+# Conserto que não depende de reconfigurar o SAi: `Desktop\Ripados` hoje
+# é uma JUNÇÃO (mklink /J) apontando pra cá. Quem grava lá grava aqui.
+# Se um dia a porta do setup for apontada direto pro D:, a junção pode
+# sair — mas enquanto existir, não apague nenhuma das duas.
 PASTA_RIPADOS = pathlib.Path(r"D:\RIPADOS")
 
 # A pasta sincronizada que a máquina do outro lado vigia. Fica ao LADO
