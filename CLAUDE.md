@@ -97,6 +97,13 @@ três lugares, cada um com seu arredondamento.
 O caso que separa as duas: 2,00 × 4,00 m passa deitado num rolo de 3,20 e imprime; numa mesa de
 2,50 os 4,00 m não têm pra onde ir.
 
+**Nas DOCAN o sistema só entrega** (regra do usuário, 24/09/2026: *"não barre nenhuma arte... antes
+de ripar devo colocar no tamanho que preciso, então você mexer é desnecessário, é só subir para o
+programa de RIP, eu resolvo o restante lá dentro"*). `"girar": False` no cadastro: a arte chega ao
+SAi byte a byte como saiu da fila; a medida segue valendo pro aviso de "não cabe" e pro registro.
+O que motivou: uma lona em escala 1:10 (página 0,70 × 0,32 de uma peça de 7 × 3,20) girada pela
+medida da página — que numa arte em escala não quer dizer nada. As Mimaki seguem girando.
+
 **A saída do SAi não se configura por arquivo, e apagar a pasta dela derruba o RIP.** Quem decide
 onde o `.prt` nasce é a **porta** do setup no Production Manager (porta `FILE:`), ajustada na tela.
 Em 23/09/2026 a pasta velha (`Desktop\Ripados`) foi apagada por estar vazia, dez minutos antes de

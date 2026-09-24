@@ -158,6 +158,15 @@ MAQUINAS = {
         # máquina ("Nome do dispositivo"), e é por ele que separar_ripados
         # sabe de quem é cada ripado
         "setup_sai": "Docan",
+        # NAS DOCAN O SISTEMA SÓ ENTREGA (24/09/2026): "preciso que não barre
+        # nenhuma arte... antes de ripar devo colocar no tamanho que preciso,
+        # então você mexer é desnecessário, é só subir para o programa de RIP,
+        # eu resolvo o restante lá dentro". A arte chega ao SAi byte a byte
+        # como saiu da fila: sem giro automático. A medida continua servindo
+        # pro aviso de "não cabe" e pro registro. Motivo concreto: lona em
+        # escala 1:10 (página 0,70 x 0,32 de uma peça de 7 x 3,20) foi girada
+        # pela medida da PÁGINA, que não quer dizer nada numa arte em escala.
+        "girar": False,
     },
     # A segunda DOCAN (2026-09-23): PLANA, imprime em chapa rígida de até
     # 100 mm de espessura. Setup 'Docan-Docan_H2525' no mesmo SAi, ao
@@ -188,6 +197,7 @@ MAQUINAS = {
         "mesa_util_m": (2.50, 2.50),
         "posto": POSTO_SAI,
         "setup_sai": "Docan_H2525",
+        "girar": False,  # idem R5200: só entrega, o tamanho e o giro são feitos no RIP
     },
 }
 
@@ -769,9 +779,12 @@ class LimiteDaMaquina:
     depois (nao_cabe). Já esteve escrita três vezes.
     """
 
-    def __init__(self, largura_util_m=None, mesa_util_m=None):
+    def __init__(self, largura_util_m=None, mesa_util_m=None, gira=True):
         self.largura_util_m = largura_util_m
         self.mesa_util_m = tuple(mesa_util_m) if mesa_util_m else None
+        # Máquina com gira=False recebe a arte como veio: a medida continua
+        # valendo pra avisar que não cabe, mas ninguém gira nada por ela.
+        self.gira = gira
 
     @property
     def plana(self):
@@ -801,6 +814,8 @@ class LimiteDaMaquina:
         em 'nao_cabe' (girou porque não entrava em pé) ou 'economia' (já
         cabia, gira pra gastar menos bobina — só existe em rolo).
         """
+        if not self.gira:
+            return None  # quem acerta tamanho e giro é quem opera o RIP
         em_pe = self.cabe_em_pe(largura_m, altura_m)
         deitado = self.cabe_deitado(largura_m, altura_m)
 
@@ -839,12 +854,13 @@ def limite_da_maquina(valor):
     """
     if not isinstance(valor, dict):
         return None
+    gira = valor.get("girar", True)
     mesa = valor.get("mesa_util_m")
     if mesa:
-        return LimiteDaMaquina(mesa_util_m=(float(mesa[0]), float(mesa[1])))
+        return LimiteDaMaquina(mesa_util_m=(float(mesa[0]), float(mesa[1])), gira=gira)
     largura = valor.get("largura_util_m")
     if largura:
-        return LimiteDaMaquina(largura_util_m=float(largura))
+        return LimiteDaMaquina(largura_util_m=float(largura), gira=gira)
     return None
 
 

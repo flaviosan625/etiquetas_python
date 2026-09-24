@@ -218,3 +218,67 @@ def test_a_h2525_tem_pasta_na_fila_de_verdade():
     if not fila.is_dir():
         pytest.skip("fila do OneDrive não está nesta máquina")
     assert (fila / "DOCAN H2525").is_dir()
+
+
+# ------------------------------ DOCAN: o sistema so entrega (24/09/2026)
+
+def _pdf(caminho, largura_m, altura_m):
+    import pymupdf
+
+    pt = 72 / 0.0254
+    doc = pymupdf.open()
+    doc.new_page(width=largura_m * pt, height=altura_m * pt)
+    doc.save(str(caminho))
+    doc.close()
+
+
+def test_maquina_que_nao_gira_nunca_gira():
+    """Nem por economia, nem pra encaixar: quem acerta isso e quem opera o RIP."""
+    rolo = rl_hf.LimiteDaMaquina(largura_util_m=3.20, gira=False)
+    mesa = rl_hf.LimiteDaMaquina(mesa_util_m=(2.50, 1.30), gira=False)
+    assert rolo.decidir_giro(1.00, 2.40) is None
+    assert mesa.decidir_giro(1.20, 2.40) is None
+    assert mesa.cabe(2.00, 4.00) is False, "a medida continua valendo pro aviso"
+
+
+def test_as_duas_docan_so_entregam_e_as_mimaki_continuam_girando():
+    assert rl_hf.limite_de("DOCAN R5200").gira is False
+    assert rl_hf.limite_de("DOCAN H2525").gira is False
+    assert rl_hf.limite_de("UJV 100 UNY CV").gira is True
+    assert rl_hf.limite_de("SWJ320A").gira is True
+
+
+def test_a_tela_nao_promete_giro_na_docan():
+    assert envio_impressao.prever_giro(dim(1.00, 2.40), "DOCAN R5200") is None
+    assert envio_impressao.prever_giro(dim(1.00, 2.40), "SWJ320A")["motivo"] == "economia"
+
+
+def test_a_docan_recebe_a_arte_byte_a_byte(tmp_path):
+    """
+    O caso real: lona em 1:10 (pagina 0,32 x 0,70 de uma peca de 7 x 3,20) foi
+    girada pela medida da pagina. Agora o arquivo chega ao RIP como saiu da fila,
+    e a medida da pagina ainda vai pro registro de producao.
+    """
+    origem = tmp_path / "LONA.pdf"
+    _pdf(origem, 0.32, 0.70)
+    destino = tmp_path / "hot" / "LONA.pdf"
+    destino.parent.mkdir()
+    limite = rl_hf.limite_da_maquina(rl_hf.MAQUINAS["DOCAN R5200"])
+
+    girou, pagina = rl_hf._montar_para_hot_folder(origem, destino, limite, lambda *a: None)
+
+    assert girou is False
+    assert destino.read_bytes() == origem.read_bytes()
+    assert pagina is not None and round(pagina[0], 2) == 0.32
+
+
+def test_na_mimaki_a_mesma_arte_ainda_gira(tmp_path):
+    origem = tmp_path / "LONA.pdf"
+    _pdf(origem, 0.32, 0.70)
+    destino = tmp_path / "hot" / "LONA.pdf"
+    destino.parent.mkdir()
+    limite = rl_hf.limite_da_maquina(rl_hf.MAQUINAS["SWJ320A"])
+
+    girou, _ = rl_hf._montar_para_hot_folder(origem, destino, limite, lambda *a: None)
+
+    assert girou is True
