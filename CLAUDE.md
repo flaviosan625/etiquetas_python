@@ -139,11 +139,15 @@ então faz o rename local — mesma disciplina da hot folder, mas aqui quem não
 metade é o OneDrive. E `PASTA_NUVEM` fica **ao lado** da fila, nunca dentro: o vigia avisa a cada
 passada sobre pasta dentro da fila que não seja máquina cadastrada.
 
-**A hot folder do SAi nunca é escrita de cabeça** — sai do `PMSetups.ini` por `sai_setups.py`,
-porque o SAi corta o nome da pasta em 12 letras (`XLF_HS_NET_EPS3200UV_LM` → `XLF_HS_NET_E`).
-Caminho montado pelo nome do setup erra calado: o vigia diz "enviado" e a máquina nunca recebe.
-`sai_setups.conferir_maquinas` compara o cadastro com o `.ini` e tem teste rodando contra o
-arquivo real desta máquina.
+**A hot folder do SAi nunca é escrita de cabeça**, porque o SAi corta o nome da pasta em 12 letras
+(`XLF_HS_NET_EPS3200UV_LM` → `XLF_HS_NET_E`) e não usa o nome do setup (`Docan_H2525` virou
+`Docan_1`). Caminho escrito de cabeça erra calado: o vigia diz "enviado" e a máquina nunca recebe.
+Mas o `PMSetups.ini` **também mente, por atraso**: em 24/09/2026 a Hot Folder da H2525 foi trocada na
+tela para `D:\RIPADOS\DOCAN H2525`, o `.ini` continuou dizendo `Docan_1`, e o adesivo das 06:39 ficou
+parado na pasta que ninguém vigiava. A verdade viva é o `SETTINGS.PRF` (campo que o `PMConfig.xml`
+chama de `<HotFolder>`); a prova definitiva é largar um arquivo na pasta e ver se ele entra na lista.
+Hoje o cadastro da H2525 segue o SAi (`D:\RIPADOS\DOCAN H2525`), e por isso a SAÍDA dela nunca pode
+ser essa mesma pasta.
 
 ### O registro guarda fato bruto, não interpretação
 
