@@ -301,3 +301,74 @@ def test_copia_que_falha_nao_deixa_lixo_nem_perde_a_origem(tmp_path, monkeypatch
     assert "disco cheio" in motivo
     assert origem.exists(), "falhar a entrega nao pode perder o trabalho ripado"
     assert not list(rpn.PASTA_NUVEM.glob("*montando*"))
+
+
+# ---------- as duas extensoes ----------
+
+def test_prn_conta_tanto_quanto_prt(tmp_path):
+    """
+    O SAi cospe as duas: o teste de 07/09 saiu .prt e o de 23/09, na
+    mesma maquina, saiu .prn - 9,4 GB que o codigo ignorava por procurar
+    so uma extensao.
+    """
+    pasta = tmp_path / "Ripados"
+    _ripado(pasta, "arte.prt")
+    _ripado(pasta, "outra.prn")
+    _ripado(pasta, "anotacao.txt")
+
+    assert sorted(f.name for f in rpn.listar(pasta)) == ["arte.prt", "outra.prn"]
+
+
+def test_prn_maiusculo_tambem_conta(tmp_path):
+    pasta = tmp_path / "Ripados"
+    _ripado(pasta, "ARTE.PRN")
+    assert [f.name for f in rpn.listar(pasta)] == ["ARTE.PRN"]
+
+
+# ---------- uma pasta por maquina ----------
+
+def test_cada_maquina_tem_sua_pasta_de_saida(tmp_path):
+    """
+    Duas DOCAN cuspindo na mesma pasta misturaria os ripados, e do outro
+    lado ninguem saberia qual trabalho e de qual impressora.
+    """
+    r5200 = rpn.pasta_da_maquina("DOCAN R5200", tmp_path)
+    h2525 = rpn.pasta_da_maquina("DOCAN H2525", tmp_path)
+    assert r5200 != h2525
+    assert r5200.parent == tmp_path
+
+
+def test_a_pasta_da_nuvem_espelha_a_da_saida(tmp_path):
+    assert rpn.pasta_na_nuvem("DOCAN H2525", tmp_path).name == \
+           rpn.pasta_da_maquina("DOCAN H2525", tmp_path).name
+
+
+def test_so_as_maquinas_do_sai_ripam_aqui():
+    """As Mimaki ripam no OUTRO PC: o caminho delas nao passa por aqui."""
+    nomes = rpn.maquinas_do_sai()
+    assert "DOCAN R5200" in nomes and "DOCAN H2525" in nomes
+    assert not [n for n in nomes if "UJV" in n or "SWJ" in n]
+
+
+def test_garantir_pastas_cria_a_de_cada_maquina(tmp_path):
+    """
+    A porta do setup NAO cria pasta: destino faltando faz o trabalho
+    morrer depois de ripado, com "Nao foi possivel abrir a porta".
+    """
+    criadas = rpn.garantir_pastas(tmp_path)
+    assert set(criadas) == set(rpn.maquinas_do_sai())
+    assert all(p.is_dir() for p in criadas.values())
+
+
+def test_o_ripado_de_cada_maquina_vai_pra_pasta_dela(tmp_path):
+    rpn.garantir_pastas(tmp_path / "saida")
+    _ripado(rpn.pasta_da_maquina("DOCAN H2525", tmp_path / "saida"), "chapa.prn")
+
+    resultado = rpn.levar_de_todas_as_maquinas(
+        raiz_ripados=tmp_path / "saida", raiz_nuvem=tmp_path / "nuvem",
+        esperar_estavel=False)
+
+    assert [d.name for d in resultado["DOCAN H2525"]["levados"]] == ["chapa.prn"]
+    assert resultado["DOCAN R5200"]["levados"] == []
+    assert (tmp_path / "nuvem" / "DOCAN H2525" / "chapa.prn").exists()
+    assert not (tmp_path / "nuvem" / "DOCAN R5200").exists()

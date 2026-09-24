@@ -83,7 +83,18 @@ PASTA_RIPADOS = pathlib.Path(r"D:\RIPADOS")
 # ficou apontando pro vazio até ser corrigido no mesmo dia.
 PASTA_NUVEM = caminhos.ONEDRIVE_UNY / "RIPADOS PARA AS MAQUINAS"
 
-EXTENSAO_RIPADO = ".prt"
+# O que o SAi cospe. São DUAS extensões, descoberto do jeito caro em
+# 23/09/2026: o teste de 07/09 saiu `.prt` e o de hoje, na mesma
+# máquina, saiu `.prn` — 9,4 GB que o código teria ignorado para sempre,
+# porque procurava só `.prt`. Quem manda na extensão é o nome de saída
+# configurado na porta do setup, não o driver, então não dá pra fixar
+# uma só. Na dúvida, aceitar a mais: o pior que acontece com uma
+# extensão a mais na lista é o arquivo ser conferido antes de ir.
+EXTENSOES_RIPADO = (".prt", ".prn")
+
+# Nome antigo, de quando era uma extensão só. Mantido porque já tem
+# coisa importando por ele.
+EXTENSAO_RIPADO = EXTENSOES_RIPADO[0]
 
 # Teto por arquivo. Não é palpite técnico: é o número que o usuário deu
 # depois de ver o de 13,8 GB passar (2026-09-08).
@@ -136,7 +147,7 @@ def listar(pasta_ripados=None):
     if not pasta.is_dir():
         return []
     ripados = [f for f in pasta.iterdir()
-               if f.is_file() and f.suffix.lower() == EXTENSAO_RIPADO]
+               if f.is_file() and f.suffix.lower() in EXTENSOES_RIPADO]
     return sorted(ripados, key=lambda f: f.stat().st_mtime)
 
 
@@ -263,6 +274,70 @@ def levar(caminho, pasta_nuvem=None, limite_bytes=None, logger=None, esperar_est
     if logger:
         logger("ok", f"'{caminho.name}' ({_tamanho_legivel(destino.stat().st_size)}) entregue na nuvem.")
     return destino, None
+
+
+def pasta_da_maquina(nome_maquina, raiz=None):
+    """
+    Onde o SAi larga o ripado DESTA máquina. Uma subpasta por máquina,
+    com o mesmo nome que ela tem em rasterlink_hotfolder.MAQUINAS — o
+    mesmo nome da subpasta da fila, pelo mesmo motivo: é o nome que liga
+    arquivo a máquina em todo o sistema.
+
+    Com duas DOCAN cuspindo na mesma pasta (pedido dele, 2026-09-23:
+    "DOCAN H2525 também precisa de um caminho para a saída na unidade
+    D:"), os .prt se misturariam e do outro lado ninguém saberia qual
+    trabalho é de qual impressora — e um .prt de plana mandado pra
+    máquina de rolo é chapa perdida.
+    """
+    return pathlib.Path(raiz or PASTA_RIPADOS) / nome_maquina
+
+
+def pasta_na_nuvem(nome_maquina, raiz=None):
+    """O destino sincronizado desta máquina — espelha pasta_da_maquina."""
+    return pathlib.Path(raiz or PASTA_NUVEM) / nome_maquina
+
+
+def maquinas_do_sai(maquinas=None):
+    """
+    As máquinas que ripam NESTE PC — as do posto do SAi. As Mimaki não
+    entram: quem ripa pra elas é o RasterLink7, no outro PC, e o
+    caminho delas não passa por aqui.
+    """
+    from rasterlink_hotfolder import POSTO_SAI, maquinas_do_posto
+
+    return sorted(maquinas_do_posto(POSTO_SAI, maquinas))
+
+
+def garantir_pastas(raiz=None, maquinas=None):
+    """
+    Cria a pasta de saída de cada máquina e devolve o que existe agora.
+
+    A porta do setup no SAi não cria pasta: se o destino não existir na
+    hora de gravar, ela falha com "Não foi possível abrir a porta" e o
+    trabalho morre depois de ripado (aconteceu em 23/09/2026).
+    """
+    criadas = {}
+    for nome in maquinas_do_sai(maquinas):
+        pasta = pasta_da_maquina(nome, raiz)
+        pasta.mkdir(parents=True, exist_ok=True)
+        criadas[nome] = pasta
+    return criadas
+
+
+def levar_de_todas_as_maquinas(raiz_ripados=None, raiz_nuvem=None, maquinas=None,
+                               limite_bytes=None, logger=None, esperar_estavel=True):
+    """
+    Uma passada por máquina: o ripado de cada uma vai pra pasta dela na
+    nuvem. Devolve {nome_maquina: resultado de levar_todos}.
+    """
+    return {
+        nome: levar_todos(
+            pasta_ripados=pasta_da_maquina(nome, raiz_ripados),
+            pasta_nuvem=pasta_na_nuvem(nome, raiz_nuvem),
+            limite_bytes=limite_bytes, logger=logger, esperar_estavel=esperar_estavel,
+        )
+        for nome in maquinas_do_sai(maquinas)
+    }
 
 
 def levar_todos(pasta_ripados=None, pasta_nuvem=None, limite_bytes=None, logger=None,
