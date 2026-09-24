@@ -112,10 +112,46 @@ def test_maquina_sem_medida_nao_recusa_nem_gira_nada():
     assert rl_hf.limite_da_maquina(r"C:\x") is None
 
 
-def test_as_maquinas_de_hoje_continuam_sendo_de_rolo():
-    """As três em operação são bobina — nenhuma virou mesa por acidente."""
+def test_as_maquinas_de_rolo_continuam_sendo_de_rolo():
+    """As três de bobina — nenhuma virou mesa por acidente."""
     for nome in ("UJV 100 UNY CV", "SWJ320A", "DOCAN"):
         assert rl_hf.limite_de(nome).plana is False
+
+
+# --------------------------------------------- a DOCAN H2525 cadastrada
+
+def test_h2525_esta_cadastrada_como_plana_de_2_50():
+    limite = rl_hf.limite_de("DOCAN H2525")
+    assert limite.plana is True
+    assert limite.mesa_util_m == (2.50, 2.50)
+
+
+def test_h2525_e_atendida_pelo_vigia_deste_pc():
+    """
+    Ela roda no SAi desta máquina, ao lado da R5200 — se cair no posto do
+    RIP, ninguém entrega nada e o arquivo fica encalhado na fila.
+    """
+    assert "DOCAN H2525" in rl_hf.maquinas_do_posto(rl_hf.POSTO_SAI)
+
+
+def test_as_duas_docan_nao_dividem_a_mesma_hot_folder():
+    """
+    O SAi criou a pasta da H2525 como 'Docan_1', não com o nome do setup.
+    Cadastro copiado da R5200 mandaria a chapa pra impressora de rolo —
+    e o vigia diria "enviado", porque a pasta existe.
+    """
+    r5200 = rl_hf.MAQUINAS["DOCAN"]["hot_folder"]
+    h2525 = rl_hf.MAQUINAS["DOCAN H2525"]["hot_folder"]
+    assert r5200 != h2525
+
+
+def test_arte_de_rolo_nao_passa_na_mesa_da_h2525():
+    """
+    O caso que a plana precisa recusar: lona de 2,00 × 4,00 m, que a SWJ
+    imprime sem pensar, não tem pra onde ir numa mesa de 2,50.
+    """
+    assert rl_hf.limite_de("DOCAN H2525").cabe(2.00, 4.00) is False
+    assert rl_hf.limite_de("SWJ320A").cabe(2.00, 4.00) is True
 
 
 # ------------------------------------ a tela usa a mesma regra do vigia

@@ -150,6 +150,27 @@ MAQUINAS = {
         "largura_util_m": 5.00,
         "posto": POSTO_SAI,
     },
+    # A segunda DOCAN (2026-09-23): PLANA, imprime em chapa rígida de até
+    # 100 mm de espessura. Setup 'Docan-Docan_H2525' no mesmo SAi, ao
+    # lado da R5200 — por isso POSTO_SAI, e por isso o vigia que já roda
+    # neste PC atende as duas sem tarefa nova no Agendador.
+    #
+    # A PASTA NÃO SE CHAMA H2525. O setup foi criado com esse nome e o
+    # SAi gerou 'Docan_1', porque 'Docan' já existia. Quem escrevesse o
+    # caminho pelo nome do setup erraria calado: o vigia diria "enviado"
+    # e a máquina nunca receberia nada. O valor abaixo saiu do
+    # PMSetups.ini (ver sai_setups.py), e tem teste conferindo os dois.
+    #
+    # 'mesa_util_m' e não largura: numa plana os dois lados são teto. Os
+    # 2,50 × 2,50 são a ÁREA DE IMPRESSÃO da ficha do fabricante — aqui
+    # o catálogo dá a medida certa, diferente da R5200, onde ele dava a
+    # mídia (5,20) e a útil (5,00) só apareceu no BYHX. Confirmar no
+    # BYHX dela assim que estiver montada.
+    "DOCAN H2525": {
+        "hot_folder": r"C:\Program Files\SAi\SAi Production Suite 22\Jobs and Settings\Jobs\Docan\Docan_1",
+        "mesa_util_m": (2.50, 2.50),
+        "posto": POSTO_SAI,
+    },
 }
 
 
