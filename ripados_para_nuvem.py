@@ -81,12 +81,13 @@ import caminhos
 # personalizada?][extensão], em strings do MFC. Só leitura: o Production
 # Manager regrava o arquivo com o programa ABERTO.
 #
-# `Desktop\Ripados` hoje é uma JUNÇÃO (mklink /J) pra pasta da R5200 —
-# era o Local padrão dela. Cuidado: o setup XLF (Epson, de outra máquina)
-# também tem Local padrão = `Desktop\Ripados`, então enquanto a junção
-# existir, ripado de Epson feito por engano aqui cai na pasta da R5200.
-# Com o Local padrão de cada DOCAN apontado direto pro D:, a junção sai e
-# `Desktop\Ripados` volta a ser pasta comum, só do XLF.
+# A porta é do DISPOSITIVO: as duas DOCAN gravam na mesma pasta
+# (D:\RIPADOS\DOCAN H2525), e quem separa o da R5200 é separar_ripados,
+# com prova do RIPLOG. Por isso, quando levar_de_todas_as_maquinas for
+# ligado, ele tem que rodar DEPOIS do separador na passada — senão leva pra
+# nuvem da H2525 um ripado da R5200 que ainda não foi separado.
+# `Desktop\Ripados` é pasta comum (a junção de 23/09 foi desfeita) e é do
+# setup XLF, da Epson de outra máquina.
 PASTA_RIPADOS = pathlib.Path(r"D:\RIPADOS")
 
 # A pasta sincronizada que a máquina do outro lado vigia. Fica ao LADO

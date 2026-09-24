@@ -114,10 +114,23 @@ saída na mesma pasta, ripar o próprio ripado em círculo. O `SETTINGS.PRF` gua
 porque o Production Manager o regrava com o programa **aberto**. O `PMSetups.ini` só é atualizado
 depois, então `sai_setups.conferir_maquinas` pode demorar a acusar uma hot folder trocada.
 
-`Desktop\Ripados` é uma **junção** (`mklink /J`) pra `D:\RIPADOS\DOCAN R5200`, porque era o Local
-padrão da R5200. Mas o setup **XLF** (Epson, de outra máquina, não se toca) tem o mesmo Local padrão:
-enquanto a junção existir, ripado de Epson feito aqui por engano cai na pasta da R5200. O destino
-certo é cada DOCAN com Local padrão direto no D: e `Desktop\Ripados` de volta a pasta comum, do XLF.
+**A porta é do DISPOSITIVO, não da configuração.** As duas DOCAN são configurações do mesmo
+dispositivo `Docan Docan@FILE:` (aba de cima; o "Mudar porta..." fica na seta ▼ dela, ao lado de um
+"Apagar" que apaga o dispositivo): trocar a Localização padrão de uma trocou a das duas (conferido no
+`SETTINGS.PRF` em 24/09/2026 06:58). Então o SAi grava os ripados das DUAS em `D:\RIPADOS\DOCAN H2525`,
+e quem manda o da R5200 pra `D:\RIPADOS\DOCAN R5200` é `separar_ripados.py`, a cada passada do vigia
+da DOCAN. A prova de quem gerou cada `.prt` é o bloco "Iniciar a impressão" do `RIPLOG.HTML`
+("Nome do dispositivo" + nome do trabalho + "Término da Saída", que bate com a hora do arquivo em menos
+de 1 s). Sem as três coisas — e o arquivo parado há 30 s —, fica onde está e vira aviso uma vez.
+Antes de ligar, três revisores reproduziram em pasta temporária: arquivo sendo gravado herdando a prova
+de uma saída anterior de mesmo nome, cópia a cada minuto até encher o disco, e dois homônimos se
+apagando. Os três viraram teste.
+
+Cada trabalho **guarda o destino da hora em que entrou no SAi**: reenviar um trabalho antigo grava no
+destino velho (`Desktop\Ripados`, no C:) — por isso o separador também varre ali. `Desktop\Ripados` é
+pasta comum (a junção de 23/09 foi desfeita), e o setup **XLF** (Epson, de outra máquina, não se toca)
+grava `.prn` nela: o separador só toca `.prt` de dispositivo DOCAN. E a saída só é gravada no
+**Enviar**: ripar sozinho deixa o trabalho "Mantendo".
 
 **Cada máquina grava na SUA pasta** (`D:\RIPADOS\<nome da máquina>`, o mesmo nome da fila).
 Duas na mesma pasta misturariam os `.prt`, e um ripado de plana mandado pra máquina de rolo é

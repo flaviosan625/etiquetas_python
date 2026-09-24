@@ -154,6 +154,10 @@ MAQUINAS = {
         "hot_folder": r"C:\Program Files\SAi\SAi Production Suite 22\Jobs and Settings\Jobs\Docan\Docan",
         "largura_util_m": 5.00,
         "posto": POSTO_SAI,
+        # nome da configuração dentro do SAi: é como o RIPLOG chama esta
+        # máquina ("Nome do dispositivo"), e é por ele que separar_ripados
+        # sabe de quem é cada ripado
+        "setup_sai": "Docan",
     },
     # A segunda DOCAN (2026-09-23): PLANA, imprime em chapa rígida de até
     # 100 mm de espessura. Setup 'Docan-Docan_H2525' no mesmo SAi, ao
@@ -183,6 +187,7 @@ MAQUINAS = {
         "hot_folder": r"C:\Program Files\SAi\SAi Production Suite 22\Jobs and Settings\Jobs\Docan\Docan_1",
         "mesa_util_m": (2.50, 2.50),
         "posto": POSTO_SAI,
+        "setup_sai": "Docan_H2525",
     },
 }
 
@@ -1621,11 +1626,20 @@ def principal_uma_vez(posto=None):
     posto = posto or posto_pedido()
     carregar_estado_avisos()
     resultado = {}
+
+    def passada():
+        try:
+            resultado.update(vigiar_fila_uma_vez(logger=logger_arquivo, posto=posto))
+        finally:
+            # DENTRO da trava (duas passadas nunca movem o mesmo ripado) e
+            # ANTES de salvar os avisos (a deduplicação precisa ir pro disco).
+            # Nunca dentro de vigiar_fila_uma_vez: teste chama aquela com o
+            # posto do SAi e passaria a mexer no D: de verdade.
+            if posto == POSTO_SAI:
+                _separar_ripados_da_docan()
+
     try:
-        _rodar_protegido(
-            lambda: resultado.update(vigiar_fila_uma_vez(logger=logger_arquivo, posto=posto)),
-            posto=posto,
-        )
+        _rodar_protegido(passada, posto=posto)
     finally:
         salvar_estado_avisos()
 
@@ -1633,6 +1647,59 @@ def principal_uma_vez(posto=None):
 
     for linha in resumo_da_passada(resultado):
         _falar(linha)
+
+
+# Ripado sem prova de qual DOCAN o gerou só vira aviso depois de parado
+# esse tempo: antes disso é normal (sendo gravado, ou recém-terminado e
+# o log ainda chegando). E vira aviso uma vez só, não uma por minuto.
+ESPERA_AVISO_SEM_PROVA_S = 600
+
+
+def _avisar_uma_vez(chave, texto, logger):
+    """Loga só quando muda. Guarda em _ultimo_erro_por_arquivo, que já vai pro disco."""
+    if _ultimo_erro_por_arquivo.get(chave) == texto:
+        return
+    if texto:
+        _ultimo_erro_por_arquivo[chave] = texto
+        logger("warn", texto)
+    else:
+        _ultimo_erro_por_arquivo.pop(chave, None)
+
+
+def _separar_ripados_da_docan(logger=None, agora=None):
+    """
+    Leva cada ripado das duas DOCAN pra pasta da sua máquina (ver
+    separar_ripados). Só roda no posto do SAi, e o import é tardio pelo
+    mesmo motivo do aviso de fila: este arquivo viaja sozinho pro PC do RIP.
+    Qualquer erro vira aviso e a passada segue — entregar a fila é o
+    trabalho de verdade.
+    """
+    logger = logger or logger_arquivo
+    try:
+        import separar_ripados
+    except ImportError:
+        return
+    try:
+        r = separar_ripados.separar(maquinas=MAQUINAS, logger=logger)
+    except Exception as erro:  # noqa: BLE001 - ver docstring
+        _avisar_uma_vez("~separar_ripados~", f"Separação dos ripados da DOCAN parou: {erro}", logger)
+        return
+    _avisar_uma_vez("~separar_ripados~", None, logger)
+
+    agora = agora or time.time()
+    atuais = set()
+    for caminho in r["sem_prova"] + r["em_uso"]:
+        try:
+            if agora - caminho.stat().st_mtime < ESPERA_AVISO_SEM_PROVA_S:
+                continue
+        except OSError:
+            continue
+        chave = f"~ripado~{caminho}"
+        atuais.add(chave)
+        _avisar_uma_vez(chave, f"Ripado '{caminho.name}' em '{caminho.parent}' sem prova de qual DOCAN "
+                               f"o gerou — ficou onde está. Confira no RIPLOG.", logger)
+    for chave in [k for k in _ultimo_erro_por_arquivo if k.startswith("~ripado~") and k not in atuais]:
+        _ultimo_erro_por_arquivo.pop(chave, None)
 
 
 def _avisar_fila_parada():
@@ -1649,7 +1716,9 @@ def _avisar_fila_parada():
     """
     try:
         import aviso_fila
-
+    except ImportError:
+        return  # PC do RIP: o módulo não viaja pra lá. Não é erro — era um aviso por minuto no log
+    try:
         avisadas = aviso_fila.conferir()
     except Exception as erro:  # noqa: BLE001 - ver docstring
         logger_arquivo("warn", f"aviso de fila parada não saiu: {erro}")

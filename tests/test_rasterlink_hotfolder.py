@@ -42,6 +42,14 @@ def _isolar_pasta_relatorios(tmp_path, monkeypatch):
     # teste, e uma investigacao inteira atras de um defeito de producao
     # que nunca existiu (2026-09-07).
     monkeypatch.setattr(rl_hf, "CAMINHO_CRASH", tmp_path / "hotfolder_crash.log")
+    # A passada do posto SAi chama o separador de ripados, que mexe no D: e
+    # no Desktop\Ripados de verdade e le o RIPLOG real (2026-09-24).
+    import ripados_para_nuvem
+    import separar_ripados
+
+    monkeypatch.setattr(ripados_para_nuvem, "PASTA_RIPADOS", tmp_path / "_ripados")
+    monkeypatch.setattr(separar_ripados, "CAMINHO_RIPLOG", tmp_path / "_riplog.html")
+    monkeypatch.setattr(separar_ripados, "PASTA_RIPADOS_ANTIGA", tmp_path / "_ripados_antiga")
 
 
 def _maquinas(hot_folder, largura_util_m=None):
