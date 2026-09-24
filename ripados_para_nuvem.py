@@ -67,19 +67,26 @@ import caminhos
 # deixando 3 GB de dados ripados parados nos temporários do SAi. A porta
 # não avisa que perdeu o destino: ela só não abre.
 #
-# ONDE A PORTA APONTA, de verdade: o caminho está enterrado em UTF-16
-# dentro do binário `Jobs and Settings\SETTINGS.PRF`, e em 23/09/2026 era
-# `C:\Users\flavi\Desktop\Ripados`. Não está no registro, nem no
-# PMConfig.xml, nem no PMSetups.ini — procurei nos quatro. E não se
-# edita por fora: o formato é desconhecido e o Production Manager
-# reescreve o arquivo ao fechar.
+# ONDE A SAÍDA SE CONFIGURA (documentado pela própria SAi): tela "Mudar
+# Porta" — botão direito no setup, ou duplo clique na aba dele. Na porta
+# FILE: há "Solicitar caminho de arquivo para cada arquivo" (marcada = abre
+# "Salvar como" a cada trabalho) e "Local padrão" (a pasta onde grava
+# quando não pergunta). NÃO é na tela de Propriedades do setup: lá o campo
+# de pasta é a HOT FOLDER, a ENTRADA — trocar aquela achando que é a saída
+# aconteceu em 23/09/2026 e faria o Production Manager parar de receber o
+# que o vigia entrega (e, com saída e entrada na mesma pasta, ripar o
+# próprio ripado em círculo).
 #
-# Conserto que não depende de reconfigurar o SAi: `Desktop\Ripados` é uma
-# JUNÇÃO (mklink /J) apontando pra pasta da R5200 aqui dentro. Quem grava
-# no caminho velho grava direto na pasta certa, sem tocar no setup.
-# A H2525 não tem como usar o mesmo truque — junção é um destino só —,
-# então a porta DELA se configura na tela, apontando pra pasta dela.
-# Não apague nenhuma das duas pontas da junção.
+# O SETTINGS.PRF guarda, por setup: [pergunta?][Local padrão][extensão
+# personalizada?][extensão], em strings do MFC. Só leitura: o Production
+# Manager regrava o arquivo com o programa ABERTO.
+#
+# `Desktop\Ripados` hoje é uma JUNÇÃO (mklink /J) pra pasta da R5200 —
+# era o Local padrão dela. Cuidado: o setup XLF (Epson, de outra máquina)
+# também tem Local padrão = `Desktop\Ripados`, então enquanto a junção
+# existir, ripado de Epson feito por engano aqui cai na pasta da R5200.
+# Com o Local padrão de cada DOCAN apontado direto pro D:, a junção sai e
+# `Desktop\Ripados` volta a ser pasta comum, só do XLF.
 PASTA_RIPADOS = pathlib.Path(r"D:\RIPADOS")
 
 # A pasta sincronizada que a máquina do outro lado vigia. Fica ao LADO
@@ -92,14 +99,16 @@ PASTA_RIPADOS = pathlib.Path(r"D:\RIPADOS")
 # ficou apontando pro vazio até ser corrigido no mesmo dia.
 PASTA_NUVEM = caminhos.ONEDRIVE_UNY / "RIPADOS PARA AS MAQUINAS"
 
-# O que o SAi cospe. São DUAS extensões, descoberto do jeito caro em
-# 23/09/2026: o teste de 07/09 saiu `.prt` e o de hoje, na mesma
-# máquina, saiu `.prn` — 9,4 GB que o código teria ignorado para sempre,
-# porque procurava só `.prt`. Quem manda na extensão é o nome de saída
-# configurado na porta do setup, não o driver, então não dá pra fixar
-# uma só. Na dúvida, aceitar a mais: o pior que acontece com uma
-# extensão a mais na lista é o arquivo ser conferido antes de ir.
-EXTENSOES_RIPADO = (".prt", ".prn")
+# O que o driver da DOCAN cospe na porta FILE: é `.prt`, e SÓ `.prt`.
+#
+# Já esteve aqui `.prn` também, por um erro meu em 23/09/2026: apareceu um
+# `.prn` de 9,4 GB na pasta e eu li como "a DOCAN às vezes sai .prn". O
+# RIPLOG desmentiu — aquele trabalho foi ripado no setup XLF (a Epson de
+# OUTRA máquina, perfil KALTECH), cuja porta tem extensão personalizada
+# "prn" e também grava em `Desktop\Ripados`. Aceitar `.prn` aqui mandaria
+# dado de Epson pra impressora DOCAN. Arquivo que não é `.prt` fica onde
+# está: o que não é da DOCAN não sai por este caminho.
+EXTENSOES_RIPADO = (".prt",)
 
 # Nome antigo, de quando era uma extensão só. Mantido porque já tem
 # coisa importando por ele.

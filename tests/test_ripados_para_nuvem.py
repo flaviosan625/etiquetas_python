@@ -305,24 +305,25 @@ def test_copia_que_falha_nao_deixa_lixo_nem_perde_a_origem(tmp_path, monkeypatch
 
 # ---------- as duas extensoes ----------
 
-def test_prn_conta_tanto_quanto_prt(tmp_path):
+def test_prn_nao_e_ripado_da_docan(tmp_path):
     """
-    O SAi cospe as duas: o teste de 07/09 saiu .prt e o de 23/09, na
-    mesma maquina, saiu .prn - 9,4 GB que o codigo ignorava por procurar
-    so uma extensao.
+    O driver da DOCAN sai .prt. O .prn de 9,4 GB que apareceu em 23/09
+    era do setup XLF (a Epson de OUTRA maquina), que tambem grava em
+    Desktop\\Ripados com extensao personalizada "prn". Levar .prn mandaria
+    dado de Epson pra impressora DOCAN.
     """
     pasta = tmp_path / "Ripados"
     _ripado(pasta, "arte.prt")
-    _ripado(pasta, "outra.prn")
+    _ripado(pasta, "da_epson.prn")
     _ripado(pasta, "anotacao.txt")
 
-    assert sorted(f.name for f in rpn.listar(pasta)) == ["arte.prt", "outra.prn"]
+    assert [f.name for f in rpn.listar(pasta)] == ["arte.prt"]
 
 
-def test_prn_maiusculo_tambem_conta(tmp_path):
+def test_prt_maiusculo_tambem_conta(tmp_path):
     pasta = tmp_path / "Ripados"
-    _ripado(pasta, "ARTE.PRN")
-    assert [f.name for f in rpn.listar(pasta)] == ["ARTE.PRN"]
+    _ripado(pasta, "ARTE.PRT")
+    assert [f.name for f in rpn.listar(pasta)] == ["ARTE.PRT"]
 
 
 # ---------- uma pasta por maquina ----------
@@ -362,13 +363,13 @@ def test_garantir_pastas_cria_a_de_cada_maquina(tmp_path):
 
 def test_o_ripado_de_cada_maquina_vai_pra_pasta_dela(tmp_path):
     rpn.garantir_pastas(tmp_path / "saida")
-    _ripado(rpn.pasta_da_maquina("DOCAN H2525", tmp_path / "saida"), "chapa.prn")
+    _ripado(rpn.pasta_da_maquina("DOCAN H2525", tmp_path / "saida"), "chapa.prt")
 
     resultado = rpn.levar_de_todas_as_maquinas(
         raiz_ripados=tmp_path / "saida", raiz_nuvem=tmp_path / "nuvem",
         esperar_estavel=False)
 
-    assert [d.name for d in resultado["DOCAN H2525"]["levados"]] == ["chapa.prn"]
+    assert [d.name for d in resultado["DOCAN H2525"]["levados"]] == ["chapa.prt"]
     assert resultado["DOCAN R5200"]["levados"] == []
-    assert (tmp_path / "nuvem" / "DOCAN H2525" / "chapa.prn").exists()
+    assert (tmp_path / "nuvem" / "DOCAN H2525" / "chapa.prt").exists()
     assert not (tmp_path / "nuvem" / "DOCAN R5200").exists()

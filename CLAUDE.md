@@ -102,22 +102,33 @@ onde o `.prt` nasce é a **porta** do setup no Production Manager (porta `FILE:`
 Em 23/09/2026 a pasta velha (`Desktop\Ripados`) foi apagada por estar vazia, dez minutos antes de
 dois testes: os dois morreram com **"Não foi possível abrir a porta"** e 3 GB de dados ripados
 ficaram presos nos temporários do SAi. A porta não avisa que perdeu o destino — ela só não abre.
-**Onde a porta aponta** está enterrado em UTF-16 dentro do binário `Jobs and Settings\SETTINGS.PRF`
-(em 23/09/2026: `C:\Users\flavi\Desktop\Ripados`) — não está no registro, nem no `PMConfig.xml`,
-nem no `PMSetups.ini`, e não se edita por fora, porque o Production Manager reescreve o arquivo ao
-fechar. Hoje `Desktop\Ripados` é uma **junção** (`mklink /J`) apontando pra `D:\RIPADOS\DOCAN
-R5200`, então o caminho velho grava direto na pasta certa sem tocar no setup; não apague nenhuma
-das duas pontas. Junção é um destino só, então **a segunda máquina não tem esse truque**: a porta
-dela se configura na tela, apontando pra pasta dela.
+**A saída se configura na tela "Mudar Porta", nunca em Propriedades** (documentado pela SAi:
+botão direito no setup → *Mudar Porta*, ou duplo clique na aba dele). Na porta `FILE:`,
+**"Solicitar caminho de arquivo para cada arquivo"** marcada abre "Salvar como" a cada trabalho;
+desmarcada, grava sozinha no **"Local padrão"**. Setup novo nasce com ela marcada e o Local padrão
+em `Jobs and Settings` — por isso a H2525 abria o diálogo e a R5200 não. O campo de pasta da tela de
+**Propriedades** é a **hot folder, a ENTRADA**: em 23/09/2026 ela foi trocada ali achando que era a
+saída, o que faria o Production Manager parar de receber o que o vigia entrega — e, com entrada e
+saída na mesma pasta, ripar o próprio ripado em círculo. O `SETTINGS.PRF` guarda por setup
+`[pergunta?][Local padrão][extensão personalizada?][extensão]` em strings do MFC; é só leitura,
+porque o Production Manager o regrava com o programa **aberto**. O `PMSetups.ini` só é atualizado
+depois, então `sai_setups.conferir_maquinas` pode demorar a acusar uma hot folder trocada.
+
+`Desktop\Ripados` é uma **junção** (`mklink /J`) pra `D:\RIPADOS\DOCAN R5200`, porque era o Local
+padrão da R5200. Mas o setup **XLF** (Epson, de outra máquina, não se toca) tem o mesmo Local padrão:
+enquanto a junção existir, ripado de Epson feito aqui por engano cai na pasta da R5200. O destino
+certo é cada DOCAN com Local padrão direto no D: e `Desktop\Ripados` de volta a pasta comum, do XLF.
 
 **Cada máquina grava na SUA pasta** (`D:\RIPADOS\<nome da máquina>`, o mesmo nome da fila).
 Duas na mesma pasta misturariam os `.prt`, e um ripado de plana mandado pra máquina de rolo é
 chapa perdida. `ripados_para_nuvem.garantir_pastas()` cria as duas, porque a porta do SAi não cria
 pasta — destino faltando mata o trabalho **depois** de ripado.
 
-**O SAi cospe `.prt` E `.prn`.** O teste de 07/09 saiu `.prt`; o de 23/09, na mesma máquina, saiu
-`.prn` — 9,4 GB que `listar()` ignorava por procurar só uma extensão. Quem manda na extensão é o
-nome de saída da porta, então as duas contam.
+**O ripado da DOCAN é `.prt`, e só `.prt`.** Em 23/09/2026 um `.prn` de 9,4 GB apareceu na pasta e
+eu concluí que "a DOCAN às vezes sai `.prn`" — e fiz `listar()` aceitar os dois. Estava errado: o
+RIPLOG mostrava `Impressora: XLF_HS_NET_EPS3200UV_LM`, perfil KALTECH; o `.prn` vinha da extensão
+personalizada da porta do XLF. Aceitar `.prn` mandaria dado de Epson pra DOCAN. Antes de tirar
+conclusão sobre um ripado, leia no `RIPLOG.HTML` **qual impressora** o gerou.
 
 **O ripado mora no D:, e a entrega atravessa disco.** Um `.prt` acompanha a ÁREA impressa, não o
 PDF — já medimos 13,8 GB saindo de um PDF de 582 KB. Desde 23/09/2026 `ripados_para_nuvem.
