@@ -160,21 +160,19 @@ MAQUINAS = {
     # lado da R5200 — por isso POSTO_SAI, e por isso o vigia que já roda
     # neste PC atende as duas sem tarefa nova no Agendador.
     #
-    # A HOT FOLDER É A QUE O SAi VIGIA DE VERDADE, não a que o PMSetups.ini
-    # diz. O setup nasceu com 'Jobs\Docan\Docan_1' (o SAi não usou o nome
-    # H2525 porque 'Docan' já existia), e em 24/09/2026, madrugada, o campo
-    # "Nome do Hot Folder" do setup foi trocado na tela para
-    # 'D:\RIPADOS\DOCAN H2525' — achando que era a saída. O PMSetups.ini
-    # continuou dizendo Docan_1 (ele atrasa), o vigia entregava lá, e nada
-    # entrava no RIP: o adesivo das 06:39 ficou parado em Docan_1. A prova
-    # de qual pasta o SAi vigia foi um ripado que caiu em D:\RIPADOS\DOCAN
-    # H2525 e ele PUXOU como trabalho novo. Então o cadastro segue o SAi.
+    # A HOT FOLDER É A PASTA INTERNA DO SAi, e o usuário nunca precisa vê-la.
+    # O desenho dele (24/09/2026): "FILA\DOCAN H2525 entrada, D:\RIPADOS\
+    # DOCAN H2525 saída". Entre as duas mora esta pasta, que é só o ponto
+    # onde o vigia larga e o SAi puxa. O setup nasceu com 'Jobs\Docan\Docan_1'
+    # (o SAi não usou o nome H2525 porque 'Docan' já existia).
     #
-    # ARMADILHA: com a entrada aqui, a SAÍDA da H2525 NUNCA pode ser esta
-    # mesma pasta ("Localização padrão" em Mudar porta). Entrada e saída
-    # juntas fazem o SAi puxar o próprio ripado como trabalho novo — já
-    # aconteceu com a 'Lona Gaveta .prt'. Hoje a saída é D:\RIPADOS (raiz).
-    # Se o campo do SAi voltar pra Docan_1, este valor volta junto.
+    # Na madrugada de 24/09 o campo "Nome do Hot Folder" foi trocado na tela
+    # para D:\RIPADOS\DOCAN H2525, achando que era a saída — e o SAi puxou
+    # um ripado que caiu ali como trabalho novo. Voltou pra Docan_1 às 06:53.
+    # O PMSetups.ini atrasa: quem diz a hot folder viva é o SETTINGS.PRF.
+    #
+    # ARMADILHA: entrada e saída nunca na mesma pasta. A saída da H2525 é
+    # D:\RIPADOS\DOCAN H2525; a entrada do SAi, esta aqui.
     #
     # 'mesa_util_m' e não largura: numa plana os dois lados são teto. Os
     # 2,50 × 2,50 são a ÁREA DE IMPRESSÃO da ficha do fabricante — aqui
@@ -182,7 +180,7 @@ MAQUINAS = {
     # mídia (5,20) e a útil (5,00) só apareceu no BYHX. Confirmar no
     # BYHX dela assim que estiver montada.
     "DOCAN H2525": {
-        "hot_folder": r"D:\RIPADOS\DOCAN H2525",
+        "hot_folder": r"C:\Program Files\SAi\SAi Production Suite 22\Jobs and Settings\Jobs\Docan\Docan_1",
         "mesa_util_m": (2.50, 2.50),
         "posto": POSTO_SAI,
     },
