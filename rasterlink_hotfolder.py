@@ -1319,6 +1319,39 @@ def salvar_estado_avisos(caminho=None):
         pass
 
 
+def garantir_pastas_da_fila(pasta_raiz, maquinas, logger=None):
+    """
+    Cria a subpasta de fila de cada máquina DESTE posto, com o 'Enviados'
+    dentro. Devolve as que acabaram de nascer.
+
+    Até 23/09/2026 a pasta só nascia no primeiro envio (enviar_para_fila),
+    e máquina recém-cadastrada simplesmente não aparecia na fila: a DOCAN
+    H2525 entrou no sistema e ele foi procurar a pasta dela pra largar
+    arquivo — não existia. Pasta que não existe também não dá pra usar na
+    mão, que é como um arquivo urgente entra na fila.
+
+    Falha de criação NÃO derruba a passada: a pasta é conforto, e
+    entregar o que já está na fila é o trabalho de verdade. O OneDrive
+    pendurado é motivo de sobra pra um mkdir falhar num minuto e
+    funcionar no seguinte.
+    """
+    nascidas = []
+    for nome_maquina in maquinas:
+        pasta = pasta_raiz / nome_maquina
+        if pasta.is_dir():
+            continue
+        try:
+            (pasta / NOME_SUBPASTA_ENVIADOS).mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            if logger:
+                logger("warn", f"Não consegui criar a pasta de fila da '{nome_maquina}': {e}")
+            continue
+        nascidas.append(nome_maquina)
+        if logger:
+            logger("ok", f"Pasta de fila da '{nome_maquina}' criada — ela já pode receber arquivo.")
+    return nascidas
+
+
 def vigiar_fila_uma_vez(pasta_fila=None, maquinas=None, logger=print, pasta_relatorios=None,
                         dias_retencao=None, posto=None):
     """
@@ -1355,6 +1388,7 @@ def vigiar_fila_uma_vez(pasta_fila=None, maquinas=None, logger=print, pasta_rela
         )
 
     pasta_raiz = pathlib.Path(pasta_fila or PASTA_FILA_ONEDRIVE)
+    garantir_pastas_da_fila(pasta_raiz, maquinas, logger)
 
     resultado_por_maquina = {}
     for nome_maquina, config_maquina in maquinas.items():

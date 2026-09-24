@@ -163,3 +163,58 @@ def test_a_tela_preve_o_giro_da_plana_pela_mesma_regra():
     assert envio_impressao.prever_giro(dim(1.00, 1.20), "H", maquinas) is None
     assert envio_impressao.cabe_na_maquina(dim(2.00, 4.00), "H", maquinas) is False
     assert envio_impressao.cabe_na_maquina(dim(1.00, 1.20), "H", maquinas) is True
+
+
+# ------------------------------ a pasta da fila nasce sozinha
+
+def test_a_fila_de_maquina_nova_nasce_na_passada(tmp_path):
+    """
+    Ate 23/09/2026 a pasta so nascia no primeiro envio, e maquina
+    recem-cadastrada nao aparecia na fila - ele foi procurar a da H2525
+    pra largar arquivo e nao existia. Pasta que nao existe tambem nao da
+    pra usar na mao, que e como um arquivo urgente entra.
+    """
+    hot = tmp_path / "hot"
+    hot.mkdir()
+    maquinas = {"MAQUINA NOVA": {"hot_folder": str(hot), "mesa_util_m": (2.5, 2.5)}}
+    fila = tmp_path / "fila"
+    fila.mkdir()
+
+    rl_hf.vigiar_fila_uma_vez(pasta_fila=fila, maquinas=maquinas, logger=lambda *a: None,
+                              pasta_relatorios=tmp_path / "rel")
+
+    assert (fila / "MAQUINA NOVA" / "Enviados").is_dir()
+
+
+def test_pasta_que_ja_existe_nao_e_mexida(tmp_path):
+    fila = tmp_path / "fila"
+    (fila / "X" / "Enviados").mkdir(parents=True)
+    (fila / "X" / "ja_estava.pdf").write_bytes(b"x")
+
+    nascidas = rl_hf.garantir_pastas_da_fila(fila, {"X": {}})
+
+    assert nascidas == []
+    assert (fila / "X" / "ja_estava.pdf").exists()
+
+
+def test_falha_ao_criar_pasta_nao_derruba_a_passada(tmp_path, monkeypatch):
+    """Entregar o que ja esta na fila e o trabalho de verdade; a pasta e conforto."""
+    avisos = []
+    monkeypatch.setattr(rl_hf.pathlib.Path, "mkdir",
+                        lambda *a, **k: (_ for _ in ()).throw(OSError("OneDrive pendurado")))
+
+    nascidas = rl_hf.garantir_pastas_da_fila(tmp_path / "fila", {"X": {}},
+                                             logger=lambda n, m: avisos.append(m))
+
+    assert nascidas == []
+    assert any("não consegui criar" in m.lower() for m in avisos)
+
+
+def test_a_h2525_tem_pasta_na_fila_de_verdade():
+    """Contra a fila REAL, so leitura: se sumir, o arquivo dela nao tem pra onde ir."""
+    import pytest
+
+    fila = rl_hf.PASTA_FILA_ONEDRIVE
+    if not fila.is_dir():
+        pytest.skip("fila do OneDrive não está nesta máquina")
+    assert (fila / "DOCAN H2525").is_dir()
