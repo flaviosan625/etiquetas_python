@@ -605,21 +605,44 @@ def test_relatorio_vale_para_a_docan(tmp_path):
     "relatorio precisa valer para DOCAN"). Sem 'maquinas=' de proposito:
     o teste confere a configuracao DE VERDADE, nao uma de mentira.
     """
-    _escrever_registro(tmp_path, [_envio("2026-09-24T09:00:00", "DOCAN",
+    _escrever_registro(tmp_path, [_envio("2026-09-24T09:00:00", "DOCAN R5200",
                                          "1UN LONA IMPRESSA 4.00X3.00M_painel.pdf")])
 
     registros = rp.ler_registros_do_dia(datetime.date(2026, 9, 24), pasta_relatorios=tmp_path)
     por_maquina = rp.interpretar(registros, pasta_fila=tmp_path / "fila")
 
-    assert "DOCAN" in por_maquina
-    linha = por_maquina["DOCAN"][0]
+    assert "DOCAN R5200" in por_maquina
+    linha = por_maquina["DOCAN R5200"][0]
     assert linha["largura_util"] == 5.0, "5,00 util; a midia de 5,20 nao imprime inteira"
     assert round(linha["area_m2"], 2) == 12.0
     assert not linha["nao_cabe"]
 
 
+def test_maquina_que_saiu_do_cadastro_ainda_aparece_no_relatorio(tmp_path):
+    """
+    O registro guarda o nome da maquina como TEXTO. Se ela for renomeada
+    ou sair de MAQUINAS, as linhas velhas continuam com o nome antigo e
+    nao tem mais largura util pra conferir — mas a entrega precisa
+    continuar comprovada, porque o material foi gasto de verdade.
+
+    E por isso que renomear a DOCAN em 23/09/2026 so saiu barato: o
+    registro dela tinha ZERO linha naquele dia.
+    """
+    _escrever_registro(tmp_path, [_envio("2026-09-24T09:00:00", "MAQUINA QUE NAO EXISTE MAIS",
+                                         "1UN LONA IMPRESSA 4.00X3.00M_painel.pdf")])
+
+    por_maquina = rp.interpretar(
+        rp.ler_registros_do_dia(datetime.date(2026, 9, 24), pasta_relatorios=tmp_path),
+        pasta_fila=tmp_path / "fila")
+
+    linha = por_maquina["MAQUINA QUE NAO EXISTE MAIS"][0]
+    assert round(linha["area_m2"], 2) == 12.0, "o m2 do cliente nao pode sumir"
+    assert linha["largura_util"] is None
+    assert linha["nao_cabe"] is False, "sem cadastro nao da pra acusar que nao coube"
+
+
 def test_relatorio_da_docan_sai_em_pdf(tmp_path):
-    _escrever_registro(tmp_path, [_envio("2026-09-24T09:00:00", "DOCAN",
+    _escrever_registro(tmp_path, [_envio("2026-09-24T09:00:00", "DOCAN R5200",
                                          "1UN LONA IMPRESSA 4.00X3.00M_painel.pdf")])
 
     caminho = rp.gerar_pdf(datetime.date(2026, 9, 24), pasta_relatorios=tmp_path,

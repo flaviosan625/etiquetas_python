@@ -145,7 +145,12 @@ MAQUINAS = {
     # giro automático continua raciocinando por 5,00 e deixa passar reta
     # uma arte que o material corta na borda. É consequência aceita da
     # simplificação, não descuido.
-    "DOCAN": {
+    # Chamava-se só "DOCAN" até 23/09/2026, quando a segunda chegou e o
+    # nome cru ficou ambíguo na tela. Renomear saiu barato porque o
+    # registro dela tinha ZERO linha (ele mandou começar do zero no mesmo
+    # dia) — com histórico, o nome antigo teria que continuar valendo nas
+    # linhas velhas, que guardam o nome da máquina como texto.
+    "DOCAN R5200": {
         "hot_folder": r"C:\Program Files\SAi\SAi Production Suite 22\Jobs and Settings\Jobs\Docan\Docan",
         "largura_util_m": 5.00,
         "posto": POSTO_SAI,

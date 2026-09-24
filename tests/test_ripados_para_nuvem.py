@@ -225,3 +225,79 @@ def test_resumo_diz_o_que_ficou_pra_tras(tmp_path):
     _ripado(tmp_path / "Ripados", "gigante.prt", tamanho=20000)
     texto = "\n".join(rpn.resumo(rpn.levar_todos(limite_bytes=10000)))
     assert "gigante.prt" in texto and "limite" in texto
+
+
+# ---------- entrega entre discos diferentes ----------
+#
+# Desde 23/09/2026 o ripado mora no D: e o OneDrive no C:, entao
+# os.replace falha e a entrega passa pela montagem. Os testes forcam
+# esse caminho pelo erro do replace, em vez de exigir dois discos de
+# verdade na maquina que roda a suite.
+
+def _sem_replace_entre_discos(monkeypatch):
+    """Faz os.replace recusar a travessia, como o Windows faz de verdade."""
+    replace_real = rpn.os.replace
+
+    def replace(origem, destino):
+        if pathlib.Path(origem).name.startswith("~montando~"):
+            return replace_real(origem, destino)  # rename local: esse funciona
+        raise OSError(17, "The system cannot move the file to a different disk drive")
+
+    monkeypatch.setattr(rpn.os, "replace", replace)
+
+
+def test_entrega_acontece_mesmo_em_discos_diferentes(tmp_path, monkeypatch):
+    _sem_replace_entre_discos(monkeypatch)
+    origem = _ripado(tmp_path / "Ripados", "arte.prt")
+
+    destino, motivo = rpn.levar(origem)
+
+    assert motivo is None
+    assert destino.exists(), "o ripado tem que chegar mesmo atravessando disco"
+    assert not origem.exists(), "a origem sai do D: pra nao encher o disco"
+
+
+def test_o_nome_final_so_aparece_depois_de_completo(tmp_path, monkeypatch):
+    """
+    O OneDrive nao pode ver um .prt de 14 GB ainda sendo escrito: a copia
+    vai pra um nome provisorio e so entra por rename local.
+    """
+    _sem_replace_entre_discos(monkeypatch)
+    origem = _ripado(tmp_path / "Ripados", "arte.prt")
+
+    copiados = []
+    copy2_real = rpn.shutil.copy2
+
+    def copy2(de, para):
+        copiados.append(pathlib.Path(para).name)
+        return copy2_real(de, para)
+
+    monkeypatch.setattr(rpn.shutil, "copy2", copy2)
+    rpn.levar(origem)
+
+    assert copiados == ["~montando~arte.prt.parcial"], \
+        "a copia nunca pode ir direto pro nome final"
+
+
+def test_montagem_nao_fica_pra_tras(tmp_path, monkeypatch):
+    _sem_replace_entre_discos(monkeypatch)
+    origem = _ripado(tmp_path / "Ripados", "arte.prt")
+    destino, _ = rpn.levar(origem)
+
+    restos = [f.name for f in destino.parent.iterdir() if "montando" in f.name]
+    assert restos == []
+
+
+def test_copia_que_falha_nao_deixa_lixo_nem_perde_a_origem(tmp_path, monkeypatch):
+    """Um .prt de 14 GB pela metade nao pode ficar ocupando a pasta sincronizada."""
+    _sem_replace_entre_discos(monkeypatch)
+    origem = _ripado(tmp_path / "Ripados", "arte.prt")
+    monkeypatch.setattr(rpn.shutil, "copy2",
+                        lambda de, para: (_ for _ in ()).throw(OSError("disco cheio")))
+
+    destino, motivo = rpn.levar(origem)
+
+    assert destino is None
+    assert "disco cheio" in motivo
+    assert origem.exists(), "falhar a entrega nao pode perder o trabalho ripado"
+    assert not list(rpn.PASTA_NUVEM.glob("*montando*"))

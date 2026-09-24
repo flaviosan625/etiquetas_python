@@ -114,7 +114,7 @@ def test_maquina_sem_medida_nao_recusa_nem_gira_nada():
 
 def test_as_maquinas_de_rolo_continuam_sendo_de_rolo():
     """As três de bobina — nenhuma virou mesa por acidente."""
-    for nome in ("UJV 100 UNY CV", "SWJ320A", "DOCAN"):
+    for nome in ("UJV 100 UNY CV", "SWJ320A", "DOCAN R5200"):
         assert rl_hf.limite_de(nome).plana is False
 
 
@@ -140,7 +140,7 @@ def test_as_duas_docan_nao_dividem_a_mesma_hot_folder():
     Cadastro copiado da R5200 mandaria a chapa pra impressora de rolo —
     e o vigia diria "enviado", porque a pasta existe.
     """
-    r5200 = rl_hf.MAQUINAS["DOCAN"]["hot_folder"]
+    r5200 = rl_hf.MAQUINAS["DOCAN R5200"]["hot_folder"]
     h2525 = rl_hf.MAQUINAS["DOCAN H2525"]["hot_folder"]
     assert r5200 != h2525
 

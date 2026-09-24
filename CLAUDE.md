@@ -97,6 +97,15 @@ três lugares, cada um com seu arredondamento.
 O caso que separa as duas: 2,00 × 4,00 m passa deitado num rolo de 3,20 e imprime; numa mesa de
 2,50 os 4,00 m não têm pra onde ir.
 
+**O ripado mora no D:, e a entrega atravessa disco.** Um `.prt` acompanha a ÁREA impressa, não o
+PDF — já medimos 13,8 GB saindo de um PDF de 582 KB. Desde 23/09/2026 `ripados_para_nuvem.
+PASTA_RIPADOS` é `D:\RIPADOS` (462 GB livres contra 183 do C:, e encher o disco do Windows trava a
+máquina inteira), com atalho na área de trabalho. Como o OneDrive continua no C:, `os.replace`
+falha entre volumes: a entrega copia pra `~montando~<nome>.parcial` **na pasta do destino** e só
+então faz o rename local — mesma disciplina da hot folder, mas aqui quem não pode ver arquivo pela
+metade é o OneDrive. E `PASTA_NUVEM` fica **ao lado** da fila, nunca dentro: o vigia avisa a cada
+passada sobre pasta dentro da fila que não seja máquina cadastrada.
+
 **A hot folder do SAi nunca é escrita de cabeça** — sai do `PMSetups.ini` por `sai_setups.py`,
 porque o SAi corta o nome da pasta em 12 letras (`XLF_HS_NET_EPS3200UV_LM` → `XLF_HS_NET_E`).
 Caminho montado pelo nome do setup erra calado: o vigia diz "enviado" e a máquina nunca recebe.

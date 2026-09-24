@@ -25,11 +25,13 @@ prática em 2026-09-07/08:
      saber que veio pela metade. Por isso nada sai daqui sem passar pelo
      _arquivo_estavel.
 
-  3. **A entrega é um rename, não uma cópia.** As duas pastas moram no
-     mesmo volume, então os.replace é instantâneo e atômico: o arquivo
-     aparece inteiro na pasta sincronizada ou não aparece. Copiar 14 GB
-     pra dentro de uma pasta do OneDrive faria ele começar a subir um
-     arquivo pela metade.
+  3. **O nome final só aparece quando o arquivo está inteiro.** Copiar
+     14 GB direto pra dentro de uma pasta do OneDrive faria ele começar
+     a subir um arquivo ainda sendo escrito, e do outro lado ninguém tem
+     como saber que veio pela metade. No mesmo volume isso sai de graça
+     com os.replace. Desde 23/09/2026 o ripado mora no D: e o OneDrive
+     no C:, então a entrega passa por um nome provisório na pasta do
+     destino e entra por rename local — ver _entregar_entre_discos.
 
 O teto de 20 GB é decisão do usuário (2026-09-08): "a intenção é subir
 pelo menos vinte gigas de uma vez (...) sempre vai existir uma fila pra
@@ -41,13 +43,30 @@ o que fazer com ele é uma pessoa.
 import datetime
 import os
 import pathlib
+import shutil
 import time
 
-# Onde o SAi larga o ripado nesta máquina, e pra onde ele vai. O nome da
-# pasta de destino é o mesmo que está escrito no COMO LIGAR NA MAQUINA
-# DA DOCAN.txt que fica lá dentro — se mudar aqui, muda lá também.
-PASTA_RIPADOS = pathlib.Path.home() / "Desktop" / "Ripados"
-PASTA_NUVEM = pathlib.Path.home() / "OneDrive" / "UNYCOMUNICACAO" / "RIP DOCAN" / "Para imprimir"
+import caminhos
+
+# Onde o SAi larga o ripado nesta máquina, e pra onde ele vai.
+#
+# RIPADO MORA NO D: (pedido dele, 2026-09-23: "a pasta Ripados pode
+# ficar na Unidade D: tem mais espaço... isso deve evitar travamentos
+# futuros"). O motivo é concreto: um .prt acompanha a ÁREA impressa, não
+# o PDF — já medimos um de 13,8 GB vindo de um PDF de 582 KB. O C: é o
+# disco do sistema e tem 183 GB livres; o D: tem 462. Encher o disco do
+# Windows trava a máquina inteira, não só o RIP.
+PASTA_RIPADOS = pathlib.Path(r"D:\RIPADOS")
+
+# A pasta sincronizada que a máquina do outro lado vigia. Fica ao LADO
+# da fila, nunca dentro dela: o vigia avisa a cada passada sobre
+# qualquer pasta dentro da fila que não seja uma máquina cadastrada, e
+# isso viraria ruído de minuto em minuto (ver vigiar_fila_uma_vez).
+#
+# A antiga 'RIP DOCAN\Para imprimir' morreu em 23/09/2026, quando as
+# três impressoras foram concentradas numa fila só — e este caminho
+# ficou apontando pro vazio até ser corrigido no mesmo dia.
+PASTA_NUVEM = caminhos.ONEDRIVE_UNY / "RIPADOS PARA AS MAQUINAS"
 
 EXTENSAO_RIPADO = ".prt"
 
@@ -132,6 +151,52 @@ def conferir(caminho, limite_bytes=None):
     return True, None
 
 
+def _caminho_de_montagem(destino):
+    """O nome provisório, na MESMA pasta do destino — ver _entregar_entre_discos."""
+    return destino.with_name(f"~montando~{destino.name}.parcial")
+
+
+def _entregar_entre_discos(caminho, destino):
+    """
+    Entrega quando origem e destino estão em discos diferentes, sem
+    perder a garantia que o rename dava. Devolve o motivo do erro, ou
+    None quando deu certo.
+
+    Copiar direto pro nome final faria o OneDrive começar a subir um
+    .prt de 14 GB ainda sendo escrito, e do outro lado a máquina não tem
+    como saber que veio pela metade. Então a cópia vai pra um nome
+    provisório NA PASTA DO DESTINO e só entra por os.replace depois de
+    completa — rename dentro da mesma pasta, que é instantâneo e
+    atômico. É a mesma disciplina da hot folder (ver
+    rasterlink_hotfolder._copiar_para_hot_folder); a diferença é que lá
+    quem não pode ver arquivo pela metade é o RIP, e aqui é o OneDrive.
+
+    O '~montando~' na frente e o '.parcial' no fim existem pra que nada
+    do outro lado confunda a montagem com trabalho pronto: quem vigia
+    procura '.prt'.
+    """
+    montagem = _caminho_de_montagem(destino)
+    try:
+        shutil.copy2(caminho, montagem)
+        os.replace(montagem, destino)
+    except OSError as e:
+        # Não deixa 14 GB de lixo ocupando a pasta sincronizada.
+        try:
+            montagem.unlink()
+        except OSError:
+            pass
+        return f"Não consegui entregar na nuvem ({e})."
+
+    try:
+        caminho.unlink()
+    except OSError as e:
+        # O trabalho CHEGOU — isso é o que importa. Não apagar a origem
+        # é desperdício de disco, não perda de arte, então vira aviso e
+        # nunca desfaz a entrega.
+        return None if destino.exists() else f"Entreguei mas não consegui limpar a origem ({e})."
+    return None
+
+
 def levar(caminho, pasta_nuvem=None, limite_bytes=None, logger=None, esperar_estavel=True):
     """
     Entrega UM ripado na pasta do OneDrive. Devolve (destino, None) ou
@@ -173,15 +238,12 @@ def levar(caminho, pasta_nuvem=None, limite_bytes=None, logger=None, esperar_est
         # Rename, não cópia: mesmo volume, então é instantâneo e atômico.
         # O OneDrive nunca vê um arquivo pela metade com o nome final.
         os.replace(caminho, destino)
-    except OSError as e:
-        # Volumes diferentes (o Desktop redirecionado, um pendrive) caem
-        # aqui. Não tenta copiar por conta própria: uma cópia de 14 GB
-        # pra dentro de pasta sincronizada é exatamente o que o rename
-        # existe pra evitar.
-        return None, (
-            f"Não consegui mover pra nuvem ({e}). Se as duas pastas não estão no mesmo "
-            f"disco, o movimento deixa de ser atômico e precisa ser resolvido antes."
-        )
+    except OSError:
+        # Volumes diferentes. É o caso NORMAL desde 23/09/2026, quando o
+        # ripado passou a morar no D: e o OneDrive continuou no C:.
+        erro = _entregar_entre_discos(caminho, destino)
+        if erro:
+            return None, erro
 
     if logger:
         logger("ok", f"'{caminho.name}' ({_tamanho_legivel(destino.stat().st_size)}) entregue na nuvem.")

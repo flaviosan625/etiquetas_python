@@ -1652,10 +1652,10 @@ def test_docan_esta_cadastrada_com_a_largura_util_e_nao_a_da_midia():
     5000.00 mm). Cadastrar 5,20 aqui faria o giro automatico deixar
     passar uma arte que a maquina corta na borda.
     """
-    hot, largura = rl_hf._config_maquina(rl_hf.MAQUINAS["DOCAN"])
+    hot, largura = rl_hf._config_maquina(rl_hf.MAQUINAS["DOCAN R5200"])
     assert largura == 5.00
     assert "SAi" in hot, "a hot folder da DOCAN e o Setup do SAi, nao uma pasta inventada"
-    assert rl_hf._posto_da_maquina(rl_hf.MAQUINAS["DOCAN"]) == rl_hf.POSTO_SAI
+    assert rl_hf._posto_da_maquina(rl_hf.MAQUINAS["DOCAN R5200"]) == rl_hf.POSTO_SAI
     for mimaki in ("UJV 100 UNY CV", "SWJ320A"):
         assert rl_hf._posto_da_maquina(rl_hf.MAQUINAS[mimaki]) == rl_hf.POSTO_RIP
 
@@ -1698,10 +1698,10 @@ def test_a_fila_nao_ganha_arquivo_alem_da_arte(tmp_path):
 
 
 def test_docan_esta_cadastrada_com_uma_largura_util_so():
-    hot, largura = rl_hf._config_maquina(rl_hf.MAQUINAS["DOCAN"])
+    hot, largura = rl_hf._config_maquina(rl_hf.MAQUINAS["DOCAN R5200"])
     assert largura == 5.00
-    assert "rolos_m" not in rl_hf.MAQUINAS["DOCAN"]
+    assert "rolos_m" not in rl_hf.MAQUINAS["DOCAN R5200"]
     assert "SAi" in hot, "a hot folder da DOCAN e o Setup do SAi, nao uma pasta inventada"
-    assert rl_hf._posto_da_maquina(rl_hf.MAQUINAS["DOCAN"]) == rl_hf.POSTO_SAI
+    assert rl_hf._posto_da_maquina(rl_hf.MAQUINAS["DOCAN R5200"]) == rl_hf.POSTO_SAI
     for mimaki in ("UJV 100 UNY CV", "SWJ320A"):
         assert rl_hf._posto_da_maquina(rl_hf.MAQUINAS[mimaki]) == rl_hf.POSTO_RIP

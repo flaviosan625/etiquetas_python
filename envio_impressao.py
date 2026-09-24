@@ -61,7 +61,7 @@ MAQUINA_ADESIVO = "UJV 100 UNY CV"
 # valendo pra escolher ENTRE MATERIAIS — adesivo na UJV, lona nas
 # outras, sem a largura opinar. A largura só entra depois, pra desempatar
 # QUAL das duas máquinas de lona, que é a única coisa que as distingue.
-MAQUINA_DOCAN = "DOCAN"
+MAQUINA_DOCAN = "DOCAN R5200"
 
 # A folga de 1mm (arte fechada exatamente na largura da bobina vira
 # 3.2000000038m depois da conversão de pontos pra metros) mora dentro do

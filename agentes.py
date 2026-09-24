@@ -79,8 +79,9 @@ class Agente:
 
 AGENTES = (
     Agente(
-        chave="docan", nome="Vigia da DOCAN",
-        faz="Pega o que chega na fila do OneDrive e entrega na hot folder da DOCAN.",
+        chave="docan", nome="Vigia das DOCAN (R5200 e H2525)",
+        faz="Pega o que chega na fila do OneDrive e entrega nas hot folders das duas "
+            "DOCAN — a de rolo e a plana.",
         onde="este PC · a cada 1 min", tipo="minuto",
         tarefa="Vigia DOCAN (SAi)",
         argumentos=("-m", "rasterlink_hotfolder", "--uma-vez", "--posto", "sai"),
