@@ -15,10 +15,13 @@ OS, a cópia com os valores apareceria na lista de impressão da produção.
 Um teste trava isso.
 
 A CONTA
-Pra cada peça: a área dela e a sobra estimada, pela MESMA conta que o
-sistema já usa pro desperdício (processamento._acumular_consumo_categoria),
-vezes o preço por m² cadastrado pra aquele material/espessura. Material
-composto ("PS ADESIVADO") consome também o material extra, ao preço dele.
+O material que sai do estoque — metros de rolo × largura, ou chapas
+inteiras × área da chapa — vezes o preço por m² cadastrado pra aquele
+material/espessura. Desde 28/09/2026 é a MESMA conta da baixa de estoque
+(aproveitamento.consumo_por_material): as peças do mesmo material
+encaixadas juntas, em lote, e não cada peça sozinha na largura do rolo.
+Material composto ("PS ADESIVADO") consome também o material extra, ao
+preço dele.
 
 VALOR EM REAIS SOMA ENTRE MATERIAIS — é a mesma moeda. O que nunca se soma
 é m² de materiais diferentes (regra da casa), e isso continua separado.
@@ -110,23 +113,18 @@ def calcular(itens, materiais):
     """
     {'por_material': {cat: {area_pecas_m2, area_sobra_m2, valor, completo}},
      'total', 'completo', 'faltando_preco': [descrições]}
+
+    A sobra é a do LOTE: o que sai do estoque menos o que vira peça.
     """
-    from processamento import _acumular_consumo_categoria
+    from aproveitamento import consumo_por_material
 
     por_material, faltando = {}, []
-
-    def consumir(categoria, variante, dimensao, quantidade):
-        info = (materiais or {}).get(categoria)
-        if not info or not dimensao:
-            return
-        acumulado = {"area_total_m2": 0.0, "area_desperdicio_m2": 0.0,
-                     "comprimento_rolo_usado_m": 0.0, "chapas_extras": 0}
-        _acumular_consumo_categoria(acumulado, info, dimensao, quantidade)
-
+    for lote in consumo_por_material(itens, materiais):
+        categoria, variante = lote["categoria"], lote["variante"]
         linha = por_material.setdefault(categoria, {
             "area_pecas_m2": 0.0, "area_sobra_m2": 0.0, "valor": 0.0, "completo": True})
-        linha["area_pecas_m2"] += acumulado["area_total_m2"]
-        linha["area_sobra_m2"] += acumulado["area_desperdicio_m2"]
+        linha["area_pecas_m2"] += lote["area_pecas_m2"]
+        linha["area_sobra_m2"] += lote["desperdicio_m2"]
 
         preco = preco_m2(materiais, categoria, variante)
         if preco is None:
@@ -134,15 +132,8 @@ def calcular(itens, materiais):
             descricao = _descricao(categoria, variante)
             if descricao not in faltando:
                 faltando.append(descricao)
-            return
-        linha["valor"] += (acumulado["area_total_m2"] + acumulado["area_desperdicio_m2"]) * preco
-
-    for item in itens:
-        quantidade = item.get("quantidade") or 1
-        consumir(item.get("categoria"), item.get("variante"), item.get("dimensao"), quantidade)
-        if item.get("categoria_extra"):
-            # a peça é uma só; o material composto consome os dois
-            consumir(item["categoria_extra"], None, item.get("dimensao"), quantidade)
+            continue
+        linha["valor"] += lote["area_consumida_m2"] * preco
 
     for linha in por_material.values():
         for chave in ("area_pecas_m2", "area_sobra_m2", "valor"):

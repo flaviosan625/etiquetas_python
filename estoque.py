@@ -19,18 +19,27 @@ ilhós) já cadastrados na planilha. Todo produto começa com saldo ZERO
 — os volumes reais são lançados do zero via entrada manual, não
 importados da planilha (decisão do usuário: a planilha pode estar
 desatualizada, prefere um levantamento físico novo).
+
+O arquivo mora em caminhos.ESTOQUE (lido na hora do uso, pra teste poder
+apontar pra outro lugar — um teste distraído já apagou o estoque real).
+
+ROLO: saldo em rolos, com fração. Cada baixa pela OS é um movimento com a
+fração de rolo que o pedido gastou (12,40 m de um rolo de 50 m = −0,248),
+então 2,752 rolos quer dizer dois fechados e um aberto com 37,60 m. Até
+28/09/2026 os metros do rolo aberto ficavam num contador solto
+('acumulado_m') e só virava movimento quando um rolo inteiro fechava:
+pedido pequeno não deixava rastro no histórico, não dava pra desfazer e o
+aviso de baixa repetida não enxergava. O contador antigo, se houver, vira
+um ajuste na primeira carga (ver carregar_estoque).
 """
 import copy
 import json
 import math
-import pathlib
 import re
 from datetime import datetime
 
-from dimensoes import calcular_desperdicio_chapa_grande, calcular_desperdicio_item
-
-BASE_DIR = pathlib.Path(__file__).resolve().parent
-ESTOQUE_PATH = BASE_DIR / "estoque.json"
+import caminhos
+from aproveitamento import consumo_por_material
 
 
 def _produto_rolo(descricao, categoria, comprimento_rolo_m, minimo=0, maximo=0, codigo_planilha=None, custo=None):
@@ -39,7 +48,6 @@ def _produto_rolo(descricao, categoria, comprimento_rolo_m, minimo=0, maximo=0, 
         "comprimento_rolo_m": comprimento_rolo_m,
         "categoria_vinculada": categoria, "variante_vinculada": None,
         "minimo": minimo, "maximo": maximo, "codigo_planilha": codigo_planilha,
-        "acumulado_m": 0.0,
         "custo": custo,  # R$ por rolo — None quando ainda não informado (ver [[project-backlog-ideas]])
     }
 
@@ -175,18 +183,19 @@ def carregar_estoque():
     movimentos já registrados. Se o arquivo estiver corrompido, guarda
     uma cópia de segurança e recria do zero — mesmo padrão do config.py.
     """
-    if not ESTOQUE_PATH.exists():
+    arquivo = caminhos.ESTOQUE
+    if not arquivo.exists():
         estoque_novo = {"produtos": copy.deepcopy(CATALOGO_PADRAO), "movimentos": [], "proximo_id": 1, "producao_mensal": []}
         salvar_estoque(estoque_novo)
         return estoque_novo
 
     try:
-        with open(ESTOQUE_PATH, "r", encoding="utf-8") as f:
+        with open(arquivo, "r", encoding="utf-8") as f:
             estoque = json.load(f)
     except (json.JSONDecodeError, OSError):
-        backup = ESTOQUE_PATH.with_suffix(".json.bak")
+        backup = arquivo.with_suffix(".json.bak")
         try:
-            ESTOQUE_PATH.replace(backup)
+            arquivo.replace(backup)
         except OSError:
             pass
         estoque_novo = {"produtos": copy.deepcopy(CATALOGO_PADRAO), "movimentos": [], "proximo_id": 1, "producao_mensal": []}
@@ -213,6 +222,20 @@ def carregar_estoque():
                 if chave not in estoque["produtos"][codigo]:
                     estoque["produtos"][codigo][chave] = copy.deepcopy(valor)
                     alterado = True
+
+    # o contador solto de rolo aberto (modelo antigo, ver o topo do módulo)
+    # vira movimento: o que ele guardava são metros JÁ gastos
+    for codigo, produto in estoque["produtos"].items():
+        if "acumulado_m" not in produto:
+            continue
+        acumulado = produto.pop("acumulado_m") or 0.0
+        alterado = True
+        comprimento = produto.get("comprimento_rolo_m") or 0
+        if acumulado > 0 and comprimento > 0:
+            _acrescentar_movimento(
+                estoque, codigo, "ajuste", -round(acumulado / comprimento, 4),
+                observacao=f"Metros já gastos do rolo aberto ({acumulado:.2f} m), do contador antigo",
+            )
     if alterado:
         salvar_estoque(estoque)
 
@@ -220,8 +243,16 @@ def carregar_estoque():
 
 
 def salvar_estoque(estoque):
-    with open(ESTOQUE_PATH, "w", encoding="utf-8") as f:
+    """
+    Grava por arquivo temporário + troca: um travamento no meio da gravação
+    deixaria o estoque.json pela metade, e a carga seguinte o daria por
+    corrompido e recomeçaria do zero.
+    """
+    arquivo = caminhos.ESTOQUE
+    temporario = arquivo.with_name(arquivo.name + ".tmp")
+    with open(temporario, "w", encoding="utf-8") as f:
         json.dump(estoque, f, ensure_ascii=False, indent=2)
+    temporario.replace(arquivo)
 
 
 _ACENTOS = str.maketrans("ÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇ", "AAAAAEEEEIIIIOOOOOUUUUC")
@@ -275,18 +306,16 @@ def atualizar_produto(estoque, codigo, tipo, descricao, unidade=None, categoria_
                        variante=None, comprimento_rolo_m=None, minimo=0, maximo=0, codigo_planilha=None):
     """
     Atualiza o cadastro de um produto já existente (edição, não criação
-    — o código interno não muda). Preserva o progresso do acumulador de
-    rolo se o produto continuar sendo tipo rolo, e nunca mexe no
-    histórico de movimentos — só o cadastro é substituído.
+    — o código interno não muda). Nunca mexe no histórico de movimentos
+    — só o cadastro é substituído.
     """
-    acumulado_anterior = estoque["produtos"][codigo].get("acumulado_m", 0.0)
     produto = novo_produto(
         tipo, descricao, unidade=unidade, categoria_vinculada=categoria_vinculada,
         variante=variante, comprimento_rolo_m=comprimento_rolo_m, minimo=minimo,
         maximo=maximo, codigo_planilha=codigo_planilha,
     )
-    if tipo == "rolo":
-        produto["acumulado_m"] = acumulado_anterior
+    # custo não tem campo na tela de cadastro: editar não pode apagá-lo
+    produto["custo"] = estoque["produtos"][codigo].get("custo")
     estoque["produtos"][codigo] = produto
     salvar_estoque(estoque)
     return produto
@@ -310,7 +339,101 @@ def remover_produto(estoque, codigo):
 
 def saldo_produto(estoque, codigo):
     """Saldo é sempre a soma do histórico — nunca um contador solto."""
-    return sum(m["quantidade"] for m in estoque["movimentos"] if m["produto"] == codigo)
+    # arredonda o ruído da soma de frações de rolo (0,1 + 0,2 = 0,30000000000000004)
+    return round(sum(m["quantidade"] for m in estoque["movimentos"] if m["produto"] == codigo), 4)
+
+
+def _numero(valor, casas=2):
+    """12.4 -> '12,4'; 3.0 -> '3'. Sem zero sobrando, com vírgula."""
+    texto = f"{valor:.{casas}f}".rstrip("0").rstrip(".")
+    return (texto if texto not in ("", "-0") else "0").replace(".", ",")
+
+
+def formatar_quantidade(produto, quantidade):
+    """
+    Uma quantidade desse produto em texto. Rolo diz também os metros — é o
+    que se mede na bancada; '0,248 rolo' sozinho não diz nada a ninguém.
+    """
+    unidade = (produto or {}).get("unidade", "")
+    comprimento = (produto or {}).get("comprimento_rolo_m") or 0
+    if (produto or {}).get("tipo") == "rolo" and comprimento > 0:
+        return f"{_numero(quantidade, 3)} {unidade} ({_numero(quantidade * comprimento)} m)"
+    return f"{_numero(quantidade, 3)} {unidade}".strip()
+
+
+def descrever_saldo(produto, saldo):
+    """
+    O saldo como se conta na prateleira. Rolo: '2 fechados + aberto com
+    37,6 m (137,6 m)' — o aberto é o que sobrou do rolo em uso.
+    """
+    comprimento = produto.get("comprimento_rolo_m") or 0
+    if produto.get("tipo") != "rolo" or comprimento <= 0 or saldo <= 0:
+        return formatar_quantidade(produto, saldo)
+    fechados = math.floor(saldo + 1e-6)
+    aberto_m = round((saldo - fechados) * comprimento, 2)
+    total_m = _numero(saldo * comprimento)
+    if aberto_m < 0.01:
+        return f"{fechados} {produto['unidade']} ({total_m} m)"
+    return f"{fechados} fechado(s) + aberto com {_numero(aberto_m)} m ({total_m} m)"
+
+
+def interpretar_quantidade(produto, texto):
+    """
+    O que se digita na entrada/saída manual. Número puro é na unidade do
+    produto; rolo aceita também metros com 'm' no fim ('37,6m'), que é como
+    se conta rolo aberto na contagem física. Devolve a quantidade na unidade
+    do produto; ValueError quando não dá pra entender ou não é maior que zero.
+    """
+    limpo = str(texto).strip().lower().replace(",", ".").replace(" ", "")
+    em_metros = limpo.endswith("m")
+    if em_metros:
+        limpo = limpo[:-1]
+    quantidade = float(limpo)
+    if quantidade <= 0:
+        raise ValueError("a quantidade precisa ser maior que zero")
+    if not em_metros:
+        return quantidade
+    comprimento = produto.get("comprimento_rolo_m") or 0
+    if produto.get("tipo") != "rolo" or comprimento <= 0:
+        raise ValueError("metros só valem pra rolo com comprimento cadastrado")
+    return round(quantidade / comprimento, 4)
+
+
+def conferir_cadastro(estoque, materiais):
+    """
+    Onde o estoque e o config.json não conversam — cada um vira baixa que
+    não acontece:
+      'sem_produto': material/espessura que o sistema reconhece no nome do
+                     arquivo, mas sem produto no estoque (a baixa pela OS
+                     fica "sem produto vinculado");
+      'sem_material': produto de chapa/rolo cujo material ou espessura o
+                     config não reconhece (nunca recebe baixa pela OS).
+    """
+    from dimensoes import formatar_variante
+
+    produtos = estoque["produtos"]
+    sem_produto, sem_material = [], []
+    for categoria, info in (materiais or {}).items():
+        vinculados = [p for p in produtos.values() if p.get("categoria_vinculada") == categoria]
+        variantes = info.get("variantes") or []
+        if info.get("tipo") == "rolo" or not variantes:
+            if not vinculados:
+                sem_produto.append(categoria)
+            continue
+        for variante in variantes:
+            if not any(_mesma_variante(p.get("variante_vinculada"), variante) for p in vinculados):
+                sem_produto.append(f"{categoria} {formatar_variante(variante)}")
+    for produto in produtos.values():
+        categoria = produto.get("categoria_vinculada")
+        if not categoria or produto.get("tipo") == "insumo":
+            continue
+        info = (materiais or {}).get(categoria)
+        if info is None:
+            sem_material.append(produto["descricao"])
+        elif produto.get("tipo") == "chapa" and info.get("variantes") and not any(
+                _mesma_variante(produto.get("variante_vinculada"), v) for v in info["variantes"]):
+            sem_material.append(produto["descricao"])
+    return {"sem_produto": sem_produto, "sem_material": sorted(sem_material)}
 
 
 def registrar_movimento(estoque, codigo, tipo, quantidade, observacao="", origem_pedido=None, estorno_de=None):
@@ -320,6 +443,12 @@ def registrar_movimento(estoque, codigo, tipo, quantidade, observacao="", origem
     usado inclusive pelo desfazer). Nunca edita um movimento existente,
     só acrescenta — assim o histórico continua confiável.
     """
+    mov = _acrescentar_movimento(estoque, codigo, tipo, quantidade, observacao, origem_pedido, estorno_de)
+    salvar_estoque(estoque)
+    return mov
+
+
+def _acrescentar_movimento(estoque, codigo, tipo, quantidade, observacao="", origem_pedido=None, estorno_de=None):
     mov = {
         "id": estoque["proximo_id"],
         "data": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
@@ -332,7 +461,6 @@ def registrar_movimento(estoque, codigo, tipo, quantidade, observacao="", origem
     }
     estoque["movimentos"].append(mov)
     estoque["proximo_id"] += 1
-    salvar_estoque(estoque)
     return mov
 
 
@@ -354,6 +482,19 @@ def desfazer_movimento(estoque, movimento_id):
     )
 
 
+def _mesma_variante(cadastrada, da_peca):
+    """
+    A variante pelo que ela É — espessura e cor. A da peça é uma cópia da
+    variante do config.json, que pode carregar preço e rótulo; comparar o
+    dicionário inteiro fazia a chapa com preço cadastrado perder o produto
+    do estoque (mesma regra de custos._mesma_variante).
+    """
+    if not cadastrada or not da_peca:
+        return not cadastrada and not da_peca
+    return ((cadastrada.get("espessura") or "") == (da_peca.get("espessura") or "")
+            and (cadastrada.get("cor") or "") == (da_peca.get("cor") or ""))
+
+
 def _produto_vinculado(estoque, categoria, variante):
     """
     Acha o produto do estoque vinculado a uma categoria de etiqueta (e,
@@ -365,6 +506,11 @@ def _produto_vinculado(estoque, categoria, variante):
     arquivo não indica qual foi usado (só a categoria "ADESIVO"). Nesse
     caso o sistema não adivinha: fica sem produto resolvido, pra dar
     baixa manual depois escolhendo o certo.
+
+    Chapa cujo nome de arquivo não disse espessura/cor (variante None —
+    "PS 1,00X0,50M" sem o "2MM") é o mesmo caso: qualquer chapa do
+    material pode ser, então é ambígua e quem dá baixa escolhe. Antes
+    ficava "sem produto vinculado", sem jeito de baixar pela OS.
     """
     candidatos = [
         (codigo, produto) for codigo, produto in estoque["produtos"].items()
@@ -380,11 +526,11 @@ def _produto_vinculado(estoque, categoria, variante):
             return codigo, produto, False
         return None, None, True
 
-    chapas = [(c, p) for c, p in candidatos if p["variante_vinculada"] == variante]
+    chapas = [(c, p) for c, p in candidatos if _mesma_variante(p["variante_vinculada"], variante)]
     if len(chapas) == 1:
         codigo, produto = chapas[0]
         return codigo, produto, False
-    return None, None, bool(chapas)
+    return None, None, bool(chapas) or not variante
 
 
 def produtos_por_categoria(estoque, categoria):
@@ -402,75 +548,32 @@ def produtos_por_categoria(estoque, categoria):
 
 def calcular_consumo(itens, materiais_config):
     """
-    Agrupa os itens de uma OS por categoria+variante e calcula quanto
-    cada grupo consumiu — em metros lineares (rolo) ou em chapas
-    inteiras (chapa) — reaproveitando as mesmas contas de corte que o
-    processamento normal já usa (dimensoes.calcular_desperdicio_item /
-    calcular_desperdicio_chapa_grande), só que agrupadas por variante
-    em vez de por categoria inteira.
+    Quanto cada material que sai do estoque consome nesta OS — metros de
+    rolo ou chapas inteiras —, agrupado por categoria + variante.
 
-    Material composto (ex: "PS ADESIVADO" — ver processamento.py/
-    dimensoes.identificar_categoria_extra): o mesmo item entra no grupo
-    da categoria principal E no da 'categoria_extra', mesma medida —
-    consome os dois materiais de verdade, não é escolha entre um ou
-    outro.
+    Desde 28/09/2026 a conta é do LOTE (aproveitamento.consumo_por_material):
+    as peças do mesmo material encaixadas juntas, como saem na máquina e na
+    bancada. Antes cada peça gastava sozinha a largura inteira do rolo, e a
+    baixa saía maior do que o material que de fato foi usado.
+
+    Material composto (ex: "PS ADESIVADO"): a mesma peça entra no lote de PS
+    e no de ADESIVO — consome os dois de verdade, não é escolha entre um ou
+    outro. 'dimensao' é de UMA peça e a quantidade multiplica (regressão de
+    2026-08-29: "4UN PVC..." baixava como 1).
     """
-    grupos = {}
-    for item in itens:
-        categorias_do_item = [item["categoria"]]
-        if item.get("categoria_extra"):
-            categorias_do_item.append(item["categoria_extra"])
-
-        for categoria in categorias_do_item:
-            chave = (categoria, json.dumps(item.get("variante"), sort_keys=True))
-            grupos.setdefault(chave, {"itens": [], "variante": item.get("variante")})
-            grupos[chave]["itens"].append(item)
-
     resultados = []
-    for (categoria, _), grupo in grupos.items():
-        info_material = materiais_config.get(categoria)
-        if not info_material:
-            continue
-        largura_m = info_material["largura_cm"] / 100
-        comprimento_m = info_material["comprimento_cm"] / 100
-
-        comprimento_acumulado = 0.0
-        chapas_extras = 0
-        desperdicio_total = 0.0
-        area_total_m2 = 0.0
-        for item in grupo["itens"]:
-            dimensao = item.get("dimensao")
-            if not dimensao:
-                continue
-            # 'dimensao' é sempre de UMA peça — "4UN PVC..." consome
-            # material de 4 peças, não de 1 (mesmo ponto corrigido em
-            # processamento.py, 2026-08-29). Sem multiplicar pela
-            # quantidade aqui, a baixa de estoque ficava sempre como se
-            # todo item tivesse vindo 1 UN, mesmo quando o nome dizia
-            # outra coisa.
-            quantidade_item = item.get("quantidade", 1)
-            area_total_m2 += dimensao.get("area_m2", 0.0) * quantidade_item
-            calculo = calcular_desperdicio_item(dimensao, largura_m)
-            if calculo:
-                comprimento_acumulado += calculo["peca_comprimento_m"] * quantidade_item
-                desperdicio_total += calculo["desperdicio_m2"] * quantidade_item
-            elif info_material["tipo"] == "chapa":
-                estimativa = calcular_desperdicio_chapa_grande(dimensao, largura_m, comprimento_m)
-                chapas_extras += estimativa["total_chapas"] * quantidade_item
-                desperdicio_total += estimativa["desperdicio_m2"] * quantidade_item
-
-        if info_material["tipo"] == "rolo":
-            resultados.append({
-                "categoria": categoria, "variante": grupo["variante"], "tipo": "rolo",
-                "metros": comprimento_acumulado, "desperdicio_m2": desperdicio_total, "area_m2": area_total_m2,
-            })
+    for lote in consumo_por_material(itens, materiais_config):
+        linha = {
+            "categoria": lote["categoria"], "variante": lote["variante"], "tipo": lote["tipo"],
+            "area_m2": lote["area_pecas_m2"], "desperdicio_m2": lote["desperdicio_m2"],
+            "aproveitamento": lote["aproveitamento"], "pecas_divididas": lote["pecas_divididas"],
+        }
+        if lote["tipo"] == "rolo":
+            linha["metros"] = lote["metros"]
         else:
-            unidades = math.ceil(comprimento_acumulado / comprimento_m) if comprimento_m > 0 else 0
-            unidades += chapas_extras
-            resultados.append({
-                "categoria": categoria, "variante": grupo["variante"], "tipo": "chapa",
-                "chapas": unidades, "desperdicio_m2": desperdicio_total, "area_m2": area_total_m2,
-            })
+            linha["chapas"] = lote["chapas"]
+            linha["maior_retalho_m"] = lote.get("maior_retalho_m")
+        resultados.append(linha)
     return resultados
 
 
@@ -494,36 +597,38 @@ def _processar_saida_os(estoque, itens, materiais_config, nome_pedido, persistir
             resumo.append({
                 "categoria": grupo["categoria"], "variante": grupo["variante"], "produto": None,
                 "codigo": None, "descontado": None, "unidade": None, "saldo_resultante": None,
-                "ambiguo": ambiguo,
+                "ambiguo": ambiguo, "problema": None, "consumo": grupo,
             })
             continue
 
         saldo_atual = saldo_produto(estoque, codigo)
+        estimativa = f"{grupo['aproveitamento']:.0%} aproveitado, lote encaixado — estimativa"
+        if grupo["pecas_divididas"]:
+            estimativa += f"; {grupo['pecas_divididas']} peça(s) em partes, emenda não contada"
 
+        problema = None
         if grupo["tipo"] == "rolo":
-            acumulado_novo = produto.get("acumulado_m", 0.0) + grupo["metros"]
-            comprimento_rolo = produto["comprimento_rolo_m"]
-            descontado = int(acumulado_novo // comprimento_rolo)
-            if persistir:
-                produto["acumulado_m"] = acumulado_novo - descontado * comprimento_rolo
-                if descontado > 0:
-                    registrar_movimento(
-                        estoque, codigo, "saida", -descontado,
-                        observacao=f"Saída pela OS ({grupo['metros']:.2f}m consumidos nesse pedido)",
-                        origem_pedido=nome_pedido,
-                    )
+            comprimento_rolo = produto.get("comprimento_rolo_m") or 0
+            if comprimento_rolo > 0:
+                # fração de rolo: 12,40 m de um rolo de 50 m = 0,248 (ver o topo do módulo)
+                descontado = round(grupo["metros"] / comprimento_rolo, 4)
+            else:
+                descontado = 0
+                problema = "rolo sem comprimento cadastrado — edite o produto antes de dar baixa"
+            observacao = f"Saída pela OS: {grupo['metros']:.2f} m de rolo ({estimativa})"
         else:
             descontado = grupo["chapas"]
-            if persistir and descontado > 0:
-                registrar_movimento(
-                    estoque, codigo, "saida", -descontado,
-                    observacao="Saída pela OS", origem_pedido=nome_pedido,
-                )
+            observacao = f"Saída pela OS: {descontado} chapa(s) ({estimativa})"
+        if persistir and descontado > 0:
+            registrar_movimento(
+                estoque, codigo, "saida", -descontado, observacao=observacao, origem_pedido=nome_pedido,
+            )
 
         resumo.append({
             "categoria": grupo["categoria"], "variante": grupo["variante"], "produto": produto["descricao"],
             "codigo": codigo, "descontado": descontado, "unidade": produto["unidade"],
-            "saldo_resultante": saldo_atual - descontado, "ambiguo": False,
+            "saldo_resultante": saldo_atual - descontado, "ambiguo": False, "problema": problema,
+            "consumo": grupo,
         })
 
         # só LONA e ADESIVO têm máquina vinculada (ver MAQUINA_POR_CATEGORIA)
@@ -680,5 +785,5 @@ def prever_saida_os(estoque, itens, materiais_config, resolucoes_manuais=None):
 
 
 def confirmar_saida_os(estoque, itens, materiais_config, nome_pedido, resolucoes_manuais=None):
-    """Desconta de verdade (rolo: acumula e só baixa rolo fechado; chapa: baixa direto) e grava."""
+    """Desconta de verdade (rolo: a fração de rolo gasta; chapa: chapas inteiras) e grava."""
     return _processar_saida_os(estoque, itens, materiais_config, nome_pedido, persistir=True, resolucoes_manuais=resolucoes_manuais)

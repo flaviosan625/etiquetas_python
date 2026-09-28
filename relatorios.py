@@ -243,7 +243,8 @@ def _rodape_de_custos(pdf_os, pagina, y, custos, limite_y, cabecalho, dados_pagi
             Custo de material: {formatar_reais(custos["total"])}{parcial}</p>
         {faltando}
         <p style="font-size: 7pt; color: #999999; margin: 4px 0 0 0;">
-            Custo = (área das peças + sobra estimada do rolo/chapa) × preço por m² cadastrado.
+            Custo = material que sai do estoque (área das peças + sobra estimada do lote, com as peças
+            do mesmo material encaixadas juntas) × preço por m² cadastrado.
             Só material: não inclui tinta, máquina nem mão de obra. Valores em reais somam entre
             materiais; m² nunca.</p>
     </div>

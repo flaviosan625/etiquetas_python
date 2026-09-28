@@ -47,6 +47,12 @@ EVENTOS = ONEDRIVE_UNY / "EVENTOS"
 # relativo à pasta onde alguém abriu o atalho.
 ETIQUETAS_GERADAS = PASTA_PROGRAMA / "etiquetas_geradas"
 
+# O estoque (estoque.py): catálogo e histórico de movimentos. Ao lado do
+# programa e fora do OneDrive — um arquivo inteiro regravado a cada
+# lançamento é o caso em que o OneDrive fica com uma versão só e a outra
+# evapora (ver o registro de 17 a 22/09 no CLAUDE.md).
+ESTOQUE = PASTA_PROGRAMA / "estoque.json"
+
 # Onde a tela de receber artes deixa o que baixou ANTES de ele confirmar
 # (2026-09-21). Local e fora do OneDrive de propósito: arte que ele ainda
 # pode recusar não deve ficar sincronizando, e cliente novo só nasce na

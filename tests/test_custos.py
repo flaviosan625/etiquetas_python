@@ -16,7 +16,6 @@ import pymupdf
 import pytest
 
 import custos
-from dimensoes import calcular_desperdicio_item
 
 
 def _materiais(preco_lona=18.0, preco_adesivo=25.0):
@@ -80,7 +79,7 @@ def test_sem_nada_cadastrado_nao_tem_preco():
 def test_custo_e_pecas_mais_sobra_vezes_o_preco():
     """Decisão do usuário: o material que sai do rolo de verdade, não só a peça."""
     item = _item("LONA", 3.0, 1.0, quantidade=2)
-    sobra = calcular_desperdicio_item(item["dimensao"], 3.20)["desperdicio_m2"] * 2
+    sobra = 3.20 * 2.0 - 6.0      # duas lonas de 3,00 × 1,00: 2 m de rolo de 3,20
 
     r = custos.calcular([item], _materiais())
     lona = r["por_material"]["LONA"]
@@ -88,6 +87,19 @@ def test_custo_e_pecas_mais_sobra_vezes_o_preco():
     assert lona["area_pecas_m2"] == round(3.0 * 1.0 * 2, 2)
     assert lona["area_sobra_m2"] == round(sobra, 2)
     assert lona["valor"] == round((6.0 + sobra) * 18.0, 2)
+
+
+def test_sobra_e_do_lote_as_pecas_dividem_o_rolo():
+    """Pedido de 28/09/2026: duas peças de 1,50 m lado a lado num rolo de 3,20 — sobra de 0,20 de largura."""
+    r = custos.calcular([_item("LONA", 1.5, 2.0, quantidade=2)], _materiais())
+    assert r["por_material"]["LONA"]["area_sobra_m2"] == round(3.20 * 2.0 - 6.0, 2)
+
+
+def test_chapa_cobra_a_chapa_que_sai_do_estoque():
+    """Quatro PS de 1,80 × 0,50 cabem em 2 chapas de 2,00 × 1,00: custa 4 m² de PS 1mm."""
+    ps = {"espessura": "1MM", "cor": "BRANCO"}
+    r = custos.calcular([_item("PS", 1.80, 0.50, quantidade=4, variante=ps)], _materiais())
+    assert r["por_material"]["PS"]["valor"] == round(4.0 * 30.0, 2)
 
 
 def test_reais_somam_entre_materiais():

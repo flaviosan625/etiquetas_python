@@ -43,11 +43,13 @@ from estoque import (
     prever_saida_os, confirmar_saida_os, pedido_ja_teve_saida, produtos_por_categoria,
     novo_produto, adicionar_produto, atualizar_produto, remover_produto,
     meses_disponiveis, resumo_mensal, rendimento_tinta_mensal,
+    conferir_cadastro, descrever_saldo, formatar_quantidade, interpretar_quantidade,
 )
 from impressao import imprimir_pdf, impressora_padrao, listar_impressoras
 from processamento import processar_etiquetas
 from rasterlink import rastrear as rastrear_rip
 from rasterlink_hotfolder import MAQUINAS as MAQUINAS_RIP
+import caminhos
 import tema
 from tema import cores
 from utils import sanitizar_nome_arquivo
@@ -1324,9 +1326,26 @@ class JanelaEstoque(tk.Toplevel):
         tk.Label(
             self, fg=cores.texto2, bg=cores.fundo, justify="left", wraplength=780,
             text="Clique duas vezes num produto pra editar seus dados. Toda entrada/saída fica registrada "
-                 "no histórico e pode ser desfeita.",
+                 "no histórico e pode ser desfeita. Rolo aberto se lança em metros: \"37,6m\".",
         ).grid(row=linha, column=0, sticky="w", padx=20, pady=(0, 10))
         linha += 1
+
+        # onde o estoque e o config.json não conversam, a baixa pela OS não
+        # acontece — melhor saber aqui do que descobrir na hora da baixa
+        conferencia = conferir_cadastro(self.estoque, self.config_dados.get("materiais", {}))
+        avisos = []
+        if conferencia["sem_produto"]:
+            avisos.append("Sem produto no estoque (a baixa pela OS não acha de onde tirar): "
+                          + ", ".join(conferencia["sem_produto"]) + ".")
+        if conferencia["sem_material"]:
+            avisos.append("Produto que o sistema não reconhece no nome dos arquivos (nunca recebe baixa "
+                          "pela OS): " + ", ".join(conferencia["sem_material"]) + ".")
+        if avisos:
+            tk.Label(
+                self, text="\n".join(avisos), fg=cores.alerta, bg=cores.alerta_fundo, justify="left",
+                wraplength=780, anchor="w", padx=8, pady=4,
+            ).grid(row=linha, column=0, sticky="ew", padx=20, pady=(0, 10))
+            linha += 1
 
         linha_conteudo = linha
         linha += 1
@@ -1440,10 +1459,7 @@ class JanelaEstoque(tk.Toplevel):
         frame_dir.grid(row=0, column=1, sticky="e", padx=(4, 10), pady=9)
         clicaveis.append(frame_dir)
 
-        texto_saldo = f"{saldo:g} {produto['unidade']}"
-        acumulado = produto.get("acumulado_m", 0.0)
-        if produto["tipo"] == "rolo" and acumulado > 0:
-            texto_saldo += f"  (+{acumulado:.2f}m ac.)"
+        texto_saldo = descrever_saldo(produto, saldo)
         rotulo_saldo = tk.Label(frame_dir, text=texto_saldo, bg=cores.cartao, fg=cores.texto, font=("Segoe UI", 10, "bold"))
         rotulo_saldo.pack(side="left")
         clicaveis.append(rotulo_saldo)
@@ -1507,7 +1523,8 @@ class JanelaMovimentoManual(tk.Toplevel):
         self.var_produto = tk.StringVar(value=rotulos[0] if rotulos else "")
         ttk.Combobox(self, textvariable=self.var_produto, values=rotulos, state="readonly").pack(fill="x", padx=16)
 
-        tk.Label(self, text="Quantidade").pack(anchor="w", **pad)
+        tk.Label(self, text="Quantidade (rolo: em rolos, ou em metros com m no fim — ex.: 37,6m)").pack(
+            anchor="w", **pad)
         self.var_quantidade = tk.StringVar()
         tk.Entry(self, textvariable=self.var_quantidade).pack(fill="x", padx=16)
 
@@ -1536,13 +1553,12 @@ class JanelaMovimentoManual(tk.Toplevel):
             return
         codigo, produto = self.produtos_ordenados[indice]
 
-        texto_qtd = self.var_quantidade.get().strip().replace(",", ".")
         try:
-            quantidade = float(texto_qtd)
-            if quantidade <= 0:
-                raise ValueError
+            quantidade = interpretar_quantidade(produto, self.var_quantidade.get())
         except ValueError:
-            messagebox.showwarning("Quantidade inválida", "Informe uma quantidade maior que zero.")
+            messagebox.showwarning(
+                "Quantidade inválida",
+                "Informe uma quantidade maior que zero. Metros (\"37,6m\") só valem pra rolo.")
             return
 
         sinal = 1 if self.tipo == "entrada" else -1
@@ -1554,7 +1570,7 @@ class JanelaMovimentoManual(tk.Toplevel):
         if saldo_novo < 0:
             messagebox.showwarning(
                 "Estoque negativo",
-                f"'{produto['descricao']}' ficou com saldo negativo ({saldo_novo:g} {produto['unidade']}). "
+                f"'{produto['descricao']}' ficou com saldo negativo ({formatar_quantidade(produto, saldo_novo)}). "
                 f"O lançamento foi salvo mesmo assim — confira se está correto.",
             )
         self.destroy()
@@ -1618,7 +1634,7 @@ class JanelaSaidaOS(tk.Toplevel):
         self.grab_set()
 
     def _escolher_arquivo(self):
-        pasta_entrada = pathlib.Path("etiquetas_geradas")
+        pasta_entrada = caminhos.ETIQUETAS_GERADAS
         caminho = filedialog.askopenfilename(
             title="Escolha o arquivo da OS (.json)", filetypes=[("Arquivo da OS", "*.json")],
             initialdir=str(pasta_entrada.resolve()) if pasta_entrada.exists() else None,
@@ -1675,7 +1691,8 @@ class JanelaSaidaOS(tk.Toplevel):
                 frame_item = tk.Frame(self.frame_previa)
                 frame_item.pack(anchor="w", fill="x", pady=4)
                 tk.Label(
-                    frame_item, text=f"{linha['categoria']}{variante_txt} — mais de um produto possível, escolha qual baixar:",
+                    frame_item, text=f"{linha['categoria']}{variante_txt} — o nome do arquivo não diz qual produto "
+                                     f"(acabamento, espessura ou cor), escolha qual baixar:",
                     anchor="w", fg=cores.alerta, justify="left", wraplength=500,
                 ).pack(anchor="w")
 
@@ -1698,15 +1715,33 @@ class JanelaSaidaOS(tk.Toplevel):
                 motivo = "mais de um produto possível, dê baixa manual" if linha.get("ambiguo") else "sem produto vinculado no estoque"
                 texto = f"{linha['categoria']}{variante_txt} — {motivo}"
                 cor = cores.alerta
+            elif linha.get("problema"):
+                texto = f"{linha['produto']} — {linha['problema']}"
+                cor = cores.alerta
             else:
+                produto = self.estoque["produtos"][linha["codigo"]]
                 texto = (
-                    f"{linha['produto']} — baixa de {linha['descontado']:g} {linha['unidade']} "
-                    f"(saldo ficaria: {linha['saldo_resultante']:g})"
+                    f"{linha['produto']} — baixa de {formatar_quantidade(produto, linha['descontado'])} "
+                    f"(saldo ficaria: {descrever_saldo(produto, linha['saldo_resultante'])})"
                 )
                 cor = cores.texto
             tk.Label(
                 self.frame_previa, text=texto, anchor="w", fg=cor, justify="left", wraplength=500,
-            ).pack(anchor="w", pady=2)
+            ).pack(anchor="w", pady=(2, 0))
+            # de onde saiu o número: o lote encaixado, sobra e aproveitamento
+            # — estimativa, e escrita como tal (regra da casa)
+            consumo = linha.get("consumo") or {}
+            if consumo:
+                detalhe = (f"{consumo['area_m2']:.2f} m² de peças, sobra {consumo['desperdicio_m2']:.2f} m², "
+                           f"{consumo['aproveitamento']:.0%} aproveitado — estimativa, peças encaixadas juntas")
+                if consumo.get("maior_retalho_m"):
+                    detalhe += " · maior retalho %.2f x %.2f m" % consumo["maior_retalho_m"]
+                if consumo.get("pecas_divididas"):
+                    detalhe += f" · {consumo['pecas_divididas']} peça(s) em partes, emenda não contada"
+                tk.Label(
+                    self.frame_previa, text=detalhe, anchor="w", fg=cores.texto2, justify="left",
+                    wraplength=500, font=("Segoe UI", 8),
+                ).pack(anchor="w", pady=(0, 4))
 
     def _confirmar(self):
         if not self.dados_os:
@@ -1723,7 +1758,8 @@ class JanelaSaidaOS(tk.Toplevel):
         resumo = confirmar_saida_os(
             self.estoque, self.dados_os["itens"], self.config_dados["materiais"], nome_pedido, self.resolucoes_manuais,
         )
-        negativos = [r for r in resumo if r["saldo_resultante"] is not None and r["saldo_resultante"] < 0]
+        negativos = [r for r in resumo if r["saldo_resultante"] is not None and r["saldo_resultante"] < 0
+                     and r["codigo"]]
         self.ao_salvar()
         if negativos:
             nomes = ", ".join(r["produto"] for r in negativos)
@@ -1779,14 +1815,13 @@ class JanelaHistorico(tk.Toplevel):
         for mov in movimentos:
             produto = self.estoque["produtos"].get(mov["produto"])
             nome_produto = produto["descricao"] if produto else mov["produto"]
-            unidade = produto["unidade"] if produto else ""
 
             linha = tk.Frame(self.frame_lista)
             linha.pack(fill="x", pady=3)
 
             sinal = "+" if mov["quantidade"] > 0 else ""
             cor = cores.positivo if mov["quantidade"] > 0 else cores.texto
-            texto = f"{mov['data']} · {nome_produto} · {sinal}{mov['quantidade']:g} {unidade}"
+            texto = f"{mov['data']} · {nome_produto} · {sinal}{formatar_quantidade(produto, mov['quantidade'])}"
             if mov.get("observacao"):
                 texto += f" · {mov['observacao']}"
             if mov.get("origem_pedido"):
@@ -1898,7 +1933,7 @@ class JanelaNovoProduto(tk.Toplevel):
             saldo_atual = saldo_produto(self.estoque, self.codigo_edicao)
             tk.Label(
                 self, bg=cores.fundo, fg=cores.texto2,
-                text=f"Saldo atual: {saldo_atual:g} {p['unidade']} (editar aqui não muda o saldo — "
+                text=f"Saldo atual: {descrever_saldo(p, saldo_atual)} (editar aqui não muda o saldo — "
                      f"use entrada/saída/histórico pra isso).",
                 justify="left", wraplength=420,
             ).pack(anchor="w", padx=16, pady=(6, 0))
@@ -2223,7 +2258,7 @@ class JanelaDashboard(tk.Toplevel):
             tk.Label(linha, text=produto["descricao"], anchor="w", bg=cores.fundo, fg=cores.texto).grid(
                 row=0, column=0, sticky="ew")
             tk.Label(
-                linha, text=f"{valor:g} {produto['unidade']}", anchor="e", bg=cores.fundo, fg=cores.texto,
+                linha, text=formatar_quantidade(produto, valor), anchor="e", bg=cores.fundo, fg=cores.texto,
                 font=("Segoe UI", 9, "bold"), width=14,
             ).grid(row=0, column=1, sticky="e", padx=(8, 0))
 

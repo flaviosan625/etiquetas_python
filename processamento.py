@@ -31,18 +31,18 @@ Principais diferenças em relação à versão original de main.py:
     (usado no modo linha de comando).
 """
 import os
-import math
 import pathlib
 import re
 from datetime import datetime
 
 import pymupdf
 
+from aproveitamento import consumo_por_material, descrever as descrever_consumo, partes_da_peca
 from conversao_adobe import CONVERSORES_POR_EXTENSAO, converter_se_necessario
 from dimensoes import (
-    contem_palavra, extrair_dimensoes, calcular_desperdicio_item, extrair_quantidade,
+    contem_palavra, extrair_dimensoes, extrair_quantidade,
     identificar_categoria, identificar_categoria_extra, identificar_variante, formatar_variante,
-    calcular_desperdicio_chapa_grande, dimensao_da_arte, nome_sem_prefixo_reconhecido, remover_palavra,
+    dimensao_da_arte, nome_sem_prefixo_reconhecido, remover_palavra,
     FATORES_UNIDADE,
 )
 from estado_pedido import carregar_estado, nomes_ja_processados, salvar_estado
@@ -136,10 +136,9 @@ def _novo_estado_categoria():
         "tem_etiqueta": False,
         "total_etiquetas": 0,
         "area_total_m2": 0.0,
-        "area_desperdicio_m2": 0.0,
-        "comprimento_rolo_usado_m": 0.0,
+        # artes maiores que o rolo/chapa: entram no consumo divididas (aproveitamento.py)
+        # e a emenda não é contada — o fim da rodada pede pra conferir
         "itens_fora_do_rolo": [],
-        "chapas_extras": 0,  # chapas estimadas pras peças maiores que uma chapa (calcular_desperdicio_chapa_grande)
         "sobra_rodape": [],  # espaço vertical que sobrou no rodapé de cada etiqueta, na ordem em que foram montadas
         "posicoes_etiquetas": [],  # (índice_da_página, y_inicial, y_final) de cada etiqueta, na ordem em que foram montadas
         "caixa_contagem_banner": None,  # retângulo reservado no banner pra escrever "N etiquetas" depois
@@ -328,39 +327,20 @@ def _renomear_para_padrao(pasta_entrada, nome_antigo, nome_novo, logger):
 
 def _acumular_consumo_categoria(cat_info, info_material, dimensao, quantidade):
     """
-    Soma o consumo de UMA peça (medida x quantidade) nos totais de uma
-    categoria — área, desperdício, comprimento de rolo usado ou chapas
-    extras. Reaproveitado tanto pra categoria principal do item quanto
-    pra categoria extra de material composto (ex: "PS ADESIVADO" conta
-    pra PS e pra ADESIVO, mesma medida — ver dimensoes.identificar_
-    categoria_extra) — cada categoria usa sua própria largura de
-    rolo/chapa, então a mesma peça pode caber numa e não na outra.
+    Soma a área de UMA arte (medida x quantidade) no total da categoria e
+    devolve em quantas partes ela entra no cálculo do material: 1 = cabe
+    inteira no rolo/chapa; mais = maior que o material, entra dividida (e a
+    emenda não é contada). Reaproveitado pra categoria extra de material
+    composto (ex: "PS ADESIVADO" conta pra PS e pra ADESIVO, mesma medida)
+    — cada uma com a largura do seu rolo/chapa.
 
-    Retorna um dict com 'resultado_corte' (quando a peça coube no
-    rolo/chapa normal) ou 'estimativa_chapa_grande' (quando não coube
-    e é chapa — estimativa por grade) — os dois None quando não coube
-    e é rolo (peça mais larga que o rolo, sem estimativa possível).
-    Quem chama decide o texto de log a partir disso.
+    Metros, chapas e sobra NÃO são daqui: desde 28/09/2026 são do LOTE
+    inteiro (aproveitamento.consumo_por_material, no fim da rodada) — a
+    sobra de uma peça sozinha não existe quando ela sai ao lado de outra.
     """
     cat_info["area_total_m2"] += dimensao["area_m2"] * quantidade
-    largura_m = info_material["largura_cm"] / 100
-    resultado_corte = calcular_desperdicio_item(dimensao, largura_m)
-    if resultado_corte:
-        cat_info["area_desperdicio_m2"] += resultado_corte["desperdicio_m2"] * quantidade
-        cat_info["comprimento_rolo_usado_m"] += resultado_corte["peca_comprimento_m"] * quantidade
-        return {"resultado_corte": resultado_corte, "estimativa_chapa_grande": None}
-
-    if info_material["tipo"] == "chapa":
-        # rolo tem comprimento livre (sempre cabe na área de impressão),
-        # então essa estimativa por grade só faz sentido pra chapa, que
-        # tem largura E comprimento fixos
-        comprimento_chapa_m = info_material["comprimento_cm"] / 100
-        estimativa = calcular_desperdicio_chapa_grande(dimensao, largura_m, comprimento_chapa_m)
-        cat_info["area_desperdicio_m2"] += estimativa["desperdicio_m2"] * quantidade
-        cat_info["chapas_extras"] += estimativa["total_chapas"] * quantidade
-        return {"resultado_corte": None, "estimativa_chapa_grande": estimativa}
-
-    return {"resultado_corte": None, "estimativa_chapa_grande": None}
+    return partes_da_peca(dimensao["largura_m"], dimensao["altura_m"], info_material["tipo"],
+                          info_material["largura_cm"] / 100, info_material["comprimento_cm"] / 100)
 
 
 def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor,
@@ -944,29 +924,12 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
                 if dimensao["unidade_corrigida"]:
                     detalhe_area += f" (unidade corrigida de {dimensao['unidade_bruta']} para {dimensao['unidade_usada']})"
 
-            resultado = _acumular_consumo_categoria(cat_info, materiais[categoria_encontrada], dimensao, quantidade)
-            if resultado["resultado_corte"]:
-                resultado_corte = resultado["resultado_corte"]
-                detalhe_area += f" | Desperdício estimado: {resultado_corte['desperdicio_m2']:.2f}m²"
-                if quantidade > 1:
-                    detalhe_area += f" por peça ({resultado_corte['desperdicio_m2'] * quantidade:.2f}m² no total das {quantidade})"
-            elif resultado["estimativa_chapa_grande"]:
-                estimativa = resultado["estimativa_chapa_grande"]
+            partes = _acumular_consumo_categoria(cat_info, materiais[categoria_encontrada], dimensao, quantidade)
+            if partes > 1:
                 cat_info["itens_fora_do_rolo"].append(arquivo)
-                texto_girada = " (peça girada 90°)" if estimativa["girada"] else ""
-                texto_total_chapas = (
-                    f" ({estimativa['total_chapas'] * quantidade} chapas no total das {quantidade})"
-                    if quantidade > 1 else ""
-                )
-                detalhe_area += (
-                    f" | Peça maior que a chapa — estimativa: {estimativa['colunas']}x{estimativa['linhas']}"
-                    f" = {estimativa['total_chapas']} chapas{texto_girada} por peça{texto_total_chapas}, "
-                    f"~{estimativa['desperdicio_m2']:.2f}m² de desperdício por peça "
-                    f"(confira o posicionamento das emendas manualmente)"
-                )
-            else:
-                cat_info["itens_fora_do_rolo"].append(arquivo)
-                detalhe_area += " | ⚠️ Peça mais larga que o rolo — desperdício não calculado"
+                material = "o rolo" if materiais[categoria_encontrada]["tipo"] == "rolo" else "a chapa"
+                detalhe_area += (f" | Peça maior que {material} — entra no consumo em {partes} partes "
+                                 f"(emenda não contada, confira)")
 
             # Material composto (ex: "PS ADESIVADO", "ACRÍLICO ADESIVADO"):
             # a MESMA peça consome dois materiais diferentes ao mesmo tempo
@@ -1239,43 +1202,20 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
     if total_geral_area > 0:
         logger.emitir("info", f"Área TOTAL: {total_geral_area:.2f} m²")
 
-    # Estimativa de desperdício de material (modelo de corte sequencial)
+    # Consumo de material desta rodada, do LOTE (aproveitamento.py): as peças
+    # do mesmo material e variante encaixadas juntas, como saem na máquina e
+    # na bancada — a mesma conta da baixa de estoque e da cópia de custos.
+    for consumo in consumo_por_material(itens_os, materiais):
+        logger.emitir("info", descrever_consumo(consumo))
     for cat in ordem_unificado:
-        cat_info = dados_categorias[cat]
-        if not cat_info["contem_arquivos"]:
-            continue
-        if cat_info["comprimento_rolo_usado_m"] == 0 and cat_info["chapas_extras"] == 0:
-            continue
-        info_material = materiais[cat]
-        tipo = info_material["tipo"]
-        comprimento_estoque_m = info_material["comprimento_cm"] / 100
-        comprimento_usado = cat_info["comprimento_rolo_usado_m"]
-        unidades_necessarias = math.ceil(comprimento_usado / comprimento_estoque_m) if comprimento_estoque_m > 0 else 0
-        # peças maiores que uma chapa só já entram como um número exato de
-        # chapas (calcular_desperdicio_chapa_grande), não como comprimento —
-        # soma direto no total (não se aplica a rolo, que não usa isso)
-        unidades_necessarias += cat_info["chapas_extras"]
-        unidade_label = "rolo(s)" if tipo == "rolo" else "chapa(s)"
-
-        logger.emitir(
-            "info",
-            f"Desperdício {cat}: {cat_info['area_desperdicio_m2']:.2f} m² "
-            f"| {comprimento_usado:.2f} m usados (~{unidades_necessarias} {unidade_label} de {comprimento_estoque_m:.2f}m)",
-        )
-        if cat_info["itens_fora_do_rolo"]:
-            if tipo == "chapa":
-                logger.emitir(
-                    "warn",
-                    f"{len(cat_info['itens_fora_do_rolo'])} peça(s) de {cat} maior(es) que uma chapa — "
-                    f"estimativa por chapas já somada acima, mas confira o posicionamento das emendas: "
-                    f"{', '.join(cat_info['itens_fora_do_rolo'])}",
-                )
-            else:
-                logger.emitir(
-                    "warn",
-                    f"{len(cat_info['itens_fora_do_rolo'])} peça(s) de {cat} mais larga(s) que o rolo, "
-                    f"conferir manualmente: {', '.join(cat_info['itens_fora_do_rolo'])}",
-                )
+        fora = dados_categorias[cat]["itens_fora_do_rolo"]
+        if fora:
+            material = "o rolo" if materiais[cat]["tipo"] == "rolo" else "a chapa"
+            logger.emitir(
+                "warn",
+                f"{len(fora)} peça(s) de {cat} maior(es) que {material} — entraram no consumo divididas "
+                f"em partes; confira as emendas: {', '.join(fora)}",
+            )
 
     return {
         "pasta_saida": str(pasta_saida),

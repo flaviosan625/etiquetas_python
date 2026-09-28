@@ -135,7 +135,8 @@ de instalação (`.ps1` precisa de BOM, `.bat` precisa ser ASCII puro).
 ```
 main.py / gui.py              entrada do programa e interface (tkinter)
 processamento.py              núcleo: lê os PDFs, categoriza, monta as etiquetas
-dimensoes.py                  lê medida e quantidade do nome do arquivo; calcula desperdício
+dimensoes.py                  lê medida e quantidade do nome do arquivo
+aproveitamento.py             encaixa o lote de cada material (rolo/chapa): metros, chapas e sobra
 config.py / config.json       materiais, sinônimos, typos, últimos valores usados
 relatorios.py / pdf_layout.py log CSV, Ordem de Serviço, páginas de título
 producao.py                   organiza a pasta PRODUCAO de cada cliente

@@ -169,6 +169,35 @@ chama de `<HotFolder>`); a prova definitiva é largar um arquivo na pasta e ver 
 Hoje o cadastro da H2525 segue o SAi (`D:\RIPADOS\DOCAN H2525`), e por isso a SAÍDA dela nunca pode
 ser essa mesma pasta.
 
+### Consumo de material é do LOTE, não da peça
+
+Regra do usuário (28/09/2026): *"tirar melhor proveito do material sempre, independente se for chapa
+ou rolo... o desperdício deve ser calculado como um todo, assim podemos calcular melhor nossa saída de
+material do estoque"*. `aproveitamento.consumo_por_material` é a **fonte única** de metros, chapas e
+sobra — a baixa de estoque, a cópia de CUSTOS e o resumo do fim da rodada chamam a mesma conta. As
+peças do mesmo material **e variante** são encaixadas juntas: rolo minimiza metros (a largura é teto),
+chapa minimiza chapas (os dois lados são teto), sempre com giro e sempre em **guilhotina** — encaixe que
+só a fresa cortaria é economia de papel. A conta antiga (`dimensoes.calcular_desperdicio_item`, cada
+peça sozinha na largura do rolo) ainda existe, mas não alimenta mais nada.
+
+Duas coisas que a conta antiga escondia e que mudam o número pra CIMA: peça maior que o rolo ficava
+**fora da conta** (agora entra dividida em faixas), e a sobra da chapa agora é a chapa inteira que sai
+do estoque menos as peças (o resto aparece como "maior retalho"). A emenda de peça dividida **não** é
+contada e sai escrita. Comparado em pedidos reais: Mercado Livre, lona de 836 m → 608 m (93%);
+ASICS, adesivo de 6,2 m → 9,1 m (a peça larga passou a contar).
+
+É estimativa de um encaixe bom e **possível** — o real sai do RIP ou de quem corta, e só bate se a
+produção encaixar parecido. Por isso todo texto diz "estimativa, peças encaixadas juntas".
+
+**Rolo no estoque é fração de rolo.** Cada baixa é um movimento (12,40 m de 50 = −0,248 rolo) e o saldo
+se lê "19 fechados + aberto com 35,6 m". Até 28/09 os metros do rolo aberto iam pra um contador solto
+(`acumulado_m`) e só viravam movimento quando um rolo fechava: pedido pequeno não deixava rastro, não
+se desfazia e `pedido_ja_teve_saida` não o via. `carregar_estoque` converte o contador antigo em ajuste.
+Variante no estoque casa por **espessura e cor** (`_mesma_variante`), nunca pelo dicionário — a peça
+carrega cópia da variante do config com preço e rótulo. Chapa sem espessura no nome é ambígua e quem dá
+baixa escolhe, como o acabamento do ADESIVO. `conferir_cadastro` mostra na tela de estoque o que o
+config reconhece e o estoque não tem (e vice-versa).
+
 ### O registro guarda fato bruto, não interpretação
 
 `registrar_envio` grava uma linha JSON por arquivo entregue em
