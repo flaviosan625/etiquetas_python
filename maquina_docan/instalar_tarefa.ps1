@@ -93,27 +93,38 @@ if (-not (Test-Path $ORIGEM)) {
             "Ele tem que vir junto na pasta — é o vigia em si.")
 }
 
-# O Python do sistema. A lista é a mesma do instalador da máquina do RIP,
-# onde o 'python' solto do prompt cai no atalho da Microsoft Store e não
-# roda nada.
-$candidatos = @(
-    "$env:LOCALAPPDATA\Python\pythoncore-3.14-64\pythonw.exe",
-    "$env:LOCALAPPDATA\Python\pythoncore-3.13-64\pythonw.exe",
-    "$env:LOCALAPPDATA\Programs\Python\Python313\pythonw.exe",
-    "$env:LOCALAPPDATA\Programs\Python\Python312\pythonw.exe",
-    "$env:ProgramFiles\Python313\pythonw.exe",
-    "$env:ProgramFiles\Python312\pythonw.exe"
-)
-$PYTHONW = $null
-foreach ($c in $candidatos) { if (-not $PYTHONW -and (Test-Path $c)) { $PYTHONW = $c } }
+# O Python do sistema. Procura por PADRÃO, não por lista fixa: cada jeito
+# de instalar põe em um lugar diferente (o do python.org pra todos os
+# usuários vai pro Program Files, o pra mim vai pro LOCALAPPDATA\Programs,
+# e o gerenciador novo usa pythoncore-3.XX-64). Lista fixa envelhece e
+# manda instalar um Python que já está instalado.
+$encontrados = @()
+foreach ($padrao in @(
+    "$env:LOCALAPPDATA\Python\pythoncore-3.*\pythonw.exe",
+    "$env:LOCALAPPDATA\Programs\Python\Python3*\pythonw.exe",
+    "$env:ProgramFiles\Python3*\pythonw.exe",
+    "${env:ProgramFiles(x86)}\Python3*\pythonw.exe",
+    "C:\Python3*\pythonw.exe")) {
+    $encontrados += @(Get-ChildItem -Path $padrao -ErrorAction SilentlyContinue)
+}
+$PYTHONW = ($encontrados | Sort-Object FullName -Descending | Select-Object -First 1).FullName
+
+# O do PATH só serve se NÃO for o atalho da Microsoft Store: aquele é um
+# arquivo de zero byte que, em vez de rodar, abre a loja — e numa tarefa
+# agendada isso vira uma falha silenciosa, que é a pior de todas.
 if (-not $PYTHONW) {
     $doPath = Get-Command pythonw.exe -ErrorAction SilentlyContinue
-    if ($doPath) { $PYTHONW = $doPath.Source }
+    if ($doPath -and $doPath.Source -notmatch "WindowsApps") { $PYTHONW = $doPath.Source }
 }
+if ($PYTHONW -and (Get-Item $PYTHONW).Length -eq 0) { $PYTHONW = $null }
+
 if (-not $PYTHONW) {
-    Parar @("Não achei pythonw.exe nesta máquina.",
-            "Instale o Python (python.org, marcando 'Add to PATH') e rode isto de novo.",
-            "O vigia não precisa de biblioteca nenhuma além da padrão.")
+    Parar @("Não achei Python nesta máquina (e o atalho da Microsoft Store não serve).",
+            "Jeito mais curto, num PowerShell como administrador:",
+            "    winget install -e --id Python.Python.3.13",
+            "Ou baixe em python.org/downloads e MARQUE 'Add python.exe to PATH' antes de instalar.",
+            "O vigia não precisa de biblioteca nenhuma além da padrão — é só o Python.",
+            "Depois, rode este instalador de novo.")
 }
 $PYTHON = $PYTHONW -replace 'pythonw\.exe$', 'python.exe'
 Write-Host "  Python......: $PYTHONW" -ForegroundColor Green
@@ -163,7 +174,6 @@ if ($LASTEXITCODE -ne 0 -or -not $saida) {
 }
 
 $problemas = @()
-$fila = ""
 $dona = ""
 foreach ($linha in $saida) {
     $partes = ([string]$linha).Split("|", 2)
@@ -171,7 +181,6 @@ foreach ($linha in $saida) {
     $chave = $partes[0].Trim()
     $valor = $partes[1].Trim()
     if ($chave -eq "FILA") {
-        $fila = $valor
         if (Test-Path $valor) {
             Write-Host "  Fila do OneDrive: $valor" -ForegroundColor Green
         } else {
