@@ -228,12 +228,22 @@ Titulo "3/7  Perguntando ao próprio vigia o que ele enxerga daqui"
 # corta o nome da pasta em 12 letras, então caminho escrito de cabeça
 # erra calado: o vigia diz "enviado" e a máquina nunca recebe.
 #
-# stderr NÃO é redirecionado: no PowerShell 5.1 isso embrulha cada linha
-# num NativeCommandError e, com ErrorActionPreference = Stop, derruba o
-# script inteiro.
+# O sys.path.insert é o que faz o import achar o vigia: o Python só
+# procura na pasta ATUAL, e um terminal de administrador abre em
+# C:\Windows\system32. Sem isto deu 'ModuleNotFoundError' na máquina da
+# DOCAN em 03/10/2026 — e aqui no PC principal passava despercebido,
+# porque eu rodava de dentro do repositório, onde o módulo está ao lado.
+#
+# O stderr vem junto (2>&1) com o ErrorActionPreference afrouxado: sem
+# ele a mensagem de erro do Python se perde e sobra um "Saída:" vazio,
+# que não diz nada a quem está do outro lado. Afrouxar é obrigatório
+# porque, com 'Stop', o PowerShell 5.1 embrulha cada linha de stderr num
+# NativeCommandError e derruba o script inteiro.
 $eapAntigo = $ErrorActionPreference
 $ErrorActionPreference = "Continue"
 $codigo = @"
+import sys
+sys.path.insert(0, r'$PASTA')
 import rasterlink_hotfolder as r
 for nome, cfg in r.maquinas_do_posto('sai').items():
     print('%s|%s' % (nome, r._config_maquina(cfg)[0]))
@@ -241,11 +251,14 @@ print('FILA|%s' % r.PASTA_FILA_ONEDRIVE)
 dona = r.outro_vigia_no_posto(posto='sai')
 print('DONA|%s' % (dona or ''))
 "@
-$saida = & $PYTHON -c $codigo
+Push-Location $PASTA
+$saida = & $PYTHON -c $codigo 2>&1
+Pop-Location
 $ErrorActionPreference = $eapAntigo
 
 if ($LASTEXITCODE -ne 0 -or -not $saida) {
-    Parar @("O Python não conseguiu ler o vigia recém-copiado. Saída: $saida")
+    Parar @("O Python não conseguiu ler o vigia recém-copiado.",
+            "O que ele respondeu: $($saida -join ' / ')")
 }
 
 $problemas = @()
