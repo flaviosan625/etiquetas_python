@@ -32,6 +32,18 @@
 
 $ErrorActionPreference = "Stop"
 
+# TUDO O QUE ELE DIZ FICA GRAVADO, na própria pasta do kit — que está no
+# OneDrive, o único caminho que as duas máquinas enxergam.
+#
+# Por que: a máquina da impressora não é vista do PC principal (nem ping,
+# nem rede), e em 03/10/2026 passamos quase uma hora perguntando "o que
+# apareceu na tela?" e recebendo "instalado" — enquanto o instalador
+# parava numa conferência e ninguém sabia em qual. Transcrever mensagem a
+# dois computadores de distância é lento e erra; o arquivo não.
+try {
+    Start-Transcript -Path (Join-Path $PSScriptRoot ("instalacao_{0}.txt" -f $env:COMPUTERNAME)) -Force | Out-Null
+} catch { }
+
 $NOME_TAREFA = "Vigia DOCAN (SAi)"
 $PASTA       = "C:\VigiaDocan"
 # O vigia vem ao lado deste instalador (é assim que a pasta do OneDrive é
@@ -67,13 +79,19 @@ function TraduzirResultado($codigo) {
     }
 }
 
+function Fechar($codigo) {
+    try { Stop-Transcript | Out-Null } catch { }
+    exit $codigo
+}
+
 function Parar($motivos) {
     Write-Host ""
     Write-Host "  PAREI ANTES DE MEXER EM QUALQUER COISA." -ForegroundColor Red
     foreach ($m in $motivos) { Write-Host "    - $m" -ForegroundColor Yellow }
     Write-Host ""
     Write-Host "  Nada foi alterado." -ForegroundColor Green
-    exit 1
+    Write-Host "  (o que apareceu aqui ficou gravado em instalacao_$env:COMPUTERNAME.txt, nesta pasta)" -ForegroundColor DarkGray
+    Fechar 1
 }
 
 # ---------------------------------------------------------------- 1/7
@@ -112,7 +130,7 @@ if ($souOPrincipal.Count -gt 0) {
     Write-Host "      etiquetas_python\maquina_sai\instalar_tarefa.bat" -ForegroundColor Cyan
     Write-Host ""
     Write-Host "  Nada foi alterado." -ForegroundColor Green
-    exit 1
+    Fechar 1
 }
 
 $souAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
@@ -242,7 +260,7 @@ if ($problemas.Count -gt 0) {
     Write-Host ""
     Write-Host "  Sem tarefa criada, nada roda — a fila fica esperando, nada se perde." -ForegroundColor Green
     Write-Host "  Resolva o que está acima e rode este mesmo instalador de novo." -ForegroundColor Green
-    exit 1
+    Fechar 1
 }
 
 # ---------------------------------------------------------------- 4/7
@@ -365,7 +383,7 @@ try {
     Register-ScheduledTask -TaskName $NOME_TAREFA -Xml $xml -Force | Out-Null
 } catch {
     Write-Host "  PAREI ao criar a tarefa: $($_.Exception.Message)" -ForegroundColor Red
-    exit 1
+    Fechar 1
 }
 Write-Host "  Tarefa '$NOME_TAREFA' criada." -ForegroundColor Green
 
@@ -408,3 +426,5 @@ Write-Host "  o painel de Agentes, no PC principal, passa a mostrar $env:COMPUTE
 Write-Host ""
 Write-Host "  Teste de verdade: mande uma arte pela tela 'Enviar para impressão'" -ForegroundColor Cyan
 Write-Host "  e veja ela aparecer na lista do Production Manager daqui." -ForegroundColor Cyan
+
+Fechar 0
