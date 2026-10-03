@@ -133,11 +133,34 @@ if ($souOPrincipal.Count -gt 0) {
     Fechar 1
 }
 
+# Criar tarefa no Agendador precisa de administrador. Em vez de mandar o
+# usuário fechar e clicar com o botão direito — que foi onde isto travou a
+# noite inteira de 03/10/2026, porque duplo clique é o gesto natural —, ele
+# PEDE a permissão do Windows sozinho e se reabre elevado.
+#
+# Reabre o .BAT, não este .ps1: assim o 'pause' do fim mantém a janela
+# aberta pra pessoa ler o resultado. E vai por -FilePath, nunca montando
+# uma linha de comando: o caminho tem espaço e acento ("IMPRESSÃO DOCAN"),
+# e cmd.exe come aspas de um jeito que quebraria calado.
 $souAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
             ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if (-not $souAdmin) {
-    Parar @("Criar tarefa no Agendador precisa de administrador.",
-            "Feche, clique com o BOTÃO DIREITO no instalar_tarefa.bat e escolha 'Executar como administrador'.")
+    $bat = Join-Path $PSScriptRoot "instalar_tarefa.bat"
+    Write-Host ""
+    Write-Host "  Criar tarefa no Agendador precisa de administrador." -ForegroundColor Yellow
+    Write-Host "  Vou pedir a permissão do Windows e me reabrir — clique em SIM." -ForegroundColor Yellow
+    try {
+        Start-Process -FilePath $bat -Verb RunAs | Out-Null
+        Write-Host "  (continua na outra janela, a que abriu com permissão)" -ForegroundColor Green
+    } catch {
+        Write-Host ""
+        Write-Host "  Você recusou a permissão, ou ela não foi pedida." -ForegroundColor Red
+        Write-Host "  Então feche isto, clique com o BOTÃO DIREITO no instalar_tarefa.bat" -ForegroundColor Yellow
+        Write-Host "  e escolha 'Executar como administrador'." -ForegroundColor Yellow
+    }
+    Write-Host ""
+    Write-Host "  Nada foi alterado por esta janela." -ForegroundColor Green
+    Fechar 0
 }
 
 if (-not (Test-Path $ORIGEM)) {
