@@ -119,24 +119,49 @@ def test_hora_do_agendador_vem_marcada_utc_mas_e_local():
 
 # --------------------------------------------------------------- monitor
 
-def test_monitor_congelado(tmp_path, monkeypatch):
+# O vigia da producao foi RELIGADO em 03/10/2026, a pedido dele. De 12/09
+# ate la ele esteve congelado porque ORGANIZAVA a pasta sozinho; hoje a
+# pasta e plana, nada se move, e ele so vigia e avisa. Por isso o que estes
+# testes medem virou o contrario: antes "o atalho voltou?" era alarme;
+# agora "ele esta de pe?" e o que importa.
+
+def _monitor_em(tmp_path, monkeypatch, onde=None, rodando=False):
     monkeypatch.setattr(ag, "PASTA_INICIALIZACAO", tmp_path / "Startup")
     monkeypatch.setattr(ag, "PASTA_CONGELADO", tmp_path / "_congelado")
-    (tmp_path / "_congelado").mkdir()
-    (tmp_path / "_congelado" / ag.ATALHO_MONITOR).write_bytes(b"lnk")
+    monkeypatch.setattr(ag, "monitor_rodando", lambda: rodando)
+    if onde:
+        (tmp_path / onde).mkdir(parents=True, exist_ok=True)
+        (tmp_path / onde / ag.ATALHO_MONITOR).write_bytes(b"lnk")
 
-    assert ag.estado_monitor()["nivel"] == "congelado"
+
+def test_monitor_vigiando_e_subindo_sozinho_e_ok(tmp_path, monkeypatch):
+    _monitor_em(tmp_path, monkeypatch, onde="Startup", rodando=True)
+    assert ag.estado_monitor()["nivel"] == "ok"
 
 
-def test_monitor_que_voltou_pra_inicializacao_acende_alerta(tmp_path, monkeypatch):
-    monkeypatch.setattr(ag, "PASTA_INICIALIZACAO", tmp_path / "Startup")
-    monkeypatch.setattr(ag, "PASTA_CONGELADO", tmp_path / "_congelado")
-    (tmp_path / "Startup").mkdir()
-    (tmp_path / "Startup" / ag.ATALHO_MONITOR).write_bytes(b"lnk")
-
+def test_monitor_rodando_mas_fora_da_inicializacao_avisa(tmp_path, monkeypatch):
+    """Fechou a sessao, acabou o vigia — e ninguem sente falta ate faltar."""
+    _monitor_em(tmp_path, monkeypatch, onde=None, rodando=True)
     r = ag.estado_monitor()
-    assert r["nivel"] == "atencao"
-    assert "VOLTOU" in r["texto"]
+    assert r["nivel"] == "atencao" and "nao sobe sozinho" in r["texto"].replace("ã", "a").replace("Ã", "A").lower()
+
+
+def test_monitor_guardado_no_congelado_e_parado(tmp_path, monkeypatch):
+    _monitor_em(tmp_path, monkeypatch, onde="_congelado", rodando=False)
+    r = ag.estado_monitor()
+    assert r["nivel"] == "parado" and "_congelado" in r["texto"]
+
+
+def test_monitor_no_startup_mas_ainda_nao_rodando(tmp_path, monkeypatch):
+    _monitor_em(tmp_path, monkeypatch, onde="Startup", rodando=False)
+    assert ag.estado_monitor()["nivel"] == "atencao"
+
+
+def test_nao_saber_ler_os_processos_nao_vira_parado(tmp_path, monkeypatch):
+    """A mesma regra do resto do painel: "nao sei" nunca se passa por "parado"."""
+    _monitor_em(tmp_path, monkeypatch, onde="Startup")
+    monkeypatch.setattr(ag, "monitor_rodando", lambda: None)
+    assert ag.estado_monitor()["nivel"] == "sem_sinal"
 
 
 # ---------------------------------------------------------------- disparo

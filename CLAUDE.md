@@ -507,6 +507,15 @@ Decisões do usuário de 2026-09-13, que valem pro sistema inteiro:
 
 ## Regras que já custaram material de verdade
 
+- **O vigia da produção voltou — mas só como vigia.** `monitor_onedrive.py` ficou CONGELADO de
+  12/09 a 03/10/2026 porque ORGANIZAVA a pasta sozinho, distribuindo arte por material. Com a pasta
+  plana isso deixou de existir (`organizar_pasta_producao` não move nada), e ele foi religado a
+  pedido dele: *"pode ativar aquele vigia de movimentação das pastas de produção, lembrando que não
+  vai estar mais por material e sim uma simples pasta de PRONTOS; vigiar tudo que estiver fora de
+  PRONTOS e avisar como era antes"*. Hoje ele notifica entrada/saída/alteração de arquivo e acende o
+  alerta vermelho na bandeja enquanto houver peça fora de PRONTOS. O atalho voltou do `_congelado`
+  pra inicialização do Windows, e o painel de Agentes passou a medir **se ele está de pé** (era o
+  contrário: até 03/10 o alarme era o atalho ter voltado sozinho pra inicialização).
 - **A pasta de produção é PLANA: arquivo solto + uma pasta `PRONTOS`.** Regra dele de 03/10/2026:
   *"assim que for criada a pasta de produção, criar somente uma pasta de PRONTOS; deixar os arquivos
   soltos e, na medida que for ficando pronto, eu arrasto pra pasta. Antes estava por material, gerava

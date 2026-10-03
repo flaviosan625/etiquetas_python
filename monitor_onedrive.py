@@ -2,7 +2,14 @@
 Vigia uma pasta do OneDrive e avisa com notificação do Windows toda vez
 que um arquivo for criado, modificado, apagado ou renomeado lá dentro
 — pra não "deixar arquivo pra trás" numa pasta que recebe material aos
-poucos (ex: pasta de eventos).
+poucos (ex: pasta de eventos). E mantém na bandeja um alerta vermelho
+enquanto houver peça FORA de PRONTOS, em qualquer cliente.
+
+ELE SÓ OLHA. Ficou congelado de 12/09 a 03/10/2026 porque ORGANIZAVA a
+pasta de produção sozinho, distribuindo arquivo por material. Isso
+acabou: a pasta é plana, `producao.organizar_pasta_producao` não move
+mais nada, e ele foi religado a pedido dele — "vigiar tudo que estiver
+fora de prontos e avisar como era antes".
 
 Roda separado do sistema de etiquetas — não mexe em nada do
 processamento, só observa uma pasta e notifica. Uso: rodar
@@ -518,16 +525,17 @@ def _monitorar_pendencias_pra_icone(icon, pasta_eventos, intervalo_segundos=300)
 
 def _organizar_producao_ao_iniciar(pasta_eventos, notificar):
     """
-    Varredura de "arrumar tudo que ficou bagunçado enquanto o
-    computador estava desligado" (pedido do usuário, 2026-09-03: tem
-    funcionário que joga arquivo direto na pasta de madrugada, tudo
-    misturado). Roda uma vez, ao iniciar o monitor — nunca decide
-    sozinho o que está "pronto" (impresso/cortado), só garante a
-    estrutura de pastas (IMPRESSAO/CORTE/COMPOSTOS + Prontos) e separa
-    o que caiu solto pra pasta certa (ver producao.py).
+    Uma passada ao iniciar, que hoje só GARANTE A PASTA PRONTOS de cada
+    cliente — não move arquivo nenhum.
 
-    Nunca trava o monitor se der problema (config ilegível, etc.) —
-    só a organização automática fica sem rodar dessa vez.
+    Até 03/10/2026 ela distribuía por material o que tivesse caído solto
+    na madrugada. Ele pediu o contrário (ver producao.py): a arte fica
+    solta e é ELE quem arrasta pra PRONTOS quando a peça sai da máquina.
+    Como nada mais se move, também não há o que notificar aqui — a
+    notificação que sobrou é a dos eventos de arquivo, que é o ponto
+    deste monitor.
+
+    Nunca trava o monitor se der problema (config ilegível, etc.).
     """
     try:
         config = carregar_config()

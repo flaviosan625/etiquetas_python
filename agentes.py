@@ -67,7 +67,8 @@ class Agente:
     nome: str
     faz: str
     onde: str
-    # "minuto" / "diario" = tarefa neste PC; "rip" = OUTRO PC, lido pelo
+    # "minuto" / "diario" = tarefa neste PC; "monitor" = vigia da produção,
+    # que roda na inicialização; "rip" = OUTRO PC, lido pelo
     # sinal de vida (não é só o RasterLink: desde 03/10/2026 a DOCAN
     # também roda na máquina dela); "congelado"
     tipo: str
@@ -128,9 +129,14 @@ AGENTES = (
         onde="PC do RIP · a cada 1 min", tipo="rip", pode_disparar=False,
     ),
     Agente(
-        chave="monitor", nome="Monitor de Pastas",
-        faz="Organizava sozinho a pasta de produção ao ligar o PC.",
-        onde="este PC · na inicialização", tipo="congelado", pode_disparar=False,
+        chave="monitor", nome="Vigia da pasta de produção",
+        faz="Avisa na tela quando entra, sai ou muda arquivo na produção, e acende o "
+            "alerta na bandeja enquanto houver peça fora de PRONTOS.",
+        # Religado em 03/10/2026 a pedido dele. Ficou congelado de 12/09 a
+        # 03/10 porque ORGANIZAVA a pasta sozinho; hoje a pasta é plana e
+        # nada se move (producao.organizar_pasta_producao não move nada),
+        # então sobrou só o que ele queria: vigiar e avisar.
+        onde="este PC · na inicialização", tipo="monitor", pode_disparar=False,
     ),
 )
 
@@ -296,18 +302,54 @@ def classificar_tarefa(ag, tarefa, agora=None):
                      "\"Rodar aqui\" mostra o erro." % quanto_faz(idade)}
 
 
+def monitor_rodando():
+    """O vigia da produção está no ar AGORA? (processo, não atalho)."""
+    try:
+        import subprocess
+        saida = subprocess.run(
+            ["powershell", "-NoProfile", "-Command",
+             "(Get-CimInstance Win32_Process -Filter \"Name like 'python%'\" | "
+             "Where-Object { $_.CommandLine -like '*monitor_onedrive*' } | Measure-Object).Count"],
+            capture_output=True, text=True, timeout=20,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        return int((saida.stdout or "0").strip() or 0) > 0
+    except Exception:   # noqa: BLE001 — não saber não é "parado"
+        return None
+
+
 def estado_monitor():
-    """O monitor está onde deveria (congelado) — ou o atalho voltou sozinho?"""
+    """
+    O vigia da produção está vigiando?
+
+    A pergunta mudou em 03/10/2026. De 12/09 até então ele estava
+    CONGELADO a pedido dele — e o que se media era se o atalho tinha
+    voltado sozinho pra inicialização, porque naquela época ele
+    ORGANIZAVA a pasta e isso não podia acontecer sem ordem. Hoje a pasta
+    de produção é plana e nada se move: ele só vigia e avisa, foi religado
+    a pedido, e o que importa agora é se está de pé.
+    """
+    rodando = monitor_rodando()
     na_inicializacao = (PASTA_INICIALIZACAO / ATALHO_MONITOR).exists()
     guardado = (PASTA_CONGELADO / ATALHO_MONITOR).exists()
+
+    if rodando:
+        if na_inicializacao:
+            return {"nivel": "ok",
+                    "texto": "Vigiando a produção agora, e sobe sozinho no próximo logon."}
+        return {"nivel": "atencao",
+                "texto": "Está vigiando agora, mas NÃO sobe sozinho: o atalho não está na "
+                         "inicialização do Windows. Fechou a sessão, acabou o vigia."}
+    if rodando is None:
+        return {"nivel": "sem_sinal",
+                "texto": "Não consegui olhar os processos — não é \"parado\", é \"não sei\"."}
     if na_inicializacao:
         return {"nivel": "atencao",
-                "texto": "O atalho VOLTOU pra inicialização do Windows: no próximo boot ele "
-                         "organiza a pasta de produção. Se não foi você, tire de lá."}
+                "texto": "Não está rodando agora, mas sobe no próximo logon. Pra começar já, "
+                         "abra o atalho na inicialização do Windows."}
     if guardado:
-        return {"nivel": "congelado",
-                "texto": "Congelado a seu pedido — o atalho está guardado em _congelado e "
-                         "nada organiza a produção sozinho."}
+        return {"nivel": "parado",
+                "texto": "Desligado — o atalho está guardado em _congelado. Enquanto estiver "
+                         "aí, nada avisa quando entra ou sai arquivo da produção."}
     return {"nivel": "sem_sinal",
             "texto": "Não achei o atalho nem na inicialização nem em _congelado."}
 
@@ -347,7 +389,7 @@ def estado(ag, agora=None, servico=None):
         from envio_impressao import estado_do_rip
         r = estado_do_rip(agora=agora, posto=ag.posto, rotulo=ag.rotulo_sinal)
         return {"nivel": r["nivel"], "texto": r["texto"]}
-    if ag.tipo == "congelado":
+    if ag.tipo in ("monitor", "congelado"):   # 'congelado' era o nome antigo dele
         return estado_monitor()
     return classificar_tarefa(ag, ler_tarefa_do_agente(ag, servico), agora)
 
@@ -428,7 +470,13 @@ def ultima_acao(ag, agora=None):
             return "último PDF: %s (%s)" % (mais_novo.name, _dia_e_hora(quando, agora))
 
         if ag.chave == "monitor":
-            return "atalho guardado em %s" % (PASTA_CONGELADO / ATALHO_MONITOR)
+            import producao
+            pendentes = producao.gerar_relatorio_pendencias(caminhos.ONEDRIVE_UNY / "EVENTOS")
+            if not pendentes:
+                return "nenhuma peça fora de PRONTOS — produção em dia"
+            partes = ["%s: %d fora de PRONTOS" % (cliente, sum(c.values()))
+                      for cliente, c in sorted(pendentes.items())]
+            return "  ·  ".join(partes)
     except Exception as e:
         return "não consegui ler: %s" % e
     return ""
