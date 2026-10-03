@@ -50,6 +50,36 @@ if (Test-Path $trava) {
     Write-Host "  Trava antiga removida: $trava" -ForegroundColor DarkGray
 }
 
+# LARGAR O POSTO, se ele for desta máquina.
+#
+# O sinal de vida é o que diz qual PC atende a DOCAN, e o vigia se recusa
+# a rodar quando o posto tem dono vivo em outro lugar. Sem apagar aqui, a
+# máquina seguinte espera 12 minutos sem entender por quê — aconteceu em
+# 03/10/2026, porque este desinstalador foi rodado no PC principal (os
+# dois kits têm .bat de mesmo nome) e lá quem soltava o sinal era o outro.
+#
+# Só apaga se o sinal for DESTA máquina: largar o posto de outro PC que
+# está vivo colocaria dois vigias na mesma fila, que é exatamente o que
+# essa trava existe pra impedir.
+$fila = Get-ChildItem -Path "$env:USERPROFILE\OneDrive\UNYCOMUNICACAO" -Directory -Filter "FILA*MAQUINAS" -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($fila) {
+    $sinal = Join-Path $fila.FullName "_sinal_de_vida_sai.json"
+    if (Test-Path $sinal) {
+        $dona = ""
+        try { $dona = (Get-Content $sinal -Raw -Encoding UTF8 | ConvertFrom-Json).maquina } catch { }
+        if ($dona -eq $env:COMPUTERNAME) {
+            try {
+                Remove-Item $sinal -Force
+                Write-Host "  Sinal de vida apagado — o posto da DOCAN está LIVRE agora." -ForegroundColor Green
+            } catch {
+                Write-Host "  Não consegui apagar o sinal ($sinal); quem assumir espera até 12 min." -ForegroundColor Yellow
+            }
+        } elseif ($dona) {
+            Write-Host "  O posto é da máquina $dona, não desta — deixei o sinal onde está." -ForegroundColor Yellow
+        }
+    }
+}
+
 Write-Host ""
 Write-Host "  Os arquivos continuam em $PASTA (log e histórico)." -ForegroundColor Green
 Write-Host "  A fila do OneDrive não se perde: ela espera quem atender." -ForegroundColor Green

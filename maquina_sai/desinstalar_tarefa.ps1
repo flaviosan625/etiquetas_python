@@ -95,13 +95,21 @@ try {
 } catch { }
 $ErrorActionPreference = "Stop"
 
+# Só se o posto for DESTA máquina: largar o de um PC vivo colocaria dois
+# vigias na mesma fila, que é o que a trava existe pra impedir.
 if ($sinal -and (Test-Path $sinal)) {
-    try {
-        Remove-Item $sinal -Force
-        Write-Host "  Sinal de vida do posto sai apagado — o posto está livre AGORA." -ForegroundColor Green
-    } catch {
-        Write-Host "  Não consegui apagar o sinal de vida ($sinal)." -ForegroundColor Yellow
-        Write-Host "  A outra máquina assume sozinha em até 12 minutos." -ForegroundColor Yellow
+    $dona = ""
+    try { $dona = (Get-Content $sinal -Raw -Encoding UTF8 | ConvertFrom-Json).maquina } catch { }
+    if ($dona -and $dona -ne $env:COMPUTERNAME) {
+        Write-Host "  O posto é da máquina $dona, não desta — deixei o sinal onde está." -ForegroundColor Yellow
+    } else {
+        try {
+            Remove-Item $sinal -Force
+            Write-Host "  Sinal de vida do posto sai apagado — o posto está livre AGORA." -ForegroundColor Green
+        } catch {
+            Write-Host "  Não consegui apagar o sinal de vida ($sinal)." -ForegroundColor Yellow
+            Write-Host "  A outra máquina assume sozinha em até 12 minutos." -ForegroundColor Yellow
+        }
     }
 }
 
