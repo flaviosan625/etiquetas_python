@@ -69,7 +69,7 @@ assinalada no PDF: `_nome_escreveu_metro` e `_nome_esqueceu_a_virgula`.
 O vigia roda em dois PCs diferentes, com o mesmo arquivo:
 
 - **`POSTO_RIP`** — UJV 100 e SWJ320A, no PC do RIP (`C:\RasterLink\rasterlink_hotfolder.py`)
-- **`POSTO_SAI`** — DOCAN, no PC principal, rodando direto desta pasta do repositório
+- **`POSTO_SAI`** — DOCAN, na máquina da impressora (`C:VigiaDocan`), desde 03/10/2026
 
 `POSTO_PADRAO = POSTO_RIP` de propósito: a tarefa antiga do RIP chama sem `--posto` e continua
 funcionando sem alteração nenhuma. Cada posto tem sua trava e seu `_sinal_de_vida_<posto>.json`.

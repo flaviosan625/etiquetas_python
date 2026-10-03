@@ -192,9 +192,14 @@ def test_nao_dispara_tarefa_desligada():
     assert tarefa.disparos == 0
 
 
-@pytest.mark.parametrize("chave", ["rip", "monitor"])
-def test_rip_e_monitor_congelado_nunca_se_disparam(chave):
-    """O RIP é outro PC; o monitor está congelado por ordem do usuário."""
+@pytest.mark.parametrize("chave", ["rip", "docan", "monitor"])
+def test_quem_roda_em_outro_PC_ou_congelado_nunca_se_dispara(chave):
+    """
+    RIP e DOCAN rodam em OUTROS computadores (a DOCAN mudou de casa em
+    03/10/2026); o monitor está congelado por ordem do usuário. Disparar
+    ou "rodar aqui" a passada da DOCAN poria um segundo vigia no mesmo
+    posto — que é o que duplica job e apaga linha do registro.
+    """
     tarefa = _TarefaFalsa()
 
     ok, _ = ag.disparar(ag.agente(chave), servico=_AgendadorFalso(tarefa))
@@ -284,3 +289,35 @@ def test_nenhum_agente_fala_de_cliente_especifico():
     for a in ag.AGENTES:
         texto = " ".join((a.chave, a.nome, a.faz, a.onde, a.tarefa or "")).lower()
         assert "mercado livre" not in texto, a.chave
+
+
+def test_vigia_de_outro_pc_e_lido_pelo_sinal_de_vida_do_posto_dele(monkeypatch):
+    """
+    O painel mostrava a DOCAN em VERMELHO depois que ela mudou de maquina
+    (03/10/2026): ele procurava a tarefa no Agendador DESTE PC, que nao
+    existe mais aqui — enquanto a propria linha dele dizia "sinal de vida
+    ha 3 min, as duas ok". Quem roda em outro PC se le pelo sinal, nunca
+    pelo Agendador local.
+    """
+    lidos = []
+
+    def falso(pasta_fila=None, agora=None, posto=None, rotulo="RIP"):
+        lidos.append((posto, rotulo))
+        return {"nivel": "ok", "texto": "%s ativo" % rotulo}
+
+    import envio_impressao
+    monkeypatch.setattr(envio_impressao, "estado_do_rip", falso)
+
+    for chave, posto, rotulo in (("docan", "sai", "DOCAN"), ("rip", None, "RIP")):
+        agente = ag.agente(chave)
+        assert agente.tipo == "rip", "%s roda em outro PC" % chave
+        estado = ag.estado(agente)
+        assert estado["nivel"] == "ok" and rotulo in estado["texto"]
+
+    assert lidos == [("sai", "DOCAN"), (None, "RIP")]
+
+
+def test_cada_posto_tem_o_seu_sinal_no_painel():
+    """Trocar os dois faria o painel jurar que a DOCAN esta viva lendo o RIP."""
+    postos = {a.chave: a.posto for a in ag.AGENTES if a.tipo == "rip"}
+    assert postos == {"docan": "sai", "rip": None}

@@ -499,10 +499,15 @@ def _quanto_faz(minutos):
     return f"{horas / 24:.0f} dias"
 
 
-def estado_do_rip(pasta_fila=None, agora=None):
+def estado_do_rip(pasta_fila=None, agora=None, posto=None, rotulo="RIP"):
     """
     Traduz o sinal de vida da máquina do RIP em algo que dá pra pôr na
     tela antes de mandar qualquer coisa.
+
+    'posto' e 'rotulo' existem porque desde 03/10/2026 a DOCAN também é
+    atendida de OUTRO computador (o da impressora): a leitura é a mesma,
+    muda o sinal que se lê e o nome que aparece na frase. Sem parâmetro
+    nenhum, é o RIP de sempre.
 
     Devolve {'nivel', 'texto', 'erros'}, com nível em:
       ok        — o RIP passou por aqui agora há pouco
@@ -514,12 +519,12 @@ def estado_do_rip(pasta_fila=None, agora=None):
     passada — hot folder faltando, por exemplo. 'registro_pendente' é
     quantas entregas ainda não entraram no relatório de produção.
     """
-    sinal = ler_sinal_de_vida(pasta_fila, agora=agora)
+    sinal = ler_sinal_de_vida(pasta_fila, agora=agora, posto=posto)
     if sinal is None:
         return {
             "nivel": "sem_sinal",
-            "texto": 'RIP: sem informação — não é "parado", é "não sei". '
-                     "A máquina do RIP ainda não deixou sinal de vida.",
+            "texto": f'{rotulo}: sem informação — não é "parado", é "não sei". '
+                     "Essa máquina ainda não deixou sinal de vida.",
             "erros": {},
             "registro_pendente": 0,
         }
@@ -539,10 +544,10 @@ def estado_do_rip(pasta_fila=None, agora=None):
     faz = _quanto_faz(minutos)
     if minutos < _SINAL_OK_MINUTOS:
         nivel = "ok"
-        texto = f"RIP ativo — visto há {faz}. Pode mandar: a fila é puxada em até 1 min."
+        texto = f"{rotulo} ativo — visto há {faz}. Pode mandar: a fila é puxada em até 1 min."
     elif minutos < _SINAL_ATENCAO_MINUTOS:
         nivel = "atencao"
-        texto = (f"RIP sem dar sinal há {faz}. Pode mandar — nesse tempo ainda é "
+        texto = (f"{rotulo} sem dar sinal há {faz}. Pode mandar — nesse tempo ainda é "
                  f"atraso do OneDrive, não defeito.")
     else:
         nivel = "parado"
@@ -554,9 +559,9 @@ def estado_do_rip(pasta_fila=None, agora=None):
         # OneDrive resolveu em 77 segundos. Daqui a tela não tem como
         # separar os dois casos (os dois são "não chegou nada"), então
         # ela oferece os dois — começando pelo que custa 1 minuto.
-        texto = (f"RIP sem dar sinal há {faz}. A fila NÃO vai andar. Comece pelo barato: "
+        texto = (f"{rotulo} sem dar sinal há {faz}. A fila NÃO vai andar. Comece pelo barato: "
                  f"feche e abra o OneDrive daqui e espere 2 min — ele já travou sem dar "
-                 f'erro nenhum. Se não voltar, aí sim vá até a máquina do RIP e veja '
+                 f'erro nenhum. Se não voltar, aí sim vá até a máquina dela e veja '
                  f'"Última execução" no Agendador.')
 
     # Entrega que ainda não entrou no registro de produção. De 09 a

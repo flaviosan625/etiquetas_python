@@ -67,8 +67,13 @@ class Agente:
     nome: str
     faz: str
     onde: str
-    # "minuto" / "diario" = tarefa neste PC; "rip" = outro PC; "congelado"
+    # "minuto" / "diario" = tarefa neste PC; "rip" = OUTRO PC, lido pelo
+    # sinal de vida (não é só o RasterLink: desde 03/10/2026 a DOCAN
+    # também roda na máquina dela); "congelado"
     tipo: str
+    # Só pros de outro PC: qual sinal de vida ler e como chamá-lo na frase.
+    posto: str | None = None
+    rotulo_sinal: str = "RIP"
     tarefa: str | None = None
     # Nomes que a mesma tarefa já teve no Agendador. O painel acha a tarefa
     # por qualquer um deles até alguém reinstalar com o nome novo.
@@ -82,9 +87,12 @@ AGENTES = (
         chave="docan", nome="Vigia das DOCAN (R5200 e H2525)",
         faz="Pega o que chega na fila do OneDrive e entrega nas hot folders das duas "
             "DOCAN — a de rolo e a plana.",
-        onde="este PC · a cada 1 min", tipo="minuto",
-        tarefa="Vigia DOCAN (SAi)",
-        argumentos=("-m", "rasterlink_hotfolder", "--uma-vez", "--posto", "sai"),
+        # Mudou de casa em 03/10/2026: o SAi passou a ripar na máquina da
+        # impressora, e o vigia foi junto. Daqui só dá pra LER o sinal de
+        # vida dele — disparar ou "rodar aqui" poria um segundo vigia no
+        # mesmo posto, que é o que duplica job e apaga linha do registro.
+        onde="PC da impressora · a cada 1 min", tipo="rip", posto="sai",
+        rotulo_sinal="DOCAN", pode_disparar=False,
     ),
     Agente(
         chave="checklist", nome="Checklist de Produção",
@@ -337,7 +345,7 @@ def estado(ag, agora=None, servico=None):
     """{'nivel', 'texto'} de um agente, lendo o que for preciso."""
     if ag.tipo == "rip":
         from envio_impressao import estado_do_rip
-        r = estado_do_rip(agora=agora)
+        r = estado_do_rip(agora=agora, posto=ag.posto, rotulo=ag.rotulo_sinal)
         return {"nivel": r["nivel"], "texto": r["texto"]}
     if ag.tipo == "congelado":
         return estado_monitor()
