@@ -1,0 +1,78 @@
+VIGIA DA DOCAN — INSTALAR NA MÁQUINA DA IMPRESSORA
+===================================================
+
+O que muda: o Production Manager 22.0 agora está na máquina da DOCAN, e é
+ela que passa a pegar a fila do OneDrive. O PC principal para de ripar a
+DOCAN — e, com isso, acaba a subida de arquivo ripado (13,8 GB no maior
+que já medimos) pelo OneDrive, porque o .prt passa a nascer do lado da
+impressora.
+
+O que NÃO muda: você continua mandando a arte pela tela "Enviar para
+impressão", do PC principal, como sempre. O arquivo cai na mesma pasta do
+OneDrive (FILA PARA IMPRESSÃO MAQUINAS\DOCAN R5200 ou \DOCAN H2525).
+
+
+A ORDEM IMPORTA
+---------------
+1) NO PC PRINCIPAL, primeiro: rode
+      etiquetas_python\maquina_sai\desinstalar_tarefa.bat
+   (botão direito > Executar como administrador)
+
+   Isso tira o vigia de lá e libera o posto na hora. Enquanto os dois PCs
+   estiverem vigiando a mesma fila, um atrapalha o outro: pegam o mesmo
+   arquivo (o SAi ripa duas vezes) e gravam no mesmo registro de produção,
+   que resolve conflito ficando com UMA versão — foi assim que 108
+   entregas sumiram do relatório entre 17 e 22/09/2026.
+
+   O vigia se protege disso sozinho (quem chega por último sai sem tocar
+   em nada e diz no log), mas é melhor desligar lá do que descobrir pelo
+   log depois.
+
+2) NESTA MÁQUINA: botão direito em instalar_tarefa.bat >
+   "Executar como administrador".
+
+   Ele confere, ANTES de agendar qualquer coisa:
+     - se tem Python (não precisa de biblioteca nenhuma além da padrão);
+     - se as duas hot folders do SAi existem aqui;
+     - se a pasta da fila do OneDrive existe aqui;
+     - se outra máquina está atendendo o posto agora.
+   Faltando qualquer uma, ele PARA e diz o quê. Sem tarefa criada nada
+   roda, a fila fica esperando, e nada se perde.
+
+3) O TESTE QUE VALE: mande uma arte pela tela "Enviar para impressão", no
+   PC principal, e veja ela aparecer na lista do Production Manager DAQUI
+   (até 1 minuto). Caminho escrito de cabeça erra calado — o vigia diz
+   "enviado" e a máquina nunca recebe. Só a arte aparecendo na lista prova
+   que a hot folder é a certa.
+
+4) A PROVA de que esta máquina assumiu: no PC principal, o painel de
+   Agentes passa a mostrar o nome DESTA máquina no vigia da DOCAN.
+
+
+PRA ATUALIZAR DEPOIS
+--------------------
+Rode o mesmo instalar_tarefa.bat de novo: ele copia o vigia novo por cima
+e reinstala a tarefa. (O arquivo que importa é o rasterlink_hotfolder.py
+desta pasta — ele vem do PC principal pelo OneDrive.)
+
+PRA DESFAZER
+------------
+desinstalar_tarefa.bat, nesta mesma pasta. A fila não se perde: sem vigia,
+o arquivo fica esperando na pasta do OneDrive até alguém atender.
+
+
+O QUE ESTE INSTALADOR NÃO MEXE: A SAÍDA DO RIPADO
+-------------------------------------------------
+Ele cuida da ENTRADA (a arte chegando no Production Manager). Onde o .prt
+é gravado depois de ripado é a PORTA do dispositivo, ajustada na tela do
+próprio Production Manager — botão direito no setup > "Mudar Porta",
+nunca em Propriedades (o campo de pasta de Propriedades é a hot folder, a
+ENTRADA; trocar ali faz o programa parar de receber).
+
+E atenção: as duas DOCAN são configurações do MESMO dispositivo
+(Docan Docan@FILE:). Trocar a Localização padrão de uma troca a das duas —
+conferido em 24/09/2026. Por isso, no PC principal, os ripados das duas
+caíam na mesma pasta e um separador mandava cada um pra sua. Aqui, se as
+duas forem imprimir, a mesma coisa vai acontecer: combine comigo antes de
+mandar as duas ripar na mesma pasta, que um ripado de plana indo pra
+máquina de rolo é chapa perdida.

@@ -80,7 +80,32 @@ if (Test-Path $trava) {
     }
 }
 
+# O sinal de vida é o que diz QUAL MÁQUINA atende este posto, e desde
+# 03/10/2026 o vigia se recusa a rodar quando o posto tem dono vivo em
+# outro PC (ver outro_vigia_no_posto). Apagar aqui é dizer, na hora, "esta
+# máquina largou o posto" — senão a máquina nova esperaria 12 minutos pra
+# poder assumir, sem entender por quê. É só um aviso: apagar não perde
+# entrega nenhuma, e a próxima passada de quem assumir escreve outro.
+$ErrorActionPreference = "Continue"
+$sinal = ""
+try {
+    $codigo = "import sys; sys.path.insert(0, r'$PASTA'); import rasterlink_hotfolder as r; print(r.caminho_do_sinal(posto='sai'))"
+    $saida = & (Join-Path $PASTA ".venv\Scripts\python.exe") -c $codigo
+    if ($LASTEXITCODE -eq 0 -and $saida) { $sinal = ([string]($saida | Select-Object -Last 1)).Trim() }
+} catch { }
+$ErrorActionPreference = "Stop"
+
+if ($sinal -and (Test-Path $sinal)) {
+    try {
+        Remove-Item $sinal -Force
+        Write-Host "  Sinal de vida do posto sai apagado — o posto está livre AGORA." -ForegroundColor Green
+    } catch {
+        Write-Host "  Não consegui apagar o sinal de vida ($sinal)." -ForegroundColor Yellow
+        Write-Host "  A outra máquina assume sozinha em até 12 minutos." -ForegroundColor Yellow
+    }
+}
+
 Write-Host ""
 Write-Host "  Pronto. A fila e a hot folder do SAi ficaram intactas." -ForegroundColor Green
-Write-Host "  O sinal de vida do posto sai (_sinal_de_vida_sai.json) para de" -ForegroundColor Green
-Write-Host "  envelhecer sozinho — é assim que se vê que ele não está mais rodando." -ForegroundColor Green
+Write-Host "  Esta máquina não atende mais a DOCAN. Quem assumir o posto grava o" -ForegroundColor Green
+Write-Host "  próprio sinal de vida, e o painel de Agentes passa a mostrar o nome dela." -ForegroundColor Green

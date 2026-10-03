@@ -325,6 +325,42 @@ def ler_sinal_de_vida(pasta_fila=None, agora=None, posto=None):
     }
 
 
+# Quanto tempo o sinal de OUTRA máquina ainda vale como "ela está
+# atendendo este posto". Tem que ser bem maior que _INTERVALO_SINAL_MINUTOS
+# (o vigia vivo reescreve o sinal a cada 5 min), senão um vigia saudável
+# pareceria morto e o outro PC entraria por cima dele. 12 min é a mesma
+# régua que a tela usa pra dizer que um vigia parou.
+MINUTOS_POSTO_DE_OUTRA_MAQUINA = 12
+
+
+def outro_vigia_no_posto(pasta_fila=None, posto=None, agora=None, maquina=None):
+    """
+    Qual OUTRA máquina está atendendo este posto agora — None quando
+    ninguém está, ou quando o sinal é desta mesma máquina.
+
+    Existe porque a trava de instância única é um arquivo LOCAL: ela
+    impede duas passadas no mesmo PC, e não enxerga nada do PC vizinho.
+    Dois PCs no mesmo posto pegariam o mesmo arquivo da fila (job
+    duplicado, material impresso duas vezes) e gravariam no mesmo
+    registro do OneDrive — que resolve conflito ficando com UMA versão,
+    sem erro em log nenhum. Foi assim que 108 entregas sumiram entre 17 e
+    22/09/2026. Quem denuncia é o próprio sinal de vida: ele já diz o
+    nome da máquina que o escreveu.
+    """
+    sinal = ler_sinal_de_vida(pasta_fila, agora=agora, posto=posto)
+    if not sinal:
+        return None
+    dona = (sinal.get("maquina") or "").strip()
+    eu = (maquina or platform.node() or "").strip()
+    if not dona or dona == "?" or dona.lower() == eu.lower():
+        return None
+    # Sinal do futuro (relógio torto do outro PC) conta como vivo: na
+    # dúvida entre parar e duplicar trabalho, parar é o lado barato.
+    if sinal["idade_minutos"] >= MINUTOS_POSTO_DE_OUTRA_MAQUINA:
+        return None
+    return dona
+
+
 def registrar_sinal_de_vida(pasta_fila=None, resultado_por_maquina=None, agora=None, posto=None,
                             registro_pendente=None):
     """
@@ -1417,6 +1453,21 @@ def vigiar_fila_uma_vez(pasta_fila=None, maquinas=None, logger=print, pasta_rela
         )
 
     pasta_raiz = pathlib.Path(pasta_fila or PASTA_FILA_ONEDRIVE)
+
+    # Este posto já tem dono em OUTRO PC? Então esta passada não toca em
+    # nada. Quem sai é sempre quem CHEGOU por último (o dono reescreve o
+    # sinal a cada 5 min e nunca se vê como intruso), então a troca de
+    # máquina se faz desligando a tarefa da antiga: 12 min depois a nova
+    # assume sozinha. Ver outro_vigia_no_posto.
+    dona = outro_vigia_no_posto(pasta_raiz, posto=posto)
+    if dona:
+        logger("warn",
+               f"O posto '{posto or POSTO_PADRAO}' está sendo atendido pela máquina {dona} "
+               f"(sinal de vida de menos de {MINUTOS_POSTO_DE_OUTRA_MAQUINA} min). Esta passada "
+               f"saiu sem tocar na fila: dois vigias no mesmo posto duplicam job e apagam linha "
+               f"do registro. Pra mudar de máquina, desligue a tarefa na {dona} primeiro.")
+        return {}
+
     garantir_pastas_da_fila(pasta_raiz, maquinas, logger)
 
     resultado_por_maquina = {}

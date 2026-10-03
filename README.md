@@ -153,6 +153,7 @@ estoque.py                    catálogo, movimentos e saldo de material
 corte_parametros.py           parâmetros de usinagem (fonte única)
 aspire/corte_nucleo.lua       gadget que cria os percursos dentro do Aspire
 maquina_rip/ maquina_sai/     instaladores das tarefas agendadas de cada posto
+maquina_docan/                o mesmo vigia, pra instalar na maquina da DOCAN (onde roda o SAi)
 tests/                        os testes
 ```
 

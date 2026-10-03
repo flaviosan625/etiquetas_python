@@ -74,6 +74,28 @@ O vigia roda em dois PCs diferentes, com o mesmo arquivo:
 `POSTO_PADRAO = POSTO_RIP` de propósito: a tarefa antiga do RIP chama sem `--posto` e continua
 funcionando sem alteração nenhuma. Cada posto tem sua trava e seu `_sinal_de_vida_<posto>.json`.
 
+**Um posto tem UMA máquina, e quem garante isso é o sinal de vida.** A trava de instância única é um
+arquivo LOCAL: ela impede duas passadas no mesmo PC e não enxerga nada do PC vizinho. Dois PCs no
+mesmo posto pegariam o mesmo arquivo da fila (o RIP cria job duplicado) e gravariam no mesmo
+`.jsonl` do OneDrive, que resolve conflito ficando com UMA versão — foi assim que 108 entregas
+sumiram entre 17 e 22/09/2026. Desde 03/10/2026 a passada lê o sinal do posto antes de tocar em
+qualquer coisa (`outro_vigia_no_posto`): se outra máquina escreveu há menos de
+`MINUTOS_POSTO_DE_OUTRA_MAQUINA` (12 min, mais que o dobro dos 5 min em que o vigia vivo reescreve o
+sinal), esta sai sem fazer nada e diz no log. **Quem sai é sempre quem chegou por último** — o dono
+nunca se vê como intruso —, então trocar de máquina é desligar a tarefa da antiga; o
+`maquina_sai/desinstalar_tarefa.ps1` apaga o sinal pra liberar o posto na hora, e sem isso a nova
+assume sozinha em 12 min.
+
+**O posto da DOCAN está indo pro PC da impressora** (pedido dele, 02/10/2026 à noite: *"quero que o
+caminho delas venha da outra máquina para o OneDrive... quando eu jogar na pasta do OneDrive, de
+entrar no programa de RIP direto, porém o da máquina de impressão"*). Ele instalou o Production
+Manager 22.0 lá. O kit é `maquina_docan/` (espelhado em `OneDrive/UNYCOMUNICACAO/IMPRESSÃO DOCAN/`,
+como o do RIP): o `rasterlink_hotfolder.py` viaja sozinho pra `C:\VigiaDocan` e a tarefa chama o
+Python do sistema — fora da biblioteca padrão ele não precisa de nada, porque o PyMuPDF só entra
+quando há giro e as DOCAN não giram. A hot folder do SAi **nunca** pode ser a pasta do OneDrive
+direto: arquivo que o OneDrive ainda não baixou é marcador, e o RIP ripa o que vê. O ganho grande é
+a segunda perna: com o RIP do lado da impressora, o `.prt` nasce lá e para de subir pelo OneDrive.
+
 Consequência prática: **editar `rasterlink_hotfolder.py` muda a DOCAN na hora** (o PC principal roda
 do repositório), mas **não muda a UJV nem a SWJ** — aquelas só mudam quando o arquivo é levado pro
 PC do RIP. Ver `maquina_rip/atualizar.bat`.

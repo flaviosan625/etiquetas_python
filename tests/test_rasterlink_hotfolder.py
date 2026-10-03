@@ -1713,3 +1713,98 @@ def test_docan_esta_cadastrada_com_uma_largura_util_so():
     assert rl_hf._posto_da_maquina(rl_hf.MAQUINAS["DOCAN R5200"]) == rl_hf.POSTO_SAI
     for mimaki in ("UJV 100 UNY CV", "SWJ320A"):
         assert rl_hf._posto_da_maquina(rl_hf.MAQUINAS[mimaki]) == rl_hf.POSTO_RIP
+
+
+# ============ o posto tem UM dono: dois PCs no mesmo posto se apagam ============
+#
+# A trava de instancia unica e um arquivo LOCAL: ela nao enxerga o PC
+# vizinho. Em 03/10/2026 o SAi passou a rodar na maquina da DOCAN, e por
+# um tempo as duas tarefas existiram. Dois vigias no mesmo posto pegam o
+# mesmo arquivo (job duplicado) e gravam no mesmo registro do OneDrive,
+# que resolve conflito ficando com UMA versao — foi assim que 108
+# entregas sumiram entre 17 e 22/09/2026.
+
+def _sinal_de_outra_maquina(fila, posto, maquina="DOCAN-PC", quando=None):
+    fila.mkdir(parents=True, exist_ok=True)
+    caminho = rl_hf.caminho_do_sinal(fila, posto=posto)
+    quando = quando or datetime.datetime.now()
+    caminho.write_text(json.dumps({
+        "quando": quando.strftime("%Y-%m-%dT%H:%M:%S"), "maquina": maquina,
+        "posto": posto, "maquinas": {"DOCAN": None}, "registro_pendente": 0,
+    }), encoding="utf-8")
+    return caminho
+
+
+def test_passada_sai_sem_tocar_na_fila_quando_outro_PC_atende_o_posto(tmp_path):
+    fila = tmp_path / "fila"
+    hot = tmp_path / "hot"
+    hot.mkdir()
+    (fila / "DOCAN").mkdir(parents=True)
+    arte = fila / "DOCAN" / "arte.pdf"
+    arte.write_bytes(b"%PDF-1.4 arte")
+    os.utime(arte, (0, 0))          # estavel ha muito tempo: seria enviada
+    _sinal_de_outra_maquina(fila, rl_hf.POSTO_SAI)
+    linhas = []
+
+    resultado = vigiar_fila_uma_vez(pasta_fila=str(fila), logger=lambda n, m: linhas.append((n, m)),
+                                    maquinas={"DOCAN": {"hot_folder": str(hot), "posto": rl_hf.POSTO_SAI}},
+                                    posto=rl_hf.POSTO_SAI)
+
+    assert resultado == {}
+    assert arte.is_file(), "a arte saiu da fila do outro vigia"
+    assert list(hot.iterdir()) == [], "entregou o que o outro PC ja vai entregar"
+    assert any("DOCAN-PC" in m and "dois vigias" in m for _, m in linhas)
+
+
+def test_o_dono_do_posto_nunca_se_ve_como_intruso(tmp_path):
+    fila = tmp_path / "fila"
+    hot = tmp_path / "hot"
+    hot.mkdir()
+    _sinal_de_outra_maquina(fila, rl_hf.POSTO_SAI, maquina=rl_hf.platform.node())
+
+    resultado = vigiar_fila_uma_vez(pasta_fila=str(fila), logger=lambda n, m: None,
+                                    maquinas={"DOCAN": {"hot_folder": str(hot), "posto": rl_hf.POSTO_SAI}},
+                                    posto=rl_hf.POSTO_SAI)
+
+    assert "DOCAN" in resultado
+
+
+def test_maquina_antiga_desligada_libera_o_posto_sozinha(tmp_path):
+    """
+    E assim que se troca de PC: desliga a tarefa la, e 12 min depois a
+    nova assume. O vigia vivo reescreve o sinal a cada 5 min, entao
+    sinal velho e vigia desligado, nao vigia ocupado.
+    """
+    fila = tmp_path / "fila"
+    hot = tmp_path / "hot"
+    hot.mkdir()
+    velho = datetime.datetime.now() - datetime.timedelta(minutes=rl_hf.MINUTOS_POSTO_DE_OUTRA_MAQUINA + 1)
+    _sinal_de_outra_maquina(fila, rl_hf.POSTO_SAI, quando=velho)
+
+    resultado = vigiar_fila_uma_vez(pasta_fila=str(fila), logger=lambda n, m: None,
+                                    maquinas={"DOCAN": {"hot_folder": str(hot), "posto": rl_hf.POSTO_SAI}},
+                                    posto=rl_hf.POSTO_SAI)
+
+    assert "DOCAN" in resultado
+
+
+def test_a_espera_de_tomar_o_posto_e_maior_que_o_intervalo_do_sinal():
+    """
+    Se fosse menor, um vigia SAUDAVEL pareceria morto entre uma gravacao
+    e outra, e o outro PC entraria por cima dele.
+    """
+    assert rl_hf.MINUTOS_POSTO_DE_OUTRA_MAQUINA > 2 * rl_hf._INTERVALO_SINAL_MINUTOS
+
+
+def test_posto_do_RIP_nao_barra_o_posto_do_SAi(tmp_path):
+    """Cada posto tem o seu sinal: a DOCAN noutro PC nao pode calar o RIP."""
+    fila = tmp_path / "fila"
+    hot = tmp_path / "hot"
+    hot.mkdir()
+    _sinal_de_outra_maquina(fila, rl_hf.POSTO_SAI)
+
+    resultado = vigiar_fila_uma_vez(pasta_fila=str(fila), logger=lambda n, m: None,
+                                    maquinas={"UJV100": {"hot_folder": str(hot), "posto": rl_hf.POSTO_RIP}},
+                                    posto=rl_hf.POSTO_RIP)
+
+    assert "UJV100" in resultado
