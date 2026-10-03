@@ -9,6 +9,18 @@
 
 $ErrorActionPreference = "Continue"
 
+# E GRAVA O QUE DISSE, na propria pasta do kit — que esta no OneDrive, o
+# unico caminho que as duas maquinas enxergam.
+#
+# Por que (03/10/2026): o PC principal nao ve esta maquina pela rede (hoje
+# esta ate em outro Wi-Fi), e transcrever mensagem de tela a dois
+# computadores de distancia e lento e erra. Com o arquivo, de la se le o
+# diagnostico inteiro sem ninguem copiar nada. Foi assim que o vigia da
+# DOCAN foi destravado.
+try {
+    Start-Transcript -Path (Join-Path $PSScriptRoot ("diagnostico_{0}.txt" -f $env:COMPUTERNAME)) -Force | Out-Null
+} catch { }
+
 $NOME_TAREFA = "RasterLink Hotfolder"
 $PASTA       = "C:\RasterLink"
 $SCRIPT      = Join-Path $PASTA "rasterlink_hotfolder.py"
@@ -203,3 +215,10 @@ try {
 
 Write-Host ""
 Write-Host "  ---- fim ----" -ForegroundColor DarkGray
+
+try {
+    Stop-Transcript | Out-Null
+    Write-Host ""
+    Write-Host "  Gravei tudo isto em diagnostico_$env:COMPUTERNAME.txt, nesta mesma pasta." -ForegroundColor Green
+    Write-Host "  Deixe o OneDrive sincronizar — do outro computador da pra ler sem copiar nada." -ForegroundColor Green
+} catch { }
