@@ -507,6 +507,17 @@ Decisões do usuário de 2026-09-13, que valem pro sistema inteiro:
 
 ## Regras que já custaram material de verdade
 
+- **A pasta de produção é PLANA: arquivo solto + uma pasta `PRONTOS`.** Regra dele de 03/10/2026:
+  *"assim que for criada a pasta de produção, criar somente uma pasta de PRONTOS; deixar os arquivos
+  soltos e, na medida que for ficando pronto, eu arrasto pra pasta. Antes estava por material, gerava
+  muita pasta — como no nome já consta o que vamos produzir, não precisamos dessa separação por
+  pasta; só em lista, etiqueta e relatórios precisa ser tudo separado"*. As quatro subpastas por
+  material saíram de `producao.garantir_estrutura_producao`, e `organizar_pasta_producao` **não move
+  mais nada**. A separação por material não se perdeu: ela sempre veio do NOME do arquivo
+  (`_pasta_de_trabalho_para`, que virou um RÓTULO), e é dali que a OS, as etiquetas e os relatórios
+  agrupam. Quem dependia da PASTA teve de mudar: a tela de envio tirava o corte puro da lista porque
+  ele morava em `CORTES/` — agora tira pelo rótulo. Cliente antigo continua com as subpastas e
+  continua sendo lido; o status PRONTO aceita as duas grafias e os dois lugares.
 - **Nunca escrever em pasta de produção sem pedido explícito.** As pastas de cliente em
   `OneDrive/UNYCOMUNICACAO/EVENTOS/...` são trabalho real, não bancada de teste.
 - **Instalar, agendar ou copiar pra máquina só com autorização dele.** Aqui tudo é teste até ele

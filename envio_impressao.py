@@ -76,6 +76,9 @@ _CATEGORIA_ADESIVO = "ADESIVO"
 _CATEGORIA_LONA = "LONA"
 
 # Pasta que nunca entra na lista: corte direto não passa por impressora.
+# Continua valendo pra cliente antigo, que ainda tem a pasta CORTES; na
+# pasta plana (03/10/2026) quem barra é o rótulo tirado do nome, em
+# 'listar'.
 _SUBPASTA_FORA = PASTA_CORTE
 
 # Pastas que a varredura nunca abre. 'Prontos' é a confirmação manual do
@@ -312,6 +315,14 @@ def listar(pasta_escolhida, config, envios_anteriores=None, maquinas=None):
     itens = []
     for caminho in _arquivos_da_pasta(pasta_escolhida):
         nome_upper = caminho.name.upper()
+        trabalho = _pasta_de_trabalho_para(caminho.name, materiais, sinonimos, compostos)
+        # Corte puro (PVC/PS/MDF/acrílico sem impressão nenhuma) não passa
+        # por impressora e nunca entrou nesta lista. Até 03/10/2026 quem o
+        # tirava era a PASTA 'CORTES'; agora a pasta de produção é plana e
+        # o arquivo fica solto, então quem decide é o rótulo tirado do
+        # NOME — a mesma regra, lida de onde ela sempre esteve.
+        if trabalho == PASTA_CORTE:
+            continue
         categoria, _ = identificar_categoria(nome_upper, materiais, sinonimos)
         quantidade, _ = extrair_quantidade(nome_upper)
         dimensao = extrair_dimensoes(nome_upper, config)
@@ -320,7 +331,7 @@ def listar(pasta_escolhida, config, envios_anteriores=None, maquinas=None):
         itens.append({
             "caminho": caminho,
             "arquivo": caminho.name,
-            "pasta_trabalho": _pasta_de_trabalho_para(caminho.name, materiais, sinonimos, compostos),
+            "pasta_trabalho": trabalho,
             "categoria": categoria,
             "quantidade": quantidade,
             "dimensao": dimensao,

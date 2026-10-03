@@ -124,6 +124,16 @@ def passada_do_cliente(cliente, forcar=False):
             _log(cliente, "warn", "pasta de produção não encontrada: %s" % cliente.pasta_producao)
             return False
 
+        # A única pasta que a produção tem (03/10/2026). É aqui porque esta
+        # passada é a que já visita todo cliente de minuto em minuto: pasta
+        # criada à mão no Explorer ganha o PRONTOS sem ninguém pedir.
+        # Idempotente, e NÃO move arquivo nenhum — ver producao.py.
+        try:
+            import producao
+            producao.garantir_estrutura_producao(cliente.pasta_producao)
+        except OSError as e:
+            _log(cliente, "warn", "não consegui criar a pasta PRONTOS: %s" % e)
+
         import custos
         from config import carregar_config
 

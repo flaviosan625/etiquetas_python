@@ -1,13 +1,24 @@
 """
-Organiza a pasta "PRODUCAO" de cada cliente (dentro de EVENTOS no
-OneDrive) automaticamente: garante que sempre existam as 4 subpastas
-de trabalho (LONA, ADESIVO, CORTE, COMPOSTOS, cada uma com seu
-Prontos e NADA MAIS dentro) e distribui os arquivos soltos que caem
-direto na raiz da PRODUCAO pra subpasta certa, usando a MESMA
-detecção de categoria já usada pra gerar a OS (dimensoes.
-identificar_categoria/identificar_categoria_extra).
+A pasta "PRODUCAO" de cada cliente (dentro de EVENTOS no OneDrive).
 
-Regra (pedido do usuário, 2026-09-03):
+**A PASTA É PLANA DESDE 03/10/2026.** Pedido dele: *"assim que for criada a
+pasta de produção, criar somente uma pasta de PRONTOS; deixar os arquivos
+soltos e, na medida que for ficando pronto, eu arrasto pra pasta. Antes
+estava por material, gerava muita pasta — como no nome já consta o que
+vamos produzir, não precisamos dessa separação por pasta; só em lista,
+etiqueta e relatórios precisa ser tudo separado"*.
+
+Então aqui não se move mais arquivo nenhum: a arte nasce solta na raiz e é
+ELE quem arrasta pra PRONTOS quando a peça sai da máquina. O que o sistema
+cria é uma pasta só.
+
+A classificação por material NÃO se perdeu com as pastas — ela sempre veio
+do NOME do arquivo, e é dali que a OS, as etiquetas e os relatórios
+continuam agrupando. `_pasta_de_trabalho_para` virou isso: um RÓTULO de
+material (a tela de envio usa pra saber o que é corte puro e não oferecer
+pra impressora), não mais um destino.
+
+O texto abaixo é a regra desse rótulo (pedido do usuário, 2026-09-03):
   - Lonas: só lona pura, nada mais.
   - Adesivos: só adesivo puro, nada mais.
   - Cortes: só quando for corte DIRETO — PVC/PS/MDF/ACRÍLICO sem
@@ -32,6 +43,13 @@ import pathlib
 from dimensoes import contem_palavra, identificar_categoria, identificar_categoria_extra
 
 NOME_PASTA_PRODUCAO = "PRODUCAO"
+# A única pasta dentro da PRODUCAO desde 03/10/2026. Em MAIÚSCULAS porque
+# é assim que ele pediu e é assim que ela aparece pra quem arrasta a arte
+# pra dentro; quem lê o status aceita as duas grafias de sempre
+# (checklist_producao._PASTAS_PRONTO).
+NOME_PASTA_PRONTOS = "PRONTOS"
+# O nome antigo continua aqui porque pasta de cliente velho tem 'Prontos'
+# dentro de cada material, e quem varre não pode deixar de reconhecer.
 NOME_SUBPASTA_PRONTOS = "Prontos"
 
 PASTA_LONA = "LONAS"
@@ -86,10 +104,24 @@ def _rotulo_pasta_producao(pasta_producao):
 
 
 def garantir_estrutura_producao(pasta_producao):
-    """Cria as 4 subpastas de trabalho (+ Prontos de cada) se ainda não existirem. Idempotente."""
-    pasta = pathlib.Path(pasta_producao)
-    for nome in _SUBPASTAS_TRABALHO:
-        (pasta / nome / NOME_SUBPASTA_PRONTOS).mkdir(parents=True, exist_ok=True)
+    """
+    Cria a ÚNICA pasta que a produção usa: PRONTOS. Idempotente.
+
+    Mudou em 03/10/2026, a pedido dele: *"assim que for criada a pasta de
+    produção, criar somente uma pasta de PRONTOS; deixar os arquivos
+    soltos e, na medida que for ficando pronto, eu arrasto pra pasta.
+    Antes estava por material, gerava muita pasta — como no nome já
+    consta o que vamos produzir, não precisamos dessa separação por
+    pasta; só em lista, etiqueta e relatórios precisa ser tudo
+    separado"*.
+
+    As quatro subpastas por material (LONAS, ADESIVOS, CORTES,
+    COMPOSTOS) saíram daqui — mas a CLASSIFICAÇÃO por material não se
+    perdeu: ela continua saindo do NOME do arquivo
+    (_pasta_de_trabalho_para), que é quem agrupa a OS, as etiquetas e
+    os relatórios. O que acabou foi a pasta, não a separação.
+    """
+    pathlib.Path(pasta_producao, NOME_PASTA_PRONTOS).mkdir(parents=True, exist_ok=True)
 
 
 def _pasta_de_trabalho_para(nome_arquivo, materiais, sinonimos_categoria=None, materiais_compostos=None):
@@ -124,36 +156,21 @@ def _pasta_de_trabalho_para(nome_arquivo, materiais, sinonimos_categoria=None, m
     return PASTA_COMPOSTOS
 
 
-def organizar_pasta_producao(pasta_producao, config):
+def organizar_pasta_producao(pasta_producao, config=None):
     """
-    Garante a estrutura e move todo arquivo solto direto na raiz da
-    PRODUCAO (nunca mexe no que já está dentro de uma subpasta de
-    trabalho ou de Prontos — só olha o primeiro nível) pra subpasta
-    certa (categoria não reconhecida vai pra Compostos também — ver
-    _pasta_de_trabalho_para). Retorna um dict com o que foi movido e
-    o que ficou parado por colisão de nome.
+    Hoje só garante o PRONTOS. **Não move arquivo nenhum.**
+
+    Até 03/10/2026 ela distribuía cada arquivo solto pra subpasta do
+    material dele. Ele pediu o contrário (ver garantir_estrutura_producao):
+    o arquivo fica solto na raiz e é ELE quem arrasta pra PRONTOS quando a
+    peça sai da máquina. Mover arte na pasta de produção por conta própria
+    é justamente o que está congelado desde 2026-09-12.
+
+    Continua devolvendo o mesmo formato ({'movidos', 'colisoes'}) pra não
+    quebrar quem chama — agora sempre vazio.
     """
-    pasta = pathlib.Path(pasta_producao)
-    garantir_estrutura_producao(pasta)
-
-    materiais = config["materiais"]
-    sinonimos_categoria = config.get("sinonimos_categoria", {})
-    materiais_compostos = config.get("materiais_compostos", {})
-
-    resultado = {"movidos": [], "colisoes": []}
-
-    for arquivo in [f for f in pasta.iterdir() if f.is_file()]:
-        pasta_destino = _pasta_de_trabalho_para(
-            arquivo.name, materiais, sinonimos_categoria, materiais_compostos,
-        )
-        destino = pasta / pasta_destino / arquivo.name
-        if destino.exists():
-            resultado["colisoes"].append(arquivo.name)
-            continue
-        arquivo.rename(destino)
-        resultado["movidos"].append((arquivo.name, pasta_destino))
-
-    return resultado
+    garantir_estrutura_producao(pasta_producao)
+    return {"movidos": [], "colisoes": []}
 
 
 def gerar_relatorio_pendencias(raiz_eventos):
@@ -167,12 +184,19 @@ def gerar_relatorio_pendencias(raiz_eventos):
     só com clientes que têm pelo menos 1 pendência — quem já está tudo
     em Prontos não aparece. Vazio (nunca estoura erro) se a raiz não
     existir.
+
+    Com a pasta plana (03/10/2026) a pendência é o que está SOLTO na raiz,
+    e aparece como "a fazer"; as subpastas de material continuam contadas
+    porque cliente antigo ainda as tem.
     """
     pendencias = {}
     for pasta_producao in _achar_pastas_producao(raiz_eventos):
         rotulo = _rotulo_pasta_producao(pasta_producao)
 
         contagem = {}
+        soltos = sum(1 for f in pasta_producao.iterdir() if f.is_file())
+        if soltos:
+            contagem["a fazer"] = soltos
         for subpasta in _SUBPASTAS_TRABALHO:
             caminho_subpasta = pasta_producao / subpasta
             if not caminho_subpasta.is_dir():

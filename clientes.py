@@ -143,6 +143,19 @@ def salvar(cliente):
     }
     (cliente.pasta / NOME_CONFIG).write_text(
         json.dumps(dados, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    # Apontou uma pasta de produção, ela ganha a PRONTOS na hora — a única
+    # que a produção tem desde 03/10/2026 ("deixar os arquivos soltos e,
+    # na medida que for ficando pronto, eu arrasto pra pasta"). Import
+    # tardio: clientes.py é leve de propósito, e falhar aqui nunca pode
+    # impedir de salvar o cadastro.
+    if cliente.pasta_producao and cliente.pasta_producao.is_dir():
+        try:
+            import producao
+            producao.garantir_estrutura_producao(cliente.pasta_producao)
+        except Exception:   # noqa: BLE001
+            pass
+
     cliente.configurado = True
     cliente.criado_em = dados["criado_em"]
     return cliente

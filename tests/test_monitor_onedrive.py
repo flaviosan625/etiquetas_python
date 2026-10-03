@@ -94,22 +94,24 @@ def test_ja_esta_rodando_detecta_segunda_instancia():
     assert resultado.stdout.strip() == "True", "segunda instância (processo separado) precisa se achar duplicada"
 
 
-def test_organizar_producao_ao_iniciar_organiza_e_avisa(tmp_path):
+def test_organizar_producao_ao_iniciar_so_garante_o_prontos(tmp_path):
     """
-    Pedido do usuário (2026-09-03): funcionário joga arquivo de
-    madrugada, tudo bagunçado — ao ligar o PC de manhã, o monitor
-    organiza sozinho antes de começar a vigiar.
+    Em 2026-09-03 ele organizava a bagunca da madrugada sozinho. Desde
+    03/10/2026 a pasta e plana e nada se move: ao ligar o PC, tudo o que
+    acontece e a pasta PRONTOS existir — e, como nada foi movido, nao ha
+    o que avisar.
     """
     eventos = tmp_path / "EVENTOS"
     (eventos / "CLIENTE A" / "PRODUCAO").mkdir(parents=True)
-    (eventos / "CLIENTE A" / "PRODUCAO" / "1UN LONA 2,00X1,00M_a.pdf").write_bytes(b"x")
+    arte = eventos / "CLIENTE A" / "PRODUCAO" / "1UN LONA 2,00X1,00M_a.pdf"
+    arte.write_bytes(b"x")
 
     avisos = []
     _organizar_producao_ao_iniciar(eventos, notificar=lambda msg, titulo=None: avisos.append(msg))
 
-    assert (eventos / "CLIENTE A" / "PRODUCAO" / "LONAS" / "1UN LONA 2,00X1,00M_a.pdf").exists()
-    assert len(avisos) == 1
-    assert "CLIENTE A" in avisos[0]
+    assert arte.exists(), "a arte nao pode sair do lugar"
+    assert (eventos / "CLIENTE A" / "PRODUCAO" / "PRONTOS").is_dir()
+    assert avisos == []
 
 
 def test_organizar_producao_ao_iniciar_nao_avisa_se_nada_pra_organizar(tmp_path):
@@ -135,7 +137,8 @@ def test_organizar_producao_ao_iniciar_nunca_trava_o_monitor(tmp_path, monkeypat
 
 
 def test_tem_pendencia_detecta_arquivo_fora_do_prontos(tmp_path):
-    from producao import garantir_estrutura_producao, PASTA_LONA
+    """Com a pasta plana (03/10/2026), pendencia e o que esta SOLTO na raiz."""
+    from producao import garantir_estrutura_producao
 
     eventos = tmp_path / "EVENTOS"
     assert _tem_pendencia(eventos) is False, "pasta vazia/inexistente nao pode acusar pendencia"
@@ -144,7 +147,7 @@ def test_tem_pendencia_detecta_arquivo_fora_do_prontos(tmp_path):
     garantir_estrutura_producao(pasta_producao)
     assert _tem_pendencia(eventos) is False, "estrutura recem-criada, sem arquivo, nao e pendencia"
 
-    (pasta_producao / PASTA_LONA / "a.pdf").write_bytes(b"x")
+    (pasta_producao / "a.pdf").write_bytes(b"x")
     assert _tem_pendencia(eventos) is True
 
 
@@ -161,10 +164,14 @@ class _EventoFalso:
 
 
 def test_criar_pasta_producao_ja_estrutura_na_hora(tmp_path):
-    """Pedido do usuário (2026-09-03): não espera reiniciar — reage assim que a pasta é criada."""
+    """
+    Pedido do usuário (2026-09-03): não espera reiniciar — reage assim que
+    a pasta é criada. O que ele cria mudou em 03/10/2026: uma pasta so,
+    PRONTOS, e nada de subpasta por material.
+    """
     import copy
     from config import CONFIG_PADRAO
-    from producao import PASTA_LONA, PASTA_ADESIVO, PASTA_CORTE, PASTA_COMPOSTOS, NOME_SUBPASTA_PRONTOS
+    from producao import NOME_PASTA_PRONTOS
 
     pasta_producao = tmp_path / "CLIENTE X" / "PRODUCAO 01_09"
     pasta_producao.mkdir(parents=True)
@@ -173,14 +180,18 @@ def test_criar_pasta_producao_ja_estrutura_na_hora(tmp_path):
                         carregar_config_fn=lambda: copy.deepcopy(CONFIG_PADRAO))
     handler.on_created(_EventoFalso(str(pasta_producao), is_directory=True))
 
-    for nome in (PASTA_LONA, PASTA_ADESIVO, PASTA_CORTE, PASTA_COMPOSTOS):
-        assert (pasta_producao / nome / NOME_SUBPASTA_PRONTOS).is_dir()
+    assert [p.name for p in pasta_producao.iterdir()] == [NOME_PASTA_PRONTOS]
 
 
-def test_criar_arquivo_solto_dentro_de_producao_ja_organiza_na_hora(tmp_path):
+def test_criar_arquivo_solto_dentro_de_producao_fica_onde_esta(tmp_path):
+    """
+    Era "organiza na hora". Agora e o contrario, a pedido dele: a arte
+    nasce solta e e ELE quem arrasta pra PRONTOS quando a peca sai da
+    maquina.
+    """
     import copy
     from config import CONFIG_PADRAO
-    from producao import PASTA_LONA, garantir_estrutura_producao
+    from producao import garantir_estrutura_producao
 
     pasta_producao = tmp_path / "CLIENTE X" / "PRODUCAO"
     garantir_estrutura_producao(pasta_producao)
@@ -191,8 +202,7 @@ def test_criar_arquivo_solto_dentro_de_producao_ja_organiza_na_hora(tmp_path):
                         carregar_config_fn=lambda: copy.deepcopy(CONFIG_PADRAO))
     handler.on_created(_EventoFalso(str(arquivo), is_directory=False))
 
-    assert (pasta_producao / PASTA_LONA / "1UN LONA 2,00X1,00M_a.pdf").exists()
-    assert not arquivo.exists()
+    assert arquivo.exists(), "a arte nao pode sair do lugar"
 
 
 def test_arquivo_fora_de_pasta_producao_nao_e_mexido(tmp_path):
