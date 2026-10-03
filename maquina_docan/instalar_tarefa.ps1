@@ -81,6 +81,40 @@ Titulo "1/7  Conferindo o terreno antes de mexer em qualquer coisa"
 
 Write-Host "  Esta máquina: $env:COMPUTERNAME"
 
+# ESTE KIT É PRA RODAR NA MÁQUINA DA IMPRESSORA.
+#
+# A pasta dele fica no OneDrive, que está sincronizado nos dois PCs — e os
+# dois kits têm .bat de mesmo nome. Em 03/10/2026 ele rodou os dois aqui no
+# PC principal sem perceber. Rodar o instalador no PC errado é pior do que
+# não rodar: cria um segundo vigia pro mesmo posto, que é exatamente o que
+# duplica job e apaga linha do registro.
+#
+# Quem denuncia o PC principal é o que só existe nele: a tarefa do
+# Checklist de Produção e o repositório na área de trabalho.
+$souOPrincipal = @()
+if (Get-ScheduledTask -TaskName "Checklist de Producao" -ErrorAction SilentlyContinue) {
+    $souOPrincipal += "a tarefa 'Checklist de Producao' está instalada aqui"
+}
+$repo = Join-Path $env:USERPROFILE "Desktop\etiquetas_python\rasterlink_hotfolder.py"
+if (Test-Path $repo) { $souOPrincipal += "o projeto está em $(Split-Path -Parent $repo)" }
+
+if ($souOPrincipal.Count -gt 0) {
+    Write-Host ""
+    Write-Host "  PAREI: esta parece ser a MÁQUINA PRINCIPAL, não a da impressora." -ForegroundColor Red
+    foreach ($m in $souOPrincipal) { Write-Host "    - $m" -ForegroundColor Yellow }
+    Write-Host ""
+    Write-Host "  Este kit é pra rodar NA MÁQUINA DA DOCAN — a que tem o Production" -ForegroundColor Yellow
+    Write-Host "  Manager do lado da impressora. Abra lá a mesma pasta do OneDrive" -ForegroundColor Yellow
+    Write-Host "  (UNYCOMUNICACAO\IMPRESSÃO DOCAN) e rode este instalador por lá." -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "  Se o que você quer é o CONTRÁRIO — trazer a DOCAN de volta pra esta" -ForegroundColor Cyan
+    Write-Host "  máquina —, o instalador certo é:" -ForegroundColor Cyan
+    Write-Host "      etiquetas_python\maquina_sai\instalar_tarefa.bat" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "  Nada foi alterado." -ForegroundColor Green
+    exit 1
+}
+
 $souAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
             ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if (-not $souAdmin) {
