@@ -18,11 +18,16 @@ echo.
 
 set "DESTINO=C:\RasterLink"
 set "ORIGEM="
-for /d %%D in ("%USERPROFILE%\OneDrive\UNYCOMUNICACAO\IMPRESS*UJV*") do set "ORIGEM=%%~fD"
+rem Desde 03/10/2026 os kits das maquinas moram juntos numa pasta so
+rem - "INSTALAR NAS MAQUINAS", sem acento, com uma subpasta por posto.
+rem A pasta antiga continua valendo: quem roda este .bat e a maquina do
+rem RIP, e ela pode estar com o OneDrive atrasado.
+for /d %%D in ("%USERPROFILE%\OneDrive\UNYCOMUNICACAO\INSTALAR NAS MAQUINAS\RIP*") do set "ORIGEM=%%~fD"
+if not defined ORIGEM for /d %%D in ("%USERPROFILE%\OneDrive\UNYCOMUNICACAO\IMPRESS*UJV*") do set "ORIGEM=%%~fD"
 
 if not defined ORIGEM (
   echo   PAREI: nao achei a pasta de deploy no OneDrive.
-  echo   Procurei por: %USERPROFILE%\OneDrive\UNYCOMUNICACAO\IMPRESS*UJV*
+  echo   Procurei em: %USERPROFILE%\OneDrive\UNYCOMUNICACAO\INSTALAR NAS MAQUINAS\RIP...
   goto :fim
 )
 echo   Pasta de deploy: %ORIGEM%

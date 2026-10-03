@@ -89,7 +89,7 @@ assume sozinha em 12 min.
 **O posto da DOCAN está indo pro PC da impressora** (pedido dele, 02/10/2026 à noite: *"quero que o
 caminho delas venha da outra máquina para o OneDrive... quando eu jogar na pasta do OneDrive, de
 entrar no programa de RIP direto, porém o da máquina de impressão"*). Ele instalou o Production
-Manager 22.0 lá. O kit é `maquina_docan/` (espelhado em `OneDrive/UNYCOMUNICACAO/IMPRESSÃO DOCAN/`,
+Manager 22.0 lá. O kit é `maquina_docan/` (espelhado em `OneDrive/UNYCOMUNICACAO/INSTALAR NAS MAQUINAS/DOCAN/`,
 como o do RIP): o `rasterlink_hotfolder.py` viaja sozinho pra `C:\VigiaDocan` e a tarefa chama o
 Python do sistema — fora da biblioteca padrão ele não precisa de nada, porque o PyMuPDF só entra
 quando há giro e as DOCAN não giram. A hot folder do SAi **nunca** pode ser a pasta do OneDrive

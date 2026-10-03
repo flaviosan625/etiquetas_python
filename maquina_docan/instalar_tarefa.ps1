@@ -123,7 +123,7 @@ if ($souOPrincipal.Count -gt 0) {
     Write-Host ""
     Write-Host "  Este kit é pra rodar NA MÁQUINA DA DOCAN — a que tem o Production" -ForegroundColor Yellow
     Write-Host "  Manager do lado da impressora. Abra lá a mesma pasta do OneDrive" -ForegroundColor Yellow
-    Write-Host "  (UNYCOMUNICACAO\IMPRESSÃO DOCAN) e rode este instalador por lá." -ForegroundColor Yellow
+    Write-Host "  (UNYCOMUNICACAO\INSTALAR NAS MAQUINAS\DOCAN) e rode por lá." -ForegroundColor Yellow
     Write-Host ""
     Write-Host "  Se o que você quer é o CONTRÁRIO — trazer a DOCAN de volta pra esta" -ForegroundColor Cyan
     Write-Host "  máquina —, o instalador certo é:" -ForegroundColor Cyan
@@ -140,7 +140,7 @@ if ($souOPrincipal.Count -gt 0) {
 #
 # Reabre o .BAT, não este .ps1: assim o 'pause' do fim mantém a janela
 # aberta pra pessoa ler o resultado. E vai por -FilePath, nunca montando
-# uma linha de comando: o caminho tem espaço e acento ("IMPRESSÃO DOCAN"),
+# uma linha de comando: o caminho tem espaço ("INSTALAR NAS MAQUINAS"),
 # e cmd.exe come aspas de um jeito que quebraria calado.
 $souAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
             ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)

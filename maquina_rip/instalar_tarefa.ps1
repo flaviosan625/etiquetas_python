@@ -80,11 +80,18 @@ try {
 # ---------------------------------------------------------------- 1/7
 Titulo "1/7  Trazendo a versão nova do script"
 
-$origem = Get-ChildItem "$env:USERPROFILE\OneDrive\UNYCOMUNICACAO" -Directory -ErrorAction SilentlyContinue |
-          Where-Object { $_.Name -like "IMPRESS*UJV*" } |
-          Select-Object -First 1
-# procurado por curinga de propósito: o nome da pasta tem "Ã" e caminho
-# acentuado dentro de .bat depende da página de código do console
+# Desde 03/10/2026 os kits moram juntos em "INSTALAR NAS MAQUINAS", uma
+# subpasta por posto; a pasta antiga ("IMPRESSÃO UJV 100") continua
+# valendo porque o OneDrive desta máquina pode estar atrasado.
+#
+# Procurado por curinga de propósito: o nome antigo tem "Ã", e caminho
+# acentuado dentro de .bat depende da página de código do console.
+$origem = Get-ChildItem "$env:USERPROFILE\OneDrive\UNYCOMUNICACAO\INSTALAR NAS MAQUINAS" -Directory -ErrorAction SilentlyContinue |
+          Where-Object { $_.Name -like "RIP*" } | Select-Object -First 1
+if ($null -eq $origem) {
+    $origem = Get-ChildItem "$env:USERPROFILE\OneDrive\UNYCOMUNICACAO" -Directory -ErrorAction SilentlyContinue |
+              Where-Object { $_.Name -like "IMPRESS*UJV*" } | Select-Object -First 1
+}
 
 if ($null -eq $origem) {
     Write-Host "  Não achei a pasta de deploy no OneDrive. Copie o rasterlink_hotfolder.py na mão pra $PASTA." -ForegroundColor Yellow

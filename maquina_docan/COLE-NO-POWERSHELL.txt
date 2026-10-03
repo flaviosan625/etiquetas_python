@@ -5,10 +5,14 @@ INSTALAR O VIGIA DA DOCAN - TUDO PELO POWERSHELL
    e escolha "Terminal (Administrador)" ou "Windows PowerShell (Admin)".
    Clique SIM na permissao.
 
+   Confira que e a janela certa - esta linha tem que responder True:
+
+([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+
 2) Copie a linha abaixo, cole no terminal e aperte Enter:
 
 
-Set-ExecutionPolicy Bypass -Scope Process -Force; $k = Get-ChildItem "$env:USERPROFILE\OneDrive\UNYCOMUNICACAO" -Directory -Filter "IMPRESS*DOCAN"; & (Join-Path $k.FullName "instalar_tarefa.ps1")
+Set-ExecutionPolicy Bypass -Scope Process -Force; cd C:\VigiaDocan; & "$env:USERPROFILE\OneDrive\UNYCOMUNICACAO\INSTALAR NAS MAQUINAS\DOCAN\instalar_tarefa.ps1"
 
 
 3) A primeira linha que ele mostra tem que dizer:
@@ -27,8 +31,15 @@ OUTRAS DUAS LINHAS, SE PRECISAR
 
 Diagnostico (so olha, nao precisa de administrador):
 
-Set-ExecutionPolicy Bypass -Scope Process -Force; $k = Get-ChildItem "$env:USERPROFILE\OneDrive\UNYCOMUNICACAO" -Directory -Filter "IMPRESS*DOCAN"; & (Join-Path $k.FullName "diagnostico.ps1")
+Set-ExecutionPolicy Bypass -Scope Process -Force; cd C:\VigiaDocan; & "$env:USERPROFILE\OneDrive\UNYCOMUNICACAO\INSTALAR NAS MAQUINAS\DOCAN\diagnostico.ps1"
 
 Tirar o vigia desta maquina (precisa de administrador):
 
-Set-ExecutionPolicy Bypass -Scope Process -Force; $k = Get-ChildItem "$env:USERPROFILE\OneDrive\UNYCOMUNICACAO" -Directory -Filter "IMPRESS*DOCAN"; & (Join-Path $k.FullName "desinstalar_tarefa.ps1")
+Set-ExecutionPolicy Bypass -Scope Process -Force; & "$env:USERPROFILE\OneDrive\UNYCOMUNICACAO\INSTALAR NAS MAQUINAS\DOCAN\desinstalar_tarefa.ps1"
+
+
+POR QUE O "cd C:\VigiaDocan" NA FRENTE
+--------------------------------------
+O Python so procura o vigia na pasta em que voce esta, e um terminal de
+administrador abre em C:\Windows\system32. Sem o cd, o instalador para no
+3/7 dizendo que nao conseguiu ler o vigia recem-copiado.
