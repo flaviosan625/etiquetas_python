@@ -248,9 +248,13 @@ def test_nome_sem_especificacao():
 
 
 def test_nome_com_area_na_frente_como_no_mercado_livre():
+    """
+    Com sangria, o tamanho COM sangria vai na frente e o final atrás — regra
+    do usuário de 2026-10-02: "manter o tamanho maior sempre que é com sangria".
+    """
     p = _peca(descricao="PAINEL FRONTAL FUNDO", material="LONA", arte=(9.5, 4.5), sangria=(9.8, 4.8))
     assert ra.nome_final(p, area="LANDMARK") == \
-        "1UN LONA 9,50X4,50M_LANDMARK - PAINEL FRONTAL FUNDO_sangria 9,80X4,80M.pdf"
+        "1UN LONA 9,80X4,80M_LANDMARK - PAINEL FRONTAL FUNDO_final 9,50X4,50M.pdf"
 
 
 def test_area_nao_se_repete_quando_a_descricao_ja_comeca_com_ela():

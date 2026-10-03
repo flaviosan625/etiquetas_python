@@ -34,7 +34,15 @@ regras do usuário:
   - o que ninguém especificou: 1 unidade e material A DEFINIR, sem
     perguntar ("1 unidade de cada quando não achar especificação";
     "pode jogar sempre como A Definir").
+
+CADERNO NA TELA (2026-10-02) — o caderno do Canva
+O arquivo chega com a ficha da peça junto (origem_artes.OrigemCaderno). A
+ficha decide MATERIAL e QUANTIDADE ("respeite sempre o que for material que
+o cliente pede"); a medida continua vindo da arte, e a do caderno serve pra
+conferir — e pra provar escala: a lona grande vem desenhada em 1:10 (ver
+escala_provada).
 """
+import collections
 import dataclasses
 import datetime
 import hashlib
@@ -170,6 +178,14 @@ class Peca:
     marca_removida: bool = False
     # imagem: o que marcas_de_corte.propor_corte_imagem achou (pra tela mostrar)
     proposta_corte: dict = dataclasses.field(default=None, repr=False, compare=False)
+    # caderno: a ficha da peça (página, nome, medidas, material, quantidade...)
+    ficha: dict = dataclasses.field(default=None, repr=False, compare=False)
+    # arte desenhada em escala (1:10): 'escala' é o fator em uso, 'escala_achada'
+    # o que a prova achou (a tela liga e desliga), e a medida como está no PDF
+    escala: int = 1
+    escala_achada: int = 1
+    arte_pdf_m: tuple = None
+    sangria_pdf_m: tuple = None
 
     @property
     def leva_nome_do_padrao(self):
@@ -381,6 +397,343 @@ def especificacao_do_nome(arquivo, config=None):
     return int(quantidade), material, de_onde, avisos
 
 
+# ------------------------------------------------------------- caderno
+
+_SANGRIA_NO_TEXTO = re.compile(r"\bSANGRIA\s*\d+(?:[.,]\d+)?\s*(?:MM|CM|M)?\b", re.I)
+# Nome de arquivo que não diz qual é a peça: aí vale o nome da ficha.
+_DESCRICOES_GENERICAS = {"ARTE", "ARTE FINAL", "FINAL", "ARQUIVO", "IMPRESSAO", "LAYOUT", "PDF",
+                         "IMG", "IMAGEM", "PECA"}
+
+
+def _palavras(texto):
+    return re.findall(r"[A-Z0-9]+", caderno_arte._sem_acento(texto or "").upper())
+
+
+def _nome_sem_medidas(texto):
+    """
+    Maiúsculo, sem acento, '_' virando espaço e sem medida nem 'sangria15cm'.
+    O '_' sai ANTES: ele é letra pro regex, e em '..._vibra_sangria15cm' a
+    sangria não era achada — o trecho comum saía com ela grudada e não batia
+    com mais nada (visto no ensaio de 2026-10-02).
+    """
+    t = caderno_arte._sem_acento(texto or "").upper().replace("_", " ")
+    return _SANGRIA_NO_TEXTO.sub(" ", _MEDIDA_NO_TEXTO.sub(" ", t))
+
+
+def trecho_comum(nomes, fracao=0.6, minimo=3):
+    """
+    A sequência de palavras que se repete em quase todo nome de arquivo de
+    um lote — o nome do projeto que a agência põe em todos. No caderno da
+    LOJINHA (2026-10-02) 56 dos 57 arquivos terminam em
+    '_loja_de_incoveniencia_vibra': não diz nada sobre a peça, e sem tirar
+    toda descrição sairia com as mesmas quatro palavras. () quando não há.
+    """
+    seqs = [_palavras(_nome_sem_medidas(n)) for n in nomes]
+    seqs = [s for s in seqs if s]
+    if len(seqs) < minimo:
+        return ()
+    contagem = collections.Counter()
+    for s in seqs:
+        vistas = set()
+        for i in range(len(s)):
+            for j in range(i + 1, min(len(s), i + 8) + 1):
+                trecho = tuple(s[i:j])
+                if trecho not in vistas:
+                    vistas.add(trecho)
+                    contagem[trecho] += 1
+    candidatos = [t for t, c in contagem.items()
+                  if c >= fracao * len(seqs) and not all(p.isdigit() for p in t)
+                  and (len(t) >= 2 or len(t[0]) >= 6)]
+    if not candidatos:
+        return ()
+    return max(candidatos, key=lambda t: (len(t), contagem[t]))
+
+
+def _tirar_trecho(texto, trecho):
+    if not trecho:
+        return texto
+    return re.sub(r"\b" + r"[^A-Z0-9]+".join(re.escape(p) for p in trecho) + r"\b", " ", texto)
+
+
+def _palavras_de_material(config):
+    """{palavra (sem acento, maiúscula): categoria} — os materiais e os sinônimos."""
+    mapa = {caderno_arte._sem_acento(c).upper(): c for c in config["materiais"]}
+    for sinonimo, categoria in (config.get("sinonimos_categoria") or {}).items():
+        mapa[caderno_arte._sem_acento(sinonimo).upper()] = categoria
+    return mapa
+
+
+def _sem_outro_material(texto, categoria, config):
+    """
+    Tira da descrição a palavra de material que NÃO é o da peça — o leitor
+    do nome do arquivo pegaria a errada ('PLACA PS' numa peça de ADESIVO).
+    A do próprio material fica: 'LONA A' é como o cliente chama a lona.
+    Em 'PS ADESIVADO' só o PS fica; A DEFINIR não guarda nenhuma, senão a
+    pendência viraria um material escolhido pelo nome.
+    """
+    mapa = _palavras_de_material(config)
+    proprias = {mapa[p] for p in _palavras(categoria)[:1] if p in mapa}
+    saida = []
+    for palavra in texto.split():
+        chave = palavra.strip(".,-;")
+        cat = mapa.get(chave) or (mapa.get(chave[:-1]) if chave.endswith("S") else None)
+        if cat and cat not in proprias:
+            continue
+        saida.append(palavra)
+    return re.sub(r"\s+", " ", " ".join(saida)).strip(" -_.,;")
+
+
+def descricao_do_caderno(arquivo, ficha, categoria, trecho=(), cliente="", area="", config=None):
+    """
+    A descrição de uma peça do caderno — do NOME DO ARQUIVO que a ficha
+    aponta: 'LONA_A_7,14x1,10m_loja_de_incoveniencia_vibra_sangria15cm'
+    vira 'LONA A'. É o arquivo que distingue a peça: no caderno da LOJINHA,
+    15 fichas se chamam só 'PLACA PS', e os arquivos são PLACA_PS_1 a
+    PLACA_PS_11, CUPOM_FISCAL, ADESIVO_ESPELHOS. Nome de arquivo genérico
+    ('arte final') cai no nome da ficha.
+    """
+    config = config or carregar_config()
+
+    def limpar(texto):
+        t = limpar_descricao(_tirar_trecho(_nome_sem_medidas(texto), trecho), remover=(cliente, area))
+        return _sem_outro_material(t, categoria, config)
+
+    descricao = limpar(arquivo.base if arquivo else "")
+    if not descricao or descricao in _DESCRICOES_GENERICAS or re.fullmatch(r"[\d\s.\-]+", descricao):
+        descricao = limpar(ficha.get("nome") or "")
+    return descricao or "PECA PAGINA %s" % ficha.get("pagina")
+
+
+def _aviso_chapa_com_adesivo(ficha, arquivo, material, config):
+    """
+    A peça se chama 'PLACA PS' e o caderno pede ADESIVO: vale o material do
+    caderno (regra de 2026-09-11), mas a chapa existe e não está no nome.
+    Quem decide é ele — PS ADESIVADO, ou PS impresso direto.
+    """
+    gatilho_de = {extra: gatilho for gatilho, extra in (config.get("materiais_compostos") or {}).items()}
+    if material not in gatilho_de:
+        return None
+    from dimensoes import contem_palavra
+    texto = caderno_arte._sem_acento("%s %s" % (ficha.get("nome") or "",
+                                                (arquivo.base if arquivo else "").replace("_", " "))).upper()
+    for palavra, categoria in _palavras_de_material(config).items():
+        if (categoria != material and config["materiais"].get(categoria, {}).get("tipo") == "chapa"
+                and contem_palavra(texto, palavra)):
+            return ("a peça cita %s e o caderno pede %s: se o adesivo vai aplicado na chapa, escolha "
+                    "'%s %s'; se é impresso direto na chapa, '%s'"
+                    % (categoria, material, categoria, gatilho_de[material], categoria))
+    return None
+
+
+def especificacao_do_caderno(ficha, arquivo, config=None):
+    """
+    (quantidade, material, de_onde, avisos) de uma peça do caderno. A ficha
+    manda; o que ela não tiver vem do nome do arquivo, como sem caderno.
+    """
+    config = config or carregar_config()
+    quantidade, material, de_onde, avisos = especificacao_do_nome(arquivo, config)
+    onde = "caderno (página %s)" % ficha.get("pagina")
+    digitos = re.sub(r"\D", "", str(ficha.get("quantidade") or ""))
+    if digitos and int(digitos) > 0:
+        quantidade, de_onde["quantidade"] = int(digitos), onde
+    do_caderno = caderno_arte.categoria_do_material(ficha.get("material"), config) if ficha.get("material") else None
+    if do_caderno:
+        material, de_onde["material"] = do_caderno, onde
+        # o que o NOME do arquivo cita deixa de importar: quem diz é a ficha
+        avisos = [a for a in avisos if "mais de um material" not in a]
+        aviso = _aviso_chapa_com_adesivo(ficha, arquivo, material, config)
+        if aviso:
+            avisos.append(aviso)
+    elif ficha.get("material"):
+        # o cliente pediu um material, só que não é nenhum dos cadastrados
+        avisos.append("o caderno pede '%s', que não é um material cadastrado — ficou %s"
+                      % (ficha["material"], material))
+    return quantidade, material, de_onde, avisos
+
+
+# Regra do usuário (2026-10-02), respondendo às 17 placas da LOJINHA que o
+# caderno pedia como ADESIVO: "quando falar placa pode colocar o PS + adesivo".
+# Placa é chapa de PS com o adesivo aplicado — PS ADESIVADO, que o resto do
+# sistema lê como PS mais ADESIVO. E é cortada no tamanho FINAL (ver
+# medidas_do_nome).
+PALAVRA_PLACA = "PLACA"
+
+
+def e_placa(*textos):
+    """Algum dos textos (nome da ficha, nome do arquivo, descrição) fala em placa?"""
+    from dimensoes import contem_palavra
+    return any(contem_palavra(caderno_arte._sem_acento(t).upper(), PALAVRA_PLACA) for t in textos if t)
+
+
+def regra_da_placa(textos, material, config):
+    """
+    (material, de_onde | None). A placa vira PS ADESIVADO quando o material
+    é ADESIVO, A DEFINIR ou PS. Placa que cita OUTRA chapa ('PLACA PVC')
+    não entra na regra — ela é de PS —, e o material fica como estava.
+    """
+    if not e_placa(*textos):
+        return material, None
+    gatilho = next((g for g, extra in (config.get("materiais_compostos") or {}).items()
+                    if extra in config["materiais"]), None)
+    if "PS" not in config["materiais"] or not gatilho:
+        return material, None
+    from dimensoes import contem_palavra
+    texto = caderno_arte._sem_acento(" ".join(t for t in textos if t)).upper().replace("_", " ")
+    for palavra, categoria in _palavras_de_material(config).items():
+        if (categoria != "PS" and config["materiais"].get(categoria, {}).get("tipo") == "chapa"
+                and contem_palavra(texto, palavra)):
+            return material, None
+    extra = config["materiais_compostos"][gatilho]
+    composto = "PS %s" % gatilho
+    if material in (extra, caderno_arte.MATERIAL_A_DEFINIR, "PS", composto):
+        return composto, "regra da placa: PS + adesivo (02/10)"
+    return material, None
+
+
+def medidas_do_nome(peca):
+    """
+    (a medida que vai na frente do nome, a segunda, o rótulo da segunda).
+
+    Regra do usuário (2026-10-02): "o restante manter o tamanho maior sempre
+    que é com sangria". Peça com sangria leva na frente o tamanho COM
+    sangria — é o que sai da máquina e o que se gasta, e é como a equipe já
+    nomeia as lonas na produção ('7.44X1.40M_LONA_C_7,14x1,10m') — e a final
+    vai atrás, como '_final'. A placa é a exceção: a chapa é cortada no
+    tamanho final, que vai na frente, e a sangria atrás (o adesivo é que é
+    impresso com ela). Vale sempre a primeira medida do nome.
+    """
+    if not peca.arte_m:
+        return None, None, None
+    final = caderno_arte.medida_metros_para_nome(peca.arte_m)
+    tem_sangria = bool(peca.sangria_m) and (peca.sangria_m[0] - peca.arte_m[0] > _SANGRIA_MINIMA_M
+                                            or peca.sangria_m[1] - peca.arte_m[1] > _SANGRIA_MINIMA_M)
+    if not tem_sangria:
+        return final, None, None
+    com_sangria = caderno_arte.medida_metros_para_nome(peca.sangria_m)
+    if e_placa(peca.descricao, peca.arquivo.base if peca.arquivo else "", (peca.ficha or {}).get("nome")):
+        return final, com_sangria, "sangria"
+    return com_sangria, final, "final"
+
+
+def medida_que_conta(peca):
+    """(largura, altura) em metros da medida da frente do nome — a que vira m²."""
+    principal, _, rotulo = medidas_do_nome(peca)
+    if principal is None:
+        return None
+    return peca.sangria_m if rotulo == "final" else peca.arte_m
+
+
+def materiais_para_escolher(config=None):
+    """
+    O que a tela oferece: A DEFINIR, cada material, e a chapa com adesivo
+    aplicado ('PS ADESIVADO') — nome que o resto do sistema já lê como PS
+    mais ADESIVO (config 'materiais_compostos').
+    """
+    config = config or carregar_config()
+    materiais = config["materiais"]
+    escolhas = [caderno_arte.MATERIAL_A_DEFINIR] + list(materiais)
+    for gatilho, extra in (config.get("materiais_compostos") or {}).items():
+        if extra in materiais:
+            escolhas += ["%s %s" % (c, gatilho) for c, info in materiais.items()
+                         if info.get("tipo") == "chapa" and c != extra]
+    return escolhas
+
+
+# -------------------------------------------------------------- escala
+
+# A agência desenha a peça grande em ESCALA: o Illustrator não passa de
+# 5,77 m de prancheta. A LONA A da LOJINHA tem 7,14 x 1,10 m no caderno e
+# 0,714 x 0,110 m no PDF (2026-10-02) — lida ao pé da letra, o nome sairia
+# com um décimo do tamanho.
+#
+# Regra do usuário de 2026-08-29 (dimensoes.dimensao_da_arte): SEM uma
+# referência confiável, "avisar quando desconfiar, não multiplicar
+# sozinho". Aqui só multiplica quando HÁ referência — a medida do caderno,
+# ou a escrita no nome do arquivo — e a arte vezes o fator BATE com ela
+# nos dois lados: é a prova, como o "arquivo batendo 100×" do relatório
+# (CLAUDE.md). A linha sai assinalada, o nome leva 'ESCALA 1-10' e a tela
+# deixa desligar.
+ESCALAS = (10,)
+_TOLERANCIA_ESCALA = 0.02
+# Um lado bate exato e o outro não: escala, se o outro estiver perto (é a
+# arte que difere do caderno, e isso vira o aviso de sempre). Longe disso é
+# medida trocada, e aí não se multiplica nada.
+_PERTO = 1.5
+
+
+def _bate(a, b):
+    return abs(a - b) <= max(0.005, abs(b) * _TOLERANCIA_ESCALA)
+
+
+def _confere(paginas, referencia, fator):
+    """
+    As páginas × fator são a peça da referência? None, ou o tipo da prova:
+      'total'   os dois lados batem;
+      'partes'  páginas de tamanhos diferentes que são PARTES da peça (o
+                piso de 7,00 x 6,00 em três lonas): todas cabem nela, e
+                alguma tem um lado inteiro dela;
+      'parcial' um lado bate exato e o outro está perto (a LONA 18 da
+                LOJINHA: 6,00 bate, a altura dá 2,40 contra 2,70).
+    """
+    ref = sorted(referencia)
+    lados = [sorted((p[0] * fator, p[1] * fator)) for p in paginas if p]
+    if not lados or min(ref) <= 0:
+        return None
+    if all(_mesmo_tamanho(l, lados[0]) for l in lados):
+        menor, maior = lados[0]
+        if _bate(menor, ref[0]) and _bate(maior, ref[1]):
+            return "total"
+        for lado, outro, r_lado, r_outro in ((menor, maior, ref[0], ref[1]), (maior, menor, ref[1], ref[0])):
+            if _bate(lado, r_lado) and outro > 0 and 1 / _PERTO <= outro / r_outro <= _PERTO:
+                return "parcial"
+        return None
+    cabem = all(l[0] <= ref[0] * (1 + _TOLERANCIA_ESCALA) + 0.005
+                and l[1] <= ref[1] * (1 + _TOLERANCIA_ESCALA) + 0.005 for l in lados)
+    if cabem and any(_bate(lado, r) for l in lados for lado in l for r in ref):
+        return "partes"
+    return None
+
+
+def escala_provada(paginas, referencias):
+    """
+    (fator, prova): o fator (10) quando a arte, vezes ele, bate com uma das
+    referências — ver _confere pro que conta como prova. (1, None) quando a
+    arte já bate como está, ou quando nada prova escala nenhuma.
+    'paginas' são as medidas (largura, altura) de cada página do PDF.
+    """
+    paginas = [p for p in paginas if p]
+    for referencia in referencias:
+        if not referencia or not paginas:
+            continue
+        if _confere(paginas, referencia, 1):
+            return 1, None
+        for fator in ESCALAS:
+            prova = _confere(paginas, referencia, fator)
+            if prova:
+                return fator, prova
+    return 1, None
+
+
+def _vezes(medida, fator):
+    return (medida[0] * fator, medida[1] * fator) if medida else None
+
+
+def aplicar_escala(peca, ligada):
+    """Liga (o fator achado) ou desliga (1) a escala: medida e sangria = PDF × fator."""
+    if peca.arte_pdf_m is None:
+        peca.arte_pdf_m, peca.sangria_pdf_m = peca.arte_m, peca.sangria_m
+    fator = peca.escala_achada if ligada else 1
+    peca.escala = fator
+    peca.arte_m = _vezes(peca.arte_pdf_m, fator)
+    peca.sangria_m = _vezes(peca.sangria_pdf_m, fator)
+    if fator > 1:
+        peca.de_onde["medida"] = "da arte × %d (escala 1:%d, provada pela medida do %s)" % (
+            fator, fator, "caderno" if peca.ficha else "nome")
+    else:
+        peca.de_onde["medida"] = "da arte"
+    return peca
+
+
 # ------------------------------------------------------------- propor
 
 def propor(baixados, todos=None, cliente="", area="", config=None):
@@ -394,11 +747,23 @@ def propor(baixados, todos=None, cliente="", area="", config=None):
     arquivo só a máquina imprime a primeira página e o resto nunca sai.
     Páginas do MESMO tamanho ficam juntas (podem ser frente e verso), com
     aviso; separar_paginas() desfaz se ele quiser.
+
+    Arquivo de CADERNO (Arquivo.ficha): material, quantidade e descrição
+    vêm da ficha (especificacao_do_caderno, descricao_do_caderno), e a
+    medida do caderno confere a arte — inclusive a escala. Várias fichas
+    apontando o MESMO PDF (os três QUADROS da LOJINHA num PDF de 3 páginas)
+    repartem as páginas pela ordem do caderno.
     """
     import origem_artes
     config = config or carregar_config()
     todos = list(todos) if todos is not None else [a for a, _, _ in baixados]
     por_grupo = origem_artes.agrupar(todos)
+    # as fichas que apontam o mesmo arquivo, na ordem do caderno
+    colegas = collections.defaultdict(list)
+    for a in todos:
+        if getattr(a, "ficha", None) and getattr(a, "mesmo_arquivo", ""):
+            colegas[a.mesmo_arquivo].append(a)
+    trecho = trecho_comum([a.base for a in todos if getattr(a, "ficha", None)])
 
     pecas = []
     for arquivo, local, chave in baixados:
@@ -409,9 +774,28 @@ def propor(baixados, todos=None, cliente="", area="", config=None):
             pecas.append(base)
             continue
 
-        base.descricao = descricao_sugerida(arquivo, irmaos, cliente, area, config)
-        base.quantidade, base.material, base.de_onde, base.avisos = especificacao_do_nome(arquivo, config)
+        ficha = getattr(arquivo, "ficha", None)
+        if ficha:
+            base.ficha = ficha
+            base.quantidade, base.material, base.de_onde, base.avisos = especificacao_do_caderno(
+                ficha, arquivo, config)
+            textos = (ficha.get("nome"), arquivo.base)
+        else:
+            base.quantidade, base.material, base.de_onde, base.avisos = especificacao_do_nome(arquivo, config)
+            textos = (arquivo.base, arquivo.grupo.split(" / ")[-1] if arquivo.grupo else "")
+        # placa é PS + adesivo (regra de 02/10) — antes da descrição, que
+        # guarda a palavra do material da peça e tira a dos outros
+        material, regra = regra_da_placa(textos, base.material, config)
+        if regra:
+            base.material, base.de_onde["material"] = material, regra
+            base.avisos = [a for a in base.avisos
+                           if "escolha '" not in a and "mais de um material" not in a]
+        if ficha:
+            base.descricao = descricao_do_caderno(arquivo, ficha, base.material, trecho, cliente, area, config)
+        else:
+            base.descricao = descricao_sugerida(arquivo, irmaos, cliente, area, config)
         base.medida_no_nome = _medida_do_nome(arquivo.nome)
+        medida_do_caderno = caderno_arte.medida_em_metros(ficha.get("medidas")) if ficha else None
 
         ext = arquivo.ext
         paginas = None
@@ -432,8 +816,11 @@ def propor(baixados, todos=None, cliente="", area="", config=None):
                 paginas = [(medida, medida, "nao sei")]
 
         if not paginas:
-            # a arte não diz o tamanho: aí vale o que o nome disser
-            if base.medida_no_nome:
+            # a arte não diz o tamanho: aí vale o que o caderno ou o nome disser
+            if medida_do_caderno:
+                base.arte_m = medida_do_caderno
+                base.de_onde["medida"] = "caderno (a arte não diz o tamanho)"
+            elif base.medida_no_nome:
                 base.arte_m = base.medida_no_nome
                 base.de_onde["medida"] = "nome do arquivo (a arte não diz o tamanho)"
             else:
@@ -444,13 +831,65 @@ def propor(baixados, todos=None, cliente="", area="", config=None):
 
         base.paginas = len(paginas)
         base.de_onde["medida"] = "da arte"
-        if (base.medida_no_nome and paginas[0][0]
-                and not _mesmo_tamanho(base.medida_no_nome, paginas[0][0])
-                and not _mesmo_tamanho(base.medida_no_nome, tuple(reversed(paginas[0][0])))):
-            base.avisos.append("o nome diz %s e a arte mede %s — vale a arte"
-                               % (formatar_medida(base.medida_no_nome), formatar_medida(paginas[0][0])))
+        fator, prova = escala_provada([p[0] for p in paginas], (medida_do_caderno, base.medida_no_nome))
+        if fator > 1:
+            no_pdf = paginas[0][0]
+            paginas = [(_vezes(arte, fator), _vezes(sang, fator), marca) for arte, sang, marca in paginas]
+            base.escala = base.escala_achada = fator
+            quem = "caderno" if (ficha and medida_do_caderno) else "nome"
+            base.de_onde["medida"] = "da arte × %d (escala 1:%d, provada pela medida do %s)" % (fator, fator, quem)
+            ref = medida_do_caderno if quem == "caderno" else base.medida_no_nome
+            if prova == "partes":
+                explica = ("as %d páginas do PDF, × %d, são partes da peça de %s do %s"
+                           % (len(paginas), fator, formatar_medida(ref), quem))
+            elif prova == "parcial":
+                explica = ("o PDF mede %s; × %d dá %s — um lado bate com o %s (%s), o outro não: confira"
+                           % (formatar_medida(no_pdf), fator, formatar_medida(paginas[0][0]), quem,
+                              formatar_medida(ref)))
+            else:
+                explica = ("o PDF mede %s; × %d dá %s, que bate com a medida do %s"
+                           % (formatar_medida(no_pdf), fator, formatar_medida(paginas[0][0]), quem))
+            base.avisos.append("arte em escala 1:%d — %s. O nome leva 'ESCALA 1-%d'." % (fator, explica, fator))
+        referencia, de_quem = ((medida_do_caderno, "o caderno") if medida_do_caderno
+                               else (base.medida_no_nome, "o nome"))
+        mesmo_tamanho = all(_mesmo_tamanho(p[0], paginas[0][0]) for p in paginas)
+        if (referencia and paginas[0][0] and mesmo_tamanho
+                and not _mesmo_tamanho(referencia, paginas[0][0])
+                and not _mesmo_tamanho(referencia, tuple(reversed(paginas[0][0])))):
+            base.avisos.append("%s diz %s e a arte mede %s — vale a arte"
+                               % (de_quem, formatar_medida(referencia), formatar_medida(paginas[0][0])))
 
-        diferentes = len(paginas) > 1 and not all(_mesmo_tamanho(p[0], paginas[0][0]) for p in paginas)
+        def guardar_pdf(peca):
+            """A medida como está no PDF, pra tela poder desligar a escala."""
+            if fator > 1:
+                peca.arte_pdf_m = _vezes(peca.arte_m, 1 / fator)
+                peca.sangria_pdf_m = _vezes(peca.sangria_m, 1 / fator)
+            return peca
+
+        # o mesmo PDF apontado por várias fichas: cada uma leva a sua página
+        juntas = (colegas.get(arquivo.mesmo_arquivo) if ficha else None) or [arquivo]
+        if len(juntas) > 1:
+            posicao = next((i for i, a in enumerate(juntas) if a.id == arquivo.id), 0)
+            paginas_do_caderno = ", ".join(str(a.ficha.get("pagina")) for a in juntas)
+            if len(paginas) == len(juntas):
+                arte, sang, marca = paginas[posicao]
+                p = dataclasses.replace(base, pagina=posicao + 1, arte_m=arte, sangria_m=sang, marca=marca,
+                                        paginas=len(paginas), avisos=list(base.avisos),
+                                        de_onde=dict(base.de_onde))
+                if posicao:
+                    p.descricao = "%s - PAGINA %d" % (base.descricao, posicao + 1)
+                p.avisos.append("as páginas %s do caderno apontam o mesmo PDF de %d páginas: pela ordem do "
+                                "caderno esta é a página %d dele — confira a prévia"
+                                % (paginas_do_caderno, len(paginas), posicao + 1))
+                pecas.append(guardar_pdf(p))
+                continue
+            base.avisos.append("as páginas %s do caderno apontam este mesmo arquivo (%d página%s): se não "
+                               "for a mesma arte, o link de uma delas está errado no caderno"
+                               % (paginas_do_caderno, len(paginas), "s" if len(paginas) != 1 else ""))
+            if posicao:
+                base.descricao = "%s %d" % (base.descricao, posicao + 1)
+
+        diferentes = len(paginas) > 1 and not mesmo_tamanho
         if diferentes:
             for i, (arte, sang, marca) in enumerate(paginas, start=1):
                 p = dataclasses.replace(base, pagina=i, arte_m=arte, sangria_m=sang, marca=marca,
@@ -459,15 +898,43 @@ def propor(baixados, todos=None, cliente="", area="", config=None):
                     p.descricao = "%s - PAGINA %d" % (base.descricao, i)
                 p.avisos.append("página %d de %d do mesmo PDF (tamanhos diferentes: virou peça própria)"
                                 % (i, len(paginas)))
-                pecas.append(p)
+                pecas.append(guardar_pdf(p))
             continue
 
         base.arte_m, base.sangria_m, base.marca = paginas[0]
         if len(paginas) > 1:
-            base.avisos.append("%d páginas do mesmo tamanho — frente e verso? Dá pra separar."
-                               % len(paginas))
-        pecas.append(base)
+            aviso = "%d páginas do mesmo tamanho — frente e verso? Dá pra separar." % len(paginas)
+            if base.quantidade == len(paginas) and ficha:
+                aviso += (" O caderno pede %d unidades: se cada página é uma unidade, separe e deixe 1 un "
+                          "em cada." % base.quantidade)
+            base.avisos.append(aviso)
+        pecas.append(guardar_pdf(base))
+    for peca in pecas:
+        aviso = _aviso_maior_que_a_chapa(peca, config)
+        if aviso:
+            peca.avisos.append(aviso)
     return pecas
+
+
+def _aviso_maior_que_a_chapa(peca, config):
+    """
+    Peça de chapa maior que a chapa cadastrada não sai de uma chapa só — e
+    quase sempre é material trocado: o CUPOM FISCAL da LOJINHA (3,10 m) caiu
+    na regra da placa, e a chapa de PS é 2,00 x 1,00 (2026-10-02).
+    """
+    if not peca.leva_nome_do_padrao:
+        return None
+    categoria = (_palavras(peca.material) or [""])[0]
+    info = config["materiais"].get(categoria) or {}
+    medida = medida_que_conta(peca)
+    if info.get("tipo") != "chapa" or not medida or not info.get("largura_cm") or not info.get("comprimento_cm"):
+        return None
+    chapa = sorted((info["largura_cm"] / 100, info["comprimento_cm"] / 100))
+    lados = sorted(medida)
+    if lados[0] <= chapa[0] + 0.005 and lados[1] <= chapa[1] + 0.005:
+        return None
+    return ("a peça (%s) é maior que a chapa de %s cadastrada (%s): sai em partes — confira o material"
+            % (formatar_medida(medida), categoria, formatar_medida(tuple(chapa))))
 
 
 def formatar_medida(medida):
@@ -501,6 +968,20 @@ def duplicar(peca, todas):
 
 # -------------------------------------------------------------- nomear
 
+_CONFIG_DOS_NOMES = None
+
+
+def _config_dos_nomes():
+    """
+    O config pra tirar palavra de material do nome — lido uma vez: o nome é
+    refeito a cada tecla na tela, e ler o config.json a cada vez não precisa.
+    """
+    global _CONFIG_DOS_NOMES
+    if _CONFIG_DOS_NOMES is None:
+        _CONFIG_DOS_NOMES = carregar_config()
+    return _CONFIG_DOS_NOMES
+
+
 def _area_no_nome(area):
     return re.sub(r"\s+", " ", caderno_arte._sem_acento(area or "").upper()).strip()
 
@@ -515,17 +996,21 @@ def nome_final(peca, area=""):
     if not peca.leva_nome_do_padrao:
         return peca.arquivo.nome
     descricao = re.sub(r"\s+", " ", (peca.descricao or "PECA").strip()) or "PECA"
+    # O material pode ter mudado na tela depois da descrição pronta: 'ADESIVO
+    # ESPELHOS' passado pra PS ADESIVADO seria lido como ADESIVO pelo leitor
+    # do nome (visto em 2026-10-02), e o PS sumiria da OS e do estoque.
+    descricao = _sem_outro_material(descricao, peca.material, _config_dos_nomes()) or "PECA"
     prefixo = _area_no_nome(area)
     if prefixo and not caderno_arte._sem_acento(descricao).upper().startswith(prefixo):
         descricao = "%s - %s" % (prefixo, descricao)
-    sangria = None
-    if peca.sangria_m and (peca.sangria_m[0] - peca.arte_m[0] > _SANGRIA_MINIMA_M
-                           or peca.sangria_m[1] - peca.arte_m[1] > _SANGRIA_MINIMA_M):
-        sangria = caderno_arte.medida_metros_para_nome(peca.sangria_m)
+    # arte em escala: o PDF tem um décimo do tamanho que o nome diz, e quem
+    # abre o arquivo no RIP precisa saber disso pelo nome
+    if peca.escala > 1 and not re.search(r"\bESC(ALA)?\b", caderno_arte._sem_acento(descricao).upper()):
+        descricao = "%s ESCALA 1-%d" % (descricao, peca.escala)
+    principal, segunda, rotulo = medidas_do_nome(peca)
     extensao = ".pdf" if peca.pagina else "." + (peca.arquivo.ext.lower() or "pdf")
-    return caderno_arte.montar_nome(peca.quantidade, peca.material,
-                                    caderno_arte.medida_metros_para_nome(peca.arte_m),
-                                    descricao, sangria) + extensao
+    return caderno_arte.montar_nome(peca.quantidade, peca.material, principal, descricao,
+                                    segunda, rotulo_segunda=rotulo or "sangria") + extensao
 
 
 def nomes_do_lote(pecas, area=""):
@@ -744,6 +1229,25 @@ def arquivar(pecas, cliente, destino, area="", origem=None, guardar_original=Tru
                 "de_onde": peca.de_onde,
                 "falta_confirmar": falta,
             }
+            if peca.leva_nome_do_padrao and medidas_do_nome(peca)[2] == "final":
+                # a medida da frente do nome é a COM sangria (regra de 02/10)
+                registro[_chave_da_peca(peca)]["medida_no_nome"] = "com sangria"
+            if origem is not None:
+                # de onde a arte foi pega — o relatório de recebimento mostra o link (02/10)
+                for campo, metodo in (("link_origem", "link_de"), ("link_caderno", "link_do_caderno")):
+                    link = getattr(origem, metodo, lambda a: "")(peca.arquivo)
+                    if link:
+                        registro[_chave_da_peca(peca)][campo] = link
+            if peca.escala > 1:
+                registro[_chave_da_peca(peca)].update({
+                    "escala": peca.escala,
+                    "medida_no_arquivo_m": [round(v, 4) for v in peca.arte_pdf_m] if peca.arte_pdf_m else None,
+                })
+            if peca.ficha:
+                # o que a ficha dizia: o cliente edita o caderno quando quiser
+                registro[_chave_da_peca(peca)]["caderno"] = {
+                    c: peca.ficha.get(c) for c in ("pagina", "secao", "nome", "medidas", "sangria",
+                                                   "material", "quantidade", "obs")}
     finally:
         shutil.rmtree(trabalho, ignore_errors=True)
 

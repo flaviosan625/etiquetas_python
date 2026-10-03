@@ -165,3 +165,30 @@ def test_o_vigia_nao_cai_quando_o_aviso_quebra(monkeypatch):
     rasterlink_hotfolder._avisar_fila_parada()  # não levanta
 
     assert any("aviso de fila parada" in texto for _, texto in registrado)
+
+
+def test_o_vigia_nao_cai_quando_o_proprio_modulo_do_aviso_nao_carrega(monkeypatch):
+    """
+    Aconteceu em 02/10/2026: um ' solto no começo do aviso_fila.py virou
+    SyntaxError — que NÃO é ImportError — e derrubou a passada da DOCAN por
+    12 minutos (resultado 1 na tarefa, nenhuma entrega). O módulo que só
+    avisa pode falhar alto no log; parar a entrega, nunca.
+    """
+    import builtins
+
+    import rasterlink_hotfolder
+
+    registrado = []
+    monkeypatch.setattr(rasterlink_hotfolder, "logger_arquivo",
+                        lambda nivel, texto, **k: registrado.append((nivel, texto)))
+    de_verdade = builtins.__import__
+
+    def quebrado(nome, *a, **k):
+        if nome == "aviso_fila":
+            raise SyntaxError("unterminated string literal")
+        return de_verdade(nome, *a, **k)
+    monkeypatch.setattr(builtins, "__import__", quebrado)
+
+    rasterlink_hotfolder._avisar_fila_parada()  # não levanta
+
+    assert any("módulo do aviso de fila não carregou" in texto for _, texto in registrado)

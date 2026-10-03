@@ -143,6 +143,12 @@ producao.py                   organiza a pasta PRODUCAO de cada cliente
 envio_impressao.py            manda da pasta de produção para a fila das máquinas
 rasterlink_hotfolder.py       o vigia: entrega na hot folder do RIP e registra
 relatorio_producao.py         PDF diário do que passou nas máquinas
+gui_receber.py                tela "Receber artes": link do Drive/WeTransfer/caderno do Canva, pasta ou ZIP
+origem_artes.py               o que cada origem tem, a prévia e o download (sem baixar antes de marcar)
+caderno_canva.py              lê o caderno de arte do Canva pelo link de visualização, sem login
+vigia_caderno.py              confere o caderno de cada cliente: peça nova ou medida mexida vira aviso
+relatorio_recebimento.py      o que já entrou e o que falta, com a prévia e a página do caderno
+receber_artes.py              da espera até ARTES: medir (inclusive arte em escala 1:10), nomear, arquivar
 estoque.py                    catálogo, movimentos e saldo de material
 corte_parametros.py           parâmetros de usinagem (fonte única)
 aspire/corte_nucleo.lua       gadget que cria os percursos dentro do Aspire

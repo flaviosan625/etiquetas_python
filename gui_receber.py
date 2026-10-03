@@ -1,6 +1,13 @@
 """
-Janela "Receber artes" — de um link do Drive ou do WeTransfer, de uma
-pasta ou de um ZIP, até ARTES do cliente, em dois passos.
+Janela "Receber artes" — de um link do Drive ou do WeTransfer, do caderno
+de arte no Canva, de uma pasta ou de um ZIP, até ARTES do cliente, em dois
+passos.
+
+Caderno do Canva (2026-10-02, "preciso que toda a parte de recebimento de
+arte leia esse caderno também em Canva"): cada ficha é um cartão no passo 1,
+com medida, material e quantidade do caderno; no passo 2 a ficha decide
+material e quantidade, e a arte em escala 1:10 aparece assinalada, com a
+caixinha pra desligar.
 
 Pedidos do usuário que desenharam esta tela (2026-09-21):
   - "os links podem ser do Google Drive, OneDrive, WeTransfer etc.";
@@ -97,7 +104,10 @@ class JanelaReceber(tk.Toplevel):
         self.minsize(980, 620)
 
         self.config_dados = carregar_config()
-        self.materiais = [caderno_arte.MATERIAL_A_DEFINIR] + list(self.config_dados["materiais"])
+        # a lista de cada linha leva também a chapa com adesivo ('PS ADESIVADO');
+        # os botões de "material de todas", só os materiais — senão não cabem
+        self.materiais = ra.materiais_para_escolher(self.config_dados)
+        self.materiais_base = [caderno_arte.MATERIAL_A_DEFINIR] + list(self.config_dados["materiais"])
         self._fila = queue.Queue()
         self._trabalho = concurrent.futures.ThreadPoolExecutor(max_workers=1)
         self._miniaturas = concurrent.futures.ThreadPoolExecutor(max_workers=6)
@@ -228,6 +238,9 @@ class JanelaReceber(tk.Toplevel):
         self._sem_rodinha(self.combo_cliente)
         self.lbl_cliente = tk.Label(l0, text="", font=("Segoe UI", 8, "bold"), bg=cores.cartao, anchor="w")
         self.lbl_cliente.pack(side="left")
+        tk.Button(l0, text="Relatório de recebimento", font=("Segoe UI", 8), relief="solid", bd=1,
+                  bg=cores.cartao, fg=cores.acento, padx=8, pady=1, cursor="hand2",
+                  command=self._relatorio_do_cliente).pack(side="right")
 
         l1 = tk.Frame(c, bg=cores.cartao)
         l1.pack(fill="x", padx=14, pady=(6, 4))
@@ -248,8 +261,8 @@ class JanelaReceber(tk.Toplevel):
                                  font=("Segoe UI", 10, "bold"), relief="flat", padx=16, pady=3,
                                  cursor="hand2", command=self._ler_origem)
         self.btn_ler.pack(side="left", padx=6)
-        tk.Label(c, text="   Google Drive e WeTransfer pelo link  ·  OneDrive sincronizado, pendrive e "
-                         "ZIP baixado pelo navegador, por Pasta... ou ZIP...",
+        tk.Label(c, text="   Google Drive, WeTransfer e caderno do Canva pelo link  ·  OneDrive sincronizado, "
+                         "pendrive e ZIP baixado pelo navegador, por Pasta... ou ZIP...",
                  font=("Segoe UI", 7), bg=cores.cartao, fg=cores.texto2).pack(anchor="w", padx=14)
 
         l2 = tk.Frame(c, bg=cores.cartao)
@@ -321,6 +334,39 @@ class JanelaReceber(tk.Toplevel):
             self._destino_escolhido = pathlib.Path(pasta)
             self._atualizar_destino()
 
+    def _relatorio_do_cliente(self):
+        """
+        Refaz o relatório de recebimento do cliente digitado, a partir do
+        registro e do caderno guardado no último recebimento. O Canva só é
+        lido de novo quando falta a imagem de alguma página (recebimento de
+        antes de ela ser guardada) — e só entra a página que não mudou.
+        Abre o PDF quando fica pronto.
+        """
+        import relatorio_recebimento as rr
+        situacao, cliente = clientes.situacao_do_nome(self.var_cliente.get())
+        if situacao != "existe":
+            messagebox.showinfo("Relatório de recebimento",
+                                "Digite um cliente que já existe — o relatório é do que ele já recebeu.",
+                                parent=self)
+            return
+        caderno = rr.caderno_guardado(cliente.pasta)
+        if not caderno:
+            messagebox.showinfo("Relatório de recebimento",
+                                "%s ainda não recebeu caderno do Canva por aqui — o relatório sai do caderno "
+                                "guardado no recebimento." % cliente.nome, parent=self)
+            return
+        self._status("montando o relatório de recebimento de %s..." % cliente.nome)
+
+        def montar():
+            rr.completar_paginas(caderno)
+            return rr.gerar_do_canva(rr.caminho_do_relatorio(cliente), caderno, cliente.pasta,
+                                     nome_cliente=cliente.nome)
+
+        def pronto(caminho):
+            self._status("relatório pronto: %s" % caminho, "ok")
+            _abrir(caminho)
+        self._no_fundo(montar, pronto)
+
     def _escolher_pasta(self):
         pasta = filedialog.askdirectory(parent=self, title="Pasta com as artes")
         if pasta:
@@ -363,7 +409,7 @@ class JanelaReceber(tk.Toplevel):
         self.lbl_status.pack(anchor="w", pady=(20, 6))
         tk.Label(caixa, text=(
             "1. Digite o cliente (existe ou novo — a pasta nasce do nome).\n"
-            "2. Cole o link do Drive ou do WeTransfer, ou escolha uma pasta ou um ZIP.\n"
+            "2. Cole o link do Drive, do WeTransfer ou do caderno no Canva, ou escolha uma pasta ou um ZIP.\n"
             "3. Ler origem: aparece a prévia de cada arte. Nada é baixado antes de você marcar."),
             font=("Segoe UI", 10), bg=cores.fundo, fg=cores.texto, justify="left").pack(anchor="w")
 
@@ -410,8 +456,9 @@ class JanelaReceber(tk.Toplevel):
         cab = tk.Frame(self.area, bg=cores.fundo)
         cab.pack(fill="x", padx=18, pady=(2, 2))
         grupos = oa.agrupar(self.itens)
-        tk.Label(cab, text="%s     %d arquivos em %d pasta%s" % (
-            self.origem.rotulo, len(self.itens), len(grupos), "s" if len(grupos) != 1 else ""),
+        unidade = "ficha" if self.origem.tipo == "canva" else "pasta"
+        tk.Label(cab, text="%s     %d arquivos em %d %s%s" % (
+            self.origem.rotulo, len(self.itens), len(grupos), unidade, "s" if len(grupos) != 1 else ""),
             font=("Segoe UI", 10, "bold"), bg=cores.fundo, fg=cores.texto,
             anchor="w", wraplength=1150, justify="left").pack(fill="x")
         extras = []
@@ -467,6 +514,11 @@ class JanelaReceber(tk.Toplevel):
                  bg=cores.cartao, fg=cores.texto, anchor="w").pack(side="left")
         tk.Label(topo, text="  %d arquivo%s" % (len(arquivos), "s" if len(arquivos) != 1 else ""),
                  font=("Segoe UI", 8), bg=cores.cartao, fg=cores.texto2).pack(side="left")
+        # caderno: o que a ficha pede, pra conferir com a prévia antes de baixar
+        resumo = self.origem.resumo_do_grupo(grupo) if self.origem else ""
+        if resumo:
+            tk.Label(cartao, text=resumo, font=("Segoe UI", 8), bg=cores.cartao, fg=cores.acento,
+                     anchor="w", justify="left", wraplength=520).pack(fill="x", padx=12, pady=(0, 3))
 
         corpo = tk.Frame(cartao, bg=cores.cartao)
         corpo.pack(fill="x", padx=10, pady=(0, 9))
@@ -649,13 +701,16 @@ class JanelaReceber(tk.Toplevel):
             len(artes), "s" if len(artes) != 1 else "", len(apoio), "s" if len(apoio) != 1 else ""),
             font=("Segoe UI", 10, "bold"), bg=cores.cartao, fg=cores.texto).pack(anchor="w", padx=14, pady=(8, 0))
         tk.Label(cab, text="A medida foi lida da arte. Sem especificação: 1 unidade e A DEFINIR — mude aqui "
-                           "se souber. O [+] faz a mesma arte servir outra peça.",
-                 font=("Segoe UI", 8), bg=cores.cartao, fg=cores.texto2).pack(anchor="w", padx=14)
+                           "se souber. O [+] faz a mesma arte servir outra peça."
+                           + ("  Do caderno: material e quantidade vêm da ficha, e a arte em escala 1:10 "
+                              "vem marcada (desmarque se não for)." if any(p.ficha for p in self.pecas) else ""),
+                 font=("Segoe UI", 8), bg=cores.cartao, fg=cores.texto2, wraplength=1150,
+                 justify="left").pack(anchor="w", padx=14)
         massa = tk.Frame(cab, bg=cores.cartao)
         massa.pack(fill="x", padx=14, pady=(6, 9))
         tk.Label(massa, text="Material de todas:", font=("Segoe UI", 9, "bold"), bg=cores.cartao,
                  fg=cores.texto).pack(side="left")
-        for m in self.materiais:
+        for m in self.materiais_base:
             tk.Button(massa, text=m, font=("Segoe UI", 8), relief="solid", bd=1, bg=cores.cartao,
                       fg=cores.acento, padx=7, pady=1, cursor="hand2",
                       command=lambda mm=m: self._material_de_todas(mm)).pack(side="left", padx=2)
@@ -713,16 +768,45 @@ class JanelaReceber(tk.Toplevel):
                                           else ("  ·  %d páginas" % peca.paginas if peca.paginas > 1 else ""))
         tk.Label(col, text="de: " + origem_txt, font=("Segoe UI", 7), bg=cores.cartao,
                  fg=cores.texto2, anchor="w").pack(anchor="w")
+        if peca.ficha:
+            f = peca.ficha
+            ficha_txt = "caderno p.%s · %s%s" % (
+                f.get("pagina"), (f.get("nome") or "").strip(),
+                ("  ·  " + oa.resumo_da_ficha(f)) if oa.resumo_da_ficha(f) else "")
+            tk.Label(col, text=ficha_txt, font=("Segoe UI", 7), bg=cores.cartao, fg=cores.acento,
+                     anchor="w", justify="left", wraplength=430).pack(anchor="w")
 
         dados = tk.Frame(c, bg=cores.cartao)
         dados.pack(side="left", padx=6)
-        tk.Label(dados, text=ra.formatar_medida(peca.arte_m) if peca.arte_m else "sem medida",
-                 font=("Segoe UI", 9, "bold"), bg=cores.cartao,
-                 fg=cores.texto if peca.arte_m else cores.alerta, width=15, anchor="w").grid(row=0, column=0, sticky="w")
-        sangria = ("sangria " + ra.formatar_medida(peca.sangria_m)) if (
-            peca.sangria_m and peca.arte_m and peca.sangria_m != peca.arte_m) else "sem sangria"
-        tk.Label(dados, text=sangria, font=("Segoe UI", 7), bg=cores.cartao, fg=cores.texto2,
-                 anchor="w").grid(row=1, column=0, sticky="w")
+        lbl_medida = tk.Label(dados, text="", font=("Segoe UI", 9, "bold"), bg=cores.cartao,
+                              width=15, anchor="w")
+        lbl_medida.grid(row=0, column=0, sticky="w")
+        lbl_sangria = tk.Label(dados, text="", font=("Segoe UI", 7), bg=cores.cartao, fg=cores.texto2, anchor="w")
+        lbl_sangria.grid(row=1, column=0, sticky="w")
+
+        def mostrar_medida():
+            # em negrito a medida que vai na frente do nome (com sangria, ou a
+            # final na placa — regra de 02/10); embaixo, a outra
+            conta = ra.medida_que_conta(peca)
+            _, segunda, rotulo = ra.medidas_do_nome(peca)
+            lbl_medida.configure(text=ra.formatar_medida(conta) if conta else "sem medida",
+                                 fg=cores.texto if conta else cores.alerta)
+            outra = peca.arte_m if rotulo == "final" else peca.sangria_m
+            lbl_sangria.configure(text=("%s %s" % ("final" if rotulo == "final" else "com sangria",
+                                                   ra.formatar_medida(outra))) if segunda else "sem sangria")
+        mostrar_medida()
+        if peca.escala_achada > 1:
+            # a prova de escala é do caderno/nome; quem confirma é ele
+            var_escala = tk.BooleanVar(value=peca.escala > 1)
+
+            def trocar_escala():
+                ra.aplicar_escala(peca, var_escala.get())
+                mostrar_medida()
+                self._verificar_nomes()
+            tk.Checkbutton(dados, text="escala 1:%d (×%d)" % (peca.escala_achada, peca.escala_achada),
+                           variable=var_escala, command=trocar_escala, font=("Segoe UI", 7),
+                           bg=cores.cartao, fg=cores.texto, activebackground=cores.cartao,
+                           cursor="hand2").grid(row=2, column=0, sticky="w")
 
         marca = tk.Frame(c, bg=cores.cartao)
         marca.pack(side="left", padx=6)
@@ -770,9 +854,12 @@ class JanelaReceber(tk.Toplevel):
 
         avisos = list(peca.avisos)
         for campo in ("quantidade", "material"):
-            if "sem especificação" in peca.de_onde.get(campo, ""):
+            # do caderno não precisa dizer: a linha do caderno já mostra a ficha
+            if any(t in peca.de_onde.get(campo, "") for t in ("sem especificação", "caderno")):
                 continue
-            if peca.de_onde.get(campo):
+            if peca.de_onde.get(campo, "").startswith("regra"):
+                avisos.append("%s: %s" % (campo, peca.de_onde[campo]))
+            elif peca.de_onde.get(campo):
                 avisos.append("%s veio do %s" % (campo, peca.de_onde[campo]))
         for texto in avisos:
             tk.Label(cartao, text="   " + texto, font=("Segoe UI", 8), bg=cores.alerta_fundo, fg=cores.alerta,
@@ -834,7 +921,8 @@ class JanelaReceber(tk.Toplevel):
         for p in self.pecas:
             if p.leva_nome_do_padrao:
                 qtd, m2 = por_material.get(p.material, (0, 0.0))
-                por_material[p.material] = (qtd + p.quantidade, m2 + _m2(p.arte_m, p.quantidade))
+                # a mesma medida que vai na frente do nome — é a que o resto do sistema conta
+                por_material[p.material] = (qtd + p.quantidade, m2 + _m2(ra.medida_que_conta(p), p.quantidade))
         texto = "      ".join("%s  %d un · %s m²" % (m, q, ("%.2f" % a).replace(".", ","))
                               for m, (q, a) in sorted(por_material.items()))
         if hasattr(self, "lbl_totais") and self.lbl_totais.winfo_exists():
@@ -859,11 +947,15 @@ class JanelaReceber(tk.Toplevel):
         tk.Checkbutton(linha, text="Tirar a marca de corte (Illustrator — não use ele enquanto arquiva)",
                        variable=self.var_tirar_marca, font=("Segoe UI", 9), bg=cores.cartao, fg=cores.texto,
                        activebackground=cores.cartao).pack(side="left")
-        descartavel = self.origem is not None and self.origem.tipo in ("wetransfer", "zip")
+        tipo = self.origem.tipo if self.origem is not None else ""
+        # WeTransfer e ZIP morrem; o caderno o cliente edita quando quiser
+        descartavel = tipo in ("wetransfer", "zip", "canva")
         self.var_guardar = tk.BooleanVar(value=descartavel)
         if descartavel:
-            tk.Checkbutton(linha, text="Guardar o que chegou, como chegou (_sistema\\recebidos)",
-                           variable=self.var_guardar, font=("Segoe UI", 9), bg=cores.cartao, fg=cores.texto,
+            texto = ("Guardar o caderno como foi lido hoje (_sistema\\recebidos)" if tipo == "canva"
+                     else "Guardar o que chegou, como chegou (_sistema\\recebidos)")
+            tk.Checkbutton(linha, text=texto, variable=self.var_guardar, font=("Segoe UI", 9),
+                           bg=cores.cartao, fg=cores.texto,
                            activebackground=cores.cartao).pack(side="left", padx=(16, 0))
         self.lbl_totais = tk.Label(esq, text="", font=("Segoe UI", 9, "bold"), bg=cores.cartao, fg=cores.texto,
                                    anchor="w")
@@ -949,12 +1041,23 @@ class JanelaReceber(tk.Toplevel):
             alvo = escolhido or (cliente.pasta / "ARTES" / area_pasta if area_pasta else cliente.pasta / "ARTES")
             resumo = ra.arquivar(pecas, cliente, alvo, area=area, origem=origem, guardar_original=guardar,
                                  remover_marcas=tirar, logger=registrar)
-            return cliente, criado, alvo, resumo
+            relatorio = None
+            if origem is not None and origem.tipo == "canva" and getattr(origem, "caderno", None):
+                # o relatório com a miniatura e de onde veio cada arte (pedido de 02/10)
+                registrar("info", "montando o relatório de recebimento...")
+                try:
+                    import relatorio_recebimento as rr
+                    relatorio = rr.gerar_do_canva(rr.caminho_do_relatorio(cliente), origem.caderno,
+                                                  cliente.pasta, nome_cliente=cliente.nome,
+                                                  paginas=origem.paginas, paginas_em=origem.paginas_em)
+                except Exception as e:   # noqa: BLE001 — o arquivamento já valeu
+                    resumo.avisos.append("o relatório de recebimento não saiu: %s" % e)
+            return cliente, criado, alvo, resumo, relatorio
 
         self._no_fundo(arquivar, self._mostrar_resultado)
 
     def _mostrar_resultado(self, resultado):
-        cliente, criado, destino, resumo = resultado
+        cliente, criado, destino, resumo, relatorio = resultado
         self._ocupado(False)
         self._limpar_area()
         self.var_passo.set("Pronto.")
@@ -973,7 +1076,10 @@ class JanelaReceber(tk.Toplevel):
         if tiradas:
             linhas.append("Marca de corte tirada de %d arte(s), conferida pixel a pixel." % tiradas)
         if resumo.originais:
-            linhas.append("O que chegou foi guardado como chegou em %s" % resumo.originais[0].parent)
+            if self.origem is not None and self.origem.tipo == "canva":
+                linhas.append("O caderno, como foi lido hoje, ficou guardado em %s" % resumo.originais[0])
+            else:
+                linhas.append("O que chegou foi guardado como chegou em %s" % resumo.originais[0].parent)
         for texto in linhas + resumo.avisos:
             tk.Label(caixa, text=texto, font=("Segoe UI", 9), bg=cores.cartao, fg=cores.texto,
                      anchor="w", wraplength=1150, justify="left").pack(fill="x", padx=14)
@@ -986,6 +1092,10 @@ class JanelaReceber(tk.Toplevel):
         tk.Button(botoes, text="Abrir a pasta", bg=cores.acento, fg=cores.sobre_acento, font=("Segoe UI", 10, "bold"),
                   relief="flat", padx=16, pady=5, cursor="hand2",
                   command=lambda: _abrir(destino)).pack(side="left", padx=(0, 8))
+        if relatorio:
+            tk.Button(botoes, text="Abrir o relatório", bg=cores.acento, fg=cores.sobre_acento,
+                      font=("Segoe UI", 10, "bold"), relief="flat", padx=16, pady=5, cursor="hand2",
+                      command=lambda: _abrir(relatorio)).pack(side="left", padx=(0, 8))
         if resumo.falharam:
             tk.Button(botoes, text="Voltar pro passo 2", font=("Segoe UI", 10), relief="solid", bd=1,
                       bg=cores.cartao, fg=cores.texto, padx=14, pady=4, cursor="hand2",

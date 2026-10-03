@@ -98,6 +98,16 @@ AGENTES = (
         argumentos=("-m", "vigia_checklist", "--uma-vez"),
     ),
     Agente(
+        chave="caderno", nome="Vigia do caderno de arte (Canva)",
+        faz="Confere o caderno de cada cliente no Canva: peça nova, arte trocada ou medida "
+            "mexida vira aviso no Windows, e a arte nova já fica baixada na espera.",
+        # pega carona na passada do checklist (a mesma tarefa do Agendador):
+        # é a única que já percorre todos os clientes de minuto em minuto
+        onde="este PC · junto do checklist · lê o Canva a cada 15 min", tipo="minuto",
+        tarefa="Checklist de Producao",
+        argumentos=("-m", "vigia_caderno", "--uma-vez"),
+    ),
+    Agente(
         chave="relatorio", nome="Relatório de Impressão Diária",
         faz="Gera o PDF do que passou nas máquinas nos últimos dias.",
         onde="este PC · todo dia às 06:00", tipo="diario",
@@ -385,6 +395,10 @@ def ultima_acao(ag, agora=None):
         if ag.chave == "checklist":
             return _ultima_acao_do_checklist(agora)
 
+        if ag.chave == "caderno":
+            import vigia_caderno
+            return vigia_caderno.ultima_acao(agora)
+
         if ag.chave in ("docan", "rip"):
             from rasterlink_hotfolder import ler_sinal_de_vida
             sinal = ler_sinal_de_vida(posto="sai" if ag.chave == "docan" else None, agora=agora)
@@ -422,6 +436,9 @@ def pasta_do_agente(ag):
     if ag.chave == "relatorio":
         from rasterlink_hotfolder import PASTA_RELATORIOS
         return PASTA_RELATORIOS
+    if ag.chave == "caderno":
+        import vigia_caderno
+        return caminhos.PASTA_RECEBENDO / vigia_caderno.PASTA_NOVIDADES
     return PASTA_CONGELADO
 
 

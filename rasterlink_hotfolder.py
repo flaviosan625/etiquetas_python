@@ -1734,6 +1734,14 @@ def _avisar_fila_parada():
         import aviso_fila
     except ImportError:
         return  # PC do RIP: o módulo não viaja pra lá. Não é erro — era um aviso por minuto no log
+    except Exception as erro:  # noqa: BLE001
+        # Em 02/10/2026 um caractere perdido no começo do aviso_fila.py (um
+        # ' solto antes da docstring) virou SyntaxError — que NÃO é
+        # ImportError — e derrubou a passada inteira do vigia da DOCAN por
+        # 12 minutos, com resultado 1 na tarefa e nenhuma entrega. Aviso é
+        # conforto: ele pode falhar alto no log, nunca parar a entrega.
+        logger_arquivo("warn", f"módulo do aviso de fila não carregou: {erro}")
+        return
     try:
         avisadas = aviso_fila.conferir()
     except Exception as erro:  # noqa: BLE001 - ver docstring

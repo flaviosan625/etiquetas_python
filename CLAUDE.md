@@ -271,6 +271,125 @@ acha a linha pelas marcas cruzando margens opostas (é isso que limpa a tarja do
 medida da arte passa a ser a distância entre as marcas, não a imagem inteira. O corte só acontece
 depois que ele aprova, no Photoshop, conferido — mantendo a sangria, como no PDF.
 
+**Caderno no Canva entra pela mesma tela** (2026-10-02, cliente VIBRA, caderno da LOJINHA MR2
+CULTURAL: *"preciso que toda a parte de recebimento de arte leia esse caderno também em Canva"*).
+Colar o link do design abre `origem_artes.OrigemCaderno`: `caderno_canva` lê as fichas e cada ficha
+vira um cartão no passo 1, com o arquivo que o link dela aponta no Drive. Sondado no caderno de
+verdade, e cada item virou teste em `tests/test_caderno_canva.py`:
+
+- **O link de edição pede login; o de visualização não.** O documento inteiro vem embutido na página
+  `/view` (`window['bootstrap'] = JSON.parse(...)`). Formato interno, não API: muda sem aviso.
+- **O link ESCRITO na ficha não é o link.** O texto azul das 60 fichas era o mesmo endereço, sobra
+  do modelo, apontando um JPG de outro trabalho; o hiperlink de cada página é o certo. Endereço
+  escrito repetido em várias fichas nunca serve de link (`link_do_modelo`).
+- **Drive público dispensa a API**: 1 byte pedido devolve nome e tamanho, e há miniatura e download
+  sem login (`drive_artes.info_publica`). O caderno inteiro lê com o token do Google vencido; só
+  arquivo restrito ou link de pasta vão pela API.
+- **A ficha decide material e quantidade** (regra de 2026-09-11), a medida continua da arte. A
+  descrição vem do NOME DO ARQUIVO (15 fichas se chamam só "PLACA PS"; os arquivos são PLACA_PS_1,
+  CUPOM_FISCAL...), sem o trecho que se repete em todos (`trecho_comum`: "loja_de_incoveniencia_vibra").
+  "PLACA PS" com material ADESIVO avisa e oferece `PS ADESIVADO` na lista — quem decide é ele.
+- **Várias fichas no mesmo PDF**: N fichas num PDF de N páginas repartem as páginas pela ordem do
+  caderno (os três QUADROS); com outro número de páginas, cada ficha leva o arquivo inteiro, com aviso.
+
+**Arte em escala 1:10 é a exceção provada de "vale a arte".** A agência desenha a lona grande em
+1:10 (o Illustrator não passa de 5,77 m): LONA A com 7,14 × 1,10 m no caderno e 0,714 × 0,110 no PDF.
+A regra de 2026-08-29 é *não multiplicar sozinho sem referência*; aqui há referência — o caderno ou
+o nome —, e `receber_artes.escala_provada` só multiplica quando a arte × 10 BATE com ela: os dois
+lados, ou partes de uma peça (o piso em 3 lonas), ou um lado exato e o outro perto (a LONA 18, cuja
+altura difere do caderno — e isso vira o aviso de sempre). O nome leva `ESCALA 1-10`, o registro
+guarda `escala` e a medida do arquivo, e a tela tem a caixinha pra desligar. Sem isso o nome
+sairia com um décimo do tamanho — 23 das 62 peças da LOJINHA.
+
+E o nome final tira a palavra de OUTRO material na hora de nomear (`receber_artes._sem_outro_material`),
+não só ao propor: "ADESIVO ESPELHOS" passado pra PS ADESIVADO na tela era lido como ADESIVO pelo
+leitor do nome, e o PS sumia da OS e do estoque.
+
+**Duas regras do usuário de 2026-10-02 pro nome do recebimento** (com ou sem caderno):
+
+- *"Quando falar placa pode colocar o PS + adesivo"* — `regra_da_placa`: a palavra PLACA na ficha ou
+  no nome do arquivo faz o material virar **PS ADESIVADO** (se era ADESIVO, A DEFINIR ou PS). Placa
+  que cita outra chapa ("PLACA PVC") fica fora: a regra é de PS.
+- *"O restante manter o tamanho maior sempre que é com sangria"* — `medidas_do_nome`: peça com sangria
+  leva **na frente** o tamanho COM sangria e a medida final atrás, como `_final` — é o que a equipe já
+  fazia à mão nas lonas (`7.44X1.40M_LONA_C_7,14x1,10m`). A **placa** é a exceção: chapa cortada no
+  final, que vai na frente, com `_sangria` atrás. O rótulo da segunda medida diz qual é qual; vale
+  sempre a primeira — então m², máquina e estoque passam a contar com a sangria. O fluxo antigo do
+  caderno do Mercado Livre (`caderno_arte.nome_no_padrao`, por comando) continua com a final na frente.
+
+Peça de chapa maior que a chapa cadastrada ganha aviso (o CUPOM FISCAL de 3,10 m caiu na regra da
+placa, e a chapa de PS é 2,00 × 1,00).
+
+**O relatório de recebimento é o do Mercado Livre, estendido** (pedido de 2026-10-02: *"relatório dos
+arquivos com miniatura igual feito em Mercado Livre e link indicando de onde pegou a determinada
+arte"*). `relatorio_recebimento.montar_blocos` ganhou o parâmetro `fonte`: `_FonteSlides` é o de
+sempre, `_FonteCanva` muda só quais fichas contam (todas — não há carimbo), onde mora o registro de
+cada uma (`canva|<design>|p<página>|<id do Drive>`) e pra onde os links apontam. O desenho é um só.
+Toda linha diz agora **de onde a arte foi pega**: a pasta do Drive no Mercado Livre, o arquivo do
+Drive no Canva — e o arquivamento passou a gravar `link_origem` e `link_caderno` no registro. Sai
+sozinho ao arquivar um caderno do Canva (`RECEBIMENTO - <CLIENTE>.pdf` na pasta do cliente) e se
+refaz pelo botão "Relatório de recebimento" da tela, a partir do caderno guardado em
+`_sistema/recebidos/` — sem ler o Canva de novo.
+
+**O link do caderno do Canva é o `/view` puro, sem `#<página>`.** Eu pus `#8` achando que o Canva
+abria na página; nunca foi provado, e o usuário respondeu *"não está abrindo o link"*. O `#` que chega
+no Canva como `%23` dá a página de erro dele (HTTP 404, testado). A página da ficha vai escrita na
+linha (`p.08`). Antes de entregar relatório com link, teste cada endereço — os 58 do VIBRA abrem.
+
+**E o visualizador do Canva não abre caderno grande: a página viaja como IMAGEM.** Resposta dele,
+ainda em 02/10: *"os arquivos abrem, porém a parte onde está localizado no caderno continua travada"*
+— o `/view` de 68 páginas não termina de carregar (nem num Chrome sem tela, que derrubou a aba). Quem
+diz ONDE a peça fica na loja é a página do caderno (planta e 3D com a peça em vermelho), e ela está
+no mesmo JSON do `/view`: `draft.imageSets.thumbnail.images`, uma imagem de **596 × 335 px** por
+página, com endereço **assinado que vence em ~2 h**. Pedir outro tamanho no endereço dá HTTP 403 (a
+assinatura cobre o tamanho) e o `preview` de 1024 px só existe da página 1 — então é esse tamanho ou
+nada. Por isso `OrigemCaderno.listar` **baixa na hora** (o passo 1 pode ficar aberto a tarde inteira)
+só das páginas que têm ficha, guarda em `_sistema/recebidos/<lote>/paginas/0008.png` ao lado do
+`caderno.json` — e o endereço, que vence, **não** é guardado. No relatório cada página vira uma folha
+A5 deitada no fim, e `abrir no caderno` **pula pra ela dentro do PDF** (`LINK_GOTO`), com `voltar à
+lista` e `abrir no Canva` de volta. Sem imagem, a linha continua abrindo o Canva.
+
+**O caderno é documento VIVO, e o vigia confere sozinho.** Pedido de 03/10/2026: *"o vigia está sempre
+passando; de qualquer cliente deve ser um padrão conferir se o caderno tem coisa nova; se tiver link
+novo deve baixar e gerar um aviso pra eu saber"*. `vigia_caderno.py` pega carona na passada do
+**Checklist de Produção** (a única tarefa que já percorre todos os clientes de minuto em minuto neste
+PC — por isso não nasceu tarefa nova), com import tardio em try/except: caderno fora do ar nunca pode
+derrubar a regeneração da OS. Quem é vigiado se cadastra sozinho: todo cliente cujo
+`_sistema/recebidos/*/caderno.json` tem link do Canva — acabou o trabalho, a pasta sai e o vigia para.
+
+Três coisas contam como novidade: **ficha nova**, **link novo** (ficha que ganhou link, ou arte
+TROCADA — o id do Drive muda) e **ficha mexida** (medida, material ou quantidade diferente do que
+estava escrito quando a arte foi recebida; não baixa nada, mas é o aviso que mais vale: produzir no
+tamanho velho é material perdido). A conta é por **ficha** (seção + nome + ordem entre homônimas),
+**nunca por número de página** — página nova no meio empurra todas as seguintes e o vigia anunciaria o
+caderno inteiro. Link que outra ficha já apontava não é arquivo novo (os três QUADROS dividem um PDF).
+
+Ele **baixa pra espera local** (`PASTA_RECEBENDO/_novidades/<cliente>/<lote>`, com o mesmo prazo de
+faxina do lote da tela) e **nunca arquiva**: nome, medida e material continuam sendo decisão dele na
+tela de dois passos. Lê o Canva **a cada 15 min por cliente**, não a cada minuto — cada leitura puxa
+~1,4 MB, e o Canva não dá ETag nem Last-Modified (HEAD volta sem os dois); o que vem dentro da página
+e diz se mudou alguma coisa é o `version` do rascunho (274 na LOJINHA em 02/10). O aviso é **um por
+passada**, no máximo 8 linhas, e a novidade só sai da fila de pendentes quando a notificação passa —
+se avisar falhar, o que já foi baixado não é baixado de novo.
+
+Recebimento antigo (o do VIBRA) completa pelo botão: `relatorio_recebimento.completar_paginas` lê o
+Canva de novo e só guarda a página que ainda diz **exatamente** o que dizia no recebimento
+(`caderno_canva.paginas_que_conferem` — mesmas fichas, mesmos campos e links). O cliente edita o Canva
+quando quer, e **uma página nova no meio empurra a numeração de todas as seguintes**: ilustrar a peça
+com a página errada é pior que não ilustrar.
+
+Duas coisas do PyMuPDF que isso descobriu: **os links que o `insert_htmlbox` cria só aparecem na
+folha relida** (na mesma folha, `get_links()` devolve nada; `reload_page` quebra com `AssertionError`
+de contagem de referência quando alguém ainda segura a página) — por isso `_escrever` reabre o
+documento (`open("pdf", doc.tobytes())`) antes de anexar; e as 60 folhas anexadas são desenhadas com
+as **base-14** (`helv`/`hebo`), nunca `insert_htmlbox`, que custa ~90 KB de fonte por chamada.
+
+Duas coisas do PDF que custaram uma rodada: o HTML do PyMuPDF **ignora a largura da célula** e
+encolhia a coluna da miniatura até a imagem (a lona estreita e a placa alta deixavam o texto
+começando em lugares diferentes) — segura com um PNG transparente esticado na largura; e a altura de
+cada bloco agora é **medida** numa folha de rascunho (`_alturas`), não estimada — com o link a mais,
+a linha quebrava e o `insert_htmlbox` encolheria a letra calado.
+
 ### Corte CNC: uma fonte só de parâmetros
 
 `corte_parametros.py` é a **fonte única** de fresa, passada, profundidade e ordem de usinagem.
@@ -404,6 +523,11 @@ Decisões do usuário de 2026-09-13, que valem pro sistema inteiro:
   a página inteira numa chamada só); `page.set_rotation(90)` só marca `/Rotate` e **distorce a arte**
   em quem lê a MediaBox junto — use `rasterlink_hotfolder._assar_giro`.
 - **Fontes base-14 só falam Latin-1**: travessão, bullet e en-dash viram `·` silenciosamente.
+- **`except ImportError` não pega módulo QUEBRADO.** Em 02/10/2026 um `'` solto antes da docstring do
+  `aviso_fila.py` (caractere perdido num editor aberto, nem commit teve) virou `SyntaxError` — que não
+  é `ImportError` — e derrubou a passada inteira do vigia da DOCAN por 12 minutos: tarefa com
+  resultado 1 e nenhuma entrega, calada. Todo gancho de conforto importado tarde (`aviso_fila`,
+  `vigia_caderno`) pega `Exception` e **registra no log**; o trabalho de verdade segue.
 - **No ttk, `map` ganha de `configure`** — e o tema `clam` já vem com mapas de estado próprios, em
   cinza claro de fábrica. Pintar só com `configure` deixa o widget certo parado e ERRADO quando
   muda de estado: a barra de rolagem sem nada pra rolar fica `disabled` e voltava branca no meio da

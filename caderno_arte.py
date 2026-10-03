@@ -207,6 +207,38 @@ def medida_para_nome(medida):
     return "%sX%sM" % (m.group(1), m.group(2))
 
 
+# Par LxA com a unidade depois de UM ou dos DOIS números: o caderno do
+# Canva da LOJINHA (2026-10-02) escreve '6,94m x 2,40m', '26,02cm x 10cm' e
+# 'A4 - 21 x 29,7cm' — formas que o leitor do nome do arquivo
+# (dimensoes.extrair_dimensoes) não entende.
+_MEDIDA_DA_FICHA = re.compile(
+    r"(\d+(?:[.,]\d+)?)\s*(mm|cm|m)?\s*[x×]\s*(\d+(?:[.,]\d+)?)\s*(mm|cm|m)?(?![a-z])", re.I)
+_FATOR_UNIDADE = {"MM": 0.001, "CM": 0.01, "M": 1.0}
+
+
+def medida_em_metros(texto):
+    """
+    O par LxA de um campo de medida do caderno, em metros. A unidade de um
+    número vale pro outro quando só um a traz; sem unidade nenhuma, metro.
+    None quando não há par.
+    """
+    m = _MEDIDA_DA_FICHA.search(_sem_acento(texto))
+    if not m:
+        return None
+    a, unidade_a, b, unidade_b = m.groups()
+    unidade_a = (unidade_a or unidade_b or "M").upper()
+    unidade_b = (unidade_b or unidade_a).upper()
+    return (float(a.replace(",", ".")) * _FATOR_UNIDADE[unidade_a],
+            float(b.replace(",", ".")) * _FATOR_UNIDADE[unidade_b])
+
+
+def cor_no_texto(texto):
+    """'LONA IMPRESSA PANTONE 802C' ou 'ADESIVO 382C' -> 'PANTONE 802C'. None se não houver."""
+    t = _sem_acento(texto).upper()
+    m = re.search(r"\bPANTONE\s*([A-Z]*\s?\d{2,4}\s?[A-Z]{0,2})\b", t) or re.search(r"\b(\d{3,4}\s?[CU])\b", t)
+    return "PANTONE %s" % re.sub(r"\s+", "", m.group(1)) if m else None
+
+
 # Material que o cliente ainda não definiu na ficha. Regra do usuário
 # (2026-09-12): quando a peça está APROVADA e tem link, "aguardando
 # imagens 3D" é sobre o render de arquitetura do slide, não sobre a arte
@@ -271,7 +303,7 @@ def medida_metros_para_nome(medida_m):
                        ("%.2f" % medida_m[1]).replace(".", ","))
 
 
-def montar_nome(quantidade, categoria, medida, descricao, sangria=None):
+def montar_nome(quantidade, categoria, medida, descricao, sangria=None, rotulo_segunda="sangria"):
     """
     O nome no padrão da casa, com as partes já decididas:
 
@@ -281,10 +313,15 @@ def montar_nome(quantidade, categoria, medida, descricao, sangria=None):
     recebimento sem caderno (receber_artes) passam por aqui, e um nome
     nunca sai diferente do outro por um detalhe de espaço ou vírgula.
     'medida' e 'sangria' já vêm no formato '6,00X3,00M'.
+
+    A segunda medida diz o que é pelo rótulo: 'sangria' (a medida da
+    frente é a final, a de trás é com sangria) ou 'final' (o contrário —
+    a regra de 2026-10-02 pro recebimento, ver receber_artes.medidas_do_nome).
+    Vale sempre a primeira.
     """
     nome = "%dUN %s %s_%s" % (int(quantidade), categoria, medida, descricao)
     if sangria:
-        nome += "_sangria %s" % sangria
+        nome += "_%s %s" % (rotulo_segunda, sangria)
     return sanitizar_nome_arquivo(nome)
 
 

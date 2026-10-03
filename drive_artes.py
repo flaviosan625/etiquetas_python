@@ -329,6 +329,111 @@ def baixar_arte_para_entrada(ficha, pasta_entrada, drive=None):
 
 
 # ---------------------------------------------------------------------
+# Arquivo PÚBLICO ("qualquer pessoa com o link"): sem login, sem token
+# ---------------------------------------------------------------------
+# Sondado em 2026-10-02 com o caderno da LOJINHA (cliente VIBRA), quando o
+# token do Google estava vencido: os 57 arquivos que o caderno aponta são
+# públicos, e o próprio Google serve nome, tamanho, miniatura e conteúdo
+# sem login — o mesmo que o navegador faz ao clicar em "Baixar". Pedir UM
+# byte (Range) já devolve o nome (Content-Disposition) e o tamanho
+# (Content-Range). Arquivo restrito não responde assim: aí é a API, com a
+# conta do Flávio (ver autenticar).
+
+URL_DOWNLOAD_PUBLICO = "https://drive.usercontent.google.com/download"
+URL_MINIATURA_PUBLICA = "https://drive.google.com/thumbnail"
+
+
+class NaoPublico(Exception):
+    """O arquivo não abre sem login — é com a API."""
+
+
+def _parametros_publicos(id_arquivo):
+    return {"id": id_arquivo, "export": "download", "confirm": "t"}
+
+
+def nome_do_cabecalho(valor):
+    """
+    O nome do arquivo no Content-Disposition. O Google manda os bytes em
+    UTF-8 dentro de 'filename="..."', e o cabeçalho HTTP é lido como
+    latin-1 — sem desfazer isso, 'SAÍDA' chega como 'SAÃ\\x8dDA'.
+    """
+    from urllib.parse import unquote
+    valor = valor or ""
+    m = re.search(r"filename\*\s*=\s*UTF-8''([^;]+)", valor, re.I)
+    if m:
+        return unquote(m.group(1).strip().strip('"'))
+    m = re.search(r'filename\s*=\s*"([^"]*)"', valor) or re.search(r"filename\s*=\s*([^;]+)", valor)
+    if not m:
+        return None
+    nome = m.group(1).strip()
+    try:
+        return nome.encode("latin-1").decode("utf-8")
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        return nome
+
+
+def info_publica(sessao, id_arquivo):
+    """
+    {'id', 'name', 'size'} do arquivo público, pedindo UM byte. None quando
+    ele não é público (o Google devolve a página de login, ou recusa).
+    """
+    try:
+        r = sessao.get(URL_DOWNLOAD_PUBLICO, params=_parametros_publicos(id_arquivo),
+                       headers={"Range": "bytes=0-0"}, timeout=40, allow_redirects=True)
+    except Exception:
+        return None
+    nome = nome_do_cabecalho(r.headers.get("Content-Disposition"))
+    if r.status_code not in (200, 206) or not nome:
+        return None
+    total = re.search(r"/(\d+)\s*$", r.headers.get("Content-Range", ""))
+    if total:
+        tamanho = int(total.group(1))
+    else:
+        tamanho = int(r.headers.get("Content-Length") or 0) if r.status_code == 200 else 0
+    return {"id": id_arquivo, "name": nome, "size": tamanho}
+
+
+def miniatura_publica(sessao, id_arquivo, px=320):
+    """A miniatura que o Google gera (PNG/JPG), ou None."""
+    try:
+        r = sessao.get(URL_MINIATURA_PUBLICA, params={"id": id_arquivo, "sz": "w%d" % px},
+                       timeout=40, allow_redirects=True)
+    except Exception:
+        return None
+    tipo = (r.headers.get("Content-Type") or "").lower()
+    if r.status_code != 200 or not tipo.startswith("image/"):
+        return None
+    return r.content
+
+
+def baixar_publico(sessao, id_arquivo, destino):
+    """
+    Baixa o arquivo público pra 'destino', montando em '~baixando~' e só
+    entrando com o nome final no fim. Levanta NaoPublico quando o que vem
+    não é o arquivo (página de login, aviso do Google) — nada fica gravado.
+    """
+    import os
+    destino = pathlib.Path(destino)
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    parcial = destino.with_name("~baixando~" + destino.name)
+    try:
+        with sessao.get(URL_DOWNLOAD_PUBLICO, params=_parametros_publicos(id_arquivo),
+                        stream=True, timeout=300, allow_redirects=True) as r:
+            tipo = (r.headers.get("Content-Type") or "").lower()
+            if (r.status_code != 200 or "text/html" in tipo
+                    or not nome_do_cabecalho(r.headers.get("Content-Disposition"))):
+                raise NaoPublico("o Drive não entregou o arquivo sem login (HTTP %s)" % r.status_code)
+            with open(parcial, "wb") as saida:
+                for bloco in r.iter_content(1024 * 1024):
+                    saida.write(bloco)
+        os.replace(parcial, destino)
+    except BaseException:
+        parcial.unlink(missing_ok=True)
+        raise
+    return destino
+
+
+# ---------------------------------------------------------------------
 # Link que abre direto o slide da peça no caderno (Google Slides)
 # ---------------------------------------------------------------------
 import re as _re

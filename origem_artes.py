@@ -30,10 +30,12 @@ Nada aqui escreve fora da pasta de espera: baixar() nunca move o
 original (pasta local é COPIADA), e arquivar é com receber_artes.
 """
 import collections
+import concurrent.futures
 import dataclasses
 import datetime
 import hashlib
 import io
+import json
 import os
 import pathlib
 import re
@@ -88,6 +90,11 @@ class Arquivo:
     modificado: str = ""    # "AAAA-MM-DD HH:MM"
     na_nuvem: bool = False  # OneDrive: só o marcador, sem o conteúdo no disco
     ref: object = None      # uso interno de cada origem
+    # Caderno (OrigemCaderno): a ficha da peça que aponta este arquivo, e o
+    # id do arquivo de verdade — três fichas podem apontar o MESMO arquivo
+    # (as três páginas dos QUADROS da LOJINHA), e cada uma é um item aqui.
+    ficha: dict = dataclasses.field(default=None, repr=False, compare=False)
+    mesmo_arquivo: str = ""
 
     @property
     def ext(self):
@@ -442,6 +449,10 @@ class Origem:
     def listar(self):
         raise NotImplementedError
 
+    def resumo_do_grupo(self, grupo):
+        """Uma linha sobre o grupo pra prévia (a ficha do caderno). '' quando não há."""
+        return ""
+
     def miniatura(self, arquivo):
         return None
 
@@ -451,6 +462,18 @@ class Origem:
     def chave(self, arquivo):
         """Chave de 'já baixei isto' no registro — não depende de slide de caderno."""
         return "%s|%s|%s" % (self.tipo, self.id_origem, arquivo.id)
+
+    def link_de(self, arquivo):
+        """
+        De ONDE a arte foi pega, pra quem abrir o registro ou o relatório
+        de recebimento depois (pedido de 2026-10-02): o endereço na internet,
+        ou o caminho no computador. '' quando não há o que mostrar.
+        """
+        return ""
+
+    def link_do_caderno(self, arquivo):
+        """A página do caderno de onde a peça saiu. '' quando não veio de caderno."""
+        return ""
 
     def pacote_original(self):
         """(nome, bytes) do que chegou, quando a origem é descartável. [] quando não é."""
@@ -512,6 +535,9 @@ class OrigemPasta(Origem):
     def miniatura(self, arquivo):
         return miniatura_de_caminho(arquivo.ref)
 
+    def link_de(self, arquivo):
+        return str(arquivo.ref) if arquivo.ref else ""
+
     def baixar(self, arquivo, pasta_espera):
         # CÓPIA: o original fica onde está, como na tela de envio.
         destino = _destino_na_espera(pasta_espera, arquivo)
@@ -542,6 +568,9 @@ class OrigemZip(Origem):
             return miniatura_de_conteudo(self.zip.read(arquivo.ref), arquivo.nome)
         except Exception:
             return None
+
+    def link_de(self, arquivo):
+        return "%s  >  %s" % (self.caminho, arquivo.id)
 
     def baixar(self, arquivo, pasta_espera):
         destino = _destino_na_espera(pasta_espera, arquivo)
@@ -665,6 +694,9 @@ class OrigemDrive(Origem):
             return self._buscar(re.sub(r"=s\d+$", "=s%d" % MINIATURA_PX, link))
         except Exception:
             return None
+
+    def link_de(self, arquivo):
+        return "https://drive.google.com/file/d/%s/view" % arquivo.id
 
     def baixar(self, arquivo, pasta_espera):
         destino = _destino_na_espera(pasta_espera, arquivo)
@@ -802,6 +834,10 @@ class OrigemWeTransfer(Origem):
         except Exception:
             return None
 
+    def link_de(self, arquivo):
+        # o link do transfer (vence em dias — o original fica em _sistema/recebidos)
+        return self.link
+
     def baixar(self, arquivo, pasta_espera):
         destino = _destino_na_espera(pasta_espera, arquivo)
         cache = self._no_cache(arquivo)
@@ -843,6 +879,269 @@ class OrigemWeTransfer(Origem):
                 pass
 
 
+# ----------------------------------------------------------------------
+# Caderno de arte (Canva): a ficha de cada peça e o arquivo que ela aponta
+# ----------------------------------------------------------------------
+
+def resumo_da_ficha(ficha):
+    """'7,14 x 1,10m  ·  sangria 15cm  ·  LONA IMPRESSA PANTONE 802C  ·  1 un'."""
+    partes = []
+    for campo, antes, depois in (("medidas", "", ""), ("sangria", "sangria ", ""),
+                                 ("material", "", ""), ("quantidade", "", " un")):
+        valor = re.sub(r"\s+", " ", str(ficha.get(campo) or "")).strip()
+        if valor:
+            partes.append(antes + valor + depois)
+    return "  ·  ".join(partes)
+
+
+def _pagina_da_ficha(ficha):
+    """'08', ou '08.2' quando a página do caderno tem mais de uma ficha."""
+    numero = "%02d" % (ficha.get("pagina") or 0)
+    return numero + (".%d" % ficha["na_pagina"] if ficha.get("na_pagina") else "")
+
+
+def _nome_de_grupo(ficha):
+    nome = re.sub(r"\s+", " ", (ficha.get("nome") or "PECA").replace("/", "-")).strip() or "PECA"
+    pagina = "%s · %s" % (_pagina_da_ficha(ficha), nome)
+    secao = (ficha.get("secao") or "").replace("/", "-").strip()
+    return "%s / %s" % (secao, pagina) if secao else pagina
+
+
+class OrigemCaderno(Origem):
+    """
+    O caderno de arte no Canva — o link de edição ou o de visualização,
+    tanto faz. Cada página com ficha vira um grupo da prévia
+    ('LONAS / 08 · LONA A'), e dentro dele o arquivo que o link daquela
+    ficha aponta no Drive. A ficha vai junto em cada item (Arquivo.ficha):
+    é de lá que receber_artes tira material e quantidade, e a medida pra
+    conferir a arte.
+
+    Arquivo PÚBLICO do Drive (o caso da LOJINHA, 2026-10-02) não precisa de
+    login nenhum. Arquivo restrito e link de PASTA vão pela API, com a conta
+    do Flávio — aí a autorização do Google tem que estar valendo; vencida,
+    a ficha aparece na lista do que ficou de fora, dizendo pra reconectar.
+
+    'ler_caderno', 'sessao' e 'api' existem pro teste passar dublês.
+    """
+    tipo = "canva"
+    TRABALHADORES = 8
+
+    def __init__(self, link, sessao=None, ler_caderno=None, api=None):
+        super().__init__()
+        import caderno_canva
+        import drive_artes
+        self._drive_artes = drive_artes
+        self.link = (link or "").strip()
+        if sessao is None:
+            import requests
+            sessao = requests.Session()
+            sessao.headers["User-Agent"] = caderno_canva.NAVEGADOR
+        self.sessao = sessao
+        self._ler_caderno = ler_caderno or (lambda: caderno_canva.ler(self.link, self.sessao))
+        self._api = api                     # (servico, buscar) — só quando precisar
+        self._trava_api = threading.Lock()
+        self.caderno = None
+        # {página: bytes} — a página do caderno em imagem, que mostra onde a
+        # peça fica (ver caderno_canva.baixar_paginas); e quando foi baixada
+        self.paginas = {}
+        self.paginas_em = None
+        self._resumos = {}
+        self._baixados = {}
+
+    # ------------------------------------------------------ API, se precisar
+
+    def _servico(self):
+        with self._trava_api:
+            if self._api is None:
+                cred = self._drive_artes.autenticar()
+                servico = self._drive_artes.servico(cred)
+                from google.auth.transport.requests import AuthorizedSession
+                sessao = AuthorizedSession(cred)
+
+                def buscar(url):
+                    r = sessao.get(url, timeout=40)
+                    r.raise_for_status()
+                    return r.content
+                self._api = (servico, buscar)
+            return self._api
+
+    def _pela_api(self, link, id_drive):
+        """[Arquivo] do que o link aponta, pela API (arquivo restrito ou pasta)."""
+        try:
+            servico, buscar = self._servico()
+        except Exception as e:   # noqa: BLE001 — vira motivo na tela
+            if "invalid_grant" in str(e) or "expired" in str(e).lower():
+                raise ErroOrigem("não é público, e a autorização do Google venceu — reconecte em "
+                                 "Agentes (Reconectar) e leia a origem de novo")
+            raise ErroOrigem("não é público, e a conta do Google não conectou (%s)" % e)
+        try:
+            meta = servico.files().get(fileId=id_drive, fields=OrigemDrive._CAMPOS,
+                                       supportsAllDrives=True).execute()
+        except Exception as e:   # noqa: BLE001
+            raise ErroOrigem("sem acesso a esse arquivo do Drive (%s)" % e)
+        mime = meta.get("mimeType", "")
+        if mime == self._drive_artes.MIME_PASTA:
+            dentro = OrigemDrive(link, servico=servico, buscar=buscar).listar()
+            return [dataclasses.replace(a, ref={"drive_id": a.id, "via": "api", "meta": a.ref})
+                    for a in dentro]
+        if mime.startswith("application/vnd.google-apps."):
+            raise ErroOrigem("é um documento do Google, não um arquivo de arte")
+        return [Arquivo(id=id_drive, nome=meta.get("name") or id_drive, bytes=int(meta.get("size") or 0),
+                        modificado=_iso_local(meta.get("modifiedTime")),
+                        ref={"drive_id": id_drive, "via": "api", "meta": meta})]
+
+    # ------------------------------------------------------------- listar
+
+    def listar(self):
+        caderno = self._ler_caderno()
+        self.caderno = caderno
+        self.id_origem = caderno.get("design_id") or self.link
+        fichas = caderno.get("fichas") or []
+        self.rotulo = "Canva  ·  %s  ·  %d peça%s" % (
+            caderno.get("titulo") or "caderno de artes", len(fichas), "s" if len(fichas) != 1 else "")
+
+        # A imagem das páginas com ficha, JÁ: o endereço vence em horas, e o
+        # passo 1 pode ficar aberto a tarde inteira antes de arquivar.
+        enderecos = caderno.get("enderecos_das_paginas") or {}
+        if enderecos:
+            import caderno_canva
+            self.paginas = caderno_canva.baixar_paginas(
+                enderecos, {f.get("pagina") for f in fichas}, self.sessao, self.TRABALHADORES)
+            self.paginas_em = datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S") if self.paginas else None
+
+        # Cada link uma vez só, mesmo apontado por várias fichas. O público
+        # se resolve em paralelo (é só um byte por arquivo); o resto vai
+        # pela API em sequência — o cliente da API do Google não é seguro
+        # pra usar de várias threads ao mesmo tempo.
+        unicos = list(dict.fromkeys(l for f in fichas for l in f.get("links") or []))
+        resolvidos = {}
+
+        def publico(link):
+            id_drive = self._drive_artes.id_do_link(link)
+            if not id_drive or "/folders/" in link:
+                return None
+            return self._drive_artes.info_publica(self.sessao, id_drive)
+
+        do_drive = [l for l in unicos if "drive.google.com" in l.lower() or "docs.google.com" in l.lower()]
+        with concurrent.futures.ThreadPoolExecutor(self.TRABALHADORES) as ex:
+            infos = dict(zip(do_drive, ex.map(publico, do_drive)))
+        for link in unicos:
+            if link not in infos:
+                resolvidos[link] = ([], "o link não é do Google Drive (%s)" % link[:70])
+                continue
+            info = infos[link]
+            if info:
+                resolvidos[link] = ([Arquivo(id=info["id"], nome=info["name"], bytes=info["size"],
+                                             ref={"drive_id": info["id"], "via": "publico"})], None)
+                continue
+            try:
+                resolvidos[link] = (self._pela_api(link, self._drive_artes.id_do_link(link)), None)
+            except ErroOrigem as e:
+                resolvidos[link] = ([], str(e))
+
+        saida = []
+        for ficha in fichas:
+            grupo = _nome_de_grupo(ficha)
+            rotulo = "página %s (%s)" % (ficha.get("pagina"), ficha.get("nome") or "sem nome")
+            self._resumos[grupo] = resumo_da_ficha(ficha)
+            if not ficha.get("links"):
+                self.ignorados.append((rotulo, "a ficha só tem o link escrito do modelo, repetido em outras "
+                                               "fichas — falta o link da peça" if ficha.get("link_do_modelo")
+                                       else "a ficha não tem link"))
+                continue
+            for link in ficha["links"]:
+                modelos, motivo = resolvidos[link]
+                if motivo:
+                    self.ignorados.append((rotulo, motivo))
+                for m in modelos:
+                    saida.append(dataclasses.replace(
+                        m, id="p%s|%s" % (_pagina_da_ficha(ficha), m.id),
+                        grupo=grupo + (" / " + m.grupo if m.grupo else ""),
+                        ficha=ficha, mesmo_arquivo=m.id))
+        return saida
+
+    def resumo_do_grupo(self, grupo):
+        return self._resumos.get(grupo, "")
+
+    def link_de(self, arquivo):
+        id_drive = (arquivo.ref or {}).get("drive_id")
+        return "https://drive.google.com/file/d/%s/view" % id_drive if id_drive else ""
+
+    def link_do_caderno(self, arquivo):
+        """
+        O caderno no visualizador do Canva — o link que abre sem login. Sem
+        '#<página>' no fim: o pulo de página nunca foi provado, e o '#'
+        trocado por '%23' no caminho dá a página de erro do Canva (02/10).
+        """
+        import caderno_canva
+        try:
+            _, url = caderno_canva.link_de_visualizacao(self.link)
+        except caderno_canva.ErroCanva:
+            return ""
+        return url
+
+    # -------------------------------------------------- prévia e download
+
+    def miniatura(self, arquivo):
+        ref = arquivo.ref or {}
+        try:
+            if ref.get("via") == "publico":
+                return self._drive_artes.miniatura_publica(self.sessao, ref["drive_id"], MINIATURA_PX)
+            link = (ref.get("meta") or {}).get("thumbnailLink")
+            if link:
+                return self._servico()[1](re.sub(r"=s\d+$", "=s%d" % MINIATURA_PX, link))
+        except Exception:   # noqa: BLE001 — sem prévia não é erro
+            return None
+        return None
+
+    def baixar(self, arquivo, pasta_espera):
+        """
+        Uma vez por arquivo de verdade: as três fichas que apontam os QUADROS
+        recebem o MESMO caminho — e é por ele que receber_artes reconhece
+        que é um arquivo só.
+        """
+        ref = arquivo.ref or {}
+        id_drive = ref["drive_id"]
+        pronto = self._baixados.get(id_drive)
+        if pronto and pronto.is_file():
+            return pronto
+        nome = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", arquivo.nome).strip(" .") or id_drive
+        destino = pathlib.Path(pasta_espera) / "drive" / id_drive / nome
+        if ref.get("via") == "publico":
+            try:
+                self._drive_artes.baixar_publico(self.sessao, id_drive, destino)
+            except self._drive_artes.NaoPublico:
+                self._drive_artes.baixar_arquivo(self._servico()[0], id_drive, destino)
+        else:
+            self._drive_artes.baixar_arquivo(self._servico()[0], id_drive, destino)
+        self._baixados[id_drive] = destino
+        return destino
+
+    def guardar_original(self, pasta):
+        """
+        O caderno como foi lido: o cliente edita o Canva quando quiser, e é
+        isto que diz o que estava escrito no dia em que as artes entraram.
+        """
+        if not self.caderno:
+            return []
+        import caderno_canva
+        destino = pathlib.Path(pasta) / "caderno.json"
+        # o endereço das imagens vence em horas: guardar ele não serve pra nada
+        dados = {k: v for k, v in self.caderno.items() if k != "enderecos_das_paginas"}
+        dados["lido_em"] = datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+        if self.paginas:
+            # de quando é a imagem de cada página (o rodapé da página anexada diz)
+            dados["paginas_em_imagem"] = {str(n): self.paginas_em for n in sorted(self.paginas)}
+        conteudo = json.dumps(dados, ensure_ascii=False, indent=1).encode("utf-8")
+        gravados = [_gravar_atomico(destino, lambda f: f.write(conteudo))]
+        # e a página de cada ficha, que o relatório anexa (02/10)
+        for numero, imagem in sorted(self.paginas.items()):
+            gravados.append(_gravar_atomico(
+                pathlib.Path(pasta) / caderno_canva.PASTA_DAS_PAGINAS / caderno_canva.nome_da_imagem(numero, imagem),
+                lambda f, d=imagem: f.write(d)))
+        return gravados
+
+
 def _data_local(iso):
     """'2026-09-24T13:09:43Z' -> '24/09 10:09' no fuso deste PC."""
     if not iso:
@@ -869,6 +1168,8 @@ def abrir(texto, pasta_espera=None):
         raise ErroOrigem("Cole um link ou escolha uma pasta ou ZIP.")
     if re.match(r"https?://", t, re.I):
         baixo = t.lower()
+        if "canva.com/design/" in baixo or "canva.link/" in baixo:
+            return OrigemCaderno(t)
         if "drive.google.com" in baixo or "docs.google.com" in baixo:
             return OrigemDrive(t)
         if "we.tl/" in baixo or "wetransfer.com" in baixo:
@@ -876,8 +1177,8 @@ def abrir(texto, pasta_espera=None):
         if "1drv.ms" in baixo or "onedrive" in baixo or "sharepoint.com" in baixo:
             raise ErroOrigem("Link compartilhado do OneDrive ainda não é lido direto. Se a pasta está "
                              "sincronizada no seu OneDrive, clique em 'Pasta ou ZIP...' e escolha ela.")
-        raise ErroOrigem("Não sei ler esse link. Funciona: Google Drive, WeTransfer, ou uma pasta/ZIP "
-                         "no computador.")
+        raise ErroOrigem("Não sei ler esse link. Funciona: Google Drive, WeTransfer, caderno do Canva, "
+                         "ou uma pasta/ZIP no computador.")
     caminho = pathlib.Path(t)
     if caminho.is_dir():
         return OrigemPasta(caminho)
@@ -907,13 +1208,23 @@ def limpar_lotes_velhos(dias=DIAS_NA_ESPERA, agora=None):
     """
     Apaga lote de espera com mais de 'dias'. Só dentro de PASTA_RECEBENDO,
     e só pasta cujo nome é uma data de lote — nunca outra coisa.
+
+    Vale também pros lotes que o vigia do caderno deixa em
+    '_novidades/<cliente>/' (2026-10-03): são a mesma espera, com o mesmo
+    nome de data, só que um nível mais fundo.
     """
     raiz = caminhos.PASTA_RECEBENDO
     if not raiz.is_dir():
         return []
     agora = agora or datetime.datetime.now()
+    candidatas = list(raiz.iterdir())
+    from vigia_caderno import PASTA_NOVIDADES     # import tardio: lá ele usa daqui
+    novidades = raiz / PASTA_NOVIDADES
+    if novidades.is_dir():
+        candidatas += [p for cliente in novidades.iterdir() if cliente.is_dir()
+                       for p in cliente.iterdir()]
     apagados = []
-    for pasta in raiz.iterdir():
+    for pasta in candidatas:
         try:
             quando = datetime.datetime.strptime(pasta.name, "%Y-%m-%d %H%M%S")
         except ValueError:

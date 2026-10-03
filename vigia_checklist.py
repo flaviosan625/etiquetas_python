@@ -1,6 +1,8 @@
 """
 Vigia do Checklist de Produção — uma passada por vez, pra TODOS os clientes
-com o checklist ligado.
+com o checklist ligado. E, de carona nela, o vigia do caderno de arte
+(`vigia_caderno`, 2026-10-03): é a única tarefa que já passa de minuto em
+minuto por todos os clientes neste PC.
 
 Pedido do usuário (2026-09-12): "atualizar a cada movimento — se entrar algo
 novo, atualizar OS e Checklist". E em 2026-09-13: "amanhã pode ser outro
@@ -183,10 +185,35 @@ def passada(forcar=False, raiz=None):
         _log(None, "info", "outra passada já está rodando — esta saiu sem fazer nada")
         return None
     try:
-        return [c.nome for c in clientes.com_checklist(raiz) if passada_do_cliente(c, forcar)]
+        regenerados = [c.nome for c in clientes.com_checklist(raiz) if passada_do_cliente(c, forcar)]
+        _conferir_cadernos(raiz)
+        return regenerados
     finally:
         if trava is not None:
             trava.close()
+
+
+def _conferir_cadernos(raiz=None):
+    """
+    De carona nesta passada, o vigia do caderno de arte (2026-10-03): o
+    cliente mexe no Canva depois de a gente ter recebido o lote, e ninguém
+    fica abrindo caderno pra conferir. Ele mesmo se segura pra ler o Canva
+    só de quinze em quinze minutos por cliente.
+
+    Import tardio dentro de try/except porque isto aqui é CARONA: caderno
+    fora do ar, link fechado ou módulo faltando nunca pode derrubar a
+    regeneração da OS, que é o trabalho desta tarefa.
+    """
+    try:
+        import vigia_caderno
+        avisados = vigia_caderno.conferir(raiz=raiz)
+    except Exception as e:      # noqa: BLE001
+        _log(None, "warn", "vigia do caderno não rodou: %s: %s" % (type(e).__name__, e))
+        return {}
+    if avisados:
+        _log(None, "ok", "caderno mudou: %s" % "; ".join(
+            "%s (%d)" % (nome, len(itens)) for nome, itens in sorted(avisados.items())))
+    return avisados
 
 
 if __name__ == "__main__":
