@@ -160,3 +160,24 @@ def test_nome_de_cliente_com_espaco_diferente_reaproveita_a_mesma_pasta(tmp_path
 
     assert pedido_novo["cliente"] == "SUPERBET", "deveria reaproveitar a grafia já usada na primeira pasta"
     assert len(list(destino.iterdir())) == 1, "não deveria ter criado uma segunda pasta de cliente"
+
+
+def test_a_os_da_producao_nunca_entra_no_arquivamento(tmp_path):
+    """
+    Desde 03/10/2026 a raiz da pasta do cliente tem uma OS: a da PRODUCAO,
+    que o vigia regenera a cada movimento. Ela nao se arquiva — nunca esta
+    "pronta", muda sozinha amanha. So LOTE e pedido.
+    """
+    base = tmp_path / "saida"
+    lote = base / "VIBRA" / "20261003_192549"
+    lote.mkdir(parents=True)
+    (lote / "OS - VIBRA.pdf").write_bytes(b"%PDF lote")
+    (base / "VIBRA" / "OS - VIBRA.pdf").write_bytes(b"%PDF producao")
+
+    pedidos = listar_pedidos(pasta_saida_base=base, pasta_destino=tmp_path / "destino")
+
+    assert len(pedidos) == 1
+    assert pedidos[0]["cliente"] == "VIBRA"
+    assert pedidos[0]["subpasta"] == "03-10-2026 19-25-49"
+    assert [a.name for a in pedidos[0]["arquivos"]] == ["OS - VIBRA.pdf"]
+    assert pedidos[0]["arquivos"][0].read_bytes() == b"%PDF lote"

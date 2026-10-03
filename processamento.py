@@ -19,9 +19,11 @@ Principais diferenças em relação à versão original de main.py:
   - O nome do cliente é "sanitizado" antes de virar nome de arquivo,
     evitando erro se alguém digitar um caractere que o Windows não
     aceita em nome de arquivo (barra, dois-pontos, etc.).
-  - Cada execução salva em uma pasta com data/hora
-    (etiquetas_geradas/CLIENTE_20260817_143000/), então rodar de novo
-    pro mesmo cliente não sobrescreve o resultado anterior.
+  - Cada execução salva numa subpasta com data/hora DENTRO da pasta do
+    cliente (etiquetas_geradas/CLIENTE/20260817_143000/), então rodar de
+    novo pro mesmo cliente não sobrescreve o resultado anterior — e o
+    cliente tem UM lugar só, que é onde o vigia também escreve a OS da
+    produção (regra dele de 03/10/2026).
   - Nunca deixa uma seção "sumir" do PDF unificado por ter sido
     esquecida na lista de ordem do config.json — qualquer categoria com
     arquivos aparece, mesmo que só no final.
@@ -48,7 +50,7 @@ from dimensoes import (
 from estado_pedido import carregar_estado, nomes_ja_processados, salvar_estado
 from pdf_layout import iniciar_pagina_com_banner, numerar_paginas_a_partir_de, estampar_conferencia_local
 from relatorios import salvar_log, gerar_os, salvar_dados_os
-from utils import nome_cliente_da_pasta, remover_acentos, sanitizar_nome_arquivo
+from utils import cliente_do_pedido, remover_acentos, sanitizar_nome_arquivo
 
 LARGURA_A4 = 595.27
 ALTURA_A4 = 841.89
@@ -452,7 +454,7 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
         # pasta em si já foi resolvida ignorando diferença de espaço (ver
         # estado_pedido.localizar_pastas_cliente); o nome usado pra
         # arquivo/conteúdo precisa seguir a MESMA decisão.
-        nome_cliente_seguro = nome_cliente_da_pasta(pasta_saida.name)
+        nome_cliente_seguro = cliente_do_pedido(pasta_saida)
         itens_anteriores = carregar_estado(pasta_saida, config)
         nomes_conhecidos = nomes_ja_processados(itens_anteriores)
 
@@ -481,7 +483,13 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
             }
     else:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        pasta_saida = pathlib.Path(pasta_saida_base) / f"{nome_cliente_seguro.upper()}_{timestamp}"
+        # UMA pasta por cliente, com os lotes dentro (03/10/2026, a pedido
+        # dele: "está gerando duas pastas de clientes... deixar apenas
+        # uma"). Antes cada rodada criava "CLIENTE_<carimbo>" na raiz, e
+        # ao lado nascia a pasta do cliente onde o vigia escreve a OS da
+        # produção — dois lugares pro mesmo cliente. Agora a pasta do
+        # cliente é a única, e cada rodada é uma subpasta com o carimbo.
+        pasta_saida = pathlib.Path(pasta_saida_base) / nome_cliente_seguro.upper() / timestamp
         try:
             pasta_saida.mkdir(parents=True, exist_ok=True)
         except OSError as e:

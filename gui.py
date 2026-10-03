@@ -38,6 +38,7 @@ from envio_impressao import (
     subtotais_por_material,
 )
 from estado_pedido import estado_existe, localizar_pastas_cliente
+from utils import cliente_do_pedido, data_hora_da_pasta, pasta_e_de_lote, pastas_de_lote
 from estoque import (
     carregar_estoque, saldo_produto, registrar_movimento, desfazer_movimento,
     prever_saida_os, confirmar_saida_os, pedido_ja_teve_saida, produtos_por_categoria,
@@ -112,23 +113,38 @@ def _rotulo_variantes(variantes):
 
 def _pedidos_para_impressao(pasta_base="etiquetas_geradas"):
     """
-    Lista cada pasta de pedido que tem OS e/ou Checklist em disco, mais
-    recente primeiro — usado pela tela de reimpressão manual (não
-    reaproveita arquivamento.listar_pedidos porque essa só devolve os
-    PDFs de OS, e aqui precisamos do Checklist também).
+    Lista o que dá pra reimprimir, mais recente primeiro — usado pela
+    tela de reimpressão manual (não reaproveita arquivamento.
+    listar_pedidos porque essa só devolve os PDFs de OS, e aqui precisamos
+    do Checklist também).
+
+    Desde 03/10/2026 entram DUAS coisas, porque o cliente passou a ter uma
+    pasta só: cada LOTE de etiquetas (a subpasta com o carimbo de data, ou
+    a pasta "CLIENTE_<data>" do formato antigo) e, na raiz da pasta do
+    cliente, a OS da PRODUÇÃO — aquela que o vigia regenera a cada
+    movimento. São documentos diferentes e os dois se reimprimem.
     """
     base = pathlib.Path(pasta_base)
     if not base.exists():
         return []
-    pedidos = []
-    for pasta in sorted(base.iterdir(), reverse=True):
-        if not pasta.is_dir():
-            continue
+
+    def _ler(pasta, rotulo):
         arquivos_os = sorted(pasta.glob("OS - *.pdf"))
         arquivos_checklist = sorted(pasta.glob("Checklist *.pdf"))
         if not arquivos_os and not arquivos_checklist:
-            continue
-        pedidos.append({"pasta": pasta, "nome": pasta.name, "os": arquivos_os, "checklist": arquivos_checklist})
+            return None
+        return {"pasta": pasta, "nome": rotulo, "os": arquivos_os, "checklist": arquivos_checklist}
+
+    pedidos = []
+    for pasta in pastas_de_lote(base):
+        item = _ler(pasta, "%s — %s" % (cliente_do_pedido(pasta), data_hora_da_pasta(pasta.name)))
+        if item:
+            pedidos.append(item)
+    for pasta in sorted(base.iterdir()):
+        if pasta.is_dir() and not pasta_e_de_lote(pasta):
+            item = _ler(pasta, "%s — produção (sempre atual)" % pasta.name)
+            if item:
+                pedidos.append(item)
     return pedidos
 
 

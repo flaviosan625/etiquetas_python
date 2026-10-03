@@ -499,6 +499,18 @@ Decisões do usuário de 2026-09-13, que valem pro sistema inteiro:
 - **Cliente = uma pasta em `OneDrive/UNYCOMUNICACAO/Recebimento de Artes/`** (`clientes.py`). Não
   existe lista central: a pasta é o cadastro, o `cliente.json` dentro dela é a configuração.
   Vários clientes em paralelo; nenhum nome de cliente escrito no código.
+- **Uma pasta por cliente em `etiquetas_geradas`, com os lotes dentro** (03/10/2026: *"está gerando
+  duas pastas de clientes na hora que estou gerando as etiquetas, uma vem com uma OS — deixar apenas
+  uma pasta"*). Eram dois lugares pro mesmo cliente: o lote nascia como `CLIENTE_<carimbo>` na raiz e,
+  ao lado, a pasta `CLIENTE` onde o vigia do checklist escreve a OS da PRODUÇÃO. Agora a pasta do
+  cliente é a única: a OS da produção fica na raiz dela e cada rodada é uma subpasta `<carimbo>`.
+  O formato antigo continua sendo LIDO (tem pedido em andamento no disco assim) — quem resolve os
+  dois é `utils.cliente_do_pedido` / `utils.pastas_de_lote`, e todo mundo que lia nome de pasta passou
+  por ali: `estado_pedido` (achar o pedido anterior), `gui._pedidos_para_impressao` (que agora lista
+  também a OS da produção, rotulada) e `arquivamento` (que **nunca** arquiva a OS da produção: ela não
+  está "pronta", muda sozinha amanhã). O nome da pasta é o `documento` do cliente — se o que ele digita
+  na tela de etiquetas não bate com o nome do cliente, nascem duas pastas de novo; é pra isso que
+  existe o `nome_documento` no `cliente.json` (o VIBRA ficou com "VIBRA LOJA CONVENIÊNCIA").
 - **`etiquetas_geradas` é SAÍDA DESCARTÁVEL.** O usuário apaga pedido e cliente de lá quando o
   trabalho termina — *"preciso manter somente o que está em andamento"*. Então nada que o sistema
   precise **lembrar** mora lá: vai em `Recebimento de Artes/<cliente>/_sistema/`. Aconteceu em

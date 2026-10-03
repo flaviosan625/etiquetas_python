@@ -21,31 +21,27 @@ from dimensoes import (
     identificar_variante,
 )
 from relatorios import NOME_SUBPASTA_LOG
-from utils import chave_comparacao_cliente, nome_cliente_da_pasta
+from utils import chave_comparacao_cliente, cliente_do_pedido, pastas_de_lote
 
 NOME_ARQUIVO_ESTADO = "estado_pedido.json"
 
 
 def localizar_pastas_cliente(nome_cliente_seguro, pasta_saida_base="etiquetas_geradas"):
     """
-    Lista as pastas já existentes desse cliente, mais recente primeiro
-    pelo nome (o timestamp no nome já ordena assim). Compara o nome do
-    cliente ignorando diferença de espaço (ver utils.chave_comparacao_
-    cliente) — sem isso, um espaço a mais ou a menos na hora de digitar
-    faz o sistema não achar o pedido anterior e começar um do zero, sem
-    avisar. Cliente nunca processado antes: lista vazia.
+    Lista os LOTES já existentes desse cliente, mais recente primeiro.
+    Compara o nome do cliente ignorando diferença de espaço (ver
+    utils.chave_comparacao_cliente) — sem isso, um espaço a mais ou a
+    menos na hora de digitar faz o sistema não achar o pedido anterior e
+    começar um do zero, sem avisar. Cliente nunca processado antes:
+    lista vazia.
+
+    Enxerga os DOIS formatos (ver utils.pastas_de_lote): o lote dentro da
+    pasta do cliente, de 03/10/2026 em diante, e o antigo "CLIENTE_<data>"
+    na raiz — que ainda existe no disco, com pedido em andamento dentro.
     """
-    base = pathlib.Path(pasta_saida_base)
-    if not base.exists():
-        return []
     chave_alvo = chave_comparacao_cliente(nome_cliente_seguro)
-    pastas = []
-    for p in base.iterdir():
-        if not p.is_dir():
-            continue
-        if chave_comparacao_cliente(nome_cliente_da_pasta(p.name)) == chave_alvo:
-            pastas.append(p)
-    return sorted(pastas, key=lambda p: p.name, reverse=True)
+    return [p for p in pastas_de_lote(pasta_saida_base)
+            if chave_comparacao_cliente(cliente_do_pedido(p)) == chave_alvo]
 
 
 def _arquivos_log(pasta_saida):

@@ -60,3 +60,70 @@ def test_carregar_estado_com_config_mas_categoria_nao_reconhecida(tmp_path):
     itens = carregar_estado(str(tmp_path), config)
     assert len(itens) == 1
     assert itens[0]["categoria"] is None
+
+
+# ============ uma pasta por cliente, com os lotes dentro (03/10/2026)
+#
+# Pedido dele: "esta gerando duas pastas de clientes na hora que estou
+# gerando as etiquetas, uma vem com uma OS — deixar apenas uma pasta". A
+# pasta do cliente passou a ser a unica: a OS da producao fica na raiz
+# dela (quem escreve e o vigia) e cada rodada de etiquetas e uma subpasta
+# com o carimbo de data. O formato antigo (CLIENTE_<carimbo> na raiz)
+# continua sendo LIDO, porque tem pedido em andamento no disco assim.
+
+def test_lote_novo_mora_dentro_da_pasta_do_cliente(tmp_path):
+    from utils import cliente_do_pedido, pastas_de_lote
+    (tmp_path / "VIBRA" / "20261003_192549").mkdir(parents=True)
+
+    lotes = pastas_de_lote(tmp_path)
+
+    assert [p.name for p in lotes] == ["20261003_192549"]
+    assert cliente_do_pedido(lotes[0]) == "VIBRA"
+
+
+def test_formato_antigo_continua_sendo_lido(tmp_path):
+    from utils import cliente_do_pedido, pastas_de_lote
+    (tmp_path / "VIBRA_20261003_192549").mkdir()
+
+    lotes = pastas_de_lote(tmp_path)
+
+    assert len(lotes) == 1 and cliente_do_pedido(lotes[0]) == "VIBRA"
+
+
+def test_a_pasta_do_cliente_nunca_e_confundida_com_lote(tmp_path):
+    """Na raiz dela mora a OS da PRODUCAO, que o vigia regenera — nao e pedido."""
+    from utils import pasta_e_de_lote, pastas_de_lote
+    pasta = tmp_path / "VIBRA"
+    pasta.mkdir()
+    (pasta / "OS - VIBRA.pdf").write_bytes(b"%PDF")
+
+    assert pastas_de_lote(tmp_path) == []
+    assert pasta_e_de_lote(pasta) is False
+
+
+def test_os_dois_formatos_convivem_e_vem_do_mais_novo_pro_mais_velho(tmp_path):
+    from utils import pastas_de_lote
+    (tmp_path / "VIBRA_20260101_080000").mkdir()
+    (tmp_path / "VIBRA" / "20261003_192549").mkdir(parents=True)
+    (tmp_path / "OUTRO" / "20260615_120000").mkdir(parents=True)
+
+    nomes = [str(p.relative_to(tmp_path)).replace("\\", "/") for p in pastas_de_lote(tmp_path)]
+
+    assert nomes == ["VIBRA/20261003_192549", "OUTRO/20260615_120000", "VIBRA_20260101_080000"]
+
+
+def test_pedido_anterior_do_cliente_acha_os_dois_formatos(tmp_path):
+    from estado_pedido import localizar_pastas_cliente
+    (tmp_path / "VIBRA_20260101_080000").mkdir()
+    (tmp_path / "VIBRA" / "20261003_192549").mkdir(parents=True)
+    (tmp_path / "OUTRO" / "20260615_120000").mkdir(parents=True)
+
+    achados = localizar_pastas_cliente("VIBRA", pasta_saida_base=tmp_path)
+
+    assert [p.name for p in achados] == ["20261003_192549", "VIBRA_20260101_080000"]
+
+
+def test_data_legivel_sai_igual_nos_dois_formatos():
+    from utils import data_hora_da_pasta
+    assert data_hora_da_pasta("VIBRA_20261003_192549") == "03-10-2026 19-25-49"
+    assert data_hora_da_pasta("20261003_192549") == "03-10-2026 19-25-49"

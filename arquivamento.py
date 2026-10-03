@@ -35,7 +35,8 @@ de cliente diferentes aqui também).
 import pathlib
 import shutil
 
-from utils import chave_comparacao_cliente, data_hora_da_pasta, nome_cliente_da_pasta
+from utils import (chave_comparacao_cliente, cliente_do_pedido, data_hora_da_pasta,
+                   nome_cliente_da_pasta, pastas_de_lote)
 
 PASTA_DESTINO_PADRAO = pathlib.Path.home() / "OneDrive" / "UNYCOMUNICACAO" / "Ordem de Serviço"
 
@@ -96,15 +97,16 @@ def listar_pedidos(pasta_saida_base="etiquetas_geradas", pasta_destino=PASTA_DES
     if not base.exists():
         return []
 
-    pastas_com_os = [
-        (p, _arquivos_os(p)) for p in sorted(base.iterdir(), reverse=True) if p.is_dir()
-    ]
+    # Só LOTE é pedido. Desde 03/10/2026 a raiz da pasta do cliente também
+    # tem uma OS — a da PRODUÇÃO, que o vigia regenera a cada movimento —
+    # e essa não se arquiva: ela nunca está "pronta", muda sozinha amanhã.
+    pastas_com_os = [(p, _arquivos_os(p)) for p in pastas_de_lote(base)]
     pastas_com_os = [(p, arquivos) for p, arquivos in pastas_com_os if arquivos]
-    nomes_clientes = _resolver_nomes_clientes([p.name for p, _ in pastas_com_os], pasta_destino)
+    nomes_clientes = _resolver_nomes_clientes([cliente_do_pedido(p) for p, _ in pastas_com_os], pasta_destino)
 
     pedidos = []
     for pasta_pedido, arquivos in pastas_com_os:
-        nome_cliente = nomes_clientes[pasta_pedido.name]
+        nome_cliente = nomes_clientes[cliente_do_pedido(pasta_pedido)]
         nome_subpasta = data_hora_da_pasta(pasta_pedido.name)
         pasta_destino_pedido = pathlib.Path(pasta_destino) / nome_cliente / nome_subpasta
         ja_enviados = all((pasta_destino_pedido / a.name).exists() for a in arquivos)
