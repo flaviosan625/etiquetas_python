@@ -265,44 +265,68 @@ if ($acao -and $acao.Execute) {
     }
 }
 
-# 5. A prova: a tarefa roda e o sinal de vida fica NOVO.
+# 5. A prova: a TAREFA roda, e o Agendador diz com que resultado.
 #
-# Mensagem de script não prova deploy — o sinal prova, porque é o próprio
-# vigia que escreve, com o nome desta máquina.
+# Mensagem de script não prova deploy. Mas o SINAL DE VIDA também não
+# serve aqui: ele é reescrito a cada 5 MINUTOS de propósito (seriam 1.440
+# gravações por dia numa pasta sincronizada), então esperar um minuto por
+# ele quase nunca ia ver mudança. Em 04/10/2026 foi isso — o sinal tinha
+# sido escrito às 08:48:01 e a espera começou às 08:49, sem a menor
+# chance. Na véspera funcionou por sorte, porque os 5 minutos venciam.
+#
+# Quem responde na hora é o próprio Agendador: LastRunTime e
+# LastTaskResult da tarefa. É local, é imediato e é a mesma coisa que a
+# gente iria olhar na tela dele.
 $antes = $null
-if (Test-Path $SINAL) { $antes = (Get-Item $SINAL).LastWriteTime }
+try { $antes = (Get-ScheduledTaskInfo -TaskName $NOME_TAREFA).LastRunTime } catch { }
 Write-Host ""
-Write-Host "  Disparando a tarefa e esperando o sinal de vida..."
+Write-Host "  Disparando a tarefa e esperando o Agendador responder..."
 try { Start-ScheduledTask -TaskName $NOME_TAREFA } catch {
     Write-Host "  (não consegui disparar a tarefa: $($_.Exception.Message))" -ForegroundColor Yellow
 }
-$apareceu = $false
-for ($i = 0; $i -lt 30; $i++) {
+$info = $null
+for ($i = 0; $i -lt 20; $i++) {
     Start-Sleep -Seconds 2
-    if (-not (Test-Path $SINAL)) { continue }
-    $agora = (Get-Item $SINAL).LastWriteTime
-    if ($null -eq $antes -or $agora -gt $antes) { $apareceu = $true; break }
+    try { $atual = Get-ScheduledTaskInfo -TaskName $NOME_TAREFA } catch { continue }
+    if ($null -eq $antes -or $atual.LastRunTime -gt $antes) {
+        # 267009 = "em execução": espera terminar pra ler o resultado
+        if ($atual.LastTaskResult -ne 267009) { $info = $atual; break }
+    }
 }
 
 Write-Host ""
-if ($apareceu) {
-    try {
-        $dados = Get-Content $SINAL -Raw | ConvertFrom-Json
-        Write-Host "  TUDO CERTO. O vigia rodou agora e assinou como '$($dados.maquina)', posto '$($dados.posto)'." -ForegroundColor Green
-        Write-Host "  Máquinas atendidas: $(($dados.maquinas | Get-Member -MemberType NoteProperty | ForEach-Object { $_.Name }) -join ', ')" -ForegroundColor Green
-    } catch {
-        Write-Host "  TUDO CERTO. O sinal de vida foi reescrito agora." -ForegroundColor Green
-    }
+if ($info -and $info.LastTaskResult -eq 0) {
+    Write-Host "  TUDO CERTO. A tarefa rodou às $($info.LastRunTime.ToString('HH:mm:ss')) e terminou sem erro." -ForegroundColor Green
+} elseif ($info) {
+    Write-Host "  A tarefa rodou às $($info.LastRunTime.ToString('HH:mm:ss')) e terminou com resultado $($info.LastTaskResult)." -ForegroundColor Yellow
+    Write-Host "  Veja o fim do log abaixo: ele diz o que ela tentou fazer." -ForegroundColor Yellow
 } else {
-    Write-Host "  O sinal de vida NÃO mudou em 1 minuto." -ForegroundColor Yellow
-    Write-Host "  Pode ser o OneDrive demorando, ou a tarefa não disparando." -ForegroundColor Yellow
-    Write-Host "  Confira o fim do log abaixo e, se precisar, o Agendador de Tarefas." -ForegroundColor Yellow
+    Write-Host "  O Agendador não respondeu em 40 segundos." -ForegroundColor Yellow
+    Write-Host "  Confira o fim do log abaixo e, se precisar, a tarefa '$NOME_TAREFA' no Agendador." -ForegroundColor Yellow
+}
+
+# O sinal de vida entra como informação, não como prova: ele é de até 5
+# minutos atrás, e isso é normal.
+if (Test-Path $SINAL) {
+    try {
+        $dados = Get-Content $SINAL -Raw -Encoding UTF8 | ConvertFrom-Json
+        $quando = (Get-Item $SINAL).LastWriteTime.ToString("HH:mm")
+        $atendidas = ($dados.maquinas | Get-Member -MemberType NoteProperty | ForEach-Object { $_.Name }) -join ", "
+        Write-Host "  Sinal de vida das $quando : assinado por '$($dados.maquina)', posto '$($dados.posto)'." -ForegroundColor Green
+        Write-Host "  Máquinas atendidas: $atendidas" -ForegroundColor Green
+        if ($dados.maquina -ne $env:COMPUTERNAME) {
+            Write-Host "  ATENÇÃO: quem assinou o posto é '$($dados.maquina)', não esta máquina." -ForegroundColor Yellow
+            Write-Host "  Duas máquinas no mesmo posto duplicam job e apagam linha do registro." -ForegroundColor Yellow
+        }
+    } catch {
+        Write-Host "  (não consegui ler o sinal de vida: $($_.Exception.Message))" -ForegroundColor Yellow
+    }
 }
 
 if (Test-Path $LOG) {
     Write-Host ""
     Write-Host "  --- fim do log do vigia ---"
-    Get-Content $LOG -Tail 12 | ForEach-Object { Write-Host "    $_" }
+    Get-Content $LOG -Tail 20 -Encoding UTF8 | ForEach-Object { Write-Host "    $_" }
 }
 
 Write-Host ""

@@ -663,6 +663,13 @@ Decisões do usuário de 2026-09-13, que valem pro sistema inteiro:
   roda, e no PC errado ele ainda diz "TUDO CERTO" — aconteceu em 22/09, e a UJV e a SWJ seguiram um
   dia a mais com a versão antiga. Hoje ele compara `%COMPUTERNAME%` com o nome que o próprio vigia
   grava no sinal de vida. Quem confirma um deploy é o **sinal de vida**, não a mensagem do script.
+- **Mas o sinal de vida não serve de prova IMEDIATA.** Ele é reescrito a cada 5 min de propósito
+  (`_INTERVALO_SINAL_MINUTOS`), então um script que dispara a tarefa e espera um minuto pelo sinal
+  quase nunca vê mudança: em 04/10/2026 o sinal era de 08:48:01 e a espera começou às 08:49, sem a
+  menor chance — e na véspera tinha funcionado por sorte, porque os 5 min venciam. Quem responde na
+  hora é o **Agendador**: `Get-ScheduledTaskInfo` dá `LastRunTime` e `LastTaskResult` (`267009` =
+  ainda rodando, espere). O sinal continua valendo pra dizer QUEM é o dono do posto — e aí a
+  pergunta certa não é "mudou?", é "o nome que está nele é desta máquina?".
 - **Não escreva `.lua` nem `.ps1` por heredoc do shell.** Cada camada come um nível de escape — já
   quebrou o mesmo Lua quatro vezes e um `\r` de caminho virou quebra de linha. Use a ferramenta de
   escrita de arquivo e depois `ferramentas/conferir_lua.py`.
