@@ -37,8 +37,8 @@ from config import carregar_config
 import miniaturas
 from dimensoes import extrair_dimensoes, extrair_quantidade, identificar_categoria, medir_conteudo_pagina
 from rasterlink_hotfolder import (
-    MAQUINAS, NOME_SUBPASTA_ENVIADOS, NOME_SUBPASTA_REGISTRO, PASTA_FILA_ONEDRIVE,
-    PASTA_RELATORIOS, limite_da_maquina,
+    MAQUINAS, NOME_SUBPASTA_ENVIADOS, NOME_SUBPASTA_IMPRESSAO, NOME_SUBPASTA_REGISTRO,
+    PASTA_FILA_ONEDRIVE, PASTA_RELATORIOS, limite_da_maquina,
 )
 
 LARGURA_PAGINA = 595.27  # A4
@@ -52,6 +52,9 @@ _COR_ACENTO = "#0b6b8a"
 _COR_AVISO = "#8a5300"
 _FUNDO_AVISO = "#fdf2e0"
 _FUNDO_REPETIDO = "#e4f0f5"
+# Verde só pra uma coisa: o que a MÁQUINA confirma ter impresso. É o
+# único dado deste documento que não passou por interpretação nenhuma.
+_COR_PROVA = "#1f6b3a"
 
 # Usa o logo JÁ reduzido que o projeto tem pra tela (230px), não o de
 # alta resolução: o grande tem 347KB e é embutido em todo PDF, o que
@@ -301,7 +304,116 @@ def _limite_da_maquina(nome_maquina, maquinas=None):
     return limite_da_maquina(maquinas[nome_maquina])
 
 
-def interpretar(registros, config=None, maquinas=None, pasta_fila=None):
+def caminho_impressoes(data, pasta_relatorios=None):
+    """O registro do que a MÁQUINA imprimiu, no mês a que 'data' pertence."""
+    pasta = pathlib.Path(pasta_relatorios or PASTA_RELATORIOS) / NOME_SUBPASTA_IMPRESSAO
+    return pasta / f"{data:%Y-%m}.jsonl"
+
+
+def provas_de_impressao(data, pasta_relatorios=None):
+    """
+    O que o programa da impressora diz ter impresso, indexado pelo NOME
+    DO RIPADO sem extensão: {nome: {'passadas': [(quando, segundos)],
+    'tamanho_m': [l, a], 'copias': n}}.
+
+    Lê o mês de 'data' e o SEGUINTE: arte entregue às 18h do dia 30 pode
+    imprimir no dia 1º, e a prova é dela do mesmo jeito.
+
+    É o único número do sistema que não é estimativa — o m² sai do nome
+    do arquivo e o tempo de máquina da OS é conta. Aqui quem fala é a
+    máquina.
+    """
+    if isinstance(data, datetime.datetime):
+        data = data.date()
+    meses = [data, data.replace(day=28) + datetime.timedelta(days=7)]
+
+    por_ripado = {}
+    for mes in meses:
+        caminho = caminho_impressoes(mes, pasta_relatorios)
+        if not caminho.is_file():
+            continue
+        with open(caminho, "r", encoding="utf-8") as f:
+            for linha in f:
+                linha = linha.strip()
+                if not linha:
+                    continue
+                try:
+                    dados = json.loads(linha)
+                    quando = datetime.datetime.strptime(dados["quando"], "%Y-%m-%dT%H:%M:%S")
+                    chave = pathlib.PurePath(dados["arquivo"]).stem.lower()
+                except (json.JSONDecodeError, KeyError, TypeError, ValueError):
+                    continue
+                prova = por_ripado.setdefault(chave, {"passadas": [], "tamanho_m": None,
+                                                      "copias": None})
+                if dados.get("tipo") == "passada":
+                    prova["passadas"].append((quando, dados.get("segundos") or 0))
+                elif dados.get("tipo") == "trabalho":
+                    prova["tamanho_m"] = dados.get("tamanho_m") or prova["tamanho_m"]
+                    prova["copias"] = dados.get("copias") or prova["copias"]
+    for prova in por_ripado.values():
+        prova["passadas"].sort()
+    return por_ripado
+
+
+# Quanto o nome do ripado pode crescer além do nome do arquivo entregue
+# e ainda ser o mesmo trabalho. O SAi acrescenta sufixo quando o mesmo
+# trabalho é ripado de novo ("_1", "_2") e às vezes um pedaço de nome
+# de perfil (" U_impress", com 10 letras). Mais que isso é outro nome, e
+# casar nome de outra peça aqui seria dar prova de impressão a quem não
+# tem — num documento que serve de comprovação pro cliente.
+_SOBRA_DE_NOME_DO_RIPADO = 12
+
+
+def _prova_da_linha(provas, nome_arquivo, quando):
+    """
+    A prova de impressão de um arquivo entregue, ou None.
+
+    O ripado nasce com o nome do trabalho, que é o nome do arquivo
+    entregue — mas pode ganhar sufixo. Por isso o casamento é em duas
+    voltas: nome exato primeiro, depois o que começa com ele e cresceu
+    pouco. É a mesma disciplina de recuperar_registro.nome_no_registro,
+    pelo mesmo motivo: comparar nome cru faz a segunda entrega parecer
+    outra peça.
+
+    Só conta passada do horário da entrega pra frente: o mesmo nome
+    entregue de novo não herda a prova da entrega anterior — foi esse
+    tipo de herança que três revisores reproduziram no separador de
+    ripados.
+
+    NÃO achar prova não quer dizer que não imprimiu: só as DOCAN têm
+    programa que registra, e mesmo nelas o log pode estar atrasado. Por
+    isso ausência de prova nunca vira aviso no relatório.
+    """
+    if not provas:
+        return None
+    alvo = pathlib.PurePath(nome_arquivo).stem.lower()
+    achados = [provas[alvo]] if alvo in provas else [
+        prova for nome, prova in provas.items()
+        if nome.startswith(alvo) and nome[len(alvo):len(alvo) + 1] in ("_", " ")
+        and len(nome) - len(alvo) <= _SOBRA_DE_NOME_DO_RIPADO]
+    if not achados:
+        return None
+
+    # cinco minutos de folga: o relógio do PC da impressora não é o
+    # mesmo deste, e a passada pode começar antes de a entrega ser
+    # anotada aqui
+    folga = quando - datetime.timedelta(minutes=5)
+    passadas, segundos, tamanho_m, copias = [], 0, None, None
+    for prova in achados:
+        minhas = [(p, s) for p, s in prova["passadas"] if p >= folga]
+        if not minhas:
+            continue
+        passadas.extend(p for p, _ in minhas)
+        segundos += sum(s for _, s in minhas)
+        tamanho_m = prova["tamanho_m"] or tamanho_m
+        copias = prova["copias"] or copias
+    if not passadas:
+        return None
+    return {"passadas": sorted(passadas), "segundos": segundos,
+            "tamanho_m": tamanho_m, "copias": copias}
+
+
+def interpretar(registros, config=None, maquinas=None, pasta_fila=None, provas=None):
     """
     Transforma os registros brutos em linhas de relatório: lê do nome do
     arquivo a quantidade, o material, a medida e o m², e marca as duas
@@ -312,6 +424,10 @@ def interpretar(registros, config=None, maquinas=None, pasta_fila=None):
     2026-09-10). Nesse caso o m² é o da arte medida e NÃO é
     multiplicado pela quantidade: a folha medida já contém o que
     contém — multiplicar de novo contaria o mesmo material N vezes.
+
+    'provas' é o que a MÁQUINA diz ter impresso (ver provas_de_impressao).
+    Entra como parâmetro opcional porque quem lê isso é o PC principal:
+    sem ele, nada muda em linha nenhuma.
 
     Devolve {nome_maquina: [linha, ...]} preservando a ordem de horário.
     """
@@ -375,6 +491,7 @@ def interpretar(registros, config=None, maquinas=None, pasta_fila=None):
             "nao_cabe": nao_cabe,
             "nao_cabe_porque": nao_cabe_porque,
             "largura_util": largura_util,
+            "impressao": _prova_da_linha(provas, nome, registro["_quando"]),
         })
     return por_maquina
 
@@ -421,6 +538,55 @@ def _tamanho_legivel(bytes_):
     if bytes_ >= 1024:
         return f"{bytes_ / 1024:.0f} KB"
     return f"{bytes_} B"
+
+
+def _tempo_de_maquina(segundos):
+    """'1h16' / '32 min' / '—'. Minuto quebrado não ajuda ninguém a conferir."""
+    if not segundos:
+        return None
+    minutos = round(segundos / 60)
+    if minutos < 60:
+        return f"{minutos} min"
+    return f"{minutos // 60}h{minutos % 60:02d}"
+
+
+def _texto_da_prova(linha):
+    """
+    O que escrever na linha quando a MÁQUINA confirma a impressão, ou
+    None quando não há prova.
+
+    Duas informações, e a segunda é a que mais vale: o tamanho que a
+    máquina usou. Nas DOCAN o sistema só entrega e quem ripa ajusta o
+    tamanho lá dentro (regra dele, 24/09/2026) — então a medida do nome
+    e a medida impressa podem divergir de verdade, e num documento de
+    comprovação isso tem que estar escrito, não escondido.
+    """
+    prova = linha.get("impressao")
+    if not prova:
+        return None
+    passadas = prova["passadas"]
+    partes = [f"{len(passadas)} passada(s) na máquina"]
+    tempo = _tempo_de_maquina(prova["segundos"])
+    if tempo:
+        partes.append(f"{tempo} de máquina")
+    partes.append(f"última às {passadas[-1]:%H:%M} de {passadas[-1]:%d/%m}")
+    if prova["copias"] and prova["copias"] > 1:
+        partes.append(f"{prova['copias']} cópias no trabalho")
+
+    texto = "A máquina confirma a impressão: " + ", ".join(partes) + "."
+    usado = prova["tamanho_m"]
+    dimensao = linha.get("dimensao")
+    if usado and len(usado) == 2:
+        texto += f" Tamanho usado na máquina: {_num(usado[0])} × {_num(usado[1])} m"
+        if dimensao and dimensao.get("largura_m") and dimensao.get("altura_m"):
+            aqui = sorted((dimensao["largura_m"], dimensao["altura_m"]))
+            la = sorted(usado)
+            if any(abs(a - b) > _TOLERANCIA_IGUAL for a, b in zip(aqui, la)):
+                texto += (f" — diferente dos {_num(dimensao['largura_m'])} × "
+                          f"{_num(dimensao['altura_m'])} m desta linha, porque quem ripou "
+                          f"ajustou o tamanho dentro do RIP")
+        texto += "."
+    return texto
 
 
 class _Folha:
@@ -582,7 +748,8 @@ def gerar_pdf(data, pasta_relatorios=None, config=None, maquinas=None, caminho_s
     if not registros:
         return None
 
-    por_maquina = interpretar(registros, config, maquinas, pasta_fila)
+    por_maquina = interpretar(registros, config, maquinas, pasta_fila,
+                              provas_de_impressao(data, pasta_relatorios))
     for nome_maquina, linhas in por_maquina.items():
         for linha in linhas:
             linha["previa"] = previa_da_arte(nome_maquina, linha["arquivo"], data,
@@ -618,6 +785,11 @@ def gerar_pdf(data, pasta_relatorios=None, config=None, maquinas=None, caminho_s
 
         for linha in linhas:
             avisos = []
+            # Primeiro de todos: é o único dado da linha que não passou
+            # por interpretação nenhuma — quem está dizendo é a máquina.
+            prova = _texto_da_prova(linha)
+            if prova:
+                avisos.append((_COR_PROVA, prova))
             if linha["repeticao"] > 1:
                 avisos.append((
                     _COR_ACENTO,

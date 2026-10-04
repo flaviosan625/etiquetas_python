@@ -655,3 +655,171 @@ def test_relatorio_da_docan_sai_em_pdf(tmp_path):
         doc.close()
     assert "DOCAN" in texto
     assert "12,00 m" in texto, "o subtotal da DOCAN tem que aparecer"
+
+
+# --- a prova de impressão (o que a MÁQUINA diz) --------------------
+#
+# O registro de impressão é irmão do de entregas e nasce no PC da
+# impressora (ver rasterlink_hotfolder.registrar_impressoes). Os dados
+# daqui saíram do programa da DOCAN em 03/10/2026, inclusive a
+# divergência de tamanho: o arquivo se chama 3.15X3.77M e a máquina
+# imprimiu 2,39 x 3,77 m, porque quem ripou ajustou lá dentro.
+
+
+def _escrever_impressoes(pasta, linhas, ano_mes="2026-09"):
+    destino = pasta / rp.NOME_SUBPASTA_IMPRESSAO
+    destino.mkdir(parents=True, exist_ok=True)
+    with open(destino / f"{ano_mes}.jsonl", "w", encoding="utf-8") as f:
+        for linha in linhas:
+            f.write(json.dumps(linha, ensure_ascii=False) + "\n")
+    return pasta
+
+
+def _passada(quando, arquivo, segundos):
+    return {"tipo": "passada", "quando": quando, "arquivo": arquivo, "pasta": "C:\\Ripados",
+            "maquina": None, "segundos": segundos, "pct": 0, "pc": "DOCAN"}
+
+
+def _trabalho(quando, arquivo, tamanho_m, copias=1):
+    return {"tipo": "trabalho", "quando": quando, "arquivo": arquivo, "pasta": "C:\\Ripados",
+            "maquina": None, "status": "Printed", "copias": copias, "tamanho_m": tamanho_m,
+            "pc": "DOCAN"}
+
+
+NOME_LONA = "1UN LONA IMPRESSA 3.15X3.77M_B_PAREDE_379x347cm"
+
+
+def test_linha_ganha_a_prova_da_maquina(tmp_path):
+    _escrever_registro(tmp_path, [_envio("2026-09-30T18:00:00", "DOCAN R5200", NOME_LONA + ".pdf")])
+    _escrever_impressoes(tmp_path, [
+        _passada("2026-09-30T19:05:06", NOME_LONA + ".prt", 1201),
+        _passada("2026-09-30T20:23:11", NOME_LONA + ".prt", 767),
+        _trabalho("2026-09-30T18:27:13", NOME_LONA + ".prt", [2.389, 3.775]),
+    ])
+
+    por_maquina = rp.interpretar(
+        rp.ler_registros_do_dia(datetime.date(2026, 9, 30), pasta_relatorios=tmp_path),
+        pasta_fila=tmp_path / "fila",
+        provas=rp.provas_de_impressao(datetime.date(2026, 9, 30), pasta_relatorios=tmp_path))
+
+    prova = por_maquina["DOCAN R5200"][0]["impressao"]
+    assert len(prova["passadas"]) == 2
+    assert prova["segundos"] == 1968, "tempo de máquina de verdade, somado das duas passadas"
+    assert prova["tamanho_m"] == [2.389, 3.775]
+
+
+def test_sem_prova_a_linha_nao_muda_nem_reclama(tmp_path):
+    """
+    Só as DOCAN têm programa que registra, e o log pode estar atrasado:
+    ausência de prova nunca pode virar aviso num documento que o cliente
+    lê como comprovação.
+    """
+    _escrever_registro(tmp_path, [_envio("2026-09-30T18:00:00", "SWJ320A",
+                                         "1UN LONA IMPRESSA 4.00X3.00M_painel.pdf")])
+
+    linha = rp.interpretar(
+        rp.ler_registros_do_dia(datetime.date(2026, 9, 30), pasta_relatorios=tmp_path),
+        pasta_fila=tmp_path / "fila",
+        provas=rp.provas_de_impressao(datetime.date(2026, 9, 30),
+                                      pasta_relatorios=tmp_path))["SWJ320A"][0]
+
+    assert linha["impressao"] is None
+    assert rp._texto_da_prova(linha) is None
+
+
+def test_ripado_com_sufixo_do_rip_ainda_e_a_mesma_peca(tmp_path):
+    """O SAi acrescenta sufixo quando o mesmo trabalho é ripado de novo."""
+    _escrever_registro(tmp_path, [_envio("2026-09-30T18:00:00", "DOCAN R5200", NOME_LONA + ".pdf")])
+    _escrever_impressoes(tmp_path, [_passada("2026-09-30T19:05:06", NOME_LONA + "_2.prt", 600)])
+
+    linha = rp.interpretar(
+        rp.ler_registros_do_dia(datetime.date(2026, 9, 30), pasta_relatorios=tmp_path),
+        pasta_fila=tmp_path / "fila",
+        provas=rp.provas_de_impressao(datetime.date(2026, 9, 30),
+                                      pasta_relatorios=tmp_path))["DOCAN R5200"][0]
+
+    assert linha["impressao"]["segundos"] == 600
+
+
+def test_nome_parecido_de_outra_peca_nao_rouba_a_prova(tmp_path):
+    """
+    "PLACA PS" não pode herdar a prova de "PLACA PS ADESIVADO LOJA 2":
+    dar prova de impressão a quem não tem é pior que não dar nenhuma.
+    """
+    _escrever_registro(tmp_path, [_envio("2026-09-30T18:00:00", "DOCAN R5200", "PLACA PS.pdf")])
+    _escrever_impressoes(tmp_path, [
+        _passada("2026-09-30T19:05:06", "PLACA PS ADESIVADO LOJA 2.prt", 600)])
+
+    linha = rp.interpretar(
+        rp.ler_registros_do_dia(datetime.date(2026, 9, 30), pasta_relatorios=tmp_path),
+        pasta_fila=tmp_path / "fila",
+        provas=rp.provas_de_impressao(datetime.date(2026, 9, 30),
+                                      pasta_relatorios=tmp_path))["DOCAN R5200"][0]
+
+    assert linha["impressao"] is None
+
+
+def test_entrega_nova_nao_herda_a_impressao_da_anterior(tmp_path):
+    """
+    Mesmo nome entregue de novo no dia seguinte: a passada de ontem é
+    prova da entrega de ontem, não da de hoje. Foi esse tipo de herança
+    que três revisores reproduziram no separador de ripados.
+    """
+    _escrever_registro(tmp_path, [_envio("2026-10-01T09:00:00", "DOCAN R5200", NOME_LONA + ".pdf")],
+                       ano_mes="2026-10")
+    _escrever_impressoes(tmp_path, [_passada("2026-09-30T20:23:11", NOME_LONA + ".prt", 767)])
+
+    linha = rp.interpretar(
+        rp.ler_registros_do_dia(datetime.date(2026, 10, 1), pasta_relatorios=tmp_path),
+        pasta_fila=tmp_path / "fila",
+        provas=rp.provas_de_impressao(datetime.date(2026, 10, 1),
+                                      pasta_relatorios=tmp_path))["DOCAN R5200"][0]
+
+    assert linha["impressao"] is None
+
+
+def test_impressao_no_dia_seguinte_conta(tmp_path):
+    """Arte entregue às 18h do dia 30 imprime no dia 1º — a prova é dela."""
+    _escrever_registro(tmp_path, [_envio("2026-09-30T18:00:00", "DOCAN R5200", NOME_LONA + ".pdf")])
+    _escrever_impressoes(tmp_path, [_passada("2026-10-01T08:10:00", NOME_LONA + ".prt", 900)],
+                         ano_mes="2026-10")
+
+    linha = rp.interpretar(
+        rp.ler_registros_do_dia(datetime.date(2026, 9, 30), pasta_relatorios=tmp_path),
+        pasta_fila=tmp_path / "fila",
+        provas=rp.provas_de_impressao(datetime.date(2026, 9, 30),
+                                      pasta_relatorios=tmp_path))["DOCAN R5200"][0]
+
+    assert linha["impressao"]["segundos"] == 900
+
+
+def test_o_pdf_escreve_a_prova_e_o_tamanho_que_a_maquina_usou(tmp_path):
+    _escrever_registro(tmp_path, [_envio("2026-09-30T18:00:00", "DOCAN R5200", NOME_LONA + ".pdf")])
+    _escrever_impressoes(tmp_path, [
+        _passada("2026-09-30T19:05:06", NOME_LONA + ".prt", 1201),
+        _passada("2026-09-30T20:23:11", NOME_LONA + ".prt", 767),
+        _trabalho("2026-09-30T18:27:13", NOME_LONA + ".prt", [2.389, 3.775]),
+    ])
+
+    caminho = rp.gerar_pdf(datetime.date(2026, 9, 30), pasta_relatorios=tmp_path,
+                           pasta_fila=tmp_path / "fila")
+
+    doc = pymupdf.open(str(caminho))
+    try:
+        texto = "".join(doc.load_page(n).get_text() for n in range(doc.page_count))
+    finally:
+        doc.close()
+    # a fonte liga "fi" num caractere só (U+FB01), e o texto extraído sai
+    # com ele: procurar "confirma" no PDF não acha nada
+    texto = texto.replace("ﬁ", "fi").replace("ﬂ", "fl")
+    assert "A máquina confirma a impressão" in texto
+    assert "2 passada(s)" in texto
+    assert "33 min de máquina" in texto
+    assert "2,39 × 3,78 m" in texto or "2,39 × 3,77 m" in texto
+    assert "ajustou o tamanho dentro do RIP" in texto, "divergência de medida tem que estar escrita"
+
+
+def test_tempo_de_maquina_legivel():
+    assert rp._tempo_de_maquina(0) is None
+    assert rp._tempo_de_maquina(767) == "13 min"
+    assert rp._tempo_de_maquina(4580) == "1h16"

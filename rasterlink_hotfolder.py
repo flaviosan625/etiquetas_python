@@ -55,9 +55,11 @@ import json
 import os
 import pathlib
 import platform
+import re
 import shutil
 import sys
 import time
+import xml.etree.ElementTree as ElementTree
 
 # Pasta comum dentro do OneDrive — existe em qualquer máquina que
 # tenha o OneDrive dessa conta sincronizado, por isso usa Path.home()
@@ -252,6 +254,70 @@ NOME_SUBPASTA_REGISTRO = "_registro"
 DIAS_RETENCAO_ENVIADOS = 15
 
 
+# --- o ripado da DOCAN, na máquina dela -----------------------------
+#
+# Desde 03/10/2026 o SAi ripa no PC da impressora, e o .prt nasce lá. O
+# diagnóstico daquele dia achou 327 GB parados num disco único de 1,8 TB:
+# seis arquivos, um deles de 88 GB. Encher o disco do Windows trava a
+# máquina inteira — com o RIP junto.
+#
+# Três dias é decisão dele (03/10/2026): tempo de reimprimir se a peça
+# sair com defeito, sem encher o disco.
+DIAS_RETENCAO_RIPADOS = 3
+
+# Onde o .prt cai naquela máquina. Mais de um caminho porque o destino é
+# a PORTA do setup no SAi, e trabalho antigo reenviado grava no destino
+# velho (mesma história do separar_ripados). Pasta que não existe é
+# pulada em silêncio — no PC do RIP nenhuma delas existe.
+PASTAS_RIPADOS_LOCAIS = (
+    pathlib.Path.home() / "Desktop" / "RIPADOS",
+    pathlib.Path("C:/RIPADOS"),
+    pathlib.Path("D:/RIPADOS"),
+)
+
+# Abaixo disto o disco vira problema de gente, não de log. Um .prt
+# acompanha a ÁREA impressa — o maior achado em 03/10/2026 tinha 88 GB —,
+# então 150 GB é menos de dois arquivos grandes de folga.
+ESPACO_MINIMO_RIPADOS_GB = 150
+
+# --- o programa da impressora (BYHX Printer Manager) ----------------
+#
+# Até aqui o sistema provava o que foi ENTREGUE à máquina. O que a
+# máquina IMPRIMIU, só o programa dela sabe — e ele guarda em dois
+# arquivos, que dizem coisas diferentes e se completam (lidos de verdade
+# em 03/10/2026, na máquina DOCAN):
+#
+#   PrintedArea.Log   uma linha por PASSADA, append-only desde janeiro:
+#                     hora, arquivo, início, duração e percentual. É a
+#                     única prova de que o .prt rodou na máquina, e a
+#                     única fonte de TEMPO DE MÁQUINA de verdade.
+#   Joblist_His.xml   a lista de TRABALHOS, com status ('Printed' /
+#                     'Idle'), cópias e o tamanho em POLEGADAS — 196,96
+#                     x 19,69 pol do arquivo "5.00X0.50M", que é o
+#                     tamanho real, não o palpite do nome.
+#
+# A pegadinha: a lista de trabalhos é uma JANELA, não um arquivo. Tinha
+# 13 trabalhos e vai rolando — trabalho antigo simplesmente sai. Por
+# isso copiar o arquivo não serve de histórico: o que não for anotado
+# entre duas passadas se perde. Quem guarda é o registro (ver
+# registrar_impressoes), e a cópia fica só como diagnóstico.
+#
+# O campo de ÁREA do log está zerado nos registros recentes (todas as 31
+# linhas de setembro/2026), então m² nunca sai dele: sai do tamanho em
+# polegadas do trabalho, ou do nome do arquivo no PC principal.
+PASTA_BYHX = pathlib.Path("C:/PrinterManager")
+ARQUIVOS_BYHX = ("Joblist_His.xml", "PrintedArea.Log")
+
+# O registro do que IMPRIMIU, irmão de _registro (o do que foi
+# entregue). Separado de propósito: quem lê _registro conta uma linha
+# como uma entrega, e misturar as duas coisas dobraria o m² do
+# relatório.
+NOME_SUBPASTA_IMPRESSAO = "_impressao"
+# A cópia crua dos dois arquivos, pra conseguir olhar da outra máquina o
+# que o programa da impressora diz. Diagnóstico, não histórico.
+NOME_PASTA_BYHX = "_byhx"
+
+
 # --- sinal de vida -------------------------------------------------
 #
 # Um arquivinho na raiz da fila, escrito pela máquina do RIP a cada
@@ -433,6 +499,17 @@ def registrar_sinal_de_vida(pasta_fila=None, resultado_por_maquina=None, agora=N
 # prova de que ficou.
 CAMINHO_REGISTRO_PENDENTE = pathlib.Path(__file__).resolve().parent / "registro_pendente.jsonl"
 
+# A mesma fila, pro registro do que IMPRIMIU. Arquivo separado porque
+# são leituras independentes: o programa da impressora pode estar
+# fechado sem que isso atrapalhe uma entrega, e vice-versa.
+CAMINHO_IMPRESSAO_PENDENTE = pathlib.Path(__file__).resolve().parent / "impressao_pendente.jsonl"
+
+# Até onde o PrintedArea.Log já foi lido. O log é append-only e em
+# ordem, então guardar a hora da última linha anotada basta pra não
+# reler 446 linhas por minuto. Não é a trava contra linha repetida —
+# essa é a chave do registro — é só economia.
+CAMINHO_MARCA_BYHX = pathlib.Path(__file__).resolve().parent / "byhx_lido.json"
+
 # Por quantos dias a fila local continua CONFERINDO uma linha que já
 # entrou no registro, antes de largar ela de vez.
 #
@@ -446,8 +523,16 @@ DIAS_GUARDA_REGISTRO = 20
 
 
 def _chave_do_registro(dados):
-    """Identidade de uma linha do registro: quando + máquina + arquivo."""
-    return (dados.get("quando"), dados.get("maquina"), dados.get("arquivo"))
+    """
+    Identidade de uma linha do registro: quando + máquina + arquivo.
+
+    O 'tipo' entra no fim por causa do registro de impressão, onde um
+    trabalho e uma passada podem cair na mesma hora com o mesmo nome.
+    Linha de ENTREGA não tem tipo, então a chave dela não mudou — e
+    isso importa: é por essa chave que a fila local reconhece o que já
+    gravou, inclusive o que foi escrito por uma versão anterior.
+    """
+    return (dados.get("quando"), dados.get("maquina"), dados.get("arquivo"), dados.get("tipo"))
 
 
 def _entrada_do_diario(item):
@@ -519,9 +604,13 @@ def _guardar_pendentes(entradas, caminho=None):
         return False
 
 
-def _arquivo_do_mes(quando_iso, pasta_relatorios=None):
-    """O .jsonl do mês a que a linha pertence ('2026-09-16T21:02:06' -> 2026-09.jsonl)."""
-    pasta = pathlib.Path(pasta_relatorios or PASTA_RELATORIOS) / NOME_SUBPASTA_REGISTRO
+def _arquivo_do_mes(quando_iso, pasta_relatorios=None, subpasta=None):
+    """
+    O .jsonl do mês a que a linha pertence ('2026-09-16T21:02:06' ->
+    2026-09.jsonl). 'subpasta' escolhe qual registro: o de entregas
+    (padrão) ou o de impressões.
+    """
+    pasta = pathlib.Path(pasta_relatorios or PASTA_RELATORIOS) / (subpasta or NOME_SUBPASTA_REGISTRO)
     return pasta / f"{str(quando_iso)[:7]}.jsonl"
 
 
@@ -550,7 +639,8 @@ def _data_da_linha(linha):
         return None
 
 
-def conciliar_registro(pasta_relatorios=None, caminho_pendente=None, logger=None, agora=None):
+def conciliar_registro(pasta_relatorios=None, caminho_pendente=None, logger=None, agora=None,
+                      subpasta=None, assunto="entrega(s)"):
     """
     Confere a fila local contra o registro do OneDrive: reescreve o que
     não estiver lá e só então marca a linha como conferida.
@@ -581,7 +671,7 @@ def conciliar_registro(pasta_relatorios=None, caminho_pendente=None, logger=None
 
     for entrada in entradas:
         linha = entrada["linha"]
-        destino = _arquivo_do_mes(linha.get("quando"), pasta_relatorios)
+        destino = _arquivo_do_mes(linha.get("quando"), pasta_relatorios, subpasta)
         if destino not in chaves_por_mes:
             chaves_por_mes[destino] = {_chave_do_registro(d) for d in _ler_jsonl(destino)}
         chaves = chaves_por_mes[destino]
@@ -608,7 +698,7 @@ def conciliar_registro(pasta_relatorios=None, caminho_pendente=None, logger=None
     if pendentes and logger:
         logger(
             "warn",
-            f"{pendentes} entrega(s) ainda não entraram no registro de produção — ficaram "
+            f"{pendentes} {assunto} ainda não entraram no registro de produção — ficaram "
             f"guardadas em '{caminho_pendente.name}' e o vigia tenta de novo na próxima passada.",
         )
     return {"gravadas": gravadas, "pendentes": pendentes}
@@ -1698,12 +1788,13 @@ def principal_uma_vez(posto=None):
         try:
             resultado.update(vigiar_fila_uma_vez(logger=logger_arquivo, posto=posto))
         finally:
-            # DENTRO da trava (duas passadas nunca movem o mesmo ripado) e
-            # ANTES de salvar os avisos (a deduplicação precisa ir pro disco).
-            # Nunca dentro de vigiar_fila_uma_vez: teste chama aquela com o
-            # posto do SAi e passaria a mexer no D: de verdade.
+            # DENTRO da trava (duas passadas nunca movem nem apagam o mesmo
+            # ripado) e ANTES de salvar os avisos (a deduplicação precisa ir
+            # pro disco). Nunca dentro de vigiar_fila_uma_vez: teste chama
+            # aquela com o posto do SAi e passaria a mexer no D: de verdade,
+            # e aqui agora tem coisa que APAGA arquivo.
             if posto == POSTO_SAI:
-                _separar_ripados_da_docan()
+                _cuidar_do_ripado()
 
     try:
         _rodar_protegido(passada, posto=posto)
@@ -1731,6 +1822,397 @@ def _avisar_uma_vez(chave, texto, logger):
         logger("warn", texto)
     else:
         _ultimo_erro_por_arquivo.pop(chave, None)
+
+
+# A linha do PrintedArea.Log, como o programa da impressora escreve:
+#
+#   [2026-09-30 20:23:11.236][TID 8852] D:\1UN LONA...prt; 9/30/2026-8:10 PM; 0:12:47; 0; 0 m2
+#    ^-- fim da passada                 ^-- o ripado        ^-- comeco       ^-- durou ^-% ^-area
+#
+# O percentual e a área vêm ZERADOS nas 31 linhas de setembro/2026 — e
+# vinham preenchidos em janeiro. Então nenhum dos dois serve de número:
+# o que presta aqui é a DURAÇÃO e o fato de a linha existir. m² sai do
+# tamanho do trabalho (em polegadas) ou do nome do arquivo.
+#
+# As linhas velhas têm caminho em chinês (de quando a máquina foi
+# montada): por isso a leitura é com errors="replace", e por isso nada
+# aqui tenta entender o nome.
+_LINHA_IMPRESSA = re.compile(
+    r"^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})[^\]]*\]\[[^\]]*\]\s*"
+    r"(.+?);\s*([^;]+);\s*(\d+):(\d+):(\d+);\s*(\d+);\s*([\d.]+)"
+)
+
+# Polegada em metro. O programa da impressora guarda o tamanho do
+# trabalho em POLEGADAS (196,961426 x 19,6888885 no arquivo que se chama
+# "5.00X0.50M" — confere: 5,003 x 0,500 m).
+METRO_POR_POLEGADA = 0.0254
+
+
+def _maquina_da_pasta(pasta, maquinas=None):
+    """
+    De qual máquina é um ripado, lido do NOME DA PASTA onde ele está
+    ("D:\\RIPADOS\\DOCAN R5200" -> "DOCAN R5200"), ou None.
+
+    None não é defeito: na máquina da DOCAN o SAi ainda grava os dois
+    juntos (C:\\Ripados), e aí quem sabe de qual máquina é o arquivo é o
+    PC principal, que tem a ENTREGA registrada com nome e máquina.
+    Chutar aqui seria número deduzido se passando por declarado.
+    """
+    nome = pathlib.PurePath(pasta).name
+    for maquina in (MAQUINAS if maquinas is None else maquinas):
+        if maquina.lower() == nome.lower():
+            return maquina
+    return None
+
+
+def _fato_do_ripado(caminho, maquinas=None):
+    """O que se sabe de um .prt só pelo caminho: nome, pasta e máquina."""
+    partes = pathlib.PurePath(caminho)
+    return {
+        "arquivo": partes.name,
+        "pasta": str(partes.parent),
+        "maquina": _maquina_da_pasta(partes.parent, maquinas),
+    }
+
+
+def passadas_do_byhx(pasta_byhx=None, desde=None, maquinas=None):
+    """
+    Uma entrada por PASSADA na máquina, lida do PrintedArea.Log: quando
+    terminou, qual ripado, de que pasta e quantos segundos levou.
+
+    É a única prova de que o .prt rodou de verdade — e a única fonte de
+    tempo de máquina que não é estimativa. O log é append-only e em
+    ordem; 'desde' (texto "AAAA-MM-DD HH:MM:SS") descarta o que já foi
+    anotado, pra não reler 446 linhas por minuto.
+
+    Linha que não casa com o formato é pulada em silêncio: o arquivo é
+    de outro programa, pode mudar de formato sem avisar, e isso nunca
+    pode derrubar a passada do vigia.
+    """
+    caminho = pathlib.Path(pasta_byhx or PASTA_BYHX) / "PrintedArea.Log"
+    try:
+        texto = caminho.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+
+    passadas = []
+    for linha in texto.splitlines():
+        achado = _LINHA_IMPRESSA.match(linha)
+        if not achado:
+            continue
+        quando, ripado, comeco, horas, minutos, segundos, pct, _area = achado.groups()
+        if desde and quando <= desde:
+            continue
+        if not ripado.lower().endswith(".prt"):
+            continue
+        dados = {"tipo": "passada", "quando": quando.replace(" ", "T")}
+        dados.update(_fato_do_ripado(ripado, maquinas))
+        dados["segundos"] = int(horas) * 3600 + int(minutos) * 60 + int(segundos)
+        dados["comeco_declarado"] = comeco.strip()
+        dados["pct"] = int(pct)
+        passadas.append(dados)
+    return passadas
+
+
+def trabalhos_do_byhx(pasta_byhx=None, maquinas=None):
+    """
+    Os trabalhos da lista do programa da impressora: status ("Printed",
+    "Idle"), hora, cópias e o TAMANHO EM METROS.
+
+    O tamanho é o número que mais vale aqui, porque é a medida que a
+    MÁQUINA usou — não a do nome do arquivo, que já veio errada vezes
+    demais. Vem em polegadas e é convertido.
+
+    ATENÇÃO: esta lista é uma JANELA, não um histórico. Tinha 13
+    trabalhos em 03/10/2026 e vai rolando; trabalho antigo sai. Quem
+    guarda é o registro (registrar_impressoes) — copiar o arquivo não
+    serve, perde o que saiu entre duas passadas.
+
+    O XML não tem nome de campo: é uma lista de <string>/<int>/<float>
+    na ordem em que o programa serializou. Por isso a leitura é por TAG
+    e não por posição (o primeiro <dateTime>, os dois primeiros <float>
+    como largura e altura) — se o programa mudar de versão e acrescentar
+    campo no meio, isto continua achando o que importa, e o que não
+    achar vira trabalho pulado, nunca exceção.
+    """
+    caminho = pathlib.Path(pasta_byhx or PASTA_BYHX) / "Joblist_His.xml"
+    try:
+        texto = caminho.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    # o arquivo começa com um <Hash> ANTES do <JobList>, ou seja, tem
+    # dois elementos de raiz — nenhum leitor de XML aceita isso
+    corte = texto.find("<JobList>")
+    if corte < 0:
+        return []
+    try:
+        raiz = ElementTree.fromstring(texto[corte:])
+    except ElementTree.ParseError:
+        return []
+
+    trabalhos = []
+    for job in raiz:
+        campos = {}
+        for filho in job:
+            campos.setdefault(filho.tag, []).append((filho.text or "").strip())
+        caminhos = [v for v in campos.get("string", []) if ":" in v or "\\" in v]
+        quando = (campos.get("dateTime") or [""])[0][:19]
+        if not caminhos or not quando:
+            continue
+        dados = {"tipo": "trabalho", "quando": quando}
+        dados.update(_fato_do_ripado(caminhos[0], maquinas))
+        dados["status"] = (campos.get("JobStatus") or [""])[0]
+        try:
+            dados["copias"] = int((campos.get("int") or ["1"])[0])
+        except ValueError:
+            dados["copias"] = 1
+        polegadas = campos.get("float", [])
+        if len(polegadas) >= 2:
+            try:
+                dados["tamanho_m"] = [round(float(polegadas[0]) * METRO_POR_POLEGADA, 3),
+                                      round(float(polegadas[1]) * METRO_POR_POLEGADA, 3)]
+            except ValueError:
+                pass
+        trabalhos.append(dados)
+    return trabalhos
+
+
+def ripados_ja_impressos(pasta_byhx=None):
+    """
+    Os nomes de .prt (minúsculos) que o programa da impressora registra
+    como impressos. Vazio quando o programa não está nesta máquina — e
+    aí a faxina não apaga nada, que é o lado seguro.
+
+    É o que separa "já saiu na máquina" de "está esperando pra sair".
+    Apagar por data sozinha jogaria fora ripado que ainda não rodou, e
+    ripar de novo custa horas de máquina: os 302 GB achados em
+    03/10/2026 eram justamente isso — seis arquivos de 02/10 que o
+    programa nunca imprimiu.
+    """
+    nomes = {d["arquivo"].lower() for d in passadas_do_byhx(pasta_byhx)}
+    nomes.update(d["arquivo"].lower() for d in trabalhos_do_byhx(pasta_byhx)
+                 if d.get("status") == "Printed")
+    return nomes
+
+
+def faxina_dos_ripados(pastas=None, dias=None, logger=None, agora=None, impressos=None):
+    """
+    Apaga o .prt que JÁ IMPRIMIU e passou do prazo, nas pastas locais de
+    ripado. Devolve (quantos, bytes liberados).
+
+    Três travas, porque apagar arquivo de 88 GB não tem desfazer:
+      - só .prt, e só dentro das pastas declaradas;
+      - só o que o programa da impressora diz que imprimiu. Sem essa
+        lista (programa ausente, log ilegível) não apaga NADA;
+      - o que está velho e NÃO imprimiu fica onde está e vira aviso uma
+        vez — pode ser trabalho esperando material chegar.
+    """
+    logger = logger or logger_arquivo
+    agora = agora or datetime.datetime.now()
+    dias = DIAS_RETENCAO_RIPADOS if dias is None else dias
+    limite = agora - datetime.timedelta(days=dias)
+    impressos = ripados_ja_impressos() if impressos is None else impressos
+    if not impressos:
+        return 0, 0
+
+    apagados, bytes_livres, parados = 0, 0, []
+    for pasta in (PASTAS_RIPADOS_LOCAIS if pastas is None else pastas):
+        pasta = pathlib.Path(pasta)
+        if not pasta.is_dir():
+            continue
+        for arquivo in pasta.rglob("*.prt"):
+            if not arquivo.is_file():
+                continue
+            try:
+                estado = arquivo.stat()
+            except OSError:
+                continue
+            if datetime.datetime.fromtimestamp(estado.st_mtime) >= limite:
+                continue
+            if arquivo.name.lower() not in impressos:
+                parados.append(arquivo)
+                continue
+            try:
+                arquivo.unlink()
+            except OSError as erro:
+                logger("warn", f"Não consegui apagar o ripado '{arquivo.name}': {erro}")
+                continue
+            apagados += 1
+            bytes_livres += estado.st_size
+
+    if apagados:
+        logger("ok", f"{apagados} ripado(s) impresso(s) e com mais de {dias} dias apagado(s) — "
+                     f"{bytes_livres / (1024 ** 3):.1f} GB liberados.")
+    for arquivo in parados:
+        _avisar_uma_vez(
+            f"~ripado_parado~{arquivo}",
+            f"'{arquivo.name}' está há mais de {dias} dias em '{arquivo.parent}' e o programa da "
+            f"impressora não registra que ele imprimiu — não apaguei. Se já não serve, apague na mão.",
+            logger)
+    return apagados, bytes_livres
+
+
+def avisar_disco_cheio(pastas=None, logger=None, minimo_gb=None):
+    """
+    Avisa uma vez quando sobra pouco disco onde mora o ripado.
+
+    A faxina não resolve tudo sozinha: ela só apaga o que já imprimiu, e
+    um .prt acompanha a ÁREA impressa (88 GB numa lona, medidos em
+    03/10/2026). Disco do Windows cheio trava a máquina inteira, com o
+    RIP junto — e esse é o tipo de coisa que ninguém descobre olhando log.
+    """
+    logger = logger or logger_arquivo
+    minimo_gb = ESPACO_MINIMO_RIPADOS_GB if minimo_gb is None else minimo_gb
+    for pasta in (PASTAS_RIPADOS_LOCAIS if pastas is None else pastas):
+        pasta = pathlib.Path(pasta)
+        if not pasta.is_dir():
+            continue
+        try:
+            livre_gb = shutil.disk_usage(pasta).free / (1024 ** 3)
+        except OSError:
+            continue
+        unidade = pasta.anchor or str(pasta)
+        _avisar_uma_vez(
+            f"~disco~{unidade.lower()}",
+            f"Sobraram {livre_gb:.0f} GB em {unidade} e o ripado mora aí. Disco cheio para a "
+            f"máquina inteira: apague ripado que não serve ou mude a saída do SAi de disco."
+            if livre_gb < minimo_gb else None,
+            logger)
+
+
+def _ler_marca_byhx(caminho=None):
+    """Até onde o log do programa da impressora já foi lido. {} quando não dá pra ler."""
+    try:
+        with open(pathlib.Path(caminho or CAMINHO_MARCA_BYHX), encoding="utf-8") as f:
+            marca = json.load(f)
+        return marca if isinstance(marca, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _guardar_marca_byhx(marca, caminho=None):
+    """Grava a marca. Falha em silêncio: na pior das hipóteses relê o log inteiro."""
+    caminho = pathlib.Path(caminho or CAMINHO_MARCA_BYHX)
+    try:
+        caminho.parent.mkdir(parents=True, exist_ok=True)
+        temporario = caminho.with_suffix(".json.tmp")
+        with open(temporario, "w", encoding="utf-8") as f:
+            json.dump(marca, f, ensure_ascii=False)
+        os.replace(temporario, caminho)
+        return True
+    except (OSError, TypeError, ValueError):
+        return False
+
+
+def registrar_impressoes(pasta_relatorios=None, pasta_byhx=None, logger=None, agora=None,
+                        caminho_pendente=None, caminho_marca=None, maquinas=None):
+    """
+    Anota no registro permanente o que a MÁQUINA imprimiu, lido do
+    programa dela. Devolve {'anotadas': n, 'pendentes': n}.
+
+    Vai pra "_impressao/AAAA-MM.jsonl", ao lado do registro de entregas
+    e nunca dentro dele: quem lê "_registro" conta cada linha como uma
+    entrega, e misturar as duas coisas dobraria o m² do relatório.
+
+    Guarda só FATO BRUTO, como o resto do registro — hora, ripado,
+    pasta, segundos de máquina, cópias e o tamanho em metros que o
+    programa informou. Material, m² e cliente são do PC principal, que
+    tem config.json e dimensoes.py.
+
+    Duas coisas entram:
+      - PASSADA: uma linha por vez que o ripado rodou na máquina;
+      - TRABALHO impresso: o tamanho e as cópias. Só "Printed" — um
+        trabalho "Idle" está na fila e não é prova de nada.
+
+    A linha nasce na fila LOCAL e só de lá vai pro OneDrive, igual à da
+    entrega: gravar sem erro não é prova (setembro/2026).
+    """
+    logger = logger or logger_arquivo
+    caminho_pendente = pathlib.Path(caminho_pendente or CAMINHO_IMPRESSAO_PENDENTE)
+    caminho_marca = pathlib.Path(caminho_marca or CAMINHO_MARCA_BYHX)
+    marca = _ler_marca_byhx(caminho_marca)
+
+    log = pathlib.Path(pasta_byhx or PASTA_BYHX) / "PrintedArea.Log"
+    try:
+        tamanho_log = log.stat().st_size
+    except OSError:
+        return {"anotadas": 0, "pendentes": 0}
+    # log que ENCOLHEU foi trocado ou zerado: a marca não vale mais, e
+    # reler tudo não duplica nada — quem garante isso é a chave do
+    # registro, não a marca
+    if tamanho_log < marca.get("bytes", 0):
+        marca = {}
+
+    passadas = passadas_do_byhx(pasta_byhx, marca.get("ate"), maquinas)
+    ja_anotados = set(marca.get("trabalhos", []))
+    trabalhos = [t for t in trabalhos_do_byhx(pasta_byhx, maquinas) if t.get("status") == "Printed"]
+    novos = [t for t in trabalhos if f"{t['quando']}|{t['arquivo']}" not in ja_anotados]
+
+    linhas = passadas + novos
+    if not linhas:
+        return {"anotadas": 0, "pendentes": 0}
+
+    for linha in linhas:
+        linha["pc"] = platform.node()
+    _guardar_pendentes([*_ler_diario(caminho_pendente), *linhas], caminho_pendente)
+    resultado = conciliar_registro(pasta_relatorios, caminho_pendente, logger, agora,
+                                   NOME_SUBPASTA_IMPRESSAO, "impressão(ões)")
+
+    marca["bytes"] = tamanho_log
+    if passadas:
+        marca["ate"] = passadas[-1]["quando"].replace("T", " ")
+    marca["trabalhos"] = [f"{t['quando']}|{t['arquivo']}" for t in trabalhos]
+    _guardar_marca_byhx(marca, caminho_marca)
+
+    logger("ok", f"Registro de impressão: {len(passadas)} passada(s) e {len(novos)} trabalho(s) "
+                 f"anotados.")
+    return {"anotadas": len(linhas), "pendentes": resultado.get("pendentes", 0)}
+
+
+def levar_historico_do_byhx(pasta_relatorios=None, pasta_byhx=None, logger=None):
+    """
+    Copia pro OneDrive os dois arquivos do programa da impressora, pra
+    dar pra OLHAR de outra máquina o que ele diz. Devolve o que copiou.
+
+    É diagnóstico, não histórico: o histórico quem guarda é
+    registrar_impressoes, porque a lista de trabalhos rola e perde o que
+    saiu entre duas passadas. Vai pra uma subpasta com o nome do PC —
+    um dia pode ter mais de uma máquina com programa próprio.
+
+    Só copia o que MUDOU (tamanho ou data): são 110 KB, mas uma passada
+    por minuto numa pasta sincronizada vira 158 MB por dia à toa.
+    """
+    logger = logger or logger_arquivo
+    origem = pathlib.Path(pasta_byhx or PASTA_BYHX)
+    if not origem.is_dir():
+        return []
+    destino = (pathlib.Path(pasta_relatorios or PASTA_RELATORIOS) / NOME_SUBPASTA_IMPRESSAO
+               / NOME_PASTA_BYHX / platform.node())
+    copiados = []
+    for nome in ARQUIVOS_BYHX:
+        de = origem / nome
+        if not de.is_file():
+            continue
+        para = destino / nome
+        try:
+            if para.is_file():
+                aqui, lado = de.stat(), para.stat()
+                if aqui.st_size == lado.st_size and int(aqui.st_mtime) == int(lado.st_mtime):
+                    continue
+            destino.mkdir(parents=True, exist_ok=True)
+            # mesma disciplina da hot folder: ninguém pode ver o arquivo
+            # pela metade — aqui quem não pode é o OneDrive
+            parcial = destino / ("~copiando~" + nome)
+            shutil.copy2(de, parcial)
+            os.replace(parcial, para)
+            copiados.append(nome)
+        except OSError as erro:
+            _avisar_uma_vez(f"~byhx~{nome}",
+                            f"Não consegui levar '{nome}' do programa da impressora pro "
+                            f"OneDrive: {erro}", logger)
+        else:
+            _avisar_uma_vez(f"~byhx~{nome}", None, logger)
+    return copiados
 
 
 def _separar_ripados_da_docan(logger=None, agora=None):
@@ -1768,6 +2250,34 @@ def _separar_ripados_da_docan(logger=None, agora=None):
     for chave in [k for k in _ultimo_erro_por_arquivo if k.startswith("~ripado~") and k not in atuais]:
         _ultimo_erro_por_arquivo.pop(chave, None)
 
+
+
+def _cuidar_do_ripado(logger=None):
+    """
+    O que o vigia faz no PC da impressora além de entregar a arte:
+    separar o ripado por máquina, anotar o que IMPRIMIU, levar o
+    histórico do programa dela pro OneDrive, varrer o ripado vencido e
+    avisar de disco apertado.
+
+    Cada coisa no seu try: o programa da impressora fechado, o log em
+    outro formato ou o OneDrive engasgado não podem impedir as outras —
+    e muito menos a entrega, que é o trabalho de verdade e já aconteceu
+    antes disto rodar.
+    """
+    logger = logger or logger_arquivo
+    for nome, tarefa in (
+        ("separar os ripados", _separar_ripados_da_docan),
+        ("anotar o que imprimiu", registrar_impressoes),
+        ("levar o histórico da impressora", levar_historico_do_byhx),
+        ("varrer o ripado vencido", faxina_dos_ripados),
+        ("conferir o disco", avisar_disco_cheio),
+    ):
+        try:
+            tarefa(logger=logger)
+        except Exception as erro:  # noqa: BLE001 - ver docstring
+            _avisar_uma_vez(f"~cuidar~{nome}", f"Não consegui {nome}: {erro}", logger)
+        else:
+            _avisar_uma_vez(f"~cuidar~{nome}", None, logger)
 
 def _avisar_fila_parada():
     """

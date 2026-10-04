@@ -50,6 +50,16 @@ def _isolar_pasta_relatorios(tmp_path, monkeypatch):
     monkeypatch.setattr(ripados_para_nuvem, "PASTA_RIPADOS", tmp_path / "_ripados")
     monkeypatch.setattr(separar_ripados, "CAMINHO_RIPLOG", tmp_path / "_riplog.html")
     monkeypatch.setattr(separar_ripados, "PASTA_RIPADOS_ANTIGA", tmp_path / "_ripados_antiga")
+    # E desde 03/10/2026 a mesma passada APAGA ripado vencido e le o
+    # programa da impressora. Sem isolar, um teste de posto SAi varreria
+    # o D:\RIPADOS e o Desktop\RIPADOS de verdade, que neste PC existem
+    # e tem ripado de trabalho em andamento. A fila local do registro de
+    # impressao e a marca de leitura moram ao lado do modulo, como as
+    # outras.
+    monkeypatch.setattr(rl_hf, "PASTAS_RIPADOS_LOCAIS", (tmp_path / "_ripados_locais",))
+    monkeypatch.setattr(rl_hf, "PASTA_BYHX", tmp_path / "_printermanager")
+    monkeypatch.setattr(rl_hf, "CAMINHO_IMPRESSAO_PENDENTE", tmp_path / "impressao_pendente.jsonl")
+    monkeypatch.setattr(rl_hf, "CAMINHO_MARCA_BYHX", tmp_path / "byhx_lido.json")
 
 
 def _maquinas(hot_folder, largura_util_m=None):

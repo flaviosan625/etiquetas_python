@@ -10,7 +10,8 @@ o mesmo `config.json` e o mesmo leitor de nome de arquivo:
 
 1. **Etiquetas / OS / checklist** — `main.py` → `gui.py` → `processamento.py`
 2. **Envio para as impressoras** — `producao.py` → `envio_impressao.py` → `rasterlink_hotfolder.py`
-3. **Comprovação do que foi produzido** — registro permanente → `relatorio_producao.py`
+3. **Comprovação do que foi produzido** — registro permanente → `relatorio_producao.py`,
+   cruzado com o que a máquina diz ter impresso (`_impressao`, lido do programa da impressora)
 4. **Corte na fresa CNC** — `corte_parametros.py` → gadget Lua dentro do Aspire
 5. **Recebimento das artes** — `gui_receber.py` → `origem_artes.py` → `receber_artes.py`
 
@@ -261,6 +262,52 @@ try/except, porque lá no PC do RIP esse módulo viaja sozinho e o resto do proj
 Ele mede o FATO — arquivo parado —, não a causa, e por isso serve igual pro vigia derrubado, pro
 OneDrive travado e pra hot folder sumida. Fila vazia não avisa nada, e o mesmo aviso não repete
 antes de uma hora: alarme que toca sessenta vezes por hora vira alarme que se aprende a ignorar.
+
+### O que a máquina imprimiu é outro registro
+
+Até 03/10/2026 o sistema provava o que foi **entregue** à máquina. O que ela **imprimiu** só o
+programa dela sabe — o BYHX Printer Manager, em `C:\PrinterManager`, na máquina da DOCAN. Ele
+guarda em dois arquivos, que dizem coisas diferentes:
+
+- **`PrintedArea.Log`** — uma linha por PASSADA, append-only desde janeiro: hora, ripado, início,
+  duração e percentual. É a única prova de que o `.prt` rodou, e a única fonte de **tempo de
+  máquina** que não é estimativa.
+- **`Joblist_His.xml`** — os trabalhos, com status (`Printed`/`Idle`), cópias e o tamanho em
+  **polegadas**: 196,96 × 19,69 pol no arquivo chamado `5.00X0.50M` (= 5,003 × 0,500 m). É a
+  medida que a máquina usou de verdade.
+
+Três coisas que a leitura descobriu e que mudam o desenho:
+
+- **A lista de trabalhos é uma JANELA, não um histórico** — tinha 13 e vai rolando. Então copiar o
+  arquivo pro OneDrive não serve de comprovação: o que sair entre duas passadas se perde. Quem
+  guarda é `registrar_impressoes`, que anota linha por linha em `_impressao/AAAA-MM.jsonl` — fila
+  local primeiro, mesma disciplina do registro de entregas. A cópia dos dois arquivos continua
+  indo, mas como **diagnóstico**.
+- **`_impressao` nunca pode cair dentro de `_registro`**: quem lê `_registro` conta cada linha como
+  uma entrega, e misturar dobraria o m² do relatório do dia.
+- **A área do log está zerada nos registros recentes** (todas as 31 linhas de setembro/2026; em
+  janeiro vinha preenchida), e o percentual também. Então m² nunca sai dali: sai do tamanho em
+  polegadas ou do nome do arquivo. O que presta no log é a **duração** e o fato da linha existir.
+
+No relatório, `provas_de_impressao` casa pelo nome do ripado sem extensão, em duas voltas (exato,
+depois o que começa com ele e cresceu até 12 letras — o SAi acrescenta `_1`, `_2`, ` U_impress`).
+Só conta passada do horário da entrega pra frente, senão a entrega de hoje herdaria a impressão de
+ontem. E **ausência de prova nunca vira aviso**: só as DOCAN têm programa que registra, as Mimaki
+não — acusar "não imprimiu" num documento que o cliente lê seria mentira. Quando a medida da
+máquina difere da da linha, isso sai **escrito** (`1UN LONA ... 3.15X3.77M` imprimiu 2,39 × 3,77:
+quem ripou ajustou lá dentro, que é o combinado — "DOCAN só entrega").
+
+**A faxina do ripado só apaga o que o programa diz que imprimiu.** Em 03/10/2026 havia 327 GB de
+`.prt` parados num disco único de 1,8 TB (um arquivo de 88 GB) — e nenhum deles estava no log nem
+na lista: foram ripados em 02/10 e nunca rodaram. Apagar por data sozinha jogaria fora trabalho que
+ainda vai sair, e ripar de novo custa horas de máquina. Então: só `.prt`, só nas pastas declaradas
+(`PASTAS_RIPADOS_LOCAIS`), só o que imprimiu, e **sem a lista não apaga nada**. Três dias é decisão
+dele. O que está velho e não imprimiu vira aviso uma vez, e disco abaixo de
+`ESPACO_MINIMO_RIPADOS_GB` também — disco cheio trava a máquina com o RIP junto.
+
+Tudo isso roda em `_cuidar_do_ripado`, no fim da passada do posto do SAi e **fora** de
+`vigiar_fila_uma_vez` (teste chama aquela com o posto do SAi e passaria a apagar arquivo de
+verdade). Cada tarefa no seu `try`: programa fechado ou log em outro formato não param as outras.
 
 ### Entrega atômica na hot folder
 

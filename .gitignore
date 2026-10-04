@@ -25,6 +25,13 @@ maquina_sai/rodar_uma_vez.bat
 maquina_sai/tarefa_*.xml
 maquina_rip/tarefa_*.xml
 
+# Transcricao do que o instalador/atualizador disse na maquina onde
+# rodou. E diagnostico daquele PC, e tem nome de maquina no arquivo.
+maquina_docan/instalacao_*.txt
+maquina_docan/atualizacao_*.txt
+maquina_docan/diagnostico_*.txt
+maquina_docan/_byhx/
+
 # Credencial e token do Google Drive - NUNCA versionar
 .google/
 
