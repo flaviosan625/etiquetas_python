@@ -111,7 +111,7 @@ def test_a_largura_vem_do_cadastro_da_maquina():
     maquina e valem aqui. Foi assim que a correcao de 5,00 pra 5,20 na
     DOCAN (04/10/2026) chegou na montagem sem eu mexer nela.
     """
-    assert montagem.largura_util("DOCAN R5200") == 5.20
+    assert montagem.largura_util("DOCAN R5200") == 5.04
     assert montagem.largura_util("SWJ320A") == 3.24
     assert montagem.largura_util("UJV 100 UNY CV") == 1.27
     assert montagem.mesa("DOCAN H2525") == (2.50, 2.50)
@@ -214,7 +214,7 @@ def test_a_folha_sai_na_largura_da_maquina(pasta):
     resultado = montagem.montar_pasta(pasta, raiz_clientes=pasta.parent / "x")
 
     with pymupdf.open(str(resultado["folhas"][0]["arquivo"])) as doc:
-        assert round(doc.load_page(0).rect.width / PT_M, 2) == 5.20
+        assert round(doc.load_page(0).rect.width / PT_M, 2) == 5.04
 
 
 def test_os_originais_saem_da_pasta_depois_de_montados(pasta):
@@ -297,7 +297,7 @@ def test_o_json_ao_lado_guarda_as_pecas(pasta):
         encoding="utf-8"))
     assert len(ficha["pecas"]) == 2
     assert ficha["area_pecas_m2"] == 2.0
-    assert ficha["folha_m"][0] == 5.2
+    assert ficha["folha_m"][0] == 5.04
     assert ficha["pecas"][0]["posicao_m"] and ficha["pecas"][0]["medida_m"] == [1.0, 1.0]
 
 
@@ -877,3 +877,36 @@ def test_a_margem_da_maquina_vale_no_encaixe(pasta):
     # a margem entra na hora de desenhar
     assert montagem.posicao_na_folha(postas_docan[0], 0.02)[0] == 0.02
     assert montagem.posicao_na_folha(postas_swj[0], 0.05)[0] == 0.05
+
+
+def test_a_letra_do_rotulo_nao_cresce_com_a_peca(pasta):
+    """
+    "Nao quero os nomes grandes" (04/10/2026). Antes o rotulo usava o
+    MAIOR tamanho que coubesse, e numa peca larga isso dava 20 mm -- letra
+    de 2 cm de altura. Agora o tamanho e o pedido, e so encolhe.
+    """
+    arte(pasta, "1UN LONA IMPRESSA 4.00X2.00M_VIBRA_PAINEL_GRANDE.pdf", 4.00, 2.00)
+
+    resultado = montagem.montar_pasta(pasta, raiz_clientes=pasta.parent / "x")
+
+    with pymupdf.open(str(resultado["folhas"][0]["arquivo"])) as doc:
+        tamanhos = [span["size"] / PT_M * 1000
+                    for bloco in doc.load_page(0).get_text("dict")["blocks"]
+                    for linha in bloco.get("lines", [])
+                    for span in linha["spans"]
+                    if "PAINEL_GRANDE" in span["text"]]
+    assert tamanhos, "cade o rotulo"
+    assert max(tamanhos) <= montagem.ROTULO_LETRA_MM + 0.1, \
+        f"a letra saiu com {max(tamanhos):.1f} mm numa peca larga"
+
+
+def test_a_largura_da_docan_fecha_5_metros_redondos_de_arte():
+    """
+    "A maquina DOCAN pode mudar para 504cm de largura; com isso,
+    descontando os 2 cm de cada lado de folga, os arquivos finais ficam
+    com 500cm de largura" (04/10/2026).
+    """
+    largura = montagem.largura_util("DOCAN R5200")
+    margem = montagem.margem("DOCAN R5200")
+
+    assert round(largura - 2 * margem, 2) == 5.00

@@ -152,20 +152,25 @@ MAQUINAS = {
     # inventada: é ali que o Production Manager fica olhando sozinho, e
     # foi por ali que o teste de 2026-09-07 passou de ponta a ponta.
     #
-    # 5,20 m é a ÁREA ÚTIL da máquina — correção dele em 04/10/2026:
-    # "se a máquina é uma DOCAN 5200 ela tem 5 metros e 20 centímetros de
-    # área útil, ou seja arte de 5 metros vai tranquilamente".
+    # 5,04 m, escolha dele no fim de 04/10/2026: *"a máquina DOCAN pode
+    # mudar para 504cm de largura; com isso, descontando os 2 cm de cada
+    # lado de folga, os arquivos finais ficam com 500cm de largura"*.
     #
-    # Aqui estava 5,00, por uma leitura mal interpretada: o BYHX mostrava
-    # `Media/Width = 5000.00 mm`, e eu li isso como o limite da máquina.
-    # Era o ROLO CARREGADO naquele dia. Os dois fatos convivem: a máquina
-    # imprime 5,20 e naquele momento havia uma bobina de 5,00 montada.
-    # Antes de usar número de tela de máquina como limite, confira se não
+    # É um número de TRABALHO, não o limite físico. A máquina faz 5,20 —
+    # ele mesmo corrigiu isso mais cedo no mesmo dia, quando aqui estava
+    # 5,00 por leitura errada minha (o BYHX mostrava `Media/Width =
+    # 5000.00 mm` e eu li como limite da máquina; era o ROLO CARREGADO
+    # naquele dia). Os 5,04 existem pra a montagem fechar em 5,00
+    # redondos de arte depois das bordas de 2 cm.
+    #
+    # ANTES DE USAR NÚMERO DE TELA DE MÁQUINA COMO LIMITE, confira se não
     # é a mídia do momento.
     #
-    # O que isso custa, e é a mesma consequência já aceita logo abaixo:
-    # com um rolo mais estreito montado, o aviso de "não cabe" fica mais
-    # permissivo. Quem sabe que rolo está na máquina é quem está nela.
+    # O que o 5,04 custa, dito de frente: o aviso de "não cabe" passa a
+    # reclamar de arte entre 5,04 e 5,20, que a máquina imprimiria. É
+    # aviso, nunca barreira ("DOCAN só entrega"), e errar pro lado
+    # conservador é o certo. Querendo os dois números, é separar a
+    # largura da MONTAGEM da largura da MÁQUINA — hoje são a mesma.
     #
     # A DOCAN roda mais de um rolo, mas 'largura_util_m' aqui é UMA só,
     # a maior. Chegou a existir escolha de rolo por arquivo e o usuário
@@ -184,7 +189,7 @@ MAQUINAS = {
     # linhas velhas, que guardam o nome da máquina como texto.
     "DOCAN R5200": {
         "hot_folder": r"C:\Program Files\SAi\SAi Production Suite 22\Jobs and Settings\Jobs\Docan\Docan",
-        "largura_util_m": 5.20,
+        "largura_util_m": 5.04,
         "margem_montagem_m": 0.02,
         "montagem": True,
         "posto": POSTO_SAI,

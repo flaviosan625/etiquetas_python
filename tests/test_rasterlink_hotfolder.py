@@ -1664,19 +1664,21 @@ def test_posto_e_lido_das_duas_formas_de_escrever():
     assert rl_hf.posto_pedido(["x.py", "--posto=SAI"]) == rl_hf.POSTO_SAI
 
 
-def test_docan_esta_cadastrada_com_os_5_20_de_area_util():
+def test_docan_esta_cadastrada_com_os_5_04_que_fecham_5_00_de_arte():
     """
-    5,20 m, correcao dele em 04/10/2026: "se a maquina e uma DOCAN 5200
-    ela tem 5 metros e 20 centimetros de area util, ou seja arte de 5
-    metros vai tranquilamente".
+    5,04 m, escolha dele no fim de 04/10/2026: "a maquina DOCAN pode
+    mudar para 504cm de largura; com isso, descontando os 2 cm de cada
+    lado de folga, os arquivos finais ficam com 500cm de largura".
 
-    Aqui estava 5,00 porque o BYHX mostrava Media/Width = 5000.00 mm e eu
-    li aquilo como o limite da maquina -- era o ROLO CARREGADO naquele
-    dia. Este teste existe pra ninguem "corrigir" de volta olhando a tela
-    da maquina com outra bobina montada.
+    E numero de TRABALHO, nao limite fisico: a maquina faz 5,20 (ele
+    corrigiu isso no mesmo dia, quando aqui estava 5,00 por leitura
+    errada minha do BYHX -- era o rolo carregado, nao o limite). Este
+    teste existe pra ninguem "corrigir" de volta olhando a tela da
+    maquina com outra bobina montada.
     """
     hot, largura = rl_hf._config_maquina(rl_hf.MAQUINAS["DOCAN R5200"])
-    assert largura == 5.20
+    assert largura == 5.04
+    assert round(largura - 2 * rl_hf.MAQUINAS["DOCAN R5200"]["margem_montagem_m"], 2) == 5.00,         "o 5,04 so existe pra a montagem fechar em 5,00 redondos de arte"
     assert "SAi" in hot, "a hot folder da DOCAN e o Setup do SAi, nao uma pasta inventada"
     assert rl_hf._posto_da_maquina(rl_hf.MAQUINAS["DOCAN R5200"]) == rl_hf.POSTO_SAI
     for mimaki in ("UJV 100 UNY CV", "SWJ320A"):
@@ -1722,7 +1724,7 @@ def test_a_fila_nao_ganha_arquivo_alem_da_arte(tmp_path):
 
 def test_docan_esta_cadastrada_com_uma_largura_util_so():
     hot, largura = rl_hf._config_maquina(rl_hf.MAQUINAS["DOCAN R5200"])
-    assert largura == 5.20
+    assert largura == 5.04
     assert "rolos_m" not in rl_hf.MAQUINAS["DOCAN R5200"]
     assert "SAi" in hot, "a hot folder da DOCAN e o Setup do SAi, nao uma pasta inventada"
     assert rl_hf._posto_da_maquina(rl_hf.MAQUINAS["DOCAN R5200"]) == rl_hf.POSTO_SAI

@@ -77,7 +77,12 @@ NOME_SUBPASTA_PROBLEMAS = "_conferir"
 # podemos fazer anotação com nome do arquivo", 04/10/2026).
 FOLGA_M = 0.05            # entre peças: passa a lâmina E leva o nome
 MARGEM_M = 0.02           # a borda LATERAL da folha, que ninguém usa
-ROTULO_LARGURA_M = 0.20   # o nome, 20 cm, UMA linha
+ROTULO_LARGURA_M = 0.20   # largura MÍNIMA reservada pro nome
+# O tamanho da letra do rótulo, em milímetros. Era "o maior que couber",
+# e numa peça larga isso dava 20 mm — letra de 2 cm de altura, que ele
+# recusou em 04/10/2026: *"não quero os nomes grandes"*. 10 mm lê de pé,
+# com a peça no chão, sem roubar a atenção da arte.
+ROTULO_LETRA_MM = 10
 CABECALHO_M = 0.08        # faixa própria no topo: escrever sobre a arte estraga a peça
 MARCA_CORTE_M = 0.02      # o braço da cruz de corte
 
@@ -495,7 +500,10 @@ def _escrever_rotulo(pagina, x0_pt, base_pt, largura_m, texto, pymupdf,
     apareceram ampliando a prévia; por isso aqui ele ESTOURA em vez de
     deixar a peça sem identificação.
     """
-    tamanhos = (20, 18, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5)
+    # começa no tamanho PEDIDO e só desce: o rótulo não cresce porque a
+    # peça é larga. "Não quero os nomes grandes" (ele, 04/10/2026).
+    tamanhos = tuple(mm for mm in (20, 18, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5)
+                     if mm <= ROTULO_LETRA_MM) or (5,)
 
     def tentar(milimetros, conteudo):
         # 1,8x a letra, medido: o insert_textbox precisa da linha MAIS o

@@ -613,7 +613,7 @@ def test_relatorio_vale_para_a_docan(tmp_path):
 
     assert "DOCAN R5200" in por_maquina
     linha = por_maquina["DOCAN R5200"][0]
-    assert linha["largura_util"] == 5.20, "a area util da DOCAN 5200 e 5,20 m (correcao de 04/10/2026)"
+    assert linha["largura_util"] == 5.04, "5,04 de trabalho, que fecham 5,00 de arte na montagem"
     assert round(linha["area_m2"], 2) == 12.0
     assert not linha["nao_cabe"]
 
