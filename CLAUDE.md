@@ -271,11 +271,19 @@ sem explicação é peça que não vai ser produzida.
 de rótulo — a LATERAL_ESQUERDA e a DIREITA têm 0,90 × 2,40 as duas, e quem corta penduraria a arte
 errada na parede errada.
 
-**A linha de corte passa no MEIO da folga**, a 2,5 cm da arte — nos cantos da peça ela obrigaria a
-cortar rente, sem folga pra errar. Isso decide onde o nome pode ficar: **abaixo da linha**, nos
-2,5 cm que ficam com ESTA peça depois do refile. Escrito do outro lado, cada pedaço sairia com o nome
-do vizinho. Na peça da ponta a marca encosta na borda de 2 cm em vez de sair da folha. O nome é
-**uma linha só, 20 cm**, com o número na frente (`01  VIBRA_LONA_A_ESCALA_1-10`).
+**Não há marca de corte** (ele tirou em 04/10/2026, vendo a folha com elas: a folga de 5 cm entre as
+peças já diz onde a lâmina passa). Mas a **meia-folga continua mandando onde o nome fica**: ele tem
+que caber nos 2,5 cm que ficam com ESTA peça depois do refile — escrito do outro lado, cada pedaço
+sairia com o nome do vizinho.
+
+**O rótulo é o NOME DO ARQUIVO, exato**, numa linha só, encostado na peça. Antes eu escrevia só o
+fim do nome, e isso mostrava a SEGUNDA medida ao lado de uma peça feita na PRIMEIRA: dizia
+`1,50x0,25m` numa peça de 1,80 × 0,55 e parecia que o tamanho estava errado quando não estava. A
+largura do rótulo é a da **própria peça**, não 20 cm fixos — nome exato é longo, e em peça larga cabe
+inteiro com letra grande. `_escrever_rotulo` **encolhe antes de cortar** (cortar é último recurso) e
+recalcula a caixa a cada tamanho, ancorada por baixo, pra o texto descer junto com a letra. Dois
+números medidos ali: o `insert_textbox` precisa de **1,8×** a letra de altura (com 1,4× ele recusava
+tudo, devolvendo negativo sem desenhar), e o teto é a meia-folga menos a folguinha de 1 mm.
 
 **Peça maior que a bobina não some calada.** O encaixe simplesmente ignora o que não cabe, e aí a
 peça não é produzida e ninguém fica sabendo — o pior resultado possível aqui. Hoje ela vira recusa

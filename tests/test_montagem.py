@@ -456,22 +456,64 @@ def test_toda_peca_sai_com_NUMERO_e_NOME_na_folha(pasta):
     assert "VIBRA_RODAPE" in texto
 
 
-def test_o_rotulo_encolhe_ate_caber_e_nunca_some(pasta):
-    """Se nem encolhendo e cortando couber, e pra ESTOURAR -- rotulo que some e peca perdida."""
+def test_o_rotulo_ENCOLHE_antes_de_cortar(pasta):
+    """
+    O nome tem que sair EXATO, igual ao do arquivo (regra dele,
+    04/10/2026). Entao encolher vem antes de cortar: cortar e ultimo
+    recurso, e so quando nem a menor letra couber.
+    """
     import pymupdf as mupdf
 
     doc = mupdf.open()
-    pagina = doc.new_page(width=1000, height=500)
-    apertada = mupdf.Rect(0, 0, 300, 40)
+    pagina = doc.new_page(width=4000, height=1000)
+    nome = "07  1UN LONA IMPRESSA_1.97x3.20m_LONA_10_1,67x2,70m_loja_de_incoveniencia_vibra"
 
-    milimetros, escrito = montagem._escrever_rotulo(
-        pagina, apertada, "07  VIBRA_UM_NOME_BEM_COMPRIDO_DE_PECA")
+    milimetros, escrito = montagem._escrever_rotulo(pagina, 0, 900, 2.00, nome, mupdf)
+
+    assert escrito == nome, "cabendo, o nome sai inteiro -- nada de truncar por preguica"
     assert 0 < milimetros <= 20
-    assert escrito.startswith("07"), "o numero nunca pode ser o pedaco cortado"
+
+    # numa peca estreita demais ele corta, mas o NUMERO nunca e o cortado
+    _mm, curto = montagem._escrever_rotulo(pagina, 0, 500, 0.08, nome, mupdf)
+    assert curto.startswith("07") and curto.endswith("~")
 
     with pytest.raises(AssertionError):
-        montagem._escrever_rotulo(pagina, mupdf.Rect(0, 0, 4, 4), "07  QUALQUER")
+        montagem._escrever_rotulo(pagina, 0, 100, 0.002, nome, mupdf)
     doc.close()
+
+
+def test_o_rotulo_e_o_NOME_DO_ARQUIVO_exato(pasta):
+    """
+    Antes eu escrevia so o fim do nome, e isso mostrava a SEGUNDA medida
+    ao lado de uma peca feita na PRIMEIRA: o rotulo dizia "1,50x0,25m"
+    numa peca de 1,80 x 0,55 e parecia que o tamanho estava errado quando
+    nao estava (ele viu na folha de 04/10/2026).
+    """
+    nome = "1UN LONA IMPRESSA_1.80x0.55m_LONA_19.2_1,50x0,25m_vibra.pdf"
+    arte(pasta, nome, 1.80, 0.55)
+
+    resultado = montagem.montar_pasta(pasta, raiz_clientes=pasta.parent / "x")
+
+    with pymupdf.open(str(resultado["folhas"][0]["arquivo"])) as doc:
+        texto = doc.load_page(0).get_text()
+    assert nome[:-4] in texto, "o rotulo tem que ser o nome do arquivo, inteiro"
+
+
+def test_sem_marcas_de_corte(pasta):
+    """
+    Ele tirou em 04/10/2026, olhando a folha com elas: a folga de 5 cm
+    entre as pecas ja diz onde a lamina passa, e as cruzinhas so sujavam
+    a sobra.
+    """
+    arte(pasta, "1UN LONA IMPRESSA 2.00X1.00M_VIBRA_PAINEL.pdf", 2.00, 1.00)
+
+    resultado = montagem.montar_pasta(pasta, raiz_clientes=pasta.parent / "x")
+
+    with pymupdf.open(str(resultado["folhas"][0]["arquivo"])) as doc:
+        pagina = doc.load_page(0)
+        tracos = [d for d in pagina.get_drawings()
+                  if d["rect"].width < 5 or d["rect"].height < 5]
+    assert not tracos, "sobrou traco de marca de corte na folha"
 
 
 def test_a_folha_respeita_a_margem_de_2cm(pasta):
@@ -625,37 +667,27 @@ def test_arte_nunca_sai_da_folha(pasta):
             assert caixa.x0 >= -0.5 and caixa.y0 >= -0.5
 
 
-def test_as_marcas_de_corte_ficam_no_MEIO_da_folga(pasta):
+def test_a_meia_folga_continua_mandando_onde_o_rotulo_fica(pasta):
     """
-    Pedido dele (04/10/2026). Nos cantos da arte obrigariam a cortar
-    rente; no meio da folga cada peca fica com 2,5 cm de branco de cada
-    lado depois do refile.
+    As marcas de corte sairam, mas a meia-folga continua sendo a regua: o
+    rotulo tem que caber nos 2,5 cm que ficam com ESTA peca. Passando
+    disso, metade do nome sairia junto com a peca de cima no refile.
     """
     arte(pasta, "1UN LONA IMPRESSA 2.00X1.00M_VIBRA_PAINEL.pdf", 2.00, 1.00)
 
     resultado = montagem.montar_pasta(pasta, raiz_clientes=pasta.parent / "x")
     folha = resultado["folhas"][0]["arquivo"]
     ficha = json.loads(folha.with_suffix(".json").read_text(encoding="utf-8"))
-    x, y = ficha["pecas"][0]["posicao_m"]
-    largura, altura = ficha["pecas"][0]["medida_m"]
-    if ficha["pecas"][0]["girada"]:
-        largura, altura = altura, largura
+    _x, y = ficha["pecas"][0]["posicao_m"]
 
     with pymupdf.open(str(folha)) as doc:
         pagina = doc.load_page(0)
-        linhas = [d["rect"] for d in pagina.get_drawings() if d["rect"].height < 5]
-        # a marca de cima fica 2,5 cm ACIMA da arte
-        alvo = (y - montagem.RECUO_CORTE_M) * PT_M
-        assert any(abs(r.y0 - alvo) < 2 for r in linhas), \
-            "nenhuma marca horizontal a 2,5 cm acima da arte"
-
-
-# ---------- a arte nunca e esticada, em lugar nenhum ----------
-#
-# Regra dele de 04/10/2026: "quando for modificar arte para o tamanho que
-# esta no nome do arquivo precisa ser proporcional, nao pode ser esticado
-# apenas por um lado". A conferencia que vale e geometrica: medir o que
-# saiu no PDF e comparar a proporcao com a do arquivo de origem.
+        blocos = [pymupdf.Rect(b[:4]) for b in pagina.get_text("blocks")
+                  if b[4].strip() and "MONTAGEM" not in b[4]]
+    assert blocos, "cade o rotulo"
+    for bloco in blocos:
+        assert bloco.y1 <= y * PT_M + 1, "o rotulo invadiu a arte"
+        assert bloco.y0 >= (y - montagem.RECUO_CORTE_M) * PT_M - 1,             "o rotulo passou da meia-folga e sairia com a peca de cima"
 
 
 def test_a_proporcao_desenhada_e_a_do_ARQUIVO_nao_a_da_caixa(pasta):

@@ -475,28 +475,52 @@ def encaixar(pecas, largura_util_m, margem_m=None):
     return arte, comprimento
 
 
-def _escrever_rotulo(pagina, caixa, texto):
+def _escrever_rotulo(pagina, x0_pt, base_pt, largura_m, texto, pymupdf,
+                     altura_max_m=None):
     """
-    O rótulo numa LINHA só dentro da caixa, encolhendo a letra até caber
-    e, no limite, cortando o fim do texto. Devolve (milímetros, o que
-    ficou escrito).
+    O rótulo numa LINHA só, encostado por BAIXO em 'base_pt' (o topo da
+    arte). Devolve (milímetros, o que ficou escrito).
 
-    Uma linha é regra dele (04/10/2026): o rótulo mora nos 2,5 cm entre a
-    linha de corte e a arte, e duas linhas não cabem ali.
+    Encostar por baixo, e não por cima da faixa, é o que deixa o nome
+    junto da peça — ele pediu *"pode ser mais encostado na peça um
+    pouco"* (04/10/2026). A caixa é recalculada a cada tamanho de letra
+    justamente pra isso: o texto desce junto quando encolhe.
 
-    O insert_textbox NÃO avisa quando desiste — devolve negativo e não
-    desenha nada. O número da peça sumiu assim DUAS vezes naquele dia, e
-    as duas só apareceram ampliando a prévia; por isso aqui ele ESTOURA
-    em vez de deixar a peça sem identificação.
+    Encolher vem ANTES de cortar. O nome tem que sair EXATO, igual ao do
+    arquivo (regra dele no mesmo dia) — cortar é último recurso, e só
+    quando nem a menor letra couber.
+
+    O insert_textbox NÃO avisa quando desiste: devolve negativo e não
+    desenha nada. O número da peça sumiu assim duas vezes, e as duas só
+    apareceram ampliando a prévia; por isso aqui ele ESTOURA em vez de
+    deixar a peça sem identificação.
     """
-    for milimetros in (20, 18, 16, 15, 14, 13, 12, 11, 10, 9, 8):
-        for corte in (len(texto), 40, 34, 28, 22, 16, 10):
-            curto = texto if corte >= len(texto) else texto[:corte - 1] + "~"
-            if pagina.insert_textbox(caixa, curto, fontsize=milimetros / 1000 * PT_M,
-                                     fontname="hebo", color=(0, 0, 0)) >= 0:
-                return milimetros, curto
-    raise AssertionError(f"o rótulo {texto!r} não coube em "
-                         f"{caixa.width / PT_M * 100:.1f} x {caixa.height / PT_M * 100:.1f} cm")
+    tamanhos = (20, 18, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5)
+
+    def tentar(milimetros, conteudo):
+        # 1,8x a letra, medido: o insert_textbox precisa da linha MAIS o
+        # espaço do acento e do rabo, e com 1,4x ele recusava tudo — e
+        # recusa devolvendo negativo, sem desenhar nada.
+        #
+        # E o teto é a meia-folga: o rótulo tem que caber nos 2,5 cm que
+        # ficam com ESTA peça. Passando disso, metade do nome sairia
+        # junto com a peça de cima no refile.
+        teto = RECUO_CORTE_M if altura_max_m is None else altura_max_m
+        alto = min(milimetros * 1.8 / 1000, teto) * PT_M
+        caixa = pymupdf.Rect(x0_pt, base_pt - alto, x0_pt + largura_m * PT_M, base_pt)
+        return pagina.insert_textbox(caixa, conteudo, fontsize=milimetros / 1000 * PT_M,
+                                     fontname="hebo", color=(0, 0, 0))
+
+    for milimetros in tamanhos:
+        if tentar(milimetros, texto) >= 0:
+            return milimetros, texto
+    # nem na menor letra: aí corta, porque nome cortado ainda identifica
+    # a peça e rótulo que some, não
+    for corte in (60, 48, 40, 32, 24, 16, 10):
+        curto = texto[:corte - 1] + "~"
+        if tentar(tamanhos[-1], curto) >= 0:
+            return tamanhos[-1], curto
+    raise AssertionError(f"o rótulo {texto!r} não coube em {largura_m * 100:.0f} cm")
 
 
 def descricao_e_especificacao(nome):
@@ -635,7 +659,7 @@ def _desenhar_peca(pagina, pecas, posta, numero, margem_m, largura_pagina_m,
     página e o deslocamento do topo. O rolo tem cabeçalho; a chapa não
     tem, porque a página É a chapa e a faixa roubaria área dela.
     """
-    indice, x, y, largura, altura, girada, _reservada_l, reservada_a = posta
+    indice, x, y, largura, altura, girada, reservada_l, reservada_a = posta
     peca = pecas[indice]
     if True:
         # a arte encosta embaixo do retângulo reservado: o que sobra em
@@ -667,36 +691,29 @@ def _desenhar_peca(pagina, pecas, posta, numero, margem_m, largura_pagina_m,
                 pagina.show_pdf_page(onde, origem, peca["pagina"], rotate=girar,
                                      keep_proportion=True)
 
-        # AS MARCAS DE CORTE NO MEIO DA FOLGA, a 2,5 cm da arte: é ali que
-        # a lâmina passa, e aí cada peça fica com 2,5 cm de branco de cada
-        # lado. Nos cantos da própria arte elas obrigariam a cortar rente,
-        # sem folga pra errar.
-        corte = caixa + (-RECUO_CORTE_M * PT_M, -RECUO_CORTE_M * PT_M,
-                         RECUO_CORTE_M * PT_M, RECUO_CORTE_M * PT_M)
-        # Na peça da ponta os 2,5 cm passariam da borda de 2 cm e a marca
-        # sairia da folha. Ali ela encosta na borda — que é onde o refile
-        # vai passar de qualquer jeito, porque aquela tira é só margem.
-        corte.x0 = max(corte.x0, margem_m * PT_M)
-        corte.x1 = min(corte.x1, (largura_pagina_m - margem_m) * PT_M)
-        braco = MARCA_CORTE_M * PT_M
-        for cx, cy in ((corte.x0, corte.y0), (corte.x1, corte.y0),
-                       (corte.x0, corte.y1), (corte.x1, corte.y1)):
-            pagina.draw_line((cx - braco, cy), (cx + braco, cy), color=(0, 0, 0), width=2)
-            pagina.draw_line((cx, cy - braco), (cx, cy + braco), color=(0, 0, 0), width=2)
+        # SEM MARCA DE CORTE: ele tirou em 04/10/2026, olhando a primeira
+        # folha com elas. A folga de 5 cm entre as peças já diz onde a
+        # lâmina passa, e as cruzinhas só sujavam a sobra.
 
-        # O NOME NO CANTO SUPERIOR ESQUERDO DA ARTE, numa linha só de
-        # 20 cm (regra dele, 04/10/2026). Ele mora nos 2,5 cm ENTRE a
-        # linha de corte e a arte — a metade da folga que fica com ESTA
-        # peça depois do refile. Escrito do outro lado da linha, sairia
-        # junto com a peça de cima.
-        caixa_nome = pymupdf.Rect(caixa.x0, caixa.y0 - (RECUO_CORTE_M - 0.003) * PT_M,
-                                  caixa.x0 + ROTULO_LARGURA_M * PT_M,
-                                  caixa.y0 - 0.003 * PT_M)
-
-        descricao, _especificacao = descricao_e_especificacao(peca["nome"])
+        # O NOME NO CANTO SUPERIOR ESQUERDO DA ARTE, numa linha só,
+        # encostado nela. É o NOME DO ARQUIVO, EXATO (regra dele,
+        # 04/10/2026): antes eu escrevia só o fim do nome e isso mostrava
+        # a SEGUNDA medida ao lado de uma peça feita na PRIMEIRA — o
+        # rótulo dizia "1,50x0,25m" numa peça de 1,80 x 0,55, e parecia
+        # que o tamanho estava errado quando não estava.
+        #
+        # A largura é a da própria peça (o espaço reservado dela), não os
+        # 20 cm fixos: nome exato é longo, e em peça larga ele cabe
+        # inteiro com letra grande em vez de sair cortado.
+        largura_rotulo = min(reservada_l, largura_pagina_m - 2 * margem_m)
+        nome = pathlib.PurePath(peca["nome"]).stem
         if peca["quantidade"] > 1:
-            descricao = f"{descricao} ({peca['copia']}/{peca['quantidade']})"
-        _escrever_rotulo(pagina, caixa_nome, f"{numero:02d}  {descricao}")
+            nome = f"{nome} ({peca['copia']}/{peca['quantidade']})"
+        # a folguinha de 1 mm entre o texto e a arte entra no teto: o
+        # rótulo inteiro tem que caber na meia-folga, senão o pedaço de
+        # cima sai com a peça vizinha no refile
+        _escrever_rotulo(pagina, caixa.x0, caixa.y0 - 0.001 * PT_M, largura_rotulo,
+                         f"{numero:02d}  {nome}", pymupdf, RECUO_CORTE_M - 0.001)
 
 
 def desenhar_chapas(pecas, chapas, mesa_m, titulo, margem_m=None):
