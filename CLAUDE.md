@@ -146,6 +146,21 @@ SAi byte a byte como saiu da fila; a medida segue valendo pro aviso de "não cab
 O que motivou: uma lona em escala 1:10 (página 0,70 × 0,32 de uma peça de 7 × 3,20) girada pela
 medida da página — que numa arte em escala não quer dizer nada. As Mimaki seguem girando.
 
+**Quem segura o giro é o campo, não a falta da biblioteca.** Até 04/10/2026 metade dessa regra valia
+por acidente: a máquina da DOCAN não tinha PyMuPDF, então o vigia não conseguia medir nem girar nada.
+Ele autorizou a instalação (*"vamos instalar e deixar completo"*, `maquina_docan/instalar_pymupdf.bat`)
+pra ganhar duas coisas que faltavam ali — a **medida da página** no registro (é dela que o relatório
+tira o m² quando o nome não traz medida, e sem ela a linha saía "medida não lida" sem recuperação,
+porque o arquivo sai de "Enviados" em 15 dias) e o **aviso de "não cabe"**. Giro continua desligado
+por `"girar": False` → `LimiteDaMaquina.decidir_giro` devolve None, e a cópia é `shutil.copy2`, byte
+a byte. Travado em teste, inclusive a cópia byte-idêntica: tirar esse campo do cadastro faria a arte
+chegar girada no SAi sem ninguém desconfiar do commit.
+
+Uma consequência que o teste também escreve: numa máquina que não gira, arte que **só cabe deitada**
+(6,00 × 2,00 m numa bobina de 5,00) passa **calada** — `cabe()` pergunta se cabe em alguma posição, e
+quem ripa vai deitar. O aviso é pra arte sem salvação (os dois lados maiores que a máquina), não pra
+essa. É a pergunta que alguém vai fazer olhando o log vazio.
+
 **A saída do SAi não se configura por arquivo, e apagar a pasta dela derruba o RIP.** Quem decide
 onde o `.prt` nasce é a **porta** do setup no Production Manager (porta `FILE:`), ajustada na tela.
 Em 23/09/2026 a pasta velha (`Desktop\Ripados`) foi apagada por estar vazia, dez minutos antes de

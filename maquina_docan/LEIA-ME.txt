@@ -66,6 +66,26 @@ do OneDrive.
 O instalar_tarefa.bat também copia tudo e continua servindo; o atualizar é
 mais seguro porque sabe voltar atrás.
 
+PRA COMPLETAR (uma vez so)
+--------------------------
+instalar_pymupdf.bat, nesta pasta. Sem o PyMuPDF o vigia entrega a arte
+normalmente, mas perde duas coisas:
+
+  1. A MEDIDA DA PAGINA no registro. Quando o nome do arquivo nao traz
+     medida, e dela que o relatorio tira o m2 -- e sem ela a linha sai
+     "medida nao lida", sem jeito de recuperar depois, porque o arquivo
+     sai de "Enviados" em 15 dias.
+  2. O AVISO de arte que nao cabe na maquina. Aviso, nunca barreira.
+
+Ele instala no Python DA TAREFA (nao num python qualquer do PATH) e no
+fim confere do jeito que o vigia usa: abre um PDF e mede. Nao precisa de
+administrador.
+
+O QUE ISSO NAO LIGA: GIRO. "DOCAN so entrega" continua valendo -- quem
+segura o giro e o campo "girar": False no cadastro, nao a falta da
+biblioteca. A arte segue chegando ao SAi byte a byte, e isso esta
+travado em teste.
+
 PRA DESFAZER
 ------------
 desinstalar_tarefa.bat, nesta mesma pasta. A fila não se perde: sem vigia,

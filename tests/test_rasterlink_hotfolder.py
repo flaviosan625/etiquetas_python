@@ -1818,3 +1818,116 @@ def test_posto_do_RIP_nao_barra_o_posto_do_SAi(tmp_path):
                                     posto=rl_hf.POSTO_RIP)
 
     assert "UJV100" in resultado
+
+
+# ---------- "DOCAN so entrega", mesmo com o pymupdf instalado ----------
+#
+# Regra dele de 24/09/2026: "nao barre nenhuma arte... antes de ripar devo
+# colocar no tamanho que preciso, entao voce mexer e desnecessario, e so
+# subir para o programa de RIP, eu resolvo o restante la dentro".
+#
+# Por que isto virou teste em 04/10/2026: ate agora a maquina da DOCAN NAO
+# tinha pymupdf, e metade da regra era garantida por acidente -- sem a
+# biblioteca o vigia nao conseguia medir nem girar nada. Com ela instalada
+# (autorizado por ele, pra ganhar a medida da pagina no registro e o aviso
+# de "nao cabe"), quem segura o giro passa a ser so o "girar": False.
+# Se alguem tirar esse campo do cadastro, a arte comeca a chegar girada no
+# SAi e ninguem vai desconfiar do commit que fez isso.
+
+def _fila_da_docan(tmp_path, monkeypatch, largura_cm, altura_cm, nome="arte.pdf"):
+    """
+    Como _fila_com_pdf, mas com o cadastro da DOCAN: 5,00 m de largura
+    util e 'girar': False. O nome da subpasta tem que ser o da maquina,
+    senao o vigia pula a pasta e o teste passa sem testar nada.
+    """
+    monkeypatch.setattr(rl_hf.time, "sleep", lambda s: None)
+    fila = tmp_path / "fila"
+    (fila / "DOCAN R5200").mkdir(parents=True)
+    hot_folder = tmp_path / "hotfolder"
+    hot_folder.mkdir()
+    _pdf_de(fila / "DOCAN R5200" / nome, largura_cm, altura_cm)
+    maquinas = {"DOCAN R5200": {"hot_folder": str(hot_folder), "largura_util_m": 5.00,
+                                "girar": False}}
+    return fila, hot_folder, maquinas
+
+
+def test_docan_nao_gira_mesmo_com_arte_que_caberia_deitada(tmp_path, monkeypatch):
+    """1,00x3,00m na bobina de 5,00m: numa Mimaki deitaria pra economizar; aqui, nao."""
+    fila, hot_folder, maquinas = _fila_da_docan(tmp_path, monkeypatch, largura_cm=100, altura_cm=300)
+
+    vigiar_fila_uma_vez(pasta_fila=str(fila), maquinas=maquinas)
+
+    assert _tamanho_cm(hot_folder / "arte.pdf") == (100, 300), "a arte tem que chegar como saiu"
+
+
+def test_na_docan_a_copia_e_byte_a_byte(tmp_path, monkeypatch):
+    """
+    Nao basta a medida bater: o arquivo nao pode ser REESCRITO. Salvar de
+    novo pelo pymupdf muda bytes, e o que vai pro RIP tem que ser o
+    mesmo arquivo que ele conferiu.
+    """
+    fila, hot_folder, maquinas = _fila_da_docan(tmp_path, monkeypatch, largura_cm=100, altura_cm=300)
+    original = (fila / "DOCAN R5200" / "arte.pdf").read_bytes()
+
+    vigiar_fila_uma_vez(pasta_fila=str(fila), maquinas=maquinas)
+
+    assert (hot_folder / "arte.pdf").read_bytes() == original
+
+
+def test_arte_maior_que_a_maquina_e_AVISO_nunca_barreira(tmp_path, monkeypatch):
+    """
+    6,00x5,50m numa bobina de 5,00m: nao cabe de jeito nenhum. Avisa e
+    MANDA. Arquivo represado sem ele ver e pior que arquivo grande demais
+    na lista do RIP, onde ele resolve (escolha dele, 2026-09-05).
+    """
+    fila, hot_folder, maquinas = _fila_da_docan(tmp_path, monkeypatch, largura_cm=600, altura_cm=550)
+
+    avisos = []
+    vigiar_fila_uma_vez(pasta_fila=str(fila), maquinas=maquinas,
+                        logger=lambda nivel, msg: avisos.append((nivel, msg)))
+
+    assert (hot_folder / "arte.pdf").is_file(), "tem que chegar no RIP de qualquer jeito"
+    assert _tamanho_cm(hot_folder / "arte.pdf") == (600, 550)
+    assert any("não cabe" in msg for _, msg in avisos), "e tem que estar escrito no log"
+
+
+def test_na_docan_arte_que_so_cabe_DEITADA_passa_calada(tmp_path, monkeypatch):
+    """
+    6,00x2,00m na bobina de 5,00m: em pe nao cabe, deitada cabe. Numa
+    Mimaki o vigia deitaria sozinho; aqui ele nao gira -- e TAMBEM nao
+    avisa, porque 'cabe' pergunta se cabe em ALGUMA posicao, e quem ripa
+    vai deitar.
+    
+
+    Nao e descuido, e consequencia da regra dele: o aviso existe pra
+    arte que nao tem salvacao, e essa tem. Esta escrito num teste porque
+    e a pergunta que alguem vai fazer olhando o log vazio ("por que nao
+    avisou que a arte era maior que a maquina?").
+    """
+    fila, hot_folder, maquinas = _fila_da_docan(tmp_path, monkeypatch, largura_cm=600, altura_cm=200)
+
+    avisos = []
+    vigiar_fila_uma_vez(pasta_fila=str(fila), maquinas=maquinas,
+                        logger=lambda nivel, msg: avisos.append((nivel, msg)))
+
+    assert _tamanho_cm(hot_folder / "arte.pdf") == (600, 200), "chega como saiu, sem girar"
+    assert not any("não cabe" in msg for _, msg in avisos)
+
+
+def test_com_pymupdf_a_medida_da_pagina_entra_no_registro(tmp_path, monkeypatch):
+    """
+    O ganho de instalar o pymupdf naquela maquina (04/10/2026): o
+    relatorio passa a ter de onde tirar o m2 quando o nome do arquivo nao
+    traz medida nenhuma. Sem isto a linha saia "medida nao lida" e nao
+    havia como recuperar depois -- o arquivo some de Enviados em 15 dias.
+    """
+    fila, hot_folder, maquinas = _fila_da_docan(tmp_path, monkeypatch, largura_cm=215,
+                                                altura_cm=140, nome="emendas_01_montado.pdf")
+
+    vigiar_fila_uma_vez(pasta_fila=str(fila), maquinas=maquinas,
+                        pasta_relatorios=tmp_path / "rel")
+
+    linha = json.loads(next((tmp_path / "rel" / "_registro").glob("*.jsonl")).read_text(
+        encoding="utf-8").splitlines()[-1])
+    assert linha["pagina_m"] == [2.15, 1.40]
+    assert linha["girado"] is False
