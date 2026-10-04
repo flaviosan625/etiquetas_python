@@ -589,3 +589,107 @@ def test_as_marcas_de_corte_ficam_no_MEIO_da_folga(pasta):
         alvo = (y - montagem.RECUO_CORTE_M) * PT_M
         assert any(abs(r.y0 - alvo) < 2 for r in linhas), \
             "nenhuma marca horizontal a 2,5 cm acima da arte"
+
+
+# ---------- a arte nunca e esticada, em lugar nenhum ----------
+#
+# Regra dele de 04/10/2026: "quando for modificar arte para o tamanho que
+# esta no nome do arquivo precisa ser proporcional, nao pode ser esticado
+# apenas por um lado". A conferencia que vale e geometrica: medir o que
+# saiu no PDF e comparar a proporcao com a do arquivo de origem.
+
+
+def test_a_proporcao_desenhada_e_a_do_ARQUIVO_nao_a_da_caixa(pasta):
+    """
+    O defeito que isto pega: passar a medida do NOME pra conta de cobrir
+    a torna um no-op (ela devolve a propria caixa), e a arte com
+    proporcao um tiquinho diferente entra encaixada POR DENTRO, deixando
+    tira branca na peca.
+    """
+    # o nome pede 2,00 x 1,00 (proporcao 2,000); o arquivo tem 1,992 x 1,00
+    arte(pasta, "1UN LONA IMPRESSA 2.00X1.00M_VIBRA_PAINEL.pdf", 1.992, 1.00)
+
+    pecas, recusadas = montagem.pecas_da_pasta(pasta)
+    assert not recusadas and pecas[0]["ajuste"]["acao"] == "escalar"
+
+    import pymupdf as mupdf
+
+    caixa = mupdf.Rect(0, 0, 2.00 * PT_M, 1.00 * PT_M)
+    arquivo_l, arquivo_a = pecas[0]["arquivo_m"]
+    onde = montagem._caixa_que_a_arte_cobre(caixa, arquivo_l, arquivo_a, mupdf)
+
+    assert onde.width / onde.height == pytest.approx(arquivo_l / arquivo_a, rel=1e-6), \
+        "a proporcao desenhada tem que ser a do ARQUIVO"
+    assert onde != caixa, "se devolveu a propria caixa, a conta virou no-op de novo"
+    assert onde.width >= caixa.width - 0.01 and onde.height >= caixa.height - 0.01, \
+        "a arte tem que COBRIR a caixa: por dentro deixaria tira branca na peca"
+
+
+def test_a_sobra_de_cobrir_cabe_na_folga_de_corte():
+    """
+    Cobrir faz a arte passar um pouco das marcas -- e esse "pouco" tem
+    que caber nos 2,5 cm de cada lado, senao invade a peca vizinha. Com
+    0,5% de tolerancia, a peca teria que passar de 10 m pra dar problema.
+    """
+    import pymupdf as mupdf
+
+    for lado_m in (1.00, 3.77, 7.14, 10.00):
+        caixa = mupdf.Rect(0, 0, lado_m * PT_M, 1.00 * PT_M)
+        pior = lado_m * (1 - montagem.TOLERANCIA_PROPORCAO)
+        onde = montagem._caixa_que_a_arte_cobre(caixa, pior, 1.00, mupdf)
+        sobra_por_lado_m = (onde.height - caixa.height) / PT_M / 2
+        assert sobra_por_lado_m <= montagem.RECUO_CORTE_M, \
+            f"peca de {lado_m} m: sobra {sobra_por_lado_m*100:.1f} cm por lado"
+
+
+def test_o_resto_do_sistema_tambem_nao_estica():
+    """
+    Varredura de 04/10/2026: todo lugar que poe arte numa caixa usa fator
+    UNICO. Este teste guarda os dois que calculam a escala na mao -- os
+    outros usam keep_proportion do PyMuPDF, que e o padrao.
+    """
+    import miniaturas
+
+    # miniaturas.encaixar: a OS, o checklist e o relatorio passam por aqui
+    largura, altura = miniaturas.encaixar(None, 100, 50)
+    assert (largura, altura) == (100, 50), "sem dados nao da pra manter proporcao nenhuma"
+
+    import processamento
+
+    fonte = pathlib.Path(processamento.__file__).read_text(encoding="utf-8")
+    assert "escala_fit = min(" in fonte, \
+        "a etiqueta calcula a escala na mao: tem que ser min() dos dois lados, nunca um por eixo"
+
+
+def test_medindo_no_PDF_a_arte_saiu_na_proporcao_do_arquivo(pasta):
+    """
+    A conferencia que vale e geometrica: medir o que FOI DESENHADO e
+    comparar com o arquivo de origem. Uma peca so na folha, pra achar o
+    desenho sem ambiguidade.
+
+    A arte entra em 1:10 (0,714 x 0,110) e o nome pede 7,14 x 1,10 --
+    proporcao 6,4909 nos dois. Se alguem trocar a conta por um fator
+    por eixo, este numero muda.
+    """
+    arte(pasta, "1UN LONA IMPRESSA 7.14X1.10M_VIBRA_LONA_A.pdf", 0.714, 0.110)
+
+    resultado = montagem.montar_pasta(pasta, raiz_clientes=pasta.parent / "x")
+    folha = resultado["folhas"][0]["arquivo"]
+    ficha = json.loads(folha.with_suffix(".json").read_text(encoding="utf-8"))
+
+    x, y = ficha["pecas"][0]["posicao_m"]
+    with pymupdf.open(str(folha)) as doc:
+        pagina = doc.load_page(0)
+        # get_xobjects devolve a DEFINICAO da pagina de origem junto com a
+        # colocacao dela; a que interessa e a que esta na posicao da peca
+        caixas = [pymupdf.Rect(item[3]) for item in pagina.get_xobjects()]
+        desenhadas = [c for c in caixas
+                      if abs(c.x0 / PT_M - x) < 0.06 and abs(c.y0 / PT_M - y) < 0.06]
+        assert len(desenhadas) == 1, f"nao achei a arte em x={x:.2f} y={y:.2f}"
+        caixa = desenhadas[0]
+
+    proporcao = caixa.width / caixa.height
+    if ficha["pecas"][0]["girada"]:
+        proporcao = 1 / proporcao
+    assert proporcao == pytest.approx(0.714 / 0.110, rel=1e-4), \
+        "a arte saiu com proporcao diferente da do arquivo: foi esticada"

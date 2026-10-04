@@ -295,7 +295,19 @@ ampliando a prévia. Hoje `_escrever_numero` e `_escrever_rotulo` encolhem até 
 se não couber, e `tests/test_montagem.py` lê o texto do PDF pronto pra conferir que todo número e
 todo nome foram desenhados e que nenhum caiu dentro de arte. Conferência a olho não pega isso.
 
-**A arte nunca é esticada.** A escala é sempre UNIFORME, um fator só pros dois lados (regra dele:
+**A arte nunca é esticada, e isso foi varrido no sistema inteiro** (04/10/2026, a pedido dele:
+*"quando for modificar arte para o tamanho que está no nome do arquivo precisa ser proporcional, não
+pode ser esticado apenas por um lado"*). Todo lugar que põe arte numa caixa usa fator único:
+`miniaturas.encaixar` (OS, checklist, relatórios) e `processamento` (etiqueta) calculam `min()` dos
+dois lados; os demais usam o `keep_proportion` do PyMuPDF, que é o padrão. Nenhum estica.
+
+**Mas a proporção é a do ARQUIVO, nunca a da caixa.** `_caixa_que_a_arte_cobre` recebia a medida do
+NOME e virava um **no-op** — devolvia a própria caixa, e arte com proporção um tiquinho diferente
+entrava encaixada POR DENTRO, deixando tira branca na peça. Por isso a peça guarda `arquivo_m` (a
+medida medida do arquivo) e o desenho inverte os lados quando gira. Conferido medindo o PDF pronto:
+a lona em 1:10 sai com proporção 6,4909 contra 6,4909 do arquivo, erro 0,0000%.
+
+**A escala é sempre UNIFORME**, um fator só pros dois lados (regra dele:
 *"as artes não podem ser mexidas em absolutamente nada, manter sempre parâmetros originais, podemos
 apenas deixar no tamanho, rotacionar para melhorar o encaixe"*). Quando a proporção difere um
 tiquinho, a arte **cobre** a caixa e a sobra sai no refile — encaixar por dentro deixaria tira branca

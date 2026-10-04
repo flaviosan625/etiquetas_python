@@ -292,6 +292,11 @@ def pecas_da_pasta(pasta, config=None, maquinas=None):
                 pecas.append({
                     "arquivo": arquivo, "nome": arquivo.name, "pagina": pagina,
                     "largura_m": alvo[0], "altura_m": alvo[1],
+                    # a medida do ARQUIVO, não a do nome: é dela que sai a
+                    # PROPORÇÃO na hora de desenhar. Sem guardá-la, quem
+                    # desenha só tem a medida do nome e não tem como
+                    # manter a proporção da arte (defeito de 04/10/2026)
+                    "arquivo_m": (atual[0], atual[1]),
                     "quantidade": int(quantidade), "copia": copia + 1,
                     "categoria": categoria, "ajuste": ajuste,
                 })
@@ -518,7 +523,15 @@ def desenhar(pecas, postas, comprimento_m, largura_util_m, titulo):
         # arquivo de origem: o PDF entra por referência e a imagem é
         # embutida como está.
         arquivo = peca["arquivo"]
-        onde = _caixa_que_a_arte_cobre(caixa, largura, altura, pymupdf)
+        # A PROPORÇÃO é a do ARQUIVO, nunca a da caixa. Passar a medida do
+        # nome aqui (que foi o que eu fiz primeiro) torna a conta um
+        # no-op: ela devolve a própria caixa, e a arte com proporção um
+        # tiquinho diferente entra encaixada POR DENTRO, deixando tira
+        # branca na peça. Girada, a proporção inverte junto.
+        arquivo_l, arquivo_a = peca["arquivo_m"]
+        if girar:
+            arquivo_l, arquivo_a = arquivo_a, arquivo_l
+        onde = _caixa_que_a_arte_cobre(caixa, arquivo_l, arquivo_a, pymupdf)
         if arquivo.suffix.lower() in IMAGENS:
             pagina.insert_image(onde, filename=str(arquivo), rotate=girar,
                                 keep_proportion=True)
