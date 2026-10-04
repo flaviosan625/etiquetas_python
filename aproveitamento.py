@@ -67,7 +67,8 @@ class _Pedaco:
     Um pedaço de material com os retângulos livres da guilhotina: uma chapa,
     ou o rolo (altura praticamente sem fim). Retângulo = (x, y, largura, altura).
     """
-    __slots__ = ("largura", "altura", "livres", "topo", "ocupado", "maior_descartado", "postas")
+    __slots__ = ("largura", "altura", "livres", "topo", "ocupado", "maior_descartado",
+                 "postas", "marcas")
 
     def __init__(self, largura, altura):
         self.largura = largura
@@ -77,6 +78,11 @@ class _Pedaco:
         self.ocupado = 0
         self.maior_descartado = (0, 0, 0)  # (área, largura, altura): conta como retalho
         self.postas = []  # (x, y, largura, altura) de cada peça — é o que os testes conferem
+        # Quem é cada posta, na mesma ordem. Duas peças de mesma medida NÃO
+        # são intercambiáveis quando a arte é outra: a LATERAL_ESQUERDA e a
+        # LATERAL_DIREITA têm 0,90 x 2,40 as duas, e casar por medida depois
+        # poria o rótulo de uma na outra (04/10/2026).
+        self.marcas = []
 
     def melhor_lugar(self, orientacoes, regra):
         """(nota, índice do livre, largura, altura) do melhor lugar, ou None."""
@@ -96,7 +102,7 @@ class _Pedaco:
                     melhor = (nota, i, pw, ph)
         return melhor
 
-    def colocar(self, i, pw, ph, divisao, menor_lado):
+    def colocar(self, i, pw, ph, divisao, menor_lado, marca=None):
         """
         Põe a peça no canto do retângulo livre 'i' e corta a sobra em dois
         retângulos por um corte reto de ponta a ponta (guilhotina). Sobra onde
@@ -128,6 +134,7 @@ class _Pedaco:
         self.topo = max(self.topo, y + ph)
         self.ocupado += pw * ph
         self.postas.append((x, y, pw, ph))
+        self.marcas.append(marca)
 
     def fechar_faixa(self):
         """
@@ -237,11 +244,20 @@ def _em_blocos(w, h, quantidade, largura, altura):
 # --------------------------------------------------------------- encaixes
 
 def _encaixar_no_rolo(pecas, largura, ordem, politica, divisao):
-    """O rolo (_Pedaco) encaixado — 'topo' é o que ele gasta —, ou None se a política não serve."""
-    altura = sum(max(p) for p in pecas) + 1
+    """
+    O rolo (_Pedaco) encaixado — 'topo' é o que ele gasta —, ou None se a
+    política não serve.
+
+    'pecas' é [(w, h)] ou [(w, h, marca)]. A marca atravessa o encaixe sem
+    participar da conta e volta em _Pedaco.marcas: é o que deixa quem
+    desenha saber qual arte é cada posição (ver posicoes_no_rolo).
+    """
+    altura = sum(max(p[0], p[1]) for p in pecas) + 1
     rolo = _Pedaco(largura, altura)
-    menor_lado = min(min(p) for p in pecas)
-    for w, h in sorted(pecas, key=ordem):
+    menor_lado = min(min(p[0], p[1]) for p in pecas)
+    for peca in sorted(pecas, key=lambda p: ordem(p[:2])):
+        w, h = peca[0], peca[1]
+        marca = peca[2] if len(peca) > 2 else None
         orientacoes = _orientacoes(w, h, largura, altura, politica)
         if not orientacoes:
             return None
@@ -250,15 +266,17 @@ def _encaixar_no_rolo(pecas, largura, ordem, politica, divisao):
             rolo.fechar_faixa()
             lugar = rolo.melhor_lugar(orientacoes, "baixo")
         _, i, pw, ph = lugar
-        rolo.colocar(i, pw, ph, divisao, menor_lado)
+        rolo.colocar(i, pw, ph, divisao, menor_lado, marca)
     return rolo
 
 
 def _encaixar_em_chapas(pecas, largura, altura, ordem, regra, divisao):
-    """As chapas (_Pedaco) que o encaixe usa."""
+    """As chapas (_Pedaco) que o encaixe usa. Aceita (w, h) ou (w, h, marca)."""
     chapas = []
-    menor_lado = min(min(p) for p in pecas)
-    for w, h in sorted(pecas, key=ordem):
+    menor_lado = min(min(p[0], p[1]) for p in pecas)
+    for peca in sorted(pecas, key=lambda p: ordem(p[:2])):
+        w, h = peca[0], peca[1]
+        marca = peca[2] if len(peca) > 2 else None
         orientacoes = _orientacoes(w, h, largura, altura)
         escolhido = None
         for chapa in chapas:
@@ -276,8 +294,59 @@ def _encaixar_em_chapas(pecas, largura, altura, ordem, regra, divisao):
             chapas.append(chapa)
             escolhido = (chapa, chapa.melhor_lugar(orientacoes, regra))
         chapa, (_, i, pw, ph) = escolhido
-        chapa.colocar(i, pw, ph, divisao, menor_lado)
+        chapa.colocar(i, pw, ph, divisao, menor_lado, marca)
     return chapas
+
+
+def posicoes_no_rolo(pecas, largura_m):
+    """
+    ONDE cada peça fica no rolo, não só quantos metros ele gasta. Devolve
+    ([(marca, x_m, y_m, largura_m, altura_m, girada)], metros) — ou
+    ([], 0.0) quando não há peça utilizável.
+
+    'pecas' é [(largura_m, altura_m, marca)]. A marca é obrigatória e volta
+    junto: duas peças de mesma medida não são intercambiáveis quando a arte
+    é outra (a LATERAL_ESQUERDA e a LATERAL_DIREITA têm 0,90 x 2,40 as
+    duas), então casar por medida depois poria o rótulo de uma na outra.
+
+    É a MESMA conta de calcular_lote, com a mesma busca pela melhor
+    estratégia — o que muda é só o que se guarda no fim. Até 04/10/2026 as
+    coordenadas eram calculadas e descartadas, porque ninguém desenhava
+    nada: só o número de metros alimentava o custo e o estoque.
+
+    Quem monta a folha precisa somar a folga de corte e a canaleta de
+    dados à medida de cada peça ANTES de chamar — aqui as peças se tocam.
+    """
+    largura = _mm(largura_m)
+    entrada = []
+    for item in pecas:
+        w, h = _mm(item[0]), _mm(item[1])
+        if w <= 0 or h <= 0 or w > largura and h > largura:
+            continue
+        entrada.append((w, h, item[2] if len(item) > 2 else None))
+    if not entrada:
+        return [], 0.0
+
+    melhor = None
+    for ordem in _ORDENS:
+        for politica in ("livre", "estreita"):
+            for divisao in ("prateleira", "coluna"):
+                rolo = _encaixar_no_rolo(entrada, largura, ordem, politica, divisao)
+                if rolo is not None and (melhor is None or rolo.topo < melhor.topo):
+                    melhor = rolo
+    if melhor is None:
+        return [], 0.0
+
+    # a peça saiu girada quando a largura posta não é a que entrou
+    medida = {}
+    for w, h, marca in entrada:
+        medida.setdefault(marca, (w, h))
+    postas = []
+    for (x, y, pw, ph), marca in zip(melhor.postas, melhor.marcas):
+        original = medida.get(marca, (pw, ph))
+        girada = (pw, ph) != original
+        postas.append((marca, x / 1000, y / 1000, pw / 1000, ph / 1000, girada))
+    return postas, melhor.topo / 1000
 
 
 # ------------------------------------------------------------------- lote

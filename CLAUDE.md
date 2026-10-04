@@ -226,6 +226,52 @@ chama de `<HotFolder>`); a prova definitiva é largar um arquivo na pasta e ver 
 Hoje o cadastro da H2525 segue o SAi (`D:\RIPADOS\DOCAN H2525`), e por isso a SAÍDA dela nunca pode
 ser essa mesma pasta.
 
+### Montagem: a pasta encaixa as artes e fecha a folha sozinha
+
+Pedido dele (04/10/2026): *"se a lona tem 500cm largura preciso jogar diversos arquivos dentro,
+preciso que redimensione esses arquivos para ter o melhor aproveitamento... se eu jogar 10 arquivos
+que tenha 10 nomes diferentes precisa ir um do lado de cada arte"*, fechando com *"essas pastas devem
+fazer a leitura pelo nome, ver o tamanho do arquivo e redimensionar para a medida que pede no nome
+conforme a regra antes de montar"*.
+
+Ele larga arquivo em `MONTAGEM ARTES DOCAN 5200` ou `MONTAGEM ARTES SWJ 3200` (no OneDrive) e
+`montagem.py` resolve. A largura é a da máquina, lida de `MAQUINAS` — o nome da pasta é só rótulo.
+
+**Aqui o NOME manda no tamanho — e isso é o inverso do recebimento, de propósito.** Lá vale a medida
+da arte (regra de 21/09); aqui o arquivo já foi recebido, conferido e nomeado, então o nome é a
+medida combinada e arte fora dela está errada. `ajuste_para` decide: `igual`, `girar`, `escalar`
+(a arte em 1:10 vira ×10; a exportada 3% maior é corrigida) — e **`recusar` quando a PROPORÇÃO não
+bate**, porque aí não existe escala que conserte e distorcer entregaria peça deformada que só se
+descobre impressa. O recusado vai pra `_conferir` **com o motivo num .txt ao lado**: peça que some
+sem explicação é peça que não vai ser produzida.
+
+**O encaixe é o mesmo de `aproveitamento.py`** — a fonte única continua uma só. O que mudou lá:
+`posicoes_no_rolo` devolve **onde** cada peça fica, que até então era calculado e jogado fora, e a
+**identidade atravessa o encaixe** (`_Pedaco.marcas`). Sem ela, duas peças de mesma medida trocariam
+de rótulo — a LATERAL_ESQUERDA e a DIREITA têm 0,90 × 2,40 as duas, e quem corta penduraria a arte
+errada na parede errada.
+
+**A canaleta é espaço RESERVADO, não sobra.** Os 5 cm de dados entram somados à altura da peça
+ANTES do encaixe; no primeiro desenho o rótulo de 5 cm foi escrito num vão de 1 cm e invadiu a peça
+de baixo. O cabeçalho também tem faixa própria: escrever sobre a arte estraga a peça. Medidas dele:
+folga de 1 cm, canaleta de 5 cm, nome em 30 cm. O rótulo encolhe de 18 até 9 mm e, no limite, corta
+**a descrição, nunca a especificação** — cortar pelo fim deixava `1UN DECORFLEX 4.30X0.80M_~` e
+jogava fora o `SPFW26_PASSARELA_PISO`, que é o que diz qual peça é.
+
+**Uma folha por MATERIAL**, porque lona e adesivo não dividem bobina — a mesma regra do m² que nunca
+mistura material. O nome de saída segue o padrão do sistema (`1UN LONA 5.00X9.86M_<CLIENTE>_MONTAGEM_
+13pecas_<carimbo>.pdf`): a folha montada é UMA peça de material, e é assim que a etiqueta, a OS e o
+relatório a leem. O cliente sai dos nomes dos arquivos (`cliente_das_pecas`), como ele pediu.
+
+**O `.json` ao lado da folha é o que impede a montagem de APAGAR a comprovação.** Pro registro de
+produção a folha é UM arquivo entregue; sem a ficha, as 13 peças sumiriam do relatório do cliente.
+Ela guarda posição, medida, giro e o fator de escala de cada peça — número deduzido nunca se passa
+por declarado.
+
+A montagem pega carona na passada do **Checklist de Produção** (como o `vigia_caderno`), e só monta
+pasta **parada** há `MINUTOS_PARADA`: largando dez arquivos seguidos, montar no primeiro faria uma
+folha de uma peça e jogaria as outras nove numa segunda.
+
 ### Consumo de material é do LOTE, não da peça
 
 Regra do usuário (28/09/2026): *"tirar melhor proveito do material sempre, independente se for chapa

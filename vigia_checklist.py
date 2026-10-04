@@ -197,6 +197,7 @@ def passada(forcar=False, raiz=None):
     try:
         regenerados = [c.nome for c in clientes.com_checklist(raiz) if passada_do_cliente(c, forcar)]
         _conferir_cadernos(raiz)
+        _montar_artes()
         return regenerados
     finally:
         if trava is not None:
@@ -245,3 +246,30 @@ if __name__ == "__main__":
             print("regenerou: " + ", ".join(regenerados))
         else:
             print("sem mudança")
+
+
+def _montar_artes():
+    """
+    De carona também, a montagem das artes (2026-10-04): ele larga os
+    arquivos em "MONTAGEM ARTES DOCAN 5200" ou "MONTAGEM ARTES SWJ 3200"
+    e a pasta tem que se resolver — "para evitar de eu fazer manualmente".
+
+    Só monta pasta PARADA (ver montagem.pasta_parada): largando dez
+    arquivos seguidos, montar no primeiro faria uma folha de uma peça e
+    jogaria as outras nove numa segunda.
+
+    Import tardio em try/except pelo mesmo motivo do caderno: isto é
+    carona, e nada aqui pode derrubar a regeneração da OS, que é o
+    trabalho desta tarefa.
+    """
+    try:
+        import montagem
+        feitas = montagem.conferir(logger=lambda nivel, msg: _log(None, nivel, msg))
+    except Exception as e:      # noqa: BLE001
+        _log(None, "warn", "montagem de artes não rodou: %s: %s" % (type(e).__name__, e))
+        return []
+    for resultado in feitas:
+        for folha in resultado["folhas"]:
+            _log(None, "ok", "montagem pronta: %s (%d peças, %.0f%% de aproveitamento)"
+                 % (folha["arquivo"].name, folha["pecas"], folha["aproveitamento"] * 100))
+    return feitas
