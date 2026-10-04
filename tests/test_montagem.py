@@ -61,8 +61,12 @@ def test_a_pasta_diz_qual_maquina_e(pasta):
 
 
 def test_a_largura_vem_do_cadastro_da_maquina():
-    """5,00 e 3,20 nao estao escritos na montagem: mudam no cadastro e valem aqui."""
-    assert montagem.largura_util("DOCAN R5200") == 5.00
+    """
+    As larguras nao estao escritas na montagem: mudam no cadastro da
+    maquina e valem aqui. Foi assim que a correcao de 5,00 pra 5,20 na
+    DOCAN (04/10/2026) chegou na montagem sem eu mexer nela.
+    """
+    assert montagem.largura_util("DOCAN R5200") == 5.20
     assert montagem.largura_util("SWJ320A") == 3.20
 
 
@@ -163,7 +167,7 @@ def test_a_folha_sai_na_largura_da_maquina(pasta):
     resultado = montagem.montar_pasta(pasta, raiz_clientes=pasta.parent / "x")
 
     with pymupdf.open(str(resultado["folhas"][0]["arquivo"])) as doc:
-        assert round(doc.load_page(0).rect.width / PT_M, 2) == 5.00
+        assert round(doc.load_page(0).rect.width / PT_M, 2) == 5.20
 
 
 def test_os_originais_saem_da_pasta_depois_de_montados(pasta):
@@ -246,7 +250,7 @@ def test_o_json_ao_lado_guarda_as_pecas(pasta):
         encoding="utf-8"))
     assert len(ficha["pecas"]) == 2
     assert ficha["area_pecas_m2"] == 2.0
-    assert ficha["folha_m"][0] == 5.0
+    assert ficha["folha_m"][0] == 5.2
     assert ficha["pecas"][0]["posicao_m"] and ficha["pecas"][0]["medida_m"] == [1.0, 1.0]
 
 

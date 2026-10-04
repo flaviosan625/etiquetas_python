@@ -1664,14 +1664,19 @@ def test_posto_e_lido_das_duas_formas_de_escrever():
     assert rl_hf.posto_pedido(["x.py", "--posto=SAI"]) == rl_hf.POSTO_SAI
 
 
-def test_docan_esta_cadastrada_com_a_largura_util_e_nao_a_da_midia():
+def test_docan_esta_cadastrada_com_os_5_20_de_area_util():
     """
-    A midia e de 5,20 m; quem imprime sao 5,00 (BYHX, Media/Width =
-    5000.00 mm). Cadastrar 5,20 aqui faria o giro automatico deixar
-    passar uma arte que a maquina corta na borda.
+    5,20 m, correcao dele em 04/10/2026: "se a maquina e uma DOCAN 5200
+    ela tem 5 metros e 20 centimetros de area util, ou seja arte de 5
+    metros vai tranquilamente".
+
+    Aqui estava 5,00 porque o BYHX mostrava Media/Width = 5000.00 mm e eu
+    li aquilo como o limite da maquina -- era o ROLO CARREGADO naquele
+    dia. Este teste existe pra ninguem "corrigir" de volta olhando a tela
+    da maquina com outra bobina montada.
     """
     hot, largura = rl_hf._config_maquina(rl_hf.MAQUINAS["DOCAN R5200"])
-    assert largura == 5.00
+    assert largura == 5.20
     assert "SAi" in hot, "a hot folder da DOCAN e o Setup do SAi, nao uma pasta inventada"
     assert rl_hf._posto_da_maquina(rl_hf.MAQUINAS["DOCAN R5200"]) == rl_hf.POSTO_SAI
     for mimaki in ("UJV 100 UNY CV", "SWJ320A"):
@@ -1717,7 +1722,7 @@ def test_a_fila_nao_ganha_arquivo_alem_da_arte(tmp_path):
 
 def test_docan_esta_cadastrada_com_uma_largura_util_so():
     hot, largura = rl_hf._config_maquina(rl_hf.MAQUINAS["DOCAN R5200"])
-    assert largura == 5.00
+    assert largura == 5.20
     assert "rolos_m" not in rl_hf.MAQUINAS["DOCAN R5200"]
     assert "SAi" in hot, "a hot folder da DOCAN e o Setup do SAi, nao uma pasta inventada"
     assert rl_hf._posto_da_maquina(rl_hf.MAQUINAS["DOCAN R5200"]) == rl_hf.POSTO_SAI

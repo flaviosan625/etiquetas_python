@@ -132,10 +132,20 @@ MAQUINAS = {
     # inventada: é ali que o Production Manager fica olhando sozinho, e
     # foi por ali que o teste de 2026-09-07 passou de ponta a ponta.
     #
-    # 5,00 m é a largura ÚTIL, não a da mídia. A mídia é de 5,20 m; quem
-    # diz 5,00 é a própria máquina (BYHX, Media/Width = 5000.00 mm).
-    # Usar 5,20 aqui faria o giro automático deixar passar uma arte que
-    # a máquina corta na borda.
+    # 5,20 m é a ÁREA ÚTIL da máquina — correção dele em 04/10/2026:
+    # "se a máquina é uma DOCAN 5200 ela tem 5 metros e 20 centímetros de
+    # área útil, ou seja arte de 5 metros vai tranquilamente".
+    #
+    # Aqui estava 5,00, por uma leitura mal interpretada: o BYHX mostrava
+    # `Media/Width = 5000.00 mm`, e eu li isso como o limite da máquina.
+    # Era o ROLO CARREGADO naquele dia. Os dois fatos convivem: a máquina
+    # imprime 5,20 e naquele momento havia uma bobina de 5,00 montada.
+    # Antes de usar número de tela de máquina como limite, confira se não
+    # é a mídia do momento.
+    #
+    # O que isso custa, e é a mesma consequência já aceita logo abaixo:
+    # com um rolo mais estreito montado, o aviso de "não cabe" fica mais
+    # permissivo. Quem sabe que rolo está na máquina é quem está nela.
     #
     # A DOCAN roda mais de um rolo, mas 'largura_util_m' aqui é UMA só,
     # a maior. Chegou a existir escolha de rolo por arquivo e o usuário
@@ -154,7 +164,7 @@ MAQUINAS = {
     # linhas velhas, que guardam o nome da máquina como texto.
     "DOCAN R5200": {
         "hot_folder": r"C:\Program Files\SAi\SAi Production Suite 22\Jobs and Settings\Jobs\Docan\Docan",
-        "largura_util_m": 5.00,
+        "largura_util_m": 5.20,
         "posto": POSTO_SAI,
         # nome da configuração dentro do SAi: é como o RIPLOG chama esta
         # máquina ("Nome do dispositivo"), e é por ele que separar_ripados

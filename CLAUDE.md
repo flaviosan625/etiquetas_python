@@ -265,8 +265,16 @@ bobina de 5,00 — **a arte saía 2,18 m pra fora da folha, calada**. Hoje
 `tests/test_montagem.py::test_arte_nunca_sai_da_folha` lê os desenhos do PDF e confere que nada
 ultrapassa a página.
 
-Consequência do teto de 2 cm que vale saber: **peça de exatamente 5,00 m passa a girar sempre**,
-porque a largura útil da montagem vira 4,96 m.
+**A DOCAN R5200 tem 5,20 m de área útil, não 5,00** (correção dele, 04/10/2026: *"se a máquina é uma
+DOCAN 5200 ela tem 5 metros e 20 centímetros de área útil, ou seja arte de 5 metros vai
+tranquilamente"*). Estava 5,00 porque o BYHX mostrava `Media/Width = 5000.00 mm` e eu li aquilo como
+o limite da máquina — **era o rolo carregado naquele dia**. Os dois fatos convivem. Antes de usar
+número de tela de máquina como limite, confira se não é a mídia do momento.
+
+O que isso muda na prática: com 5,00 cadastrado, uma peça de 5,00 × 0,50 m **não cabia atravessada**
+(a montagem tira 2 cm de borda de cada lado) e era obrigada a girar, gastando **5,00 m de bobina em
+vez de 0,55**. Travado em `test_docan_esta_cadastrada_com_os_5_20_de_area_util`, com o motivo escrito,
+pra ninguém "corrigir" de volta olhando a tela da máquina com outra bobina montada.
 
 **Os 5 cm entre peças fazem as duas coisas**: é por onde a lâmina passa no refile e é onde mora o
 nome (*"entre um arquivo e outro vamos usar espaço de 5cm, ali já podemos fazer anotação com nome do
@@ -279,8 +287,7 @@ pintado**: a folga é sobra que vai pro lixo, e pintá-la só gastaria tinta.
 dois sentidos de qualquer jeito. Então a arte encosta sempre no canto de BAIXO e o nome vai sempre no
 **canto superior esquerdo** dela, como o RasterLink faz — reservar só embaixo punha o rótulo dentro
 da peça vizinha quando o encaixe girava. Na largura ainda vale o piso do rótulo (0,39 m), senão um
-rodapé de 0,30 m tem rótulo maior que ele; o teto é a bobina, senão uma peça de 5,00 m numa bobina de
-5,00 deixa de caber deitada e gira à toa.
+rodapé de 0,30 m tem rótulo maior que ele; o teto é a bobina, mas **nunca abaixo da própria peça**.
 
 **O `insert_textbox` do PyMuPDF não avisa quando desiste** — devolve negativo e não desenha nada. O
 número da peça sumiu assim DUAS vezes em 04/10/2026 (a 28 mm e a 26 mm), e as duas só apareceram
