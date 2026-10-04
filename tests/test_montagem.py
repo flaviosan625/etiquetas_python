@@ -67,13 +67,34 @@ def test_a_pasta_diz_qual_maquina_e(pasta):
     assert montagem.maquina_da_pasta(pasta.parent / "qualquer outra") is None
 
 
-def test_toda_maquina_com_medida_tem_pasta(tmp_path):
-    """Rolo pela largura, mesa pelos dois lados: as quatro montam."""
+def test_so_as_duas_maquinas_que_ele_escolheu_tem_pasta(tmp_path):
+    """
+    "Deixar apenas a DOCAN 5200 e a SWJ 320A, o restante nos fazemos
+    manualmente" (04/10/2026). O interruptor e o campo 'montagem' no
+    cadastro: maquina nova nao passa a montar sozinha sem alguem decidir.
+    """
     criadas = montagem.garantir_pastas(raiz=tmp_path)
 
-    assert sorted(criadas) == ["DOCAN H2525", "DOCAN R5200", "SWJ320A", "UJV 100 UNY CV"]
+    assert sorted(criadas) == ["DOCAN R5200", "SWJ320A"]
     assert all(p.is_dir() for p in criadas.values())
-    assert criadas["UJV 100 UNY CV"].name == "UJV 100 UNY CV"
+    assert criadas["SWJ320A"].name == "SWJ320A", "o nome da pasta e o da maquina, igual a fila"
+
+
+def test_a_plana_so_precisa_do_campo_pra_voltar(tmp_path):
+    """
+    O codigo da mesa continua aqui e testado: a H2525 monta em chapas no
+    dia em que ele quiser, e ai e so o campo no cadastro.
+    """
+    import copy
+
+    import rasterlink_hotfolder as rl_hf
+
+    maquinas = copy.deepcopy(rl_hf.MAQUINAS)
+    maquinas["DOCAN H2525"]["montagem"] = True
+
+    criadas = montagem.garantir_pastas(raiz=tmp_path, maquinas=maquinas)
+
+    assert "DOCAN H2525" in criadas
 
 
 def test_a_margem_e_por_maquina():

@@ -241,8 +241,13 @@ o NOME DA MÁQUINA — o mesmo do cadastro, da fila e do relatório. Nome igual 
 liga arquivo a máquina sem tabela de conversão, e **medida nunca entra em nome de pasta**: vira
 mentira no dia em que a medida muda, e mudou duas vezes só nesta semana.
 
-**Toda máquina com medida monta**, e cada uma com a borda que ele deu (`margem_montagem_m` no
-cadastro): 2 cm nas DOCAN, 3 cm na UJV, 5 cm na SWJ. **Na máquina PLANA a montagem sai em chapas** —
+**Só a DOCAN R5200 e a SWJ320A têm pasta** (decisão dele, 04/10/2026: *"deixar apenas a DOCAN 5200
+e a SWJ 320A, o restante nós fazemos manualmente"*). O interruptor é o campo `montagem` no cadastro,
+e máquina sem ele não ganha pasta — assim uma máquina nova não passa a montar sozinha sem alguém
+decidir. Cada uma com a borda que ele deu (`margem_montagem_m`): 2 cm na DOCAN, 5 cm na SWJ.
+
+**O código da máquina PLANA continua aqui e testado**, desligado só pelo campo: a montagem em chapas
+sai —
 uma página por chapa, do tamanho exato dela, **sem faixa de cabeçalho**, porque a página É a chapa e
 a faixa roubaria área. O que o encaixe economiza ali não é metro de bobina, é **número de chapas**.
 `aproveitamento.posicoes_em_chapas` é a irmã plana de `posicoes_no_rolo`.

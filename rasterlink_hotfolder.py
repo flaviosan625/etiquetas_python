@@ -116,6 +116,12 @@ POSTO_PADRAO = POSTO_RIP
 # plana com 'largura_util_m' deixaria passar arte comprida demais pra
 # mesa; por isso 'mesa_util_m' ganha quando as duas aparecem. Quem
 # aplica a diferença é LimiteDaMaquina, e não um 'if' espalhado.
+# 'montagem': True diz que esta máquina tem pasta de montagem automática.
+# Só a DOCAN R5200 e a SWJ320A têm, por decisão dele em 04/10/2026 —
+# *"deixar apenas a DOCAN 5200 e a SWJ 320A, o restante nós fazemos
+# manualmente"*. Máquina sem o campo não ganha pasta: assim uma máquina
+# nova não passa a montar sozinha sem ninguém decidir.
+#
 # 'margem_montagem_m' é a borda de branco que a MONTAGEM deixa de cada
 # lado da folha (ver montagem.py). É por máquina porque ele deu uma pra
 # cada, em 04/10/2026 — e faz sentido: cada uma agarra o material de um
@@ -138,6 +144,7 @@ MAQUINAS = {
         # 3,24 m (ele, 04/10/2026). Estava 3,20, também sem fonte.
         "largura_util_m": 3.24,
         "margem_montagem_m": 0.05,
+        "montagem": True,
         "posto": POSTO_RIP,
     },
     # A hot folder da DOCAN é a do SETUP do SAi Production Manager, lida
@@ -179,6 +186,7 @@ MAQUINAS = {
         "hot_folder": r"C:\Program Files\SAi\SAi Production Suite 22\Jobs and Settings\Jobs\Docan\Docan",
         "largura_util_m": 5.20,
         "margem_montagem_m": 0.02,
+        "montagem": True,
         "posto": POSTO_SAI,
         # nome da configuração dentro do SAi: é como o RIPLOG chama esta
         # máquina ("Nome do dispositivo"), e é por ele que separar_ripados

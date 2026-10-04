@@ -137,16 +137,21 @@ def maquina_da_pasta(pasta, maquinas=None):
 
 def maquinas_que_montam(maquinas=None):
     """
-    As máquinas que têm montagem: as que têm medida cadastrada.
+    As máquinas que têm pasta de montagem: as marcadas com 'montagem' no
+    cadastro.
 
-    Toda máquina com medida monta — rolo pela largura, mesa pelos dois
-    lados. Máquina sem medida não entra: sem saber onde é o teto, o
-    encaixe não existe.
+    São duas, por decisão dele (04/10/2026): *"deixar apenas a DOCAN 5200
+    e a SWJ 320A, o restante nós fazemos manualmente"*. O campo é o
+    interruptor — máquina sem ele não ganha pasta, e máquina nova não
+    passa a montar sozinha sem alguém decidir.
+
+    O código da PLANA continua aqui e testado (ver encaixar_na_mesa): a
+    H2525 monta em chapas no dia em que ele quiser, e aí é só o campo.
     """
     maquinas = MAQUINAS if maquinas is None else maquinas
     return [nome for nome, config in maquinas.items()
-            if isinstance(config, dict) and (config.get("largura_util_m")
-                                             or config.get("mesa_util_m"))]
+            if isinstance(config, dict) and config.get("montagem")
+            and (config.get("largura_util_m") or config.get("mesa_util_m"))]
 
 
 def garantir_pastas(raiz=None, maquinas=None):
