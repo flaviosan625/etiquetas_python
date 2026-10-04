@@ -641,6 +641,15 @@ Decisões do usuário de 2026-09-13, que valem pro sistema inteiro:
   e ele quebra calado. As duas coisas quebraram a trava de máquina do `atualizar.bat` em 22/09 —
   e só apareceram porque o `.bat` foi RODADO. Rode antes de dizer que funciona:
   `MSYS_NO_PATHCONV=1 cmd.exe /c "echo. | maquina_rip\atualizar.bat"`.
+- **No PowerShell 5.1, uma linha de stderr DERRUBA o script.** Com `$ErrorActionPreference = "Stop"`,
+  cada linha que um programa escreve em stderr vira `NativeCommandError` e termina tudo — mesmo com
+  o programa saindo em código 0. Em 04/10/2026 um `SyntaxWarning` do Python (um `\P` perdido numa
+  docstring minha) matou o `maquina_docan/atualizar.bat` no meio, **depois** de ele já ter copiado
+  os quatro arquivos: o vigia estava certo e rodando, quem quebrou foi o script que conferia. Quem
+  roda programa nativo afrouxa pra `"Continue"` em volta da chamada (ver `RodarPython` no
+  `atualizar.ps1` e o mesmo cuidado no `instalar_tarefa.ps1`). E do lado do Python: **aviso de
+  sintaxe nos arquivos que viajam é defeito**, travado em `tests/test_arquivos_que_viajam.py` junto
+  com a outra regra deles — só biblioteca padrão no topo, porque lá não há `.venv` nem projeto.
 - **Deploy no PC errado não dá erro.** O `atualizar.bat` copia pra `C:\RasterLink` da máquina onde
   roda, e no PC errado ele ainda diz "TUDO CERTO" — aconteceu em 22/09, e a UJV e a SWJ seguiram um
   dia a mais com a versão antiga. Hoje ele compara `%COMPUTERNAME%` com o nome que o próprio vigia

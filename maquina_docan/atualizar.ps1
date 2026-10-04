@@ -54,6 +54,31 @@ function Fechar($codigo) {
     exit $codigo
 }
 
+# RODAR UM PROGRAMA NO POWERSHELL 5.1 PEDE CUIDADO.
+#
+# Com $ErrorActionPreference = "Stop", cada linha que o programa escreve
+# em stderr vira um NativeCommandError e DERRUBA o script — mesmo com o
+# programa terminando em código 0. Aconteceu em 04/10/2026: um
+# SyntaxWarning do Python (um "\P" perdido numa docstring minha) matou
+# este atualizador no meio, DEPOIS de ele já ter copiado os arquivos.
+# O vigia estava certo e rodando; quem quebrou foi o script que conferia.
+#
+# O instalar_tarefa.ps1 já fazia isso certo desde 03/10 e eu não copiei o
+# cuidado pra cá. Agora está num lugar só.
+function RodarPython($exe, $argumentos) {
+    $eapAntigo = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    Push-Location $PASTA
+    try {
+        $saida = & $exe @argumentos 2>&1
+        $codigo = $LASTEXITCODE
+    } finally {
+        Pop-Location
+        $ErrorActionPreference = $eapAntigo
+    }
+    return @{ saida = @($saida | ForEach-Object { "$_" }); codigo = $codigo }
+}
+
 function Parar($linhas) {
     Write-Host ""
     Write-Host "  PAREI." -ForegroundColor Red
@@ -156,11 +181,9 @@ try {
 if ($acao -and $acao.Execute) {
     Write-Host ""
     Write-Host "  Conferindo se o vigia novo inicia..."
-    Push-Location $PASTA
-    try {
-        & $acao.Execute "-m" "rasterlink_hotfolder" "--autoteste" 2>&1 | ForEach-Object { Write-Host "    $_" }
-        $codigo = $LASTEXITCODE
-    } finally { Pop-Location }
+    $r = RodarPython $acao.Execute @("-m", "rasterlink_hotfolder", "--autoteste")
+    foreach ($linha in $r.saida) { Write-Host "    $linha" }
+    $codigo = $r.codigo
     if ($codigo -ne 0) {
         Write-Host ""
         Write-Host "  O VIGIA NOVO NÃO INICIOU (código $codigo)." -ForegroundColor Red
@@ -185,13 +208,10 @@ if ($acao -and $acao.Execute) {
     Write-Host ""
     Write-Host "  Preparando a pasta de saída de cada DOCAN..."
     $raiz = $null
-    Push-Location $PASTA
-    try {
-        & $acao.Execute "-m" "rasterlink_hotfolder" "--preparar-ripados" "--posto" $POSTO 2>&1 |
-            ForEach-Object {
-                if ($_ -match "^RAIZ=(.+)$") { $raiz = $Matches[1].Trim() } else { Write-Host "    $_" }
-            }
-    } finally { Pop-Location }
+    $r = RodarPython $acao.Execute @("-m", "rasterlink_hotfolder", "--preparar-ripados", "--posto", $POSTO)
+    foreach ($linha in $r.saida) {
+        if ($linha -match "^RAIZ=(.+)$") { $raiz = $Matches[1].Trim() } else { Write-Host "    $linha" }
+    }
 
     if ($raiz -and (Test-Path $raiz)) {
         Write-Host "    raiz do ripado nesta máquina: $raiz" -ForegroundColor Green

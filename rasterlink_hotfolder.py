@@ -1849,7 +1849,7 @@ METRO_POR_POLEGADA = 0.0254
 
 
 def arquivo_do_byhx(nome, pasta=None, logger=None):
-    """
+    r"""
     O caminho de um arquivo do programa da impressora, ou None.
 
     NÃO é só juntar pasta + nome: em 04/10/2026 o registro de impressão
