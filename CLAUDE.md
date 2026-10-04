@@ -331,8 +331,13 @@ a lona em 1:10 sai com proporção 6,4909 contra 6,4909 do arquivo, erro 0,0000%
 *"as artes não podem ser mexidas em absolutamente nada, manter sempre parâmetros originais, podemos
 apenas deixar no tamanho, rotacionar para melhorar o encaixe"*). Quando a proporção difere um
 tiquinho, a arte **cobre** a caixa e a sobra sai no refile — encaixar por dentro deixaria tira branca
-na peça. E a tolerância de proporção caiu de 2% pra 0,5%: 2% numa lona de 7,14 m são 14 cm, que
-ninguém chamaria de "mesma arte".
+na peça. **E quem decide se a arte entra é QUANTO SERIA APARADO, em milímetros — não a porcentagem.** A régua
+era percentual e foi arte real dele que a derrubou (04/10/2026): oito lonas da LOJINHA tinham TODAS
+as medidas exatamente **+0,7 mm** acima do nome — offset constante da exportação, não erro de
+proporção. Em porcentagem a peça mais estreita dava 1,5% de desvio e era **recusada**; em milímetros,
+a sobra era de **3 mm por lado**, dentro dos 25 mm de folga. Metade do lote caía fora por uma régua
+errada. Hoje `SOBRA_MAXIMA_M` **é** `RECUO_CORTE_M`, de propósito: o que entra nunca estoura a folga
+de corte. Por cima fica uma trava relativa de 5%, pra peça pequena onde 25 mm seriam a arte inteira.
 
 **O `posicao_m` do JSON é onde a arte está NA FOLHA**, não onde o encaixe a pôs: a arte encosta
 embaixo da reserva e a folha ainda tem cabeçalho e margem na frente. O JSON é a planta de quem vai

@@ -93,15 +93,23 @@ RECUO_CORTE_M = FOLGA_M / 2
 # Quanto a medida do arquivo pode diferir da do nome e ainda ser "a
 # mesma": 5 mm. Abaixo disso é arredondamento de quem exportou.
 TOLERANCIA_MEDIDA_M = 0.005
-# E quanto a PROPORÇÃO pode diferir e a arte ainda ser aproveitada.
+# QUANDO A PROPORÇÃO DO ARQUIVO DIFERE DA DO NOME, quem decide é quanto
+# de arte seria APARADO — em milímetros, não em porcentagem.
 #
-# Era 2%, e 2% numa lona de 7,14 m são 14 cm — deformação que ninguém
-# chamaria de "mesma arte". Com "as artes não podem ser mexidas em
-# absolutamente nada" (regra dele, 04/10/2026), virou 0,5% e, mais
-# importante que o número: a escala é sempre UNIFORME, um fator só pros
-# dois lados. Arte nunca é esticada; no limite ela cobre a caixa e a
-# sobra sai no refile.
-TOLERANCIA_PROPORCAO = 0.005
+# A arte nunca é esticada: ela entra com escala uniforme e COBRE a caixa,
+# e o que passa sai no refile. Então a pergunta certa não é "a proporção
+# bate?", é "o que sobra cabe na folga de corte?".
+#
+# Isso veio de arte real (04/10/2026). Oito lonas da LOJINHA tinham TODAS
+# as medidas exatamente +0,7 mm acima do nome — offset constante da
+# exportação, não erro de proporção. Em porcentagem a peça mais estreita
+# dava 1,5% de desvio e era recusada; em milímetros, a sobra era de 3 mm
+# por lado, dentro dos 25 mm de folga. A régua errada recusava arte boa.
+SOBRA_MAXIMA_M = 0.025
+# E uma trava de bom senso por cima, pra peça pequena: 5% de desvio ainda
+# é a mesma arte exportada torta; mais que isso é OUTRA arte, e aí o
+# problema é o nome ou o arquivo, não o encaixe.
+TOLERANCIA_PROPORCAO = 0.05
 
 IMAGENS = (".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp")
 
@@ -266,20 +274,31 @@ def ajuste_para(alvo, atual):
             return {"acao": "girar" if girar else "igual", "girar": girar,
                     "fator": 1.0, "motivo": ""}
 
+    # A arte entra com escala UNIFORME e cobrindo a caixa, então a
+    # pergunta não é "a proporção bate?" e sim "o que sobra cabe na folga
+    # de corte?". Fica com a orientação que apara menos.
+    melhor = None
     for girar, (w, h) in ((False, (largura, altura)), (True, (altura, largura))):
         fator_w, fator_h = largura_alvo / w, altura_alvo / h
-        if _perto(fator_w / fator_h, 1.0, TOLERANCIA_PROPORCAO):
-            # arredondado: 9,999999805 e 10x, e numero feio num documento
-            # de producao faz quem le duvidar do resto
-            fator = round((fator_w + fator_h) / 2, 3)
-            return {"acao": "escalar", "girar": girar, "fator": fator,
-                    "motivo": f"arquivo {w:.3f} x {h:.3f} m ajustado {fator:.2f}x "
-                              f"pro tamanho do nome"}
+        fator = max(fator_w, fator_h)
+        sobra = max(w * fator - largura_alvo, h * fator - altura_alvo) / 2
+        desvio = abs(fator_w / fator_h - 1)
+        if melhor is None or sobra < melhor[0]:
+            melhor = (sobra, desvio, girar, fator)
+
+    sobra, desvio, girar, fator = melhor
+    if sobra <= SOBRA_MAXIMA_M and desvio <= TOLERANCIA_PROPORCAO:
+        # arredondado: 9,999999805 é 10x, e número feio num documento de
+        # produção faz quem lê duvidar do resto
+        return {"acao": "escalar", "girar": girar, "fator": round(fator, 3),
+                "motivo": f"arquivo {largura:.3f} x {altura:.3f} m ajustado {fator:.2f}x pro "
+                          f"tamanho do nome ({sobra * 1000:.0f} mm aparados por lado)"}
 
     return {"acao": "recusar", "girar": False, "fator": None,
             "motivo": f"o arquivo tem {largura:.2f} x {altura:.2f} m e o nome pede "
-                      f"{largura_alvo:.2f} x {altura_alvo:.2f} m — a proporção não bate, "
-                      f"então escalar deformaria a arte"}
+                      f"{largura_alvo:.2f} x {altura_alvo:.2f} m — pondo no tamanho do nome sem "
+                      f"deformar, sobrariam {sobra * 1000:.0f} mm por lado (o limite é "
+                      f"{SOBRA_MAXIMA_M * 1000:.0f} mm, a folga de corte). Confira a arte ou o nome"}
 
 
 # --- juntar tudo o que a pasta tem ---------------------------------

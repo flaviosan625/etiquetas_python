@@ -156,7 +156,7 @@ def test_proporcao_que_nao_bate_e_RECUSADA_nunca_distorcida():
     """
     ajuste = montagem.ajuste_para((2.00, 1.00), (2.00, 1.80, 1))
     assert ajuste["acao"] == "recusar"
-    assert "proporção não bate" in ajuste["motivo"]
+    assert "400 mm por lado" in ajuste["motivo"], "o motivo tem que dizer QUANTO sobraria"
 
 
 def test_meio_centimetro_de_diferenca_e_a_mesma_medida():
@@ -238,7 +238,7 @@ def test_recusada_vai_pro_conferir_COM_O_MOTIVO_escrito(pasta):
     assert (conferir / "1UN LONA IMPRESSA 2.00X1.00M_DEFORMADA.pdf").is_file()
     motivo = (conferir / "1UN LONA IMPRESSA 2.00X1.00M_DEFORMADA.pdf.motivo.txt").read_text(
         encoding="utf-8")
-    assert "proporção não bate" in motivo
+    assert "mm por lado" in motivo and "Confira a arte ou o nome" in motivo
 
 
 def test_duas_pecas_de_mesma_medida_nao_trocam_de_rotulo(pasta):
@@ -562,12 +562,24 @@ def test_escala_e_sempre_UNIFORME_nunca_estica(pasta):
         "a arte tem que COBRIR a caixa: por dentro deixaria tira branca na peca"
 
 
-def test_proporcao_errada_por_mais_de_meio_porcento_e_recusada():
+def test_quem_decide_e_quanto_sobra_em_MILIMETROS_nao_a_porcentagem():
     """
-    Era 2% e 2% numa lona de 7,14 m sao 14 cm. Ninguem chamaria isso de
-    "mesma arte".
+    A regua mudou em 04/10/2026, e quem a mudou foi arte REAL dele: oito
+    lonas da LOJINHA tinham TODAS as medidas exatamente +0,7 mm acima do
+    nome -- offset constante da exportacao, nao erro de proporcao. Em
+    porcentagem, a peca mais estreita dava 1,5% e era recusada; em
+    milimetros, a sobra era de 3 mm por lado, dentro dos 25 mm de folga.
+    A regua errada recusava arte boa.
     """
-    assert montagem.ajuste_para((2.00, 1.00), (2.00, 1.02, 1))["acao"] == "recusar"
+    # a peca de 0,40 x 3,00 com o arquivo em 1:10 mais 0,7 mm: 1,5% de
+    # desvio, 3 mm aparados -- ENTRA
+    ajuste = montagem.ajuste_para((0.40, 3.00), (0.0407, 0.3007, 1))
+    assert ajuste["acao"] == "escalar"
+    assert "3 mm aparados" in ajuste["motivo"]
+
+    # o MESMO 1,5% numa peca dez vezes maior ja nao cabe na folga
+    assert montagem.ajuste_para((4.00, 30.00), (0.407, 3.007, 1))["acao"] == "recusar"
+
     # mesma proporcao, 1% maior nos dois lados: escala uniforme resolve
     assert montagem.ajuste_para((2.00, 1.00), (2.02, 1.01, 1))["acao"] == "escalar"
 
@@ -672,21 +684,25 @@ def test_a_proporcao_desenhada_e_a_do_ARQUIVO_nao_a_da_caixa(pasta):
         "a arte tem que COBRIR a caixa: por dentro deixaria tira branca na peca"
 
 
-def test_a_sobra_de_cobrir_cabe_na_folga_de_corte():
+def test_nada_que_passa_apara_mais_que_a_folga_de_corte():
     """
-    Cobrir faz a arte passar um pouco das marcas -- e esse "pouco" tem
-    que caber nos 2,5 cm de cada lado, senao invade a peca vizinha. Com
-    0,5% de tolerancia, a peca teria que passar de 10 m pra dar problema.
+    Cobrir faz a arte passar das marcas, e esse "passar" nao pode invadir
+    a peca vizinha. Agora e a propria REGRA que garante: o limite de
+    aceitacao E a folga de corte, entao o que entra nunca a estoura.
     """
-    import pymupdf as mupdf
+    assert montagem.SOBRA_MAXIMA_M == montagem.RECUO_CORTE_M, \
+        "o limite de aceitacao e a folga de corte: sao a mesma coisa, de proposito"
 
-    for lado_m in (1.00, 3.77, 7.14, 10.00):
-        caixa = mupdf.Rect(0, 0, lado_m * PT_M, 1.00 * PT_M)
-        pior = lado_m * (1 - montagem.TOLERANCIA_PROPORCAO)
-        onde = montagem._caixa_que_a_arte_cobre(caixa, pior, 1.00, mupdf)
-        sobra_por_lado_m = (onde.height - caixa.height) / PT_M / 2
-        assert sobra_por_lado_m <= montagem.RECUO_CORTE_M, \
-            f"peca de {lado_m} m: sobra {sobra_por_lado_m*100:.1f} cm por lado"
+    for alvo, arquivo in (((1.00, 1.00), (0.98, 1.00)),
+                          ((3.77, 3.15), (3.70, 3.15)),
+                          ((7.14, 1.10), (0.714, 0.1105))):
+        ajuste = montagem.ajuste_para(alvo, (arquivo[0], arquivo[1], 1))
+        if ajuste["acao"] != "escalar":
+            continue
+        fator = ajuste["fator"]
+        sobra = max(arquivo[0] * fator - alvo[0], arquivo[1] * fator - alvo[1]) / 2
+        assert sobra <= montagem.RECUO_CORTE_M + 0.0005, \
+            f"{alvo}: sobra {sobra * 1000:.1f} mm por lado"
 
 
 def test_o_resto_do_sistema_tambem_nao_estica():
