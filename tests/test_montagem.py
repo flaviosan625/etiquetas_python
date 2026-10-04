@@ -46,7 +46,8 @@ def arte(pasta, nome, largura_m, altura_m, cor=(0.3, 0.5, 0.8), paginas=1):
 
 @pytest.fixture
 def pasta(tmp_path):
-    p = tmp_path / "MONTAGEM ARTES DOCAN 5200"
+    """A pasta de montagem da DOCAN R5200 -- o nome e o DA MAQUINA, como na fila."""
+    p = tmp_path / "DOCAN R5200"
     p.mkdir()
     return p
 
@@ -55,9 +56,32 @@ def pasta(tmp_path):
 
 
 def test_a_pasta_diz_qual_maquina_e(pasta):
+    """
+    Uma pasta por maquina, com o NOME da maquina -- igual a fila (pedido
+    dele, 04/10/2026). Nome igual em todo lugar e o que liga arquivo a
+    maquina sem tabela de conversao.
+    """
     assert montagem.maquina_da_pasta(pasta) == "DOCAN R5200"
-    assert montagem.maquina_da_pasta(pasta.parent / "MONTAGEM ARTES SWJ 3200") == "SWJ320A"
+    assert montagem.maquina_da_pasta(pasta.parent / "SWJ320A") == "SWJ320A"
+    assert montagem.maquina_da_pasta(pasta.parent / "ujv 100 uny cv") == "UJV 100 UNY CV"
     assert montagem.maquina_da_pasta(pasta.parent / "qualquer outra") is None
+
+
+def test_toda_maquina_com_medida_tem_pasta(tmp_path):
+    """Rolo pela largura, mesa pelos dois lados: as quatro montam."""
+    criadas = montagem.garantir_pastas(raiz=tmp_path)
+
+    assert sorted(criadas) == ["DOCAN H2525", "DOCAN R5200", "SWJ320A", "UJV 100 UNY CV"]
+    assert all(p.is_dir() for p in criadas.values())
+    assert criadas["UJV 100 UNY CV"].name == "UJV 100 UNY CV"
+
+
+def test_a_margem_e_por_maquina():
+    """Ele deu uma pra cada (04/10/2026): cada maquina agarra o material de um jeito."""
+    assert montagem.margem("DOCAN R5200") == 0.02
+    assert montagem.margem("DOCAN H2525") == 0.02
+    assert montagem.margem("UJV 100 UNY CV") == 0.03
+    assert montagem.margem("SWJ320A") == 0.05
 
 
 def test_a_largura_vem_do_cadastro_da_maquina():
@@ -67,7 +91,9 @@ def test_a_largura_vem_do_cadastro_da_maquina():
     DOCAN (04/10/2026) chegou na montagem sem eu mexer nela.
     """
     assert montagem.largura_util("DOCAN R5200") == 5.20
-    assert montagem.largura_util("SWJ320A") == 3.20
+    assert montagem.largura_util("SWJ320A") == 3.24
+    assert montagem.largura_util("UJV 100 UNY CV") == 1.27
+    assert montagem.mesa("DOCAN H2525") == (2.50, 2.50)
 
 
 # ---------- o nome manda no tamanho ----------
@@ -355,8 +381,8 @@ def test_uma_pasta_com_problema_nao_impede_a_outra(tmp_path, monkeypatch):
     import time
 
     raiz = tmp_path / "_onedrive"
-    docan = raiz / "MONTAGEM ARTES DOCAN 5200"
-    swj = raiz / "MONTAGEM ARTES SWJ 3200"
+    docan = raiz / "DOCAN R5200"
+    swj = raiz / "SWJ320A"
     for p, nome in ((docan, "1UN LONA IMPRESSA 2.00X1.00M_A.pdf"),
                     (swj, "1UN LONA IMPRESSA 1.00X1.00M_B.pdf")):
         caminho = arte(p, nome, 2.00 if p is docan else 1.00, 1.00)
@@ -437,9 +463,9 @@ def test_a_folha_respeita_a_margem_de_2cm(pasta):
 
     with pymupdf.open(str(folha)) as doc:
         pagina = doc.load_page(0)
-        limite = montagem.MARGEM_M * PT_M
+        limite = montagem.margem("DOCAN R5200") * PT_M
         for peca in ficha["pecas"]:
-            assert peca["posicao_m"][0] >= montagem.MARGEM_M - 0.001
+            assert peca["posicao_m"][0] >= montagem.margem("DOCAN R5200") - 0.001
         for bloco in pagina.get_text("blocks"):
             if not bloco[4].strip():
                 continue
@@ -491,8 +517,8 @@ def test_a_posicao_do_json_e_onde_a_arte_esta_DE_VERDADE(pasta):
         encoding="utf-8"))
 
     x, y = ficha["pecas"][0]["posicao_m"]
-    assert x == pytest.approx(montagem.MARGEM_M, abs=0.001)
-    assert y >= montagem.CABECALHO_M + montagem.MARGEM_M - 0.001, \
+    assert x == pytest.approx(montagem.margem("DOCAN R5200"), abs=0.001)
+    assert y >= montagem.CABECALHO_M + montagem.margem("DOCAN R5200") - 0.001, \
         "a arte nao pode comecar antes do cabecalho"
 
 
@@ -693,3 +719,92 @@ def test_medindo_no_PDF_a_arte_saiu_na_proporcao_do_arquivo(pasta):
         proporcao = 1 / proporcao
     assert proporcao == pytest.approx(0.714 / 0.110, rel=1e-4), \
         "a arte saiu com proporcao diferente da do arquivo: foi esticada"
+
+
+# ---------- a maquina PLANA monta em chapas, nao em rolo ----------
+#
+# Na H2525 os DOIS lados sao teto: nao existe "a bobina anda". O que a
+# montagem economiza e NUMERO DE CHAPAS, e chapa e material que sai
+# inteiro do estoque.
+
+
+@pytest.fixture
+def mesa(tmp_path):
+    p = tmp_path / "DOCAN H2525"
+    p.mkdir()
+    return p
+
+
+def test_a_plana_sai_em_paginas_do_tamanho_da_chapa(mesa):
+    for i in range(2):
+        arte(mesa, f"1UN PS 1.20X1.00M_VIBRA_PLACA_{i}.pdf", 1.20, 1.00)
+    arte(mesa, "1UN PS 2.40X2.40M_VIBRA_PAINEL.pdf", 2.40, 2.40)
+
+    resultado = montagem.montar_pasta(mesa, raiz_clientes=mesa.parent / "x")
+    folha = resultado["folhas"][0]["arquivo"]
+
+    with pymupdf.open(str(folha)) as doc:
+        assert doc.page_count == 2, "o painel de 2,40 nao divide chapa com as placas"
+        for n in range(doc.page_count):
+            pagina = doc.load_page(n)
+            assert round(pagina.rect.width / PT_M, 2) == 2.50
+            assert round(pagina.rect.height / PT_M, 2) == 2.50, \
+                "a pagina E a chapa: faixa de cabecalho em cima roubaria area dela"
+
+
+def test_a_plana_conta_chapas_no_nome_e_no_json(mesa):
+    arte(mesa, "1UN PS 2.40X2.40M_VIBRA_PAINEL.pdf", 2.40, 2.40)
+    arte(mesa, "1UN PS 2.40X2.40M_VIBRA_PAINEL_2.pdf", 2.40, 2.40)
+
+    resultado = montagem.montar_pasta(mesa, raiz_clientes=mesa.parent / "x")
+    folha = resultado["folhas"][0]["arquivo"]
+    ficha = json.loads(folha.with_suffix(".json").read_text(encoding="utf-8"))
+
+    assert "2chapas" in folha.name
+    assert ficha["chapas"] == 2
+    assert ficha["folha_m"] == [2.5, 2.5]
+
+
+def test_na_plana_a_peca_maior_que_a_chapa_e_recusada(mesa):
+    """2,60 nao cabe nos 2,50 nem girada -- e nao pode sumir calada."""
+    arte(mesa, "1UN PS 2.60X1.00M_VIBRA_GRANDE.pdf", 2.60, 1.00)
+    arte(mesa, "1UN PS 1.00X1.00M_VIBRA_NORMAL.pdf", 1.00, 1.00)
+
+    resultado = montagem.montar_pasta(mesa, raiz_clientes=mesa.parent / "x")
+
+    assert len(resultado["folhas"]) == 1
+    recusada = [r for r in resultado["recusadas"] if "GRANDE" in r["arquivo"]]
+    assert recusada and "mesa" in recusada[0]["motivo"]
+
+
+def test_na_plana_a_arte_tambem_nao_sai_da_chapa(mesa):
+    for i in range(4):
+        arte(mesa, f"1UN PS 1.20X1.10M_VIBRA_PLACA_{i}.pdf", 1.20, 1.10)
+
+    resultado = montagem.montar_pasta(mesa, raiz_clientes=mesa.parent / "x")
+
+    with pymupdf.open(str(resultado["folhas"][0]["arquivo"])) as doc:
+        for n in range(doc.page_count):
+            pagina = doc.load_page(n)
+            for desenho in pagina.get_drawings():
+                caixa = desenho["rect"]
+                assert caixa.x0 >= -0.5 and caixa.y0 >= -0.5
+                assert caixa.x1 <= pagina.rect.width + 0.5
+                assert caixa.y1 <= pagina.rect.height + 0.5
+
+
+def test_a_margem_da_maquina_vale_no_encaixe(pasta):
+    """
+    A SWJ pede 5 cm de borda e a DOCAN 2 cm: a mesma peca sobra espaco
+    diferente em cada uma. O numero vem do cadastro, nao da montagem.
+    """
+    pecas = [{"largura_m": 1.00, "altura_m": 1.00, "nome": "x",
+              "ajuste": {"girar": False, "acao": "igual"}}]
+
+    postas_docan, _ = montagem.encaixar(pecas, 5.20, montagem.margem("DOCAN R5200"))
+    postas_swj, _ = montagem.encaixar(pecas, 3.24, montagem.margem("SWJ320A"))
+
+    assert postas_docan[0][1] == 0.0 and postas_swj[0][1] == 0.0, "o encaixe comeca na origem"
+    # a margem entra na hora de desenhar
+    assert montagem.posicao_na_folha(postas_docan[0], 0.02)[0] == 0.02
+    assert montagem.posicao_na_folha(postas_swj[0], 0.05)[0] == 0.05

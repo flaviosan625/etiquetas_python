@@ -116,15 +116,28 @@ POSTO_PADRAO = POSTO_RIP
 # plana com 'largura_util_m' deixaria passar arte comprida demais pra
 # mesa; por isso 'mesa_util_m' ganha quando as duas aparecem. Quem
 # aplica a diferença é LimiteDaMaquina, e não um 'if' espalhado.
+# 'margem_montagem_m' é a borda de branco que a MONTAGEM deixa de cada
+# lado da folha (ver montagem.py). É por máquina porque ele deu uma pra
+# cada, em 04/10/2026 — e faz sentido: cada uma agarra o material de um
+# jeito e erra o alinhamento de um tanto diferente.
 MAQUINAS = {
     "UJV 100 UNY CV": {
         "hot_folder": r"C:\MijCtrl\Hot\UJV 100 UNY CV",
-        "largura_util_m": 1.48,
+        # 1,27 m, dito por ele em 04/10/2026 junto com as outras. Estava
+        # 1,48 aqui, SEM FONTE NENHUMA — nem comentário, nem nota no
+        # CLAUDE.md —, então era chute meu. São 21 cm de diferença: com
+        # 1,48 uma arte de 1,40 iria RETA pra uma máquina de 1,27 e
+        # sairia cortada na borda. Se o 1,27 for o rolo montado e não a
+        # máquina, é aqui que se corrige.
+        "largura_util_m": 1.27,
+        "margem_montagem_m": 0.03,
         "posto": POSTO_RIP,
     },
     "SWJ320A": {
         "hot_folder": r"C:\MijCtrl\Hot\SWJ320A",
-        "largura_util_m": 3.20,
+        # 3,24 m (ele, 04/10/2026). Estava 3,20, também sem fonte.
+        "largura_util_m": 3.24,
+        "margem_montagem_m": 0.05,
         "posto": POSTO_RIP,
     },
     # A hot folder da DOCAN é a do SETUP do SAi Production Manager, lida
@@ -165,6 +178,7 @@ MAQUINAS = {
     "DOCAN R5200": {
         "hot_folder": r"C:\Program Files\SAi\SAi Production Suite 22\Jobs and Settings\Jobs\Docan\Docan",
         "largura_util_m": 5.20,
+        "margem_montagem_m": 0.02,
         "posto": POSTO_SAI,
         # nome da configuração dentro do SAi: é como o RIPLOG chama esta
         # máquina ("Nome do dispositivo"), e é por ele que separar_ripados
@@ -207,6 +221,7 @@ MAQUINAS = {
     "DOCAN H2525": {
         "hot_folder": r"C:\Program Files\SAi\SAi Production Suite 22\Jobs and Settings\Jobs\Docan\Docan_1",
         "mesa_util_m": (2.50, 2.50),
+        "margem_montagem_m": 0.02,
         "posto": POSTO_SAI,
         "setup_sai": "Docan_H2525",
         "girar": False,  # idem R5200: só entrega, o tamanho e o giro são feitos no RIP

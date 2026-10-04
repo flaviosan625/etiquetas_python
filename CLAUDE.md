@@ -234,8 +234,23 @@ que tenha 10 nomes diferentes precisa ir um do lado de cada arte"*, fechando com
 fazer a leitura pelo nome, ver o tamanho do arquivo e redimensionar para a medida que pede no nome
 conforme a regra antes de montar"*.
 
-Ele larga arquivo em `MONTAGEM ARTES DOCAN 5200` ou `MONTAGEM ARTES SWJ 3200` (no OneDrive) e
-`montagem.py` resolve. A largura é a da máquina, lida de `MAQUINAS` — o nome da pasta é só rótulo.
+Ele larga arquivo em `OneDrive/UNYCOMUNICACAO/MONTAGEM ARTES MAQUINAS/<nome da máquina>/` e
+`montagem.py` resolve. A estrutura é a **mesma da fila** (pedido dele, 04/10/2026: *"precisa ter
+separação das máquinas igual a pasta FILA PARA IMPRESSÃO MAQUINAS"*): uma subpasta por máquina, com
+o NOME DA MÁQUINA — o mesmo do cadastro, da fila e do relatório. Nome igual em todo lugar é o que
+liga arquivo a máquina sem tabela de conversão, e **medida nunca entra em nome de pasta**: vira
+mentira no dia em que a medida muda, e mudou duas vezes só nesta semana.
+
+**Toda máquina com medida monta**, e cada uma com a borda que ele deu (`margem_montagem_m` no
+cadastro): 2 cm nas DOCAN, 3 cm na UJV, 5 cm na SWJ. **Na máquina PLANA a montagem sai em chapas** —
+uma página por chapa, do tamanho exato dela, **sem faixa de cabeçalho**, porque a página É a chapa e
+a faixa roubaria área. O que o encaixe economiza ali não é metro de bobina, é **número de chapas**.
+`aproveitamento.posicoes_em_chapas` é a irmã plana de `posicoes_no_rolo`.
+
+**Duas larguras do cadastro estavam erradas, e nenhuma tinha fonte** — nem comentário, nem nota: a
+UJV estava 1,48 e é **1,27**; a SWJ estava 3,20 e é **3,24** (ele, 04/10/2026). A da UJV é a que
+doía: com 1,48, uma arte de 1,40 iria RETA pra uma máquina de 1,27 e sairia cortada na borda. Se o
+1,27 for o rolo montado e não a máquina, é no cadastro que se corrige.
 
 **Aqui o NOME manda no tamanho — e isso é o inverso do recebimento, de propósito.** Lá vale a medida
 da arte (regra de 21/09); aqui o arquivo já foi recebido, conferido e nomeado, então o nome é a

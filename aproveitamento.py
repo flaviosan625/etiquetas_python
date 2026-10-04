@@ -349,6 +349,53 @@ def posicoes_no_rolo(pecas, largura_m):
     return postas, melhor.topo / 1000
 
 
+def posicoes_em_chapas(pecas, largura_m, altura_m):
+    """
+    ONDE cada peça fica, chapa por chapa:
+    [[(marca, x_m, y_m, largura_m, altura_m, girada), ...], ...] — uma
+    lista por chapa, na ordem em que elas são usadas.
+
+    Irmã de posicoes_no_rolo, pra máquina PLANA: aqui os dois lados são
+    teto, então não existe "o rolo anda" — o que sobra é número de
+    chapas. A marca volta junto pelo mesmo motivo (duas peças de mesma
+    medida não são intercambiáveis quando a arte é outra).
+    """
+    largura, altura = _mm(largura_m), _mm(altura_m)
+    entrada = []
+    for item in pecas:
+        w, h = _mm(item[0]), _mm(item[1])
+        cabe = (w <= largura and h <= altura) or (h <= largura and w <= altura)
+        if w <= 0 or h <= 0 or not cabe:
+            continue
+        entrada.append((w, h, item[2] if len(item) > 2 else None))
+    if not entrada:
+        return []
+
+    melhor = None
+    for ordem in _ORDENS:
+        for regra in ("area", "lado", "baixo"):
+            for divisao in ("menor_sobra", "maior_sobra", "maior_area"):
+                chapas = _encaixar_em_chapas(entrada, largura, altura, ordem, regra, divisao)
+                nota = (len(chapas), -max(c.maior_livre() for c in chapas)[0])
+                if melhor is None or nota < melhor[0]:
+                    melhor = (nota, chapas)
+    if melhor is None:
+        return []
+
+    medida = {}
+    for w, h, marca in entrada:
+        medida.setdefault(marca, (w, h))
+    saida = []
+    for chapa in melhor[1]:
+        postas = []
+        for (x, y, pw, ph), marca in zip(chapa.postas, chapa.marcas):
+            original = medida.get(marca, (pw, ph))
+            postas.append((marca, x / 1000, y / 1000, pw / 1000, ph / 1000,
+                           (pw, ph) != original))
+        saida.append(postas)
+    return saida
+
+
 # ------------------------------------------------------------------- lote
 
 def calcular_lote(pecas, tipo, largura_m, comprimento_m):
