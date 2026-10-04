@@ -646,8 +646,17 @@ Decisões do usuário de 2026-09-13, que valem pro sistema inteiro:
   o programa saindo em código 0. Em 04/10/2026 um `SyntaxWarning` do Python (um `\P` perdido numa
   docstring minha) matou o `maquina_docan/atualizar.bat` no meio, **depois** de ele já ter copiado
   os quatro arquivos: o vigia estava certo e rodando, quem quebrou foi o script que conferia. Quem
-  roda programa nativo afrouxa pra `"Continue"` em volta da chamada (ver `RodarPython` no
-  `atualizar.ps1` e o mesmo cuidado no `instalar_tarefa.ps1`). E do lado do Python: **aviso de
+  roda programa nativo usa `Start-Process -Wait -PassThru` com redireção pra arquivo (a redireção
+  acontece FORA do PowerShell), ou afrouxa pra `"Continue"` em volta da chamada — ver `RodarPython`
+  no `atualizar.ps1` e o mesmo cuidado no `instalar_tarefa.ps1`.
+- **E `pythonw.exe` não devolve código de saída.** Programa sem console não é esperado pelo
+  PowerShell e `$LASTEXITCODE` fica **vazio** — não zero, vazio. Em 04/10/2026 o atualizador leu
+  isso como falha e **desfez um deploy que estava certo**. Duas lições viraram código: trocar pelo
+  `python.exe` da mesma pasta quando existir (tem console, e o acento chega inteiro com
+  `PYTHONIOENCODING=utf-8`), e **"não sei" nunca se passar por "falhou"** — código ausente avisa e
+  segue, porque quem prova o deploy é o sinal de vida. Cuidado também com
+  `Start-Process -ArgumentList`: ele não protege argumento com espaço (um `-c "a; b"` chega partido);
+  nas chamadas do kit nenhum argumento tem espaço, e é de propósito. E do lado do Python: **aviso de
   sintaxe nos arquivos que viajam é defeito**, travado em `tests/test_arquivos_que_viajam.py` junto
   com a outra regra deles — só biblioteca padrão no topo, porque lá não há `.venv` nem projeto.
 - **Deploy no PC errado não dá erro.** O `atualizar.bat` copia pra `C:\RasterLink` da máquina onde

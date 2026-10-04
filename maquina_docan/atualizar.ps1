@@ -66,17 +66,45 @@ function Fechar($codigo) {
 # O instalar_tarefa.ps1 já fazia isso certo desde 03/10 e eu não copiei o
 # cuidado pra cá. Agora está num lugar só.
 function RodarPython($exe, $argumentos) {
-    $eapAntigo = $ErrorActionPreference
-    $ErrorActionPreference = "Continue"
-    Push-Location $PASTA
+    # A TAREFA CHAMA pythonw.exe, QUE NÃO TEM CONSOLE — e isso muda tudo
+    # aqui. O PowerShell não espera por programa sem console e NÃO
+    # preenche o $LASTEXITCODE: em 04/10/2026 o código voltou VAZIO, o
+    # atualizador leu vazio como falha e desfez um deploy que estava
+    # certo. Conferido na mão: com atribuição a saída vem vazia e o
+    # código também; só no formato de pipeline é que funcionava.
+    #
+    # Então duas coisas: o python.exe do lado (mesma pasta) quando
+    # existir, que tem console e fala de verdade; e Start-Process em vez
+    # de "& exe", que espera, devolve o ExitCode certo e faz a
+    # redireção FORA do PowerShell — assim nenhuma linha de stderr vira
+    # NativeCommandError, que foi o estrago da tentativa anterior.
+    $console = $exe -replace "pythonw\.exe$", "python.exe"
+    if (-not (Test-Path $console)) { $console = $exe }
+
+    # Pro acento do log não chegar embaralhado na tela.
+    $ioAntigo = $env:PYTHONIOENCODING
+    $env:PYTHONIOENCODING = "utf-8"
+    $fSaida = Join-Path $env:TEMP "vigia_atualizar_saida.txt"
+    $fErro  = Join-Path $env:TEMP "vigia_atualizar_erro.txt"
     try {
-        $saida = & $exe @argumentos 2>&1
-        $codigo = $LASTEXITCODE
+        $proc = Start-Process -FilePath $console -ArgumentList $argumentos `
+                              -WorkingDirectory $PASTA -NoNewWindow -Wait -PassThru `
+                              -RedirectStandardOutput $fSaida -RedirectStandardError $fErro
+        $codigo = $proc.ExitCode
+    } catch {
+        return @{ saida = @("não consegui rodar o $console : $($_.Exception.Message)"); codigo = $null }
     } finally {
-        Pop-Location
-        $ErrorActionPreference = $eapAntigo
+        $env:PYTHONIOENCODING = $ioAntigo
     }
-    return @{ saida = @($saida | ForEach-Object { "$_" }); codigo = $codigo }
+
+    $linhas = @()
+    foreach ($f in @($fSaida, $fErro)) {
+        if (Test-Path $f) {
+            $linhas += @(Get-Content $f -Encoding UTF8 -ErrorAction SilentlyContinue)
+            Remove-Item $f -Force -ErrorAction SilentlyContinue
+        }
+    }
+    return @{ saida = @($linhas | Where-Object { "$_".Trim() }); codigo = $codigo }
 }
 
 function Parar($linhas) {
@@ -184,6 +212,14 @@ if ($acao -and $acao.Execute) {
     $r = RodarPython $acao.Execute @("-m", "rasterlink_hotfolder", "--autoteste")
     foreach ($linha in $r.saida) { Write-Host "    $linha" }
     $codigo = $r.codigo
+    # "Não sei" não é "falhou". Desfazer um deploy bom por causa de uma
+    # resposta que não veio foi exatamente o erro de 04/10/2026 —
+    # conferido: com pythonw.exe o código voltava vazio.
+    if ($null -eq $codigo) {
+        Write-Host "  Não consegui saber se o vigia iniciou (o programa não devolveu código)." -ForegroundColor Yellow
+        Write-Host "  NÃO vou desfazer por isso. O sinal de vida, logo abaixo, é a prova que vale." -ForegroundColor Yellow
+        $codigo = 0
+    }
     if ($codigo -ne 0) {
         Write-Host ""
         Write-Host "  O VIGIA NOVO NÃO INICIOU (código $codigo)." -ForegroundColor Red
