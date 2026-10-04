@@ -345,10 +345,20 @@ def encaixar(pecas, largura_util_m):
     são espaço reservado, não sobra. Sem isso o rótulo de 5 cm cai dentro
     da peça de baixo (visto no desenho de 04/10/2026).
     """
+    # A peça reserva, além dela mesma: a folga de corte, a canaleta embaixo
+    # e — na largura — o espaço do RÓTULO. Sem a largura do rótulo, uma
+    # peça estreita (o rodapé de 0,30 m) ganha um rótulo de 0,39 m que
+    # invade a peça do lado: foi o que ele viu na primeira folha e pediu
+    # pra tirar ("os nomes devem ficar fora das peças").
+    #
+    # O teto da largura é a bobina: uma peça de 5,00 m numa bobina de 5,00
+    # não pode ser inflada, senão deixa de caber deitada e o encaixe a
+    # obriga a girar sem motivo.
+    rotulo = NUMERO_LARGURA_M + ROTULO_LARGURA_M
     inflar = []
     for i, peca in enumerate(pecas):
-        inflar.append((peca["largura_m"] + FOLGA_M,
-                       peca["altura_m"] + FOLGA_M + CANALETA_M, i))
+        largura = min(max(peca["largura_m"] + FOLGA_M, rotulo), largura_util_m)
+        inflar.append((largura, peca["altura_m"] + FOLGA_M + CANALETA_M, i))
     postas, comprimento = aproveitamento.posicoes_no_rolo(inflar, largura_util_m)
 
     arte = []
@@ -356,11 +366,16 @@ def encaixar(pecas, largura_util_m):
         peca = pecas[indice]
         largura_arte = peca["altura_m"] if girada else peca["largura_m"]
         altura_arte = peca["largura_m"] if girada else peca["altura_m"]
-        arte.append((indice, x, y, largura_arte, altura_arte, girada))
+        # 'largura'/'altura' são o RETÂNGULO RESERVADO como ele foi posto.
+        # Quem desenha precisa dos dois: a arte vai no canto, e a canaleta
+        # é o que sobra — embaixo quando a peça entrou em pé, à direita
+        # quando o encaixe a girou. Desenhar sempre embaixo punha o rótulo
+        # dentro da peça vizinha (visto em 04/10/2026).
+        arte.append((indice, x, y, largura_arte, altura_arte, girada, largura, altura))
     return arte, comprimento
 
 
-def _escrever_rotulo(pagina, caixa, descricao, rodape, pymupdf):
+def _escrever_rotulo(pagina, caixa, descricao, rodape, giro=0):
     """
     O rótulo dentro da caixa, encolhendo de 18 até 9 mm e, no limite,
     cortando a DESCRIÇÃO — nunca a especificação.
@@ -375,7 +390,7 @@ def _escrever_rotulo(pagina, caixa, descricao, rodape, pymupdf):
             texto = descricao if corte >= len(descricao) else descricao[:corte - 1] + "~"
             sobrou = pagina.insert_textbox(caixa, f"{texto}\n{rodape}",
                                            fontsize=milimetros / 1000 * PT_M,
-                                           fontname="hebo", color=(0, 0, 0))
+                                           fontname="hebo", color=(0, 0, 0), rotate=giro)
             if sobrou >= 0:
                 return milimetros
     return None
@@ -409,7 +424,8 @@ def desenhar(pecas, postas, comprimento_m, largura_util_m, titulo):
                           height=(comprimento_m + CABECALHO_M) * PT_M)
     pagina.draw_rect(pagina.rect, color=None, fill=(1, 1, 1))
 
-    for numero, (indice, x, y, largura, altura, girada) in enumerate(postas, start=1):
+    for numero, (indice, x, y, largura, altura, girada, reservada_l, reservada_a) in \
+            enumerate(postas, start=1):
         peca = pecas[indice]
         esquerda, topo = x * PT_M, (y + CABECALHO_M) * PT_M
         caixa = pymupdf.Rect(esquerda, topo, esquerda + largura * PT_M, topo + altura * PT_M)
@@ -431,15 +447,38 @@ def desenhar(pecas, postas, comprimento_m, largura_util_m, titulo):
             pagina.draw_line((cx - braco, cy), (cx + braco, cy), color=(0, 0, 0), width=2)
             pagina.draw_line((cx, cy - braco), (cx, cy + braco), color=(0, 0, 0), width=2)
 
-        faixa = pymupdf.Rect(
-            caixa.x0, caixa.y1 + FOLGA_M * PT_M,
-            min(caixa.x0 + (NUMERO_LARGURA_M + ROTULO_LARGURA_M) * PT_M, largura_util_m * PT_M),
-            caixa.y1 + (FOLGA_M + CANALETA_M) * PT_M)
-        pagina.draw_rect(faixa, color=None, fill=(0.93, 0.93, 0.93))
-        pagina.insert_textbox(
-            pymupdf.Rect(faixa.x0 + 0.006 * PT_M, faixa.y0 + 0.006 * PT_M,
-                         faixa.x0 + NUMERO_LARGURA_M * PT_M, faixa.y1),
-            f"{numero:02d}", fontsize=0.028 * PT_M, fontname="hebo", color=(0, 0, 0))
+        # O rótulo fica FORA da peça, na área branca da folha, em preto
+        # (pedido dele em 04/10/2026, olhando a primeira folha). Sem fundo
+        # pintado: a canaleta é sobra de material que vai pro lixo, e
+        # pintá-la só gastaria tinta.
+        #
+        # Onde ela está depende de como o encaixe pôs a peça: embaixo
+        # quando entrou em pé, à direita quando foi girada — aí o rótulo
+        # também gira, pra ler ao longo da tira.
+        sobra_abaixo = reservada_a - altura
+        deitado = sobra_abaixo >= CANALETA_M - 0.001
+        if deitado:
+            faixa = pymupdf.Rect(caixa.x0, caixa.y1 + FOLGA_M * PT_M,
+                                 caixa.x0 + (NUMERO_LARGURA_M + ROTULO_LARGURA_M) * PT_M,
+                                 caixa.y1 + (FOLGA_M + CANALETA_M) * PT_M)
+            caixa_numero = pymupdf.Rect(faixa.x0 + 0.006 * PT_M, faixa.y0 + 0.006 * PT_M,
+                                        faixa.x0 + NUMERO_LARGURA_M * PT_M, faixa.y1)
+            caixa_nome = pymupdf.Rect(faixa.x0 + NUMERO_LARGURA_M * PT_M, faixa.y0 + 0.004 * PT_M,
+                                      faixa.x1, faixa.y1)
+            giro_rotulo = 0
+        else:
+            faixa = pymupdf.Rect(caixa.x1 + FOLGA_M * PT_M, caixa.y0,
+                                 caixa.x1 + (FOLGA_M + CANALETA_M) * PT_M,
+                                 caixa.y0 + (NUMERO_LARGURA_M + ROTULO_LARGURA_M) * PT_M)
+            caixa_numero = pymupdf.Rect(faixa.x0, faixa.y1 - NUMERO_LARGURA_M * PT_M,
+                                        faixa.x1 - 0.006 * PT_M, faixa.y1 - 0.006 * PT_M)
+            caixa_nome = pymupdf.Rect(faixa.x0, faixa.y0,
+                                      faixa.x1 - 0.004 * PT_M,
+                                      faixa.y1 - NUMERO_LARGURA_M * PT_M)
+            giro_rotulo = 90
+
+        pagina.insert_textbox(caixa_numero, f"{numero:02d}", fontsize=0.028 * PT_M,
+                              fontname="hebo", color=(0, 0, 0), rotate=giro_rotulo)
 
         descricao, especificacao = descricao_e_especificacao(peca["nome"])
         rodape = f"{especificacao}  ·  {peca['largura_m']:.2f} x {peca['altura_m']:.2f} m"
@@ -447,11 +486,7 @@ def desenhar(pecas, postas, comprimento_m, largura_util_m, titulo):
             rodape += f"  ·  AJUSTADA {peca['ajuste']['fator']:.2f}x"
         if peca["quantidade"] > 1:
             descricao = f"{descricao}  ({peca['copia']}/{peca['quantidade']})"
-        _escrever_rotulo(pagina,
-                         pymupdf.Rect(faixa.x0 + NUMERO_LARGURA_M * PT_M, faixa.y0 + 0.004 * PT_M,
-                                      faixa.x0 + (NUMERO_LARGURA_M + ROTULO_LARGURA_M) * PT_M,
-                                      faixa.y1),
-                         descricao, rodape, pymupdf)
+        _escrever_rotulo(pagina, caixa_nome, descricao, rodape, giro_rotulo)
 
     pagina.insert_textbox(
         pymupdf.Rect(0.02 * PT_M, 0.018 * PT_M, (largura_util_m - 0.02) * PT_M,
@@ -547,7 +582,7 @@ def montar_pasta(pasta, nome_maquina=None, config=None, maquinas=None, logger=No
                 "posicao_m": [round(x, 3), round(y, 3)], "girada": girada,
                 "ajuste": do_material[i]["ajuste"]["acao"],
                 "fator": do_material[i]["ajuste"]["fator"],
-            } for numero, (i, x, y, _w, _h, girada) in enumerate(postas, start=1)],
+            } for numero, (i, x, y, _w, _h, girada, _rl, _ra) in enumerate(postas, start=1)],
         }
         destino.with_suffix(".json").write_text(
             json.dumps(ficha, ensure_ascii=False, indent=2), encoding="utf-8")

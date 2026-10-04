@@ -251,9 +251,21 @@ sem explicação é peça que não vai ser produzida.
 de rótulo — a LATERAL_ESQUERDA e a DIREITA têm 0,90 × 2,40 as duas, e quem corta penduraria a arte
 errada na parede errada.
 
-**A canaleta é espaço RESERVADO, não sobra.** Os 5 cm de dados entram somados à altura da peça
-ANTES do encaixe; no primeiro desenho o rótulo de 5 cm foi escrito num vão de 1 cm e invadiu a peça
-de baixo. O cabeçalho também tem faixa própria: escrever sobre a arte estraga a peça. Medidas dele:
+**A canaleta é espaço RESERVADO, não sobra** — e a reserva é nos DOIS sentidos. Os 5 cm de dados
+entram somados à altura, e a LARGURA do rótulo (0,39 m) vira piso da largura da peça: sem isso um
+rodapé de 0,30 m ganha um rótulo de 0,39 que invade a peça do lado. O teto é a bobina, senão uma
+peça de 5,00 m numa bobina de 5,00 deixa de caber deitada e o encaixe a obriga a girar à toa.
+
+**E o rótulo vai onde a reserva ficou, não sempre embaixo.** Quando o encaixe GIRA a peça, a
+canaleta gira com ela e vai parar à direita — desenhar embaixo punha o rótulo dentro da peça
+vizinha. `encaixar` devolve o retângulo reservado junto com o da arte, e quem desenha compara os
+dois pra saber de que lado escrever (e aí o texto também gira 90°, pra ler ao longo da tira).
+Conferido por extração de texto do PDF, não a olho: nenhum bloco de texto pode cair dentro de
+nenhuma arte. Reservar a largura ainda melhorou o encaixe — 82% → 91% nas 11 peças do VIBRA.
+
+O rótulo é **preto, sem fundo pintado** (ele, vendo a primeira folha: *"os nomes devem ficar fora
+das peças na área branca com nome em preto"*): a canaleta é sobra que vai pro lixo, e pintá-la só
+gastaria tinta. O cabeçalho também tem faixa própria: escrever sobre a arte estraga a peça. Medidas dele:
 folga de 1 cm, canaleta de 5 cm, nome em 30 cm. O rótulo encolhe de 18 até 9 mm e, no limite, corta
 **a descrição, nunca a especificação** — cortar pelo fim deixava `1UN DECORFLEX 4.30X0.80M_~` e
 jogava fora o `SPFW26_PASSARELA_PISO`, que é o que diz qual peça é.

@@ -217,14 +217,22 @@ def test_a_canaleta_nao_invade_a_peca_de_baixo(pasta):
     pecas, _ = montagem.pecas_da_pasta(pasta)
     postas, _ = montagem.encaixar(pecas, 5.00)
 
-    for _, x, y, largura, altura, _girada in postas:
-        faixa = (x, y + altura + montagem.FOLGA_M,
-                 x + largura, y + altura + montagem.FOLGA_M + montagem.CANALETA_M)
-        for _, ox, oy, olargura, oaltura, _g in postas:
+    for _, x, y, largura, altura, _girada, reservada_l, reservada_a in postas:
+        # a canaleta fica embaixo quando a peça entrou em pé e à direita
+        # quando o encaixe a girou — é a reserva que diz onde
+        if reservada_a - altura >= montagem.CANALETA_M - 0.001:
+            faixa = (x, y + altura + montagem.FOLGA_M,
+                     x + montagem.NUMERO_LARGURA_M + montagem.ROTULO_LARGURA_M,
+                     y + altura + montagem.FOLGA_M + montagem.CANALETA_M)
+        else:
+            faixa = (x + largura + montagem.FOLGA_M, y,
+                     x + largura + montagem.FOLGA_M + montagem.CANALETA_M,
+                     y + montagem.NUMERO_LARGURA_M + montagem.ROTULO_LARGURA_M)
+        for _, ox, oy, olargura, oaltura, _g, _rl, _ra in postas:
             if (ox, oy) == (x, y):
                 continue
-            separados = (ox >= faixa[2] or ox + olargura <= faixa[0]
-                         or oy >= faixa[3] or oy + oaltura <= faixa[1])
+            separados = (ox >= faixa[2] - 0.001 or ox + olargura <= faixa[0] + 0.001
+                         or oy >= faixa[3] - 0.001 or oy + oaltura <= faixa[1] + 0.001)
             assert separados, f"a canaleta de ({x},{y}) cai dentro da peça de ({ox},{oy})"
 
 
