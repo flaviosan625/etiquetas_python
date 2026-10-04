@@ -73,11 +73,19 @@ NOME_SUBPASTA_PROBLEMAS = "_conferir"
 # mais ("entre um arquivo e outro vamos usar espaço de 5cm, ali já
 # podemos fazer anotação com nome do arquivo", 04/10/2026).
 FOLGA_M = 0.05            # entre peças: passa a lâmina E leva o nome
-MARGEM_M = 0.02           # a borda da folha, que ninguém usa
-ROTULO_LARGURA_M = 0.30   # o nome, em 30 cm
-NUMERO_LARGURA_M = 0.09   # o número da peça, antes do nome
+MARGEM_M = 0.02           # a borda LATERAL da folha, que ninguém usa
+ROTULO_LARGURA_M = 0.20   # o nome, 20 cm, UMA linha
 CABECALHO_M = 0.08        # faixa própria no topo: escrever sobre a arte estraga a peça
-MARCA_CORTE_M = 0.025     # o braço da cruz de corte, nos cantos
+MARCA_CORTE_M = 0.02      # o braço da cruz de corte
+
+# A linha de corte passa no MEIO da folga (pedido dele, 04/10/2026), ou
+# seja a 2,5 cm da arte. Cada peça fica com 2,5 cm de branco de cada
+# lado depois do refile.
+#
+# Isso decide onde o nome pode ficar: ABAIXO da linha de corte, nos
+# 2,5 cm que ficam com ESTA peça. Escrito acima dela, o nome sairia
+# junto com a peça de cima, e cada pedaço ficaria com o nome do vizinho.
+RECUO_CORTE_M = FOLGA_M / 2
 
 # Quanto a medida do arquivo pode diferir da do nome e ainda ser "a
 # mesma": 5 mm. Abaixo disso é arredondamento de quem exportou.
@@ -369,11 +377,17 @@ def encaixar(pecas, largura_util_m):
     # 0,30 m) teria rótulo maior que ela. O teto é a bobina — uma peça de
     # 5,00 m numa bobina de 5,00 não pode ser inflada, senão deixa de
     # caber deitada e o encaixe a obriga a girar à toa.
-    rotulo = NUMERO_LARGURA_M + ROTULO_LARGURA_M
+    rotulo = ROTULO_LARGURA_M
     util = largura_util_m - 2 * MARGEM_M
     inflar = []
     for i, peca in enumerate(pecas):
-        largura = min(max(peca["largura_m"] + FOLGA_M, rotulo), util)
+        largura = max(peca["largura_m"] + FOLGA_M, rotulo)
+        # O teto é a largura útil, MAS NUNCA ABAIXO DA PRÓPRIA PEÇA. Com
+        # o teto cru, uma lona de 7,14 m virava um retângulo reservado de
+        # 4,96 e o encaixe "cabia" com ela deitada — a arte saía 2,18 m
+        # pra fora da folha, calada (visto em 04/10/2026). O teto existe
+        # só pra peça que cabe e cuja FOLGA é que não caberia.
+        largura = min(largura, max(util, peca["largura_m"]))
         inflar.append((largura, peca["altura_m"] + FOLGA_M, i))
     postas, comprimento = aproveitamento.posicoes_no_rolo(inflar, util)
 
@@ -389,43 +403,28 @@ def encaixar(pecas, largura_util_m):
     return arte, comprimento
 
 
-def _escrever_numero(pagina, caixa, numero, giro=0):
+def _escrever_rotulo(pagina, caixa, texto):
     """
-    O número da peça, no maior tamanho que couber. Devolve os milímetros
-    usados.
+    O rótulo numa LINHA só dentro da caixa, encolhendo a letra até caber
+    e, no limite, cortando o fim do texto. Devolve (milímetros, o que
+    ficou escrito).
 
-    Por que não é uma chamada só com um tamanho fixo: o insert_textbox
-    NÃO avisa quando desiste — devolve negativo e não desenha nada. O
-    número sumiu assim duas vezes em 04/10/2026 (a 28 mm e a 26 mm), e as
-    duas só apareceram ampliando a prévia. É o número que ele usa pra
-    achar a peça na lona de 9 m depois de refilada.
+    Uma linha é regra dele (04/10/2026): o rótulo mora nos 2,5 cm entre a
+    linha de corte e a arte, e duas linhas não cabem ali.
+
+    O insert_textbox NÃO avisa quando desiste — devolve negativo e não
+    desenha nada. O número da peça sumiu assim DUAS vezes naquele dia, e
+    as duas só apareceram ampliando a prévia; por isso aqui ele ESTOURA
+    em vez de deixar a peça sem identificação.
     """
-    for milimetros in (24, 22, 20, 18, 16, 14, 12, 10):
-        if pagina.insert_textbox(caixa, f"{numero:02d}", fontsize=milimetros / 1000 * PT_M,
-                                 fontname="hebo", color=(0, 0, 0), rotate=giro) >= 0:
-            return milimetros
-    raise AssertionError(f"o número {numero} não coube em {caixa.width:.0f} x {caixa.height:.0f} pt")
-
-
-def _escrever_rotulo(pagina, caixa, descricao, rodape, giro=0):
-    """
-    O rótulo dentro da caixa, encolhendo de 18 até 9 mm e, no limite,
-    cortando a DESCRIÇÃO — nunca a especificação.
-
-    Duas armadilhas que isto resolve, as duas vistas em 04/10/2026:
-    o insert_textbox não avisa quando desiste (devolve negativo e não
-    desenha nada, e o número da peça sumiu assim); e cortar o nome pelo
-    fim jogava fora justamente o que identifica a peça.
-    """
-    for milimetros in (18, 16, 15, 14, 13, 12, 11, 10, 9):
-        for corte in (len(descricao), 34, 28, 22, 16):
-            texto = descricao if corte >= len(descricao) else descricao[:corte - 1] + "~"
-            sobrou = pagina.insert_textbox(caixa, f"{texto}\n{rodape}",
-                                           fontsize=milimetros / 1000 * PT_M,
-                                           fontname="hebo", color=(0, 0, 0), rotate=giro)
-            if sobrou >= 0:
-                return milimetros
-    return None
+    for milimetros in (20, 18, 16, 15, 14, 13, 12, 11, 10, 9, 8):
+        for corte in (len(texto), 40, 34, 28, 22, 16, 10):
+            curto = texto if corte >= len(texto) else texto[:corte - 1] + "~"
+            if pagina.insert_textbox(caixa, curto, fontsize=milimetros / 1000 * PT_M,
+                                     fontname="hebo", color=(0, 0, 0)) >= 0:
+                return milimetros, curto
+    raise AssertionError(f"o rótulo {texto!r} não coube em "
+                         f"{caixa.width / PT_M * 100:.1f} x {caixa.height / PT_M * 100:.1f} cm")
 
 
 def descricao_e_especificacao(nome):
@@ -496,9 +495,12 @@ def desenhar(pecas, postas, comprimento_m, largura_util_m, titulo):
     """
     pymupdf = _pymupdf()
     doc = pymupdf.open()
+    # o CABECALHO em cima, e embaixo a folga inteira: a arte da ultima
+    # fileira encosta no fim do encaixe e a marca de corte dela fica
+    # 2,5 cm abaixo disso
     pagina = doc.new_page(
         width=largura_util_m * PT_M,
-        height=(comprimento_m + CABECALHO_M + 2 * MARGEM_M) * PT_M)
+        height=(comprimento_m + CABECALHO_M + MARGEM_M + FOLGA_M) * PT_M)
     pagina.draw_rect(pagina.rect, color=None, fill=(1, 1, 1))
 
     for numero, (indice, x, y, largura, altura, girada, reservada_l, reservada_a) in \
@@ -525,34 +527,36 @@ def desenhar(pecas, postas, comprimento_m, largura_util_m, titulo):
                 pagina.show_pdf_page(onde, origem, peca["pagina"], rotate=girar,
                                      keep_proportion=True)
 
+        # AS MARCAS DE CORTE NO MEIO DA FOLGA, a 2,5 cm da arte: é ali que
+        # a lâmina passa, e aí cada peça fica com 2,5 cm de branco de cada
+        # lado. Nos cantos da própria arte elas obrigariam a cortar rente,
+        # sem folga pra errar.
+        corte = caixa + (-RECUO_CORTE_M * PT_M, -RECUO_CORTE_M * PT_M,
+                         RECUO_CORTE_M * PT_M, RECUO_CORTE_M * PT_M)
+        # Na peça da ponta os 2,5 cm passariam da borda de 2 cm e a marca
+        # sairia da folha. Ali ela encosta na borda — que é onde o refile
+        # vai passar de qualquer jeito, porque aquela tira é só margem.
+        corte.x0 = max(corte.x0, MARGEM_M * PT_M)
+        corte.x1 = min(corte.x1, (largura_util_m - MARGEM_M) * PT_M)
         braco = MARCA_CORTE_M * PT_M
-        for cx, cy in ((caixa.x0, caixa.y0), (caixa.x1, caixa.y0),
-                       (caixa.x0, caixa.y1), (caixa.x1, caixa.y1)):
+        for cx, cy in ((corte.x0, corte.y0), (corte.x1, corte.y0),
+                       (corte.x0, corte.y1), (corte.x1, corte.y1)):
             pagina.draw_line((cx - braco, cy), (cx + braco, cy), color=(0, 0, 0), width=2)
             pagina.draw_line((cx, cy - braco), (cx, cy + braco), color=(0, 0, 0), width=2)
 
-        # O NOME NO CANTO SUPERIOR ESQUERDO, fora da peça, preto no
-        # branco. Fica na folga de 5 cm que separa esta peça da de cima —
-        # a mesma folga por onde passa a lâmina, então o rótulo sai junto
-        # com o refile.
-        faixa = pymupdf.Rect(caixa.x0, caixa.y0 - (reservada_a - altura) * PT_M,
-                             caixa.x0 + (NUMERO_LARGURA_M + ROTULO_LARGURA_M) * PT_M,
-                             caixa.y0 - 0.004 * PT_M)
-        caixa_numero = pymupdf.Rect(faixa.x0, faixa.y0 + 0.004 * PT_M,
-                                    faixa.x0 + NUMERO_LARGURA_M * PT_M, faixa.y1)
-        caixa_nome = pymupdf.Rect(faixa.x0 + NUMERO_LARGURA_M * PT_M, faixa.y0 + 0.003 * PT_M,
-                                  faixa.x1, faixa.y1)
-        giro_rotulo = 0
+        # O NOME NO CANTO SUPERIOR ESQUERDO DA ARTE, numa linha só de
+        # 20 cm (regra dele, 04/10/2026). Ele mora nos 2,5 cm ENTRE a
+        # linha de corte e a arte — a metade da folga que fica com ESTA
+        # peça depois do refile. Escrito do outro lado da linha, sairia
+        # junto com a peça de cima.
+        caixa_nome = pymupdf.Rect(caixa.x0, caixa.y0 - (RECUO_CORTE_M - 0.003) * PT_M,
+                                  caixa.x0 + ROTULO_LARGURA_M * PT_M,
+                                  caixa.y0 - 0.003 * PT_M)
 
-        _escrever_numero(pagina, caixa_numero, numero, giro_rotulo)
-
-        descricao, especificacao = descricao_e_especificacao(peca["nome"])
-        rodape = f"{especificacao}  ·  {peca['largura_m']:.2f} x {peca['altura_m']:.2f} m"
-        if peca["ajuste"]["acao"] == "escalar":
-            rodape += f"  ·  AJUSTADA {peca['ajuste']['fator']:.2f}x"
+        descricao, _especificacao = descricao_e_especificacao(peca["nome"])
         if peca["quantidade"] > 1:
-            descricao = f"{descricao}  ({peca['copia']}/{peca['quantidade']})"
-        _escrever_rotulo(pagina, caixa_nome, descricao, rodape, giro_rotulo)
+            descricao = f"{descricao} ({peca['copia']}/{peca['quantidade']})"
+        _escrever_rotulo(pagina, caixa_nome, f"{numero:02d}  {descricao}")
 
     pagina.insert_textbox(
         pymupdf.Rect(0.02 * PT_M, 0.018 * PT_M, (largura_util_m - 0.02) * PT_M,
@@ -617,6 +621,20 @@ def montar_pasta(pasta, nome_maquina=None, config=None, maquinas=None, logger=No
 
     for categoria, do_material in sorted(por_material.items()):
         postas, comprimento = encaixar(do_material, largura)
+
+        # Peça que não cabe na bobina de jeito nenhum NÃO pode sumir da
+        # folha em silêncio: o encaixe simplesmente a ignora, e aí ela
+        # não é produzida e ninguém fica sabendo. Vira recusa, com o
+        # motivo escrito, como todas as outras.
+        colocadas = {posta[0] for posta in postas}
+        for indice, peca in enumerate(do_material):
+            if indice in colocadas:
+                continue
+            motivo = (f"{peca['largura_m']:.2f} x {peca['altura_m']:.2f} m não cabe na "
+                      f"{nome_maquina} nem girada (largura útil {largura:.2f} m, menos "
+                      f"{MARGEM_M * 100:.0f} cm de borda de cada lado)")
+            logger("warn", f"'{peca['nome']}' ficou de fora: {motivo}")
+            resultado["recusadas"].append({"arquivo": peca["nome"], "motivo": motivo})
         if not postas:
             continue
         area_pecas = sum(p["largura_m"] * p["altura_m"] for p in do_material)

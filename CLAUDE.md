@@ -251,6 +251,23 @@ sem explicação é peça que não vai ser produzida.
 de rótulo — a LATERAL_ESQUERDA e a DIREITA têm 0,90 × 2,40 as duas, e quem corta penduraria a arte
 errada na parede errada.
 
+**A linha de corte passa no MEIO da folga**, a 2,5 cm da arte — nos cantos da peça ela obrigaria a
+cortar rente, sem folga pra errar. Isso decide onde o nome pode ficar: **abaixo da linha**, nos
+2,5 cm que ficam com ESTA peça depois do refile. Escrito do outro lado, cada pedaço sairia com o nome
+do vizinho. Na peça da ponta a marca encosta na borda de 2 cm em vez de sair da folha. O nome é
+**uma linha só, 20 cm**, com o número na frente (`01  VIBRA_LONA_A_ESCALA_1-10`).
+
+**Peça maior que a bobina não some calada.** O encaixe simplesmente ignora o que não cabe, e aí a
+peça não é produzida e ninguém fica sabendo — o pior resultado possível aqui. Hoje ela vira recusa
+com o motivo escrito, como todas as outras. O defeito que isso destravou foi pior: o teto da largura
+reservada podia ficar ABAIXO da própria peça, e o encaixe "cabia" com uma lona de 7,14 m deitada numa
+bobina de 5,00 — **a arte saía 2,18 m pra fora da folha, calada**. Hoje
+`tests/test_montagem.py::test_arte_nunca_sai_da_folha` lê os desenhos do PDF e confere que nada
+ultrapassa a página.
+
+Consequência do teto de 2 cm que vale saber: **peça de exatamente 5,00 m passa a girar sempre**,
+porque a largura útil da montagem vira 4,96 m.
+
 **Os 5 cm entre peças fazem as duas coisas**: é por onde a lâmina passa no refile e é onde mora o
 nome (*"entre um arquivo e outro vamos usar espaço de 5cm, ali já podemos fazer anotação com nome do
 arquivo"*, 04/10/2026). Antes eram 1 cm de folga MAIS 5 cm de canaleta reservada à parte — juntar as

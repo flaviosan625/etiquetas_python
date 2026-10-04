@@ -221,9 +221,8 @@ def test_a_canaleta_nao_invade_a_peca_de_baixo(pasta):
         # a arte encosta embaixo do retangulo reservado, entao a faixa do
         # nome e o que sobra em cima -- e sobra igual com a peca girada
         alto_da_arte = y + (reservada_a - altura)
-        faixa = (x, y,
-                 x + montagem.NUMERO_LARGURA_M + montagem.ROTULO_LARGURA_M,
-                 alto_da_arte)
+        faixa = (x, alto_da_arte - montagem.RECUO_CORTE_M,
+                 x + montagem.ROTULO_LARGURA_M, alto_da_arte)
         for _, ox, oy, olargura, oaltura, _g, _rl, ora in postas:
             oy = oy + (ora - oaltura)
             if (ox, oy) == (x, y):
@@ -406,20 +405,21 @@ def test_toda_peca_sai_com_NUMERO_e_NOME_na_folha(pasta):
     assert "VIBRA_RODAPE" in texto
 
 
-def test_o_numero_encolhe_ate_caber_e_nunca_some(pasta):
-    """Se nem encolhendo couber, e pra ESTOURAR -- numero que some e peca perdida."""
+def test_o_rotulo_encolhe_ate_caber_e_nunca_some(pasta):
+    """Se nem encolhendo e cortando couber, e pra ESTOURAR -- rotulo que some e peca perdida."""
     import pymupdf as mupdf
 
     doc = mupdf.open()
-    pagina = doc.new_page(width=500, height=500)
-    # 75 pt de altura nao cabem os 24 mm (68 pt de letra, 82 de linha),
-    # cabem os 20 -- e e isso que ele tem que fazer em vez de sumir
-    apertada = mupdf.Rect(0, 0, 200, 75)
+    pagina = doc.new_page(width=1000, height=500)
+    apertada = mupdf.Rect(0, 0, 300, 40)
 
-    assert 0 < montagem._escrever_numero(pagina, apertada, 7) < 24
+    milimetros, escrito = montagem._escrever_rotulo(
+        pagina, apertada, "07  VIBRA_UM_NOME_BEM_COMPRIDO_DE_PECA")
+    assert 0 < milimetros <= 20
+    assert escrito.startswith("07"), "o numero nunca pode ser o pedaco cortado"
 
     with pytest.raises(AssertionError):
-        montagem._escrever_numero(pagina, mupdf.Rect(0, 0, 4, 4), 7)
+        montagem._escrever_rotulo(pagina, mupdf.Rect(0, 0, 4, 4), "07  QUALQUER")
     doc.close()
 
 
@@ -519,3 +519,69 @@ def test_proporcao_errada_por_mais_de_meio_porcento_e_recusada():
     assert montagem.ajuste_para((2.00, 1.00), (2.00, 1.02, 1))["acao"] == "recusar"
     # mesma proporcao, 1% maior nos dois lados: escala uniforme resolve
     assert montagem.ajuste_para((2.00, 1.00), (2.02, 1.01, 1))["acao"] == "escalar"
+
+
+def test_peca_maior_que_a_bobina_nao_some_calada(pasta):
+    """
+    O encaixe simplesmente IGNORA o que nao cabe. Sem este aviso a peca
+    nao seria produzida e ninguem ficaria sabendo -- o pior resultado
+    possivel num sistema de producao.
+    """
+    arte(pasta, "1UN LONA IMPRESSA 6.00X6.00M_VIBRA_GIGANTE.pdf", 6.00, 6.00)
+    arte(pasta, "1UN LONA IMPRESSA 2.00X1.00M_VIBRA_NORMAL.pdf", 2.00, 1.00)
+    avisos = []
+
+    resultado = montagem.montar_pasta(pasta, raiz_clientes=pasta.parent / "x",
+                                      logger=lambda n, m: avisos.append(m))
+
+    assert len(resultado["folhas"]) == 1, "a peca normal tinha que montar"
+    recusada = [r for r in resultado["recusadas"] if "GIGANTE" in r["arquivo"]]
+    assert recusada and "nao cabe" in recusada[0]["motivo"].replace("ã", "a")
+    assert any("GIGANTE" in a for a in avisos)
+
+
+def test_arte_nunca_sai_da_folha(pasta):
+    """
+    O defeito de 04/10/2026: o teto da largura reservada podia ficar
+    ABAIXO da propria peca, e o encaixe "cabia" com uma lona de 7,14 m
+    deitada numa bobina de 5,00 -- a arte saia 2,18 m pra fora, calada.
+    """
+    arte(pasta, "1UN LONA IMPRESSA 7.14X1.10M_VIBRA_LONA_A.pdf", 0.714, 0.110)
+    arte(pasta, "1UN LONA IMPRESSA 5.00X0.50M_VIBRA_TESTEIRA.pdf", 5.00, 0.50)
+    arte(pasta, "1UN LONA IMPRESSA 3.15X3.77M_VIBRA_PAREDE.pdf", 3.15, 3.77)
+
+    resultado = montagem.montar_pasta(pasta, raiz_clientes=pasta.parent / "x")
+    folha = resultado["folhas"][0]["arquivo"]
+
+    with pymupdf.open(str(folha)) as doc:
+        pagina = doc.load_page(0)
+        for desenho in pagina.get_drawings():
+            caixa = desenho["rect"]
+            assert caixa.x1 <= pagina.rect.width + 0.5, "desenho passou da largura da folha"
+            assert caixa.y1 <= pagina.rect.height + 0.5, "desenho passou do fim da folha"
+            assert caixa.x0 >= -0.5 and caixa.y0 >= -0.5
+
+
+def test_as_marcas_de_corte_ficam_no_MEIO_da_folga(pasta):
+    """
+    Pedido dele (04/10/2026). Nos cantos da arte obrigariam a cortar
+    rente; no meio da folga cada peca fica com 2,5 cm de branco de cada
+    lado depois do refile.
+    """
+    arte(pasta, "1UN LONA IMPRESSA 2.00X1.00M_VIBRA_PAINEL.pdf", 2.00, 1.00)
+
+    resultado = montagem.montar_pasta(pasta, raiz_clientes=pasta.parent / "x")
+    folha = resultado["folhas"][0]["arquivo"]
+    ficha = json.loads(folha.with_suffix(".json").read_text(encoding="utf-8"))
+    x, y = ficha["pecas"][0]["posicao_m"]
+    largura, altura = ficha["pecas"][0]["medida_m"]
+    if ficha["pecas"][0]["girada"]:
+        largura, altura = altura, largura
+
+    with pymupdf.open(str(folha)) as doc:
+        pagina = doc.load_page(0)
+        linhas = [d["rect"] for d in pagina.get_drawings() if d["rect"].height < 5]
+        # a marca de cima fica 2,5 cm ACIMA da arte
+        alvo = (y - montagem.RECUO_CORTE_M) * PT_M
+        assert any(abs(r.y0 - alvo) < 2 for r in linhas), \
+            "nenhuma marca horizontal a 2,5 cm acima da arte"
