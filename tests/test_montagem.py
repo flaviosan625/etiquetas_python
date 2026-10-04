@@ -218,17 +218,14 @@ def test_a_canaleta_nao_invade_a_peca_de_baixo(pasta):
     postas, _ = montagem.encaixar(pecas, 5.00)
 
     for _, x, y, largura, altura, _girada, reservada_l, reservada_a in postas:
-        # a canaleta fica embaixo quando a peça entrou em pé e à direita
-        # quando o encaixe a girou — é a reserva que diz onde
-        if reservada_a - altura >= montagem.CANALETA_M - 0.001:
-            faixa = (x, y + altura + montagem.FOLGA_M,
-                     x + montagem.NUMERO_LARGURA_M + montagem.ROTULO_LARGURA_M,
-                     y + altura + montagem.FOLGA_M + montagem.CANALETA_M)
-        else:
-            faixa = (x + largura + montagem.FOLGA_M, y,
-                     x + largura + montagem.FOLGA_M + montagem.CANALETA_M,
-                     y + montagem.NUMERO_LARGURA_M + montagem.ROTULO_LARGURA_M)
-        for _, ox, oy, olargura, oaltura, _g, _rl, _ra in postas:
+        # a arte encosta embaixo do retangulo reservado, entao a faixa do
+        # nome e o que sobra em cima -- e sobra igual com a peca girada
+        alto_da_arte = y + (reservada_a - altura)
+        faixa = (x, y,
+                 x + montagem.NUMERO_LARGURA_M + montagem.ROTULO_LARGURA_M,
+                 alto_da_arte)
+        for _, ox, oy, olargura, oaltura, _g, _rl, ora in postas:
+            oy = oy + (ora - oaltura)
             if (ox, oy) == (x, y):
                 continue
             separados = (ox >= faixa[2] - 0.001 or ox + olargura <= faixa[0] + 0.001
@@ -377,3 +374,148 @@ def test_uma_pasta_com_problema_nao_impede_a_outra(tmp_path, monkeypatch):
 
     assert len(feitas) == 1, "a SWJ tinha que montar mesmo com a DOCAN quebrando"
     assert any("arte quebrada" in a for a in avisos), "e o motivo tem que ficar no log"
+
+
+# ---------- o que esta desenhado na folha ----------
+#
+# O insert_textbox do PyMuPDF NAO avisa quando desiste: devolve negativo e
+# nao desenha nada. Em 04/10/2026 o numero da peca sumiu assim DUAS vezes,
+# e as duas so apareceram ampliando a previa. Estes testes leem o texto do
+# PDF pronto -- e a unica conferencia que pega isso.
+
+
+def _texto_da_folha(caminho):
+    with pymupdf.open(str(caminho)) as doc:
+        return doc.load_page(0).get_text()
+
+
+def test_toda_peca_sai_com_NUMERO_e_NOME_na_folha(pasta):
+    """
+    O material vai ser refilado: depois do corte, o que identifica cada
+    pedaco e o numero e o nome que sairam ao lado dele.
+    """
+    arte(pasta, "1UN LONA IMPRESSA 2.00X1.00M_VIBRA_PAINEL_FUNDO.pdf", 2.00, 1.00)
+    arte(pasta, "3UN LONA IMPRESSA 1.60X0.30M_VIBRA_RODAPE.pdf", 1.60, 0.30)
+
+    resultado = montagem.montar_pasta(pasta, raiz_clientes=pasta.parent / "x")
+    texto = _texto_da_folha(resultado["folhas"][0]["arquivo"])
+
+    for numero in ("01", "02", "03", "04"):
+        assert numero in texto, f"o numero {numero} nao foi desenhado"
+    assert "VIBRA_PAINEL_FUNDO" in texto
+    assert "VIBRA_RODAPE" in texto
+
+
+def test_o_numero_encolhe_ate_caber_e_nunca_some(pasta):
+    """Se nem encolhendo couber, e pra ESTOURAR -- numero que some e peca perdida."""
+    import pymupdf as mupdf
+
+    doc = mupdf.open()
+    pagina = doc.new_page(width=500, height=500)
+    # 75 pt de altura nao cabem os 24 mm (68 pt de letra, 82 de linha),
+    # cabem os 20 -- e e isso que ele tem que fazer em vez de sumir
+    apertada = mupdf.Rect(0, 0, 200, 75)
+
+    assert 0 < montagem._escrever_numero(pagina, apertada, 7) < 24
+
+    with pytest.raises(AssertionError):
+        montagem._escrever_numero(pagina, mupdf.Rect(0, 0, 4, 4), 7)
+    doc.close()
+
+
+def test_a_folha_respeita_a_margem_de_2cm(pasta):
+    """Borda de 2 cm: nada de arte nem de texto encostando no fio do rolo."""
+    arte(pasta, "1UN LONA IMPRESSA 2.00X1.00M_VIBRA_PAINEL.pdf", 2.00, 1.00)
+
+    resultado = montagem.montar_pasta(pasta, raiz_clientes=pasta.parent / "x")
+    folha = resultado["folhas"][0]["arquivo"]
+    ficha = json.loads(folha.with_suffix(".json").read_text(encoding="utf-8"))
+
+    with pymupdf.open(str(folha)) as doc:
+        pagina = doc.load_page(0)
+        limite = montagem.MARGEM_M * PT_M
+        for peca in ficha["pecas"]:
+            assert peca["posicao_m"][0] >= montagem.MARGEM_M - 0.001
+        for bloco in pagina.get_text("blocks"):
+            if not bloco[4].strip():
+                continue
+            assert bloco[0] >= limite - 0.5, "texto passou da margem esquerda"
+            assert bloco[2] <= pagina.rect.width - limite + 0.5, "texto passou da margem direita"
+
+
+def test_o_nome_fica_ACIMA_da_arte_nunca_em_cima_dela(pasta):
+    """
+    Canto superior esquerdo, como o RasterLink faz. E fora da peca: o
+    rotulo mora na folga de 5 cm, que e por onde a lamina passa.
+    """
+    arte(pasta, "1UN LONA IMPRESSA 2.00X1.00M_VIBRA_PAINEL.pdf", 2.00, 1.00)
+    arte(pasta, "1UN LONA IMPRESSA 1.00X2.00M_VIBRA_LATERAL.pdf", 1.00, 2.00)
+
+    resultado = montagem.montar_pasta(pasta, raiz_clientes=pasta.parent / "x")
+    folha = resultado["folhas"][0]["arquivo"]
+    ficha = json.loads(folha.with_suffix(".json").read_text(encoding="utf-8"))
+
+    with pymupdf.open(str(folha)) as doc:
+        pagina = doc.load_page(0)
+        artes = []
+        for peca in ficha["pecas"]:
+            x, y = peca["posicao_m"]
+            largura, altura = peca["medida_m"]
+            if peca["girada"]:
+                largura, altura = altura, largura
+            artes.append(pymupdf.Rect(x * PT_M, y * PT_M,
+                                      (x + largura) * PT_M, (y + altura) * PT_M))
+        for bloco in pagina.get_text("blocks"):
+            if not bloco[4].strip() or "MONTAGEM" in bloco[4]:
+                continue
+            caixa = pymupdf.Rect(bloco[:4])
+            for arte_rect in artes:
+                assert (caixa & arte_rect).get_area() <= 1, \
+                    f"o rotulo {bloco[4][:30]!r} caiu dentro de uma arte"
+
+
+def test_a_posicao_do_json_e_onde_a_arte_esta_DE_VERDADE(pasta):
+    """
+    O JSON e a planta de quem vai procurar a peca 07 numa lona de 9 m. A
+    posicao do ENCAIXE nao serve: a arte encosta embaixo da reserva e a
+    folha ainda tem cabecalho e margem na frente.
+    """
+    arte(pasta, "1UN LONA IMPRESSA 2.00X1.00M_VIBRA_PAINEL.pdf", 2.00, 1.00)
+
+    resultado = montagem.montar_pasta(pasta, raiz_clientes=pasta.parent / "x")
+    ficha = json.loads(resultado["folhas"][0]["arquivo"].with_suffix(".json").read_text(
+        encoding="utf-8"))
+
+    x, y = ficha["pecas"][0]["posicao_m"]
+    assert x == pytest.approx(montagem.MARGEM_M, abs=0.001)
+    assert y >= montagem.CABECALHO_M + montagem.MARGEM_M - 0.001, \
+        "a arte nao pode comecar antes do cabecalho"
+
+
+# ---------- a arte nao pode ser mexida ----------
+
+
+def test_escala_e_sempre_UNIFORME_nunca_estica(pasta):
+    """
+    "As artes nao podem ser mexidas em absolutamente nada" (04/10/2026).
+    A caixa que a arte cobre mantem a proporcao do arquivo: um fator so
+    pros dois lados.
+    """
+    import pymupdf as mupdf
+
+    caixa = mupdf.Rect(0, 0, 200, 100)          # proporcao 2,00
+    onde = montagem._caixa_que_a_arte_cobre(caixa, 199, 100, mupdf)   # arte 1,99
+
+    assert onde.width / onde.height == pytest.approx(199 / 100, rel=1e-6)
+    assert onde.width >= caixa.width - 0.001 and onde.height >= caixa.height - 0.001, \
+        "a arte tem que COBRIR a caixa: por dentro deixaria tira branca na peca"
+
+
+def test_proporcao_errada_por_mais_de_meio_porcento_e_recusada():
+    """
+    Era 2% e 2% numa lona de 7,14 m sao 14 cm. Ninguem chamaria isso de
+    "mesma arte".
+    """
+    assert montagem.ajuste_para((2.00, 1.00), (2.00, 1.02, 1))["acao"] == "recusar"
+    # mesma proporcao, 1% maior nos dois lados: escala uniforme resolve
+    assert montagem.ajuste_para((2.00, 1.00), (2.02, 1.01, 1))["acao"] == "escalar"

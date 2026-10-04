@@ -251,21 +251,36 @@ sem explicação é peça que não vai ser produzida.
 de rótulo — a LATERAL_ESQUERDA e a DIREITA têm 0,90 × 2,40 as duas, e quem corta penduraria a arte
 errada na parede errada.
 
-**A canaleta é espaço RESERVADO, não sobra** — e a reserva é nos DOIS sentidos. Os 5 cm de dados
-entram somados à altura, e a LARGURA do rótulo (0,39 m) vira piso da largura da peça: sem isso um
-rodapé de 0,30 m ganha um rótulo de 0,39 que invade a peça do lado. O teto é a bobina, senão uma
-peça de 5,00 m numa bobina de 5,00 deixa de caber deitada e o encaixe a obriga a girar à toa.
+**Os 5 cm entre peças fazem as duas coisas**: é por onde a lâmina passa no refile e é onde mora o
+nome (*"entre um arquivo e outro vamos usar espaço de 5cm, ali já podemos fazer anotação com nome do
+arquivo"*, 04/10/2026). Antes eram 1 cm de folga MAIS 5 cm de canaleta reservada à parte — juntar as
+duas gasta menos bobina, não mais. A borda da folha leva 2 cm. O rótulo é **preto, sem fundo
+pintado**: a folga é sobra que vai pro lixo, e pintá-la só gastaria tinta.
 
-**E o rótulo vai onde a reserva ficou, não sempre embaixo.** Quando o encaixe GIRA a peça, a
-canaleta gira com ela e vai parar à direita — desenhar embaixo punha o rótulo dentro da peça
-vizinha. `encaixar` devolve o retângulo reservado junto com o da arte, e quem desenha compara os
-dois pra saber de que lado escrever (e aí o texto também gira 90°, pra ler ao longo da tira).
-Conferido por extração de texto do PDF, não a olho: nenhum bloco de texto pode cair dentro de
-nenhuma arte. Reservar a largura ainda melhorou o encaixe — 82% → 91% nas 11 peças do VIBRA.
+**A folga é reservada nos DOIS sentidos, e por isso o rótulo nunca erra de lugar.** Com
+`(largura+folga) × (altura+folga)`, girado vira `(altura+folga) × (largura+folga)`: sobra folga nos
+dois sentidos de qualquer jeito. Então a arte encosta sempre no canto de BAIXO e o nome vai sempre no
+**canto superior esquerdo** dela, como o RasterLink faz — reservar só embaixo punha o rótulo dentro
+da peça vizinha quando o encaixe girava. Na largura ainda vale o piso do rótulo (0,39 m), senão um
+rodapé de 0,30 m tem rótulo maior que ele; o teto é a bobina, senão uma peça de 5,00 m numa bobina de
+5,00 deixa de caber deitada e gira à toa.
 
-O rótulo é **preto, sem fundo pintado** (ele, vendo a primeira folha: *"os nomes devem ficar fora
-das peças na área branca com nome em preto"*): a canaleta é sobra que vai pro lixo, e pintá-la só
-gastaria tinta. O cabeçalho também tem faixa própria: escrever sobre a arte estraga a peça. Medidas dele:
+**O `insert_textbox` do PyMuPDF não avisa quando desiste** — devolve negativo e não desenha nada. O
+número da peça sumiu assim DUAS vezes em 04/10/2026 (a 28 mm e a 26 mm), e as duas só apareceram
+ampliando a prévia. Hoje `_escrever_numero` e `_escrever_rotulo` encolhem até caber e **estouram**
+se não couber, e `tests/test_montagem.py` lê o texto do PDF pronto pra conferir que todo número e
+todo nome foram desenhados e que nenhum caiu dentro de arte. Conferência a olho não pega isso.
+
+**A arte nunca é esticada.** A escala é sempre UNIFORME, um fator só pros dois lados (regra dele:
+*"as artes não podem ser mexidas em absolutamente nada, manter sempre parâmetros originais, podemos
+apenas deixar no tamanho, rotacionar para melhorar o encaixe"*). Quando a proporção difere um
+tiquinho, a arte **cobre** a caixa e a sobra sai no refile — encaixar por dentro deixaria tira branca
+na peça. E a tolerância de proporção caiu de 2% pra 0,5%: 2% numa lona de 7,14 m são 14 cm, que
+ninguém chamaria de "mesma arte".
+
+**O `posicao_m` do JSON é onde a arte está NA FOLHA**, não onde o encaixe a pôs: a arte encosta
+embaixo da reserva e a folha ainda tem cabeçalho e margem na frente. O JSON é a planta de quem vai
+procurar a peça 07 numa lona de 9 m, e um metro de diferença manda a pessoa procurar no lugar errado. O cabeçalho também tem faixa própria: escrever sobre a arte estraga a peça. Medidas dele:
 folga de 1 cm, canaleta de 5 cm, nome em 30 cm. O rótulo encolhe de 18 até 9 mm e, no limite, corta
 **a descrição, nunca a especificação** — cortar pelo fim deixava `1UN DECORFLEX 4.30X0.80M_~` e
 jogava fora o `SPFW26_PASSARELA_PISO`, que é o que diz qual peça é.

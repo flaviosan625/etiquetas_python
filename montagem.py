@@ -66,8 +66,14 @@ NOME_SUBPASTA_ORIGINAIS = "_originais"
 NOME_SUBPASTA_PROBLEMAS = "_conferir"
 
 # --- as medidas do desenho, que ele deu ----------------------------
-FOLGA_M = 0.01            # entre peças, pra passar a lâmina
-CANALETA_M = 0.05         # a faixa de dados embaixo de cada peça
+#
+# Os 5 cm entre peças fazem as duas coisas: é por onde passa a lâmina do
+# refile e é onde mora o nome. Antes eram 1 cm de folga MAIS 5 cm de
+# canaleta reservada à parte — juntar as duas gasta menos bobina, não
+# mais ("entre um arquivo e outro vamos usar espaço de 5cm, ali já
+# podemos fazer anotação com nome do arquivo", 04/10/2026).
+FOLGA_M = 0.05            # entre peças: passa a lâmina E leva o nome
+MARGEM_M = 0.02           # a borda da folha, que ninguém usa
 ROTULO_LARGURA_M = 0.30   # o nome, em 30 cm
 NUMERO_LARGURA_M = 0.09   # o número da peça, antes do nome
 CABECALHO_M = 0.08        # faixa própria no topo: escrever sobre a arte estraga a peça
@@ -76,9 +82,15 @@ MARCA_CORTE_M = 0.025     # o braço da cruz de corte, nos cantos
 # Quanto a medida do arquivo pode diferir da do nome e ainda ser "a
 # mesma": 5 mm. Abaixo disso é arredondamento de quem exportou.
 TOLERANCIA_MEDIDA_M = 0.005
-# E quanto a PROPORÇÃO pode diferir e ainda ser escalável: 2%. Acima
-# disso escalar deformaria, e peça deformada só se descobre impressa.
-TOLERANCIA_PROPORCAO = 0.02
+# E quanto a PROPORÇÃO pode diferir e a arte ainda ser aproveitada.
+#
+# Era 2%, e 2% numa lona de 7,14 m são 14 cm — deformação que ninguém
+# chamaria de "mesma arte". Com "as artes não podem ser mexidas em
+# absolutamente nada" (regra dele, 04/10/2026), virou 0,5% e, mais
+# importante que o número: a escala é sempre UNIFORME, um fator só pros
+# dois lados. Arte nunca é esticada; no limite ela cobre a caixa e a
+# sobra sai no refile.
+TOLERANCIA_PROPORCAO = 0.005
 
 IMAGENS = (".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp")
 
@@ -345,21 +357,25 @@ def encaixar(pecas, largura_util_m):
     são espaço reservado, não sobra. Sem isso o rótulo de 5 cm cai dentro
     da peça de baixo (visto no desenho de 04/10/2026).
     """
-    # A peça reserva, além dela mesma: a folga de corte, a canaleta embaixo
-    # e — na largura — o espaço do RÓTULO. Sem a largura do rótulo, uma
-    # peça estreita (o rodapé de 0,30 m) ganha um rótulo de 0,39 m que
-    # invade a peça do lado: foi o que ele viu na primeira folha e pediu
-    # pra tirar ("os nomes devem ficar fora das peças").
+    # A peça reserva a folga nos DOIS lados, e não só embaixo. É isso que
+    # faz o rótulo continuar no lugar certo quando o encaixe gira a peça:
+    # com (largura+folga) x (altura+folga), girado vira
+    # (altura+folga) x (largura+folga) — sobra folga nos dois sentidos de
+    # qualquer jeito, então a arte vai sempre no canto de BAIXO e a faixa
+    # do nome sempre no topo. Reservar só embaixo punha o rótulo dentro da
+    # peça vizinha quando ela girava (visto em 04/10/2026).
     #
-    # O teto da largura é a bobina: uma peça de 5,00 m numa bobina de 5,00
-    # não pode ser inflada, senão deixa de caber deitada e o encaixe a
-    # obriga a girar sem motivo.
+    # Na largura ainda vale o piso do RÓTULO: peça estreita (o rodapé de
+    # 0,30 m) teria rótulo maior que ela. O teto é a bobina — uma peça de
+    # 5,00 m numa bobina de 5,00 não pode ser inflada, senão deixa de
+    # caber deitada e o encaixe a obriga a girar à toa.
     rotulo = NUMERO_LARGURA_M + ROTULO_LARGURA_M
+    util = largura_util_m - 2 * MARGEM_M
     inflar = []
     for i, peca in enumerate(pecas):
-        largura = min(max(peca["largura_m"] + FOLGA_M, rotulo), largura_util_m)
-        inflar.append((largura, peca["altura_m"] + FOLGA_M + CANALETA_M, i))
-    postas, comprimento = aproveitamento.posicoes_no_rolo(inflar, largura_util_m)
+        largura = min(max(peca["largura_m"] + FOLGA_M, rotulo), util)
+        inflar.append((largura, peca["altura_m"] + FOLGA_M, i))
+    postas, comprimento = aproveitamento.posicoes_no_rolo(inflar, util)
 
     arte = []
     for indice, x, y, largura, altura, girada in postas:
@@ -367,12 +383,28 @@ def encaixar(pecas, largura_util_m):
         largura_arte = peca["altura_m"] if girada else peca["largura_m"]
         altura_arte = peca["largura_m"] if girada else peca["altura_m"]
         # 'largura'/'altura' são o RETÂNGULO RESERVADO como ele foi posto.
-        # Quem desenha precisa dos dois: a arte vai no canto, e a canaleta
-        # é o que sobra — embaixo quando a peça entrou em pé, à direita
-        # quando o encaixe a girou. Desenhar sempre embaixo punha o rótulo
-        # dentro da peça vizinha (visto em 04/10/2026).
+        # Quem desenha precisa dos dois: a arte encosta no canto de baixo
+        # e o que sobra em cima é a faixa do nome.
         arte.append((indice, x, y, largura_arte, altura_arte, girada, largura, altura))
     return arte, comprimento
+
+
+def _escrever_numero(pagina, caixa, numero, giro=0):
+    """
+    O número da peça, no maior tamanho que couber. Devolve os milímetros
+    usados.
+
+    Por que não é uma chamada só com um tamanho fixo: o insert_textbox
+    NÃO avisa quando desiste — devolve negativo e não desenha nada. O
+    número sumiu assim duas vezes em 04/10/2026 (a 28 mm e a 26 mm), e as
+    duas só apareceram ampliando a prévia. É o número que ele usa pra
+    achar a peça na lona de 9 m depois de refilada.
+    """
+    for milimetros in (24, 22, 20, 18, 16, 14, 12, 10):
+        if pagina.insert_textbox(caixa, f"{numero:02d}", fontsize=milimetros / 1000 * PT_M,
+                                 fontname="hebo", color=(0, 0, 0), rotate=giro) >= 0:
+            return milimetros
+    raise AssertionError(f"o número {numero} não coube em {caixa.width:.0f} x {caixa.height:.0f} pt")
 
 
 def _escrever_rotulo(pagina, caixa, descricao, rodape, giro=0):
@@ -416,30 +448,82 @@ def descricao_e_especificacao(nome):
     return (descricao or base), base[:achado.start()].strip(" _-")
 
 
+def posicao_na_folha(posta):
+    """
+    (x_m, y_m) do canto superior esquerdo da ARTE na folha — não do
+    retângulo reservado.
+
+    Os dois diferem: a arte encosta embaixo da reserva (pra sobrar a
+    faixa do nome em cima) e a folha ainda tem o cabeçalho e a margem.
+    O JSON guarda ESTA posição, não a do encaixe: ele é a planta de
+    quem vai procurar a peça 07 na lona de 9 m, e um metro de diferença
+    manda a pessoa procurar no lugar errado.
+    """
+    _indice, x, y, _largura, altura, _girada, _reservada_l, reservada_a = posta
+    return x + MARGEM_M, y + CABECALHO_M + MARGEM_M + (reservada_a - altura)
+
+
+def _caixa_que_a_arte_cobre(caixa, largura_arte, altura_arte, pymupdf):
+    """
+    O retângulo a passar pro PyMuPDF pra arte COBRIR a caixa sem ser
+    esticada, centrada nela.
+
+    A escala é uniforme — um fator só pros dois lados —, então a arte
+    nunca deforma: "as artes não podem ser mexidas em absolutamente nada"
+    (regra dele, 04/10/2026). Quando a proporção do arquivo difere um
+    tiquinho da do nome (até TOLERANCIA_PROPORCAO), o que sobra passa das
+    marcas de corte e sai no refile, que é o destino dele de qualquer
+    jeito. Encaixar POR DENTRO deixaria uma tira branca na peça.
+    """
+    if largura_arte <= 0 or altura_arte <= 0:
+        return caixa
+    fator = max(caixa.width / largura_arte, caixa.height / altura_arte)
+    largura, altura = largura_arte * fator, altura_arte * fator
+    meio_x, meio_y = (caixa.x0 + caixa.x1) / 2, (caixa.y0 + caixa.y1) / 2
+    return pymupdf.Rect(meio_x - largura / 2, meio_y - altura / 2,
+                        meio_x + largura / 2, meio_y + altura / 2)
+
+
 def desenhar(pecas, postas, comprimento_m, largura_util_m, titulo):
-    """A folha pronta: cada arte no tamanho do NOME, dados na canaleta."""
+    """
+    A folha pronta: cada arte no tamanho do NOME, o nome no canto
+    superior esquerdo dela.
+
+    A arte encosta no canto de BAIXO do espaço reservado, então a folga
+    de 5 cm sobra em cima — e é ali, alinhado à esquerda da peça, que vai
+    o nome. É a convenção do RasterLink, que ele pediu pra seguir: o
+    material vai ser refilado e cada pedaço precisa sair com o nome dele.
+    """
     pymupdf = _pymupdf()
     doc = pymupdf.open()
-    pagina = doc.new_page(width=largura_util_m * PT_M,
-                          height=(comprimento_m + CABECALHO_M) * PT_M)
+    pagina = doc.new_page(
+        width=largura_util_m * PT_M,
+        height=(comprimento_m + CABECALHO_M + 2 * MARGEM_M) * PT_M)
     pagina.draw_rect(pagina.rect, color=None, fill=(1, 1, 1))
 
     for numero, (indice, x, y, largura, altura, girada, reservada_l, reservada_a) in \
             enumerate(postas, start=1):
         peca = pecas[indice]
-        esquerda, topo = x * PT_M, (y + CABECALHO_M) * PT_M
+        # a arte encosta embaixo do retângulo reservado: o que sobra em
+        # cima é a faixa do nome, e ela existe igual com a peça girada
+        posta = (indice, x, y, largura, altura, girada, reservada_l, reservada_a)
+        px, py = posicao_na_folha(posta)
+        esquerda, topo = px * PT_M, py * PT_M
         caixa = pymupdf.Rect(esquerda, topo, esquerda + largura * PT_M, topo + altura * PT_M)
         girar = 90 if girada != peca["ajuste"]["girar"] else 0
 
-        # A ARTE ENTRA NO TAMANHO DO NOME: a caixa é a medida do nome, e
-        # é encaixando a arte nela que o "redimensionar" acontece. Nada
-        # é reescrito no arquivo de origem.
+        # A ARTE ENTRA NO TAMANHO DO NOME, e só. Nada é reescrito no
+        # arquivo de origem: o PDF entra por referência e a imagem é
+        # embutida como está.
         arquivo = peca["arquivo"]
+        onde = _caixa_que_a_arte_cobre(caixa, largura, altura, pymupdf)
         if arquivo.suffix.lower() in IMAGENS:
-            pagina.insert_image(caixa, filename=str(arquivo), rotate=girar)
+            pagina.insert_image(onde, filename=str(arquivo), rotate=girar,
+                                keep_proportion=True)
         else:
             with pymupdf.open(str(arquivo)) as origem:
-                pagina.show_pdf_page(caixa, origem, peca["pagina"], rotate=girar)
+                pagina.show_pdf_page(onde, origem, peca["pagina"], rotate=girar,
+                                     keep_proportion=True)
 
         braco = MARCA_CORTE_M * PT_M
         for cx, cy in ((caixa.x0, caixa.y0), (caixa.x1, caixa.y0),
@@ -447,38 +531,20 @@ def desenhar(pecas, postas, comprimento_m, largura_util_m, titulo):
             pagina.draw_line((cx - braco, cy), (cx + braco, cy), color=(0, 0, 0), width=2)
             pagina.draw_line((cx, cy - braco), (cx, cy + braco), color=(0, 0, 0), width=2)
 
-        # O rótulo fica FORA da peça, na área branca da folha, em preto
-        # (pedido dele em 04/10/2026, olhando a primeira folha). Sem fundo
-        # pintado: a canaleta é sobra de material que vai pro lixo, e
-        # pintá-la só gastaria tinta.
-        #
-        # Onde ela está depende de como o encaixe pôs a peça: embaixo
-        # quando entrou em pé, à direita quando foi girada — aí o rótulo
-        # também gira, pra ler ao longo da tira.
-        sobra_abaixo = reservada_a - altura
-        deitado = sobra_abaixo >= CANALETA_M - 0.001
-        if deitado:
-            faixa = pymupdf.Rect(caixa.x0, caixa.y1 + FOLGA_M * PT_M,
-                                 caixa.x0 + (NUMERO_LARGURA_M + ROTULO_LARGURA_M) * PT_M,
-                                 caixa.y1 + (FOLGA_M + CANALETA_M) * PT_M)
-            caixa_numero = pymupdf.Rect(faixa.x0 + 0.006 * PT_M, faixa.y0 + 0.006 * PT_M,
-                                        faixa.x0 + NUMERO_LARGURA_M * PT_M, faixa.y1)
-            caixa_nome = pymupdf.Rect(faixa.x0 + NUMERO_LARGURA_M * PT_M, faixa.y0 + 0.004 * PT_M,
-                                      faixa.x1, faixa.y1)
-            giro_rotulo = 0
-        else:
-            faixa = pymupdf.Rect(caixa.x1 + FOLGA_M * PT_M, caixa.y0,
-                                 caixa.x1 + (FOLGA_M + CANALETA_M) * PT_M,
-                                 caixa.y0 + (NUMERO_LARGURA_M + ROTULO_LARGURA_M) * PT_M)
-            caixa_numero = pymupdf.Rect(faixa.x0, faixa.y1 - NUMERO_LARGURA_M * PT_M,
-                                        faixa.x1 - 0.006 * PT_M, faixa.y1 - 0.006 * PT_M)
-            caixa_nome = pymupdf.Rect(faixa.x0, faixa.y0,
-                                      faixa.x1 - 0.004 * PT_M,
-                                      faixa.y1 - NUMERO_LARGURA_M * PT_M)
-            giro_rotulo = 90
+        # O NOME NO CANTO SUPERIOR ESQUERDO, fora da peça, preto no
+        # branco. Fica na folga de 5 cm que separa esta peça da de cima —
+        # a mesma folga por onde passa a lâmina, então o rótulo sai junto
+        # com o refile.
+        faixa = pymupdf.Rect(caixa.x0, caixa.y0 - (reservada_a - altura) * PT_M,
+                             caixa.x0 + (NUMERO_LARGURA_M + ROTULO_LARGURA_M) * PT_M,
+                             caixa.y0 - 0.004 * PT_M)
+        caixa_numero = pymupdf.Rect(faixa.x0, faixa.y0 + 0.004 * PT_M,
+                                    faixa.x0 + NUMERO_LARGURA_M * PT_M, faixa.y1)
+        caixa_nome = pymupdf.Rect(faixa.x0 + NUMERO_LARGURA_M * PT_M, faixa.y0 + 0.003 * PT_M,
+                                  faixa.x1, faixa.y1)
+        giro_rotulo = 0
 
-        pagina.insert_textbox(caixa_numero, f"{numero:02d}", fontsize=0.028 * PT_M,
-                              fontname="hebo", color=(0, 0, 0), rotate=giro_rotulo)
+        _escrever_numero(pagina, caixa_numero, numero, giro_rotulo)
 
         descricao, especificacao = descricao_e_especificacao(peca["nome"])
         rodape = f"{especificacao}  ·  {peca['largura_m']:.2f} x {peca['altura_m']:.2f} m"
@@ -573,16 +639,17 @@ def montar_pasta(pasta, nome_maquina=None, config=None, maquinas=None, logger=No
             "cliente": cliente, "maquina": nome_maquina, "categoria": categoria,
             "folha_m": [round(largura, 3), round(comprimento + CABECALHO_M, 3)],
             "area_folha_m2": round(area_folha, 3), "area_pecas_m2": round(area_pecas, 3),
-            "folga_m": FOLGA_M, "canaleta_m": CANALETA_M,
+            "folga_m": FOLGA_M, "margem_m": MARGEM_M,
             "pecas": [{
                 "numero": numero, "arquivo": do_material[i]["nome"],
                 "pagina": do_material[i]["pagina"],
                 "medida_m": [round(do_material[i]["largura_m"], 3),
                              round(do_material[i]["altura_m"], 3)],
-                "posicao_m": [round(x, 3), round(y, 3)], "girada": girada,
+                "posicao_m": [round(v, 3) for v in posicao_na_folha(posta)], "girada": girada,
                 "ajuste": do_material[i]["ajuste"]["acao"],
                 "fator": do_material[i]["ajuste"]["fator"],
-            } for numero, (i, x, y, _w, _h, girada, _rl, _ra) in enumerate(postas, start=1)],
+            } for numero, posta in enumerate(postas, start=1)
+               for i, girada in ((posta[0], posta[5]),)],
         }
         destino.with_suffix(".json").write_text(
             json.dumps(ficha, ensure_ascii=False, indent=2), encoding="utf-8")
