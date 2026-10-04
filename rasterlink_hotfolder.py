@@ -1848,6 +1848,55 @@ _LINHA_IMPRESSA = re.compile(
 METRO_POR_POLEGADA = 0.0254
 
 
+def arquivo_do_byhx(nome, pasta=None, logger=None):
+    """
+    O caminho de um arquivo do programa da impressora, ou None.
+
+    NÃO é só juntar pasta + nome: em 04/10/2026 o registro de impressão
+    passou a noite inteira sem anotar uma linha porque o
+    PrintedArea.Log não está na RAIZ de C:\PrinterManager — e eu tinha
+    escrito o caminho de cabeça. O coletor que rodou na máquina já
+    procurava recursivamente, e eu não copiei esse cuidado pro vigia.
+
+    Procura na raiz primeiro e depois nas subpastas, ficando com o MAIOR
+    homônimo: há mais de um Setting.xml e mais de um Print.log lá dentro,
+    e o que tem conteúdo de verdade é sempre o maior.
+    """
+    pasta = pathlib.Path(pasta or PASTA_BYHX)
+    direto = pasta / nome
+    if direto.is_file():
+        return direto
+    try:
+        achados = [c for c in pasta.rglob(nome) if c.is_file()]
+    except OSError:
+        return None
+    if not achados:
+        _avisar_uma_vez(f"~byhx_falta~{nome}",
+                        f"Não achei '{nome}' em '{pasta}' nem nas subpastas — sem ele não dá pra "
+                        f"provar o que a máquina imprimiu, e a faxina do ripado não apaga nada.",
+                        logger or logger_arquivo)
+        return None
+    _avisar_uma_vez(f"~byhx_falta~{nome}", None, logger or logger_arquivo)
+    return max(achados, key=lambda c: c.stat().st_size)
+
+
+def _texto_do_byhx(nome, pasta=None, logger=None):
+    """O conteúdo de um arquivo do programa da impressora, ou None — e diz no log por que não."""
+    caminho = arquivo_do_byhx(nome, pasta, logger)
+    if caminho is None:
+        return None
+    try:
+        texto = caminho.read_text(encoding="utf-8", errors="replace")
+    except OSError as erro:
+        # Arquivo que EXISTE e não abre é notícia, não silêncio: o
+        # programa pode estar segurando ele sem deixar ninguém ler.
+        _avisar_uma_vez(f"~byhx_ler~{nome}",
+                        f"'{caminho}' existe mas não consegui ler: {erro}", logger or logger_arquivo)
+        return None
+    _avisar_uma_vez(f"~byhx_ler~{nome}", None, logger or logger_arquivo)
+    return texto
+
+
 def _maquina_da_pasta(pasta, maquinas=None):
     """
     De qual máquina é um ripado, lido do NOME DA PASTA onde ele está
@@ -1889,10 +1938,8 @@ def passadas_do_byhx(pasta_byhx=None, desde=None, maquinas=None):
     de outro programa, pode mudar de formato sem avisar, e isso nunca
     pode derrubar a passada do vigia.
     """
-    caminho = pathlib.Path(pasta_byhx or PASTA_BYHX) / "PrintedArea.Log"
-    try:
-        texto = caminho.read_text(encoding="utf-8", errors="replace")
-    except OSError:
+    texto = _texto_do_byhx("PrintedArea.Log", pasta_byhx)
+    if texto is None:
         return []
 
     passadas = []
@@ -1935,10 +1982,8 @@ def trabalhos_do_byhx(pasta_byhx=None, maquinas=None):
     campo no meio, isto continua achando o que importa, e o que não
     achar vira trabalho pulado, nunca exceção.
     """
-    caminho = pathlib.Path(pasta_byhx or PASTA_BYHX) / "Joblist_His.xml"
-    try:
-        texto = caminho.read_text(encoding="utf-8", errors="replace")
-    except OSError:
+    texto = _texto_do_byhx("Joblist_His.xml", pasta_byhx)
+    if texto is None:
         return []
     # o arquivo começa com um <Hash> ANTES do <JobList>, ou seja, tem
     # dois elementos de raiz — nenhum leitor de XML aceita isso
@@ -2132,15 +2177,18 @@ def registrar_impressoes(pasta_relatorios=None, pasta_byhx=None, logger=None, ag
     caminho_marca = pathlib.Path(caminho_marca or CAMINHO_MARCA_BYHX)
     marca = _ler_marca_byhx(caminho_marca)
 
-    log = pathlib.Path(pasta_byhx or PASTA_BYHX) / "PrintedArea.Log"
+    # Sem o log NÃO se desiste da passada: o trabalho 'Printed' da lista é
+    # prova independente, e foi isso que faltou em 04/10/2026 — o log não
+    # estava na raiz, a função voltava vazia e nem os trabalhos entravam.
+    log = arquivo_do_byhx("PrintedArea.Log", pasta_byhx, logger)
     try:
-        tamanho_log = log.stat().st_size
+        tamanho_log = log.stat().st_size if log else 0
     except OSError:
-        return {"anotadas": 0, "pendentes": 0}
+        tamanho_log = 0
     # log que ENCOLHEU foi trocado ou zerado: a marca não vale mais, e
     # reler tudo não duplica nada — quem garante isso é a chave do
     # registro, não a marca
-    if tamanho_log < marca.get("bytes", 0):
+    if tamanho_log and tamanho_log < marca.get("bytes", 0):
         marca = {}
 
     passadas = passadas_do_byhx(pasta_byhx, marca.get("ate"), maquinas)
@@ -2158,7 +2206,8 @@ def registrar_impressoes(pasta_relatorios=None, pasta_byhx=None, logger=None, ag
     resultado = conciliar_registro(pasta_relatorios, caminho_pendente, logger, agora,
                                    NOME_SUBPASTA_IMPRESSAO, "impressão(ões)")
 
-    marca["bytes"] = tamanho_log
+    if tamanho_log:
+        marca["bytes"] = tamanho_log
     if passadas:
         marca["ate"] = passadas[-1]["quando"].replace("T", " ")
     marca["trabalhos"] = [f"{t['quando']}|{t['arquivo']}" for t in trabalhos]
@@ -2190,8 +2239,8 @@ def levar_historico_do_byhx(pasta_relatorios=None, pasta_byhx=None, logger=None)
                / NOME_PASTA_BYHX / platform.node())
     copiados = []
     for nome in ARQUIVOS_BYHX:
-        de = origem / nome
-        if not de.is_file():
+        de = arquivo_do_byhx(nome, origem, logger)
+        if de is None:
             continue
         para = destino / nome
         try:
@@ -2250,6 +2299,41 @@ def _separar_ripados_da_docan(logger=None, agora=None):
     for chave in [k for k in _ultimo_erro_por_arquivo if k.startswith("~ripado~") and k not in atuais]:
         _ultimo_erro_por_arquivo.pop(chave, None)
 
+
+
+def preparar_pastas_do_ripado(posto=None, logger=None):
+    """
+    Cria a pasta de saída de cada máquina DESTE posto e devolve
+    (raiz, [pastas]). Nada apaga, nada move.
+
+    Existe pro instalador da máquina da DOCAN chamar: lá a pasta de cada
+    máquina não existia, e sem ela o separador criaria no primeiro
+    arquivo — mas quem precisa saber o caminho ANTES é gente, pra abrir
+    a pasta e pegar o ripado. A porta do SAi também não cria pasta: se o
+    destino faltar na hora de gravar, ela falha depois de ripado.
+
+    A raiz é descoberta (ver ripados_para_nuvem.raiz_dos_ripados): no PC
+    principal é o D:, na máquina da DOCAN é o C:, que é o único disco.
+    """
+    logger = logger or logger_arquivo
+    posto = posto or posto_pedido()
+    try:
+        import ripados_para_nuvem
+    except ImportError:
+        logger("warn", "Sem o ripados_para_nuvem aqui: não sei onde é a raiz do ripado.")
+        return None, []
+    raiz = ripados_para_nuvem.raiz_dos_ripados()
+    pastas = []
+    for nome in sorted(maquinas_do_posto(posto)):
+        pasta = raiz / nome
+        try:
+            pasta.mkdir(parents=True, exist_ok=True)
+        except OSError as erro:
+            logger("warn", f"Não consegui criar '{pasta}': {erro}")
+            continue
+        pastas.append(pasta)
+        logger("ok", f"Pasta de saída da {nome}: {pasta}")
+    return raiz, pastas
 
 
 def _cuidar_do_ripado(logger=None):
@@ -2402,6 +2486,14 @@ if __name__ == "__main__":
         # absoluto — sem uma linha no log não dá pra saber se a tarefa
         # do Agendador não disparou ou se disparou e morreu no ar.
         logger_arquivo("info", f"autoteste ok — iniciei por: {sys.executable} {' '.join(sys.argv)}")
+    elif "--preparar-ripados" in sys.argv:
+        # Chamado pelo instalador/atualizador da máquina da impressora:
+        # cria a pasta de saída de cada máquina e imprime a raiz, pra o
+        # script conseguir fazer o atalho sem adivinhar caminho.
+        raiz, pastas = preparar_pastas_do_ripado()
+        for pasta in pastas:
+            print(pasta)
+        print(f"RAIZ={raiz}")
     elif "--uma-vez" in sys.argv:
         principal_uma_vez()
     else:

@@ -34,11 +34,20 @@ $SINAL       = Join-Path $env:USERPROFILE ("OneDrive\UNYCOMUNICACAO\FILA PARA IM
 
 # O vigia novo vem ao lado deste script (é assim que a pasta do OneDrive
 # é montada). Rodando de dentro do repositório, ele está uma pasta acima.
-$ORIGEM = Join-Path $PSScriptRoot "rasterlink_hotfolder.py"
-if (-not (Test-Path $ORIGEM)) {
-    $acima = Join-Path (Split-Path -Parent $PSScriptRoot) "rasterlink_hotfolder.py"
-    if (Test-Path $acima) { $ORIGEM = $acima }
+#
+# DESDE 04/10/2026 SÃO QUATRO ARQUIVOS, não um: nesta máquina o vigia
+# também separa o ripado de cada DOCAN na pasta dela, e pra isso precisa
+# do separador. Todos só de biblioteca padrão do Python.
+$ARQUIVOS = @("rasterlink_hotfolder.py", "separar_ripados.py",
+              "ripados_para_nuvem.py", "caminhos.py")
+function Origem($nome) {
+    $aqui = Join-Path $PSScriptRoot $nome
+    if (Test-Path $aqui) { return $aqui }
+    $acima = Join-Path (Split-Path -Parent $PSScriptRoot) $nome
+    if (Test-Path $acima) { return $acima }
+    return $aqui
 }
+$ORIGEM = Origem "rasterlink_hotfolder.py"
 
 function Fechar($codigo) {
     try { Stop-Transcript | Out-Null } catch { }
@@ -98,21 +107,39 @@ if ($novo.Length -eq $velho.Length) {
     Write-Host "  Vou copiar de novo de qualquer jeito: custa 90 KB e tira a dúvida." -ForegroundColor Cyan
 }
 
-# 3. Copiar, guardando a anterior.
+# 3. Copiar, guardando as anteriores.
 #
-# A cópia de segurança é barata (90 KB) e salva o dia em que a versão nova
-# vier com defeito: é só renomear de volta e a tarefa volta a funcionar.
-$seOuvir = Join-Path $PASTA "rasterlink_hotfolder.py.anterior"
+# A cópia de segurança é barata (uns 150 KB no total) e salva o dia em que
+# a versão nova vier com defeito: é só renomear de volta e a tarefa volta
+# a funcionar. Guarda ANTES de copiar qualquer um, porque o desfazer tem
+# que devolver o conjunto inteiro — vigia novo com separador velho é uma
+# combinação que nunca foi testada.
+$guardados = @{}
 try {
-    Copy-Item $SCRIPT $seOuvir -Force
-    Copy-Item $ORIGEM $SCRIPT -Force
+    foreach ($nome in $ARQUIVOS) {
+        $instalado = Join-Path $PASTA $nome
+        if (Test-Path $instalado) {
+            $copia = "$instalado.anterior"
+            Copy-Item $instalado $copia -Force
+            $guardados[$nome] = $copia
+        }
+    }
+    foreach ($nome in $ARQUIVOS) {
+        $de = Origem $nome
+        if (-not (Test-Path $de)) {
+            Write-Host "  (não achei $nome ao lado deste script — pulei)" -ForegroundColor Yellow
+            continue
+        }
+        Copy-Item $de (Join-Path $PASTA $nome) -Force
+        Write-Host ("  copiado: {0,-26} {1,8:N0} KB" -f $nome, ((Get-Item $de).Length/1KB)) -ForegroundColor Green
+    }
 } catch {
     Parar @("Não consegui escrever em $PASTA : $($_.Exception.Message)",
             "Feche esta janela, clique com o BOTÃO DIREITO no atualizar.bat e",
             "escolha 'Executar como administrador'.")
 }
 Write-Host ""
-Write-Host "  Copiado. A versão anterior ficou em rasterlink_hotfolder.py.anterior" -ForegroundColor Green
+Write-Host "  As versões anteriores ficaram como <nome>.anterior, na mesma pasta." -ForegroundColor Green
 
 # 4. O vigia aguenta subir?
 #
@@ -137,12 +164,49 @@ if ($acao -and $acao.Execute) {
     if ($codigo -ne 0) {
         Write-Host ""
         Write-Host "  O VIGIA NOVO NÃO INICIOU (código $codigo)." -ForegroundColor Red
-        Write-Host "  Desfazendo: a versão anterior volta agora." -ForegroundColor Yellow
-        Copy-Item $seOuvir $SCRIPT -Force
+        Write-Host "  Desfazendo: as versões anteriores voltam agora." -ForegroundColor Yellow
+        foreach ($nome in $guardados.Keys) {
+            Copy-Item $guardados[$nome] (Join-Path $PASTA $nome) -Force
+        }
         Write-Host "  Pronto, voltou. Mande a mensagem acima pra quem mexeu no vigia." -ForegroundColor Yellow
         Fechar 1
     }
     Write-Host "  Inicia." -ForegroundColor Green
+
+    # 4b. A pasta de saída de cada DOCAN, e um atalho pra elas.
+    #
+    # A partir de agora o ripado não fica mais num monte só: o vigia
+    # separa cada .prt na pasta da máquina que o gerou, com prova do
+    # RIPLOG. Quem precisa ACHAR a pasta é gente — por isso o atalho na
+    # área de trabalho, igual ao que existe no PC principal.
+    #
+    # Quem diz onde é a raiz é o próprio vigia (--preparar-ripados):
+    # nesta máquina não há D:, e caminho escrito de cabeça erra calado.
+    Write-Host ""
+    Write-Host "  Preparando a pasta de saída de cada DOCAN..."
+    $raiz = $null
+    Push-Location $PASTA
+    try {
+        & $acao.Execute "-m" "rasterlink_hotfolder" "--preparar-ripados" "--posto" $POSTO 2>&1 |
+            ForEach-Object {
+                if ($_ -match "^RAIZ=(.+)$") { $raiz = $Matches[1].Trim() } else { Write-Host "    $_" }
+            }
+    } finally { Pop-Location }
+
+    if ($raiz -and (Test-Path $raiz)) {
+        Write-Host "    raiz do ripado nesta máquina: $raiz" -ForegroundColor Green
+        try {
+            $atalho = Join-Path ([Environment]::GetFolderPath("Desktop")) "RIPADOS.lnk"
+            $sh = New-Object -ComObject WScript.Shell
+            $lnk = $sh.CreateShortcut($atalho)
+            $lnk.TargetPath = $raiz
+            $lnk.Description = "Ripados das DOCAN, separados por maquina"
+            $lnk.Save()
+            Write-Host "    atalho 'RIPADOS' na área de trabalho -> $raiz" -ForegroundColor Green
+        } catch {
+            Write-Host "    (não consegui criar o atalho: $($_.Exception.Message))" -ForegroundColor Yellow
+        }
+    }
 }
 
 # 5. A prova: a tarefa roda e o sinal de vida fica NOVO.

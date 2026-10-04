@@ -99,7 +99,7 @@ def maquina_do_dispositivo(maquinas=None):
 
 def pastas_onde_o_sai_grava(maquinas=None):
     """Onde o SAi grava ou já gravou ripado de DOCAN. Lido na hora do uso."""
-    raiz = pathlib.Path(ripados_para_nuvem.PASTA_RIPADOS)
+    raiz = ripados_para_nuvem.raiz_dos_ripados()
     pastas = [raiz / nome for nome in maquina_do_dispositivo(maquinas).values()]
     return pastas + [raiz, pathlib.Path(PASTA_RIPADOS_ANTIGA)]
 
@@ -275,7 +275,7 @@ def separar(pastas=None, raiz=None, riplog=None, maquinas=None, logger=None, mov
     'em_uso': [caminho], 'erros': [(caminho, motivo)]}. Com mover=False só diz o que faria.
     """
     agora = agora or datetime.datetime.now()
-    raiz = pathlib.Path(raiz or ripados_para_nuvem.PASTA_RIPADOS)
+    raiz = pathlib.Path(raiz) if raiz else ripados_para_nuvem.raiz_dos_ripados()
     mapa = maquina_do_dispositivo(maquinas)
     pastas = pastas_onde_o_sai_grava(maquinas) if pastas is None else [pathlib.Path(p) for p in pastas]
     saidas = saidas_do_riplog(riplog)

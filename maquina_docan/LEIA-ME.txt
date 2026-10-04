@@ -51,9 +51,20 @@ A ORDEM IMPORTA
 
 PRA ATUALIZAR DEPOIS
 --------------------
-Rode o mesmo instalar_tarefa.bat de novo: ele copia o vigia novo por cima
-e reinstala a tarefa. (O arquivo que importa é o rasterlink_hotfolder.py
-desta pasta — ele vem do PC principal pelo OneDrive.)
+Rode o atualizar.bat desta pasta. Ele faz só o que precisa: guarda a versão
+que está instalada, copia a nova, confere se ela INICIA e, se não iniciar,
+desfaz sozinho e devolve a anterior. No fim ele dispara a tarefa e só diz
+"tudo certo" depois de o sinal de vida ficar novo — mensagem de script não
+prova deploy nenhum.
+
+São QUATRO arquivos, não um: o rasterlink_hotfolder.py (o vigia) e mais
+três que ele usa pra separar o ripado por máquina (separar_ripados.py,
+ripados_para_nuvem.py, caminhos.py). Todos só de biblioteca padrão do
+Python — nada pra instalar. Eles vêm do PC principal por esta mesma pasta
+do OneDrive.
+
+O instalar_tarefa.bat também copia tudo e continua servindo; o atualizar é
+mais seguro porque sabe voltar atrás.
 
 PRA DESFAZER
 ------------
@@ -71,8 +82,25 @@ ENTRADA; trocar ali faz o programa parar de receber).
 
 E atenção: as duas DOCAN são configurações do MESMO dispositivo
 (Docan Docan@FILE:). Trocar a Localização padrão de uma troca a das duas —
-conferido em 24/09/2026. Por isso, no PC principal, os ripados das duas
-caíam na mesma pasta e um separador mandava cada um pra sua. Aqui, se as
-duas forem imprimir, a mesma coisa vai acontecer: combine comigo antes de
-mandar as duas ripar na mesma pasta, que um ripado de plana indo pra
-máquina de rolo é chapa perdida.
+conferido em 24/09/2026. Então as duas gravam o ripado na MESMA pasta, e
+não há ajuste na tela que resolva isso.
+
+
+A SEPARAÇÃO DO RIPADO, QUE AGORA ACONTECE AQUI
+----------------------------------------------
+Desde 04/10/2026 o vigia separa sozinho, a cada passada: lê o RIPLOG do
+SAi pra saber qual DOCAN gerou cada .prt e leva o arquivo pra pasta dela.
+
+   C:\RIPADOS\DOCAN R5200     o do rolo
+   C:\RIPADOS\DOCAN H2525     o da mesa (chapa)
+
+Tem um atalho "RIPADOS" na área de trabalho apontando pra lá — o
+atualizar.bat o cria. Ele varre também o Desktop\RIPADOS, que é onde
+trabalho antigo reenviado ainda grava: cada trabalho guarda o destino da
+hora em que entrou no SAi.
+
+Três coisas precisam bater pra um arquivo mudar de pasta: o nome do
+trabalho no RIPLOG, o horário de término batendo com o do arquivo, e o
+arquivo parado há pelo menos 30 segundos. Faltando qualquer uma, ele FICA
+ONDE ESTÁ e aparece um aviso no log — ripado de plana indo pra máquina de
+rolo é chapa perdida, e palpite aqui não serve.

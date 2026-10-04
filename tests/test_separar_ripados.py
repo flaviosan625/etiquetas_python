@@ -392,3 +392,40 @@ def test_o_vigia_nao_cai_se_o_separador_quebrar(monkeypatch):
     rl_hf._separar_ripados_da_docan(logger=lambda n, t: linhas.append(t))
 
     assert any("D: sumiu" in t for t in linhas)
+
+
+# ------------------------------------------------------- sem disco D:
+
+
+def test_pastas_varridas_seguem_a_raiz_descoberta(tmp_path, monkeypatch):
+    """
+    Na maquina da impressora (que ripa desde 03/10/2026) nao existe D:
+    nenhum: o ripado cai no C:. Enquanto a raiz era fixa em D:, o
+    separador varria pasta inexistente e nao separava nada -- calado,
+    que e o pior jeito de falhar. Agora ele pergunta qual e a raiz
+    DESTA maquina.
+    """
+    outra = tmp_path / "C_RIPADOS"
+    outra.mkdir()
+    monkeypatch.setattr(ripados_para_nuvem, "raiz_dos_ripados", lambda *a, **k: outra)
+
+    pastas = sr.pastas_onde_o_sai_grava(MAQUINAS)
+
+    assert outra / "DOCAN R5200" in pastas
+    assert outra / "DOCAN H2525" in pastas
+    assert outra in pastas, "a propria raiz tambem e varrida: e onde o SAi larga"
+
+
+def test_separa_na_raiz_descoberta(tmp_path, monkeypatch):
+    """Ponta a ponta sem D:: sai do Desktop e vai pra pasta da maquina, no C:."""
+    outra = tmp_path / "C_RIPADOS"
+    outra.mkdir()
+    monkeypatch.setattr(ripados_para_nuvem, "raiz_dos_ripados", lambda *a, **k: outra)
+    escrever_log(tmp_path, bloco_saida("Docan", "PAREDE.pdf", QUANDO))
+    p = ripado(sr.PASTA_RIPADOS_ANTIGA, "PAREDE.prt")
+
+    r = separar()
+
+    assert not p.exists()
+    assert (outra / "DOCAN R5200" / "PAREDE.prt").is_file()
+    assert [m for _, _, m in r["movidos"]] == ["DOCAN R5200"]

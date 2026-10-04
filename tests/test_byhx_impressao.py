@@ -186,6 +186,98 @@ def test_maquina_vem_da_pasta_quando_a_pasta_diz(byhx):
     assert rl_hf.trabalhos_do_byhx(byhx)[0]["maquina"] == "DOCAN R5200"
 
 
+
+# --- achar o arquivo, em vez de supor onde ele está ----------------
+#
+# O defeito de 04/10/2026: o registro de impressão passou a noite sem
+# anotar uma linha porque o PrintedArea.Log não está na RAIZ de
+# C:\PrinterManager. O coletor que rodou na máquina já procurava
+# recursivamente; o vigia não.
+
+
+def test_acha_o_arquivo_em_subpasta(byhx):
+    dentro = byhx / "Log" / "2026"
+    dentro.mkdir(parents=True)
+    (byhx / "PrintedArea.Log").rename(dentro / "PrintedArea.Log")
+
+    assert rl_hf.arquivo_do_byhx("PrintedArea.Log", byhx) == dentro / "PrintedArea.Log"
+    assert len(rl_hf.passadas_do_byhx(byhx)) == 4, "a leitura tem que seguir achando"
+
+
+def test_entre_homonimos_fica_com_o_maior(byhx):
+    """Há mais de um Setting.xml e mais de um Print.log lá dentro; o que presta é o maior."""
+    pequeno = byhx / "backup"
+    pequeno.mkdir()
+    (pequeno / "PrintedArea.Log").write_text("[2026-01-01 00:00:00][TID 1] D:\\x.prt; a; 0:0:1; 0; 0 m2\n",
+                                             encoding="utf-8")
+    grande = byhx / "PrintedArea.Log"
+    grande.unlink()
+    (byhx / "atual").mkdir()
+    (byhx / "atual" / "PrintedArea.Log").write_text(LOG_DE_VERDADE, encoding="utf-8")
+
+    assert rl_hf.arquivo_do_byhx("PrintedArea.Log", byhx) == byhx / "atual" / "PrintedArea.Log"
+
+
+def test_arquivo_que_nao_existe_avisa_uma_vez(tmp_path):
+    vazia = tmp_path / "_printermanager_vazio"
+    vazia.mkdir()
+    avisos = []
+
+    assert rl_hf.arquivo_do_byhx("PrintedArea.Log", vazia, lambda n, m: avisos.append(m)) is None
+    rl_hf.arquivo_do_byhx("PrintedArea.Log", vazia, lambda n, m: avisos.append(m))
+
+    assert len(avisos) == 1, "o mesmo aviso não repete a cada minuto"
+    assert "faxina do ripado não apaga nada" in avisos[0]
+
+
+def test_arquivo_que_existe_e_nao_abre_e_noticia(byhx, monkeypatch):
+    """
+    Silêncio aqui é o pior resultado: o programa pode estar segurando o
+    arquivo sem deixar ninguém ler, e isso tem que aparecer no log.
+    """
+    def nega(self, *a, **k):
+        raise PermissionError(32, "em uso por outro processo")
+
+    monkeypatch.setattr(pathlib.Path, "read_text", nega)
+    avisos = []
+
+    # a ordem importa: o mesmo aviso não repete, então quem pergunta
+    # primeiro é quem recolhe a mensagem
+    assert rl_hf._texto_do_byhx("PrintedArea.Log", byhx, lambda n, m: avisos.append(m)) is None
+    assert any("não consegui ler" in a for a in avisos)
+    assert rl_hf.passadas_do_byhx(byhx) == []
+
+
+def test_sem_o_log_os_trabalhos_impressos_ainda_entram(byhx, tmp_path):
+    """
+    Era o que faltava: sem PrintedArea.Log a função voltava vazia e nem a
+    lista de trabalhos era lida — e o trabalho 'Printed' é prova
+    independente, com o tamanho que a máquina usou.
+    """
+    (byhx / "PrintedArea.Log").unlink()
+
+    resultado = rl_hf.registrar_impressoes(pasta_relatorios=tmp_path / "rel", pasta_byhx=byhx,
+                                           logger=_calado)
+
+    assert resultado["anotadas"] == 1
+    linha = _linhas(tmp_path / "rel", "2026-09")[0]
+    assert linha["tipo"] == "trabalho"
+    assert linha["tamanho_m"] == [2.389, 3.775]
+
+
+def test_sem_o_log_a_faxina_ainda_sabe_o_que_imprimiu(byhx, tmp_path):
+    (byhx / "PrintedArea.Log").unlink()
+    impresso = _ripado(tmp_path / "rip", "1UN LONA IMPRESSA 3.15X3.77M_A_PAREDE_379x347cm.prt",
+                       dias_atras=5)
+    idle = _ripado(tmp_path / "rip", "5.00X0.50M_AMOSTRA.prt", dias_atras=5)
+    monkey = rl_hf.ripados_ja_impressos(byhx)
+
+    rl_hf.faxina_dos_ripados(pastas=[tmp_path / "rip"], logger=_calado, impressos=monkey)
+
+    assert not impresso.exists(), "a lista de trabalhos diz que imprimiu"
+    assert idle.exists()
+
+
 # --- a faxina dos ripados ------------------------------------------
 
 
@@ -371,6 +463,55 @@ def test_a_copia_nao_deixa_arquivo_pela_metade(byhx, tmp_path):
     rl_hf.levar_historico_do_byhx(pasta_relatorios=tmp_path / "rel", pasta_byhx=byhx, logger=_calado)
     pasta = tmp_path / "rel" / rl_hf.NOME_SUBPASTA_IMPRESSAO / rl_hf.NOME_PASTA_BYHX
     assert not list(pasta.rglob("~copiando~*"))
+
+
+
+# --- a pasta de saída de cada máquina -------------------------------
+
+
+def test_prepara_uma_pasta_por_maquina_do_posto(tmp_path, monkeypatch):
+    """
+    O instalador da máquina da impressora chama isto. A pasta precisa
+    existir ANTES de o primeiro ripado chegar: a porta do SAi não cria
+    pasta e falha depois de ripar, e quem precisa saber o caminho de
+    antemão é gente, pra abrir a pasta e pegar o arquivo.
+    """
+    import ripados_para_nuvem
+
+    monkeypatch.setattr(ripados_para_nuvem, "PASTA_RIPADOS", tmp_path / "RIPADOS")
+
+    raiz, pastas = rl_hf.preparar_pastas_do_ripado(posto=rl_hf.POSTO_SAI, logger=_calado)
+
+    assert raiz == tmp_path / "RIPADOS"
+    assert sorted(p.name for p in pastas) == ["DOCAN H2525", "DOCAN R5200"]
+    assert all(p.is_dir() for p in pastas)
+
+
+def test_nao_prepara_pasta_de_maquina_de_outro_posto(tmp_path, monkeypatch):
+    """As Mimaki ripam no outro PC: pasta delas aqui seria pasta vazia pra sempre."""
+    import ripados_para_nuvem
+
+    monkeypatch.setattr(ripados_para_nuvem, "PASTA_RIPADOS", tmp_path / "RIPADOS")
+
+    _, pastas = rl_hf.preparar_pastas_do_ripado(posto=rl_hf.POSTO_SAI, logger=_calado)
+
+    assert not any("UJV" in p.name or "SWJ" in p.name for p in pastas)
+
+
+def test_preparar_nao_levanta_quando_a_pasta_nao_da_pra_criar(tmp_path, monkeypatch):
+    import ripados_para_nuvem
+
+    # um ARQUIVO no lugar da raiz: mkdir não tem como criar nada aí dentro
+    raiz_tomada = tmp_path / "RIPADOS"
+    raiz_tomada.write_text("não sou pasta", encoding="utf-8")
+    monkeypatch.setattr(ripados_para_nuvem, "PASTA_RIPADOS", raiz_tomada)
+    avisos = []
+
+    raiz, pastas = rl_hf.preparar_pastas_do_ripado(posto=rl_hf.POSTO_SAI,
+                                                   logger=lambda n, m: avisos.append(m))
+
+    assert pastas == []
+    assert len(avisos) == 2, "um aviso por máquina, e nenhuma exceção"
 
 
 # --- a passada inteira ---------------------------------------------

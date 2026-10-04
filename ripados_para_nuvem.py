@@ -90,6 +90,45 @@ import caminhos
 # setup XLF, da Epson de outra máquina.
 PASTA_RIPADOS = pathlib.Path(r"D:\RIPADOS")
 
+# A MESMA PASTA NÃO EXISTE NAS DUAS MÁQUINAS.
+#
+# Desde 03/10/2026 o SAi também ripa na máquina da DOCAN, e lá não há D:
+# nenhum: é um disco só de 1,8 TB, e o ripado cai em C:\RIPADOS e no
+# Desktop\RIPADOS. Com o caminho fixo em D:, o separador varria pasta que
+# não existe e não separava nada — calado, que é o pior jeito de falhar.
+#
+# A ordem importa: no PC principal o D: tem 462 GB livres contra 183 do C:,
+# e é pra lá que a porta do SAi aponta.
+RAIZES_ALTERNATIVAS = (pathlib.Path(r"C:\RIPADOS"),)
+
+# Cópia congelada do padrão de fábrica. Serve de trava pro teste: ver
+# raiz_dos_ripados.
+_PASTA_RIPADOS_PADRAO = PASTA_RIPADOS
+
+
+def raiz_dos_ripados(padrao=None, alternativas=None):
+    """
+    A raiz dos ripados NESTA máquina: PASTA_RIPADOS quando ela existe, a
+    primeira das RAIZES_ALTERNATIVAS que existir quando não.
+
+    Nenhuma existindo, devolve PASTA_RIPADOS mesmo — assim o erro aparece
+    no lugar certo ("não achei a pasta") em vez de o separador concluir
+    que não há nada pra separar.
+
+    A trava do teste: a procura por alternativa só acontece quando
+    PASTA_RIPADOS é o padrão de fábrica. Teste que aponta a constante pra
+    tmp_path NUNCA cai no D: ou no C: de verdade, mesmo que a tmp_path
+    ainda não exista — e nesta pasta tem ripado de trabalho em andamento,
+    de GIGABYTES.
+    """
+    raiz = pathlib.Path(padrao or PASTA_RIPADOS)
+    if raiz.is_dir() or raiz != _PASTA_RIPADOS_PADRAO:
+        return raiz
+    for outra in (RAIZES_ALTERNATIVAS if alternativas is None else alternativas):
+        if pathlib.Path(outra).is_dir():
+            return pathlib.Path(outra)
+    return raiz
+
 # A pasta sincronizada que a máquina do outro lado vigia. Fica ao LADO
 # da fila, nunca dentro dela: o vigia avisa a cada passada sobre
 # qualquer pasta dentro da fila que não seja uma máquina cadastrada, e

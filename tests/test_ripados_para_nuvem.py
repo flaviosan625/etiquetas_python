@@ -373,3 +373,57 @@ def test_o_ripado_de_cada_maquina_vai_pra_pasta_dela(tmp_path):
     assert resultado["DOCAN R5200"]["levados"] == []
     assert (tmp_path / "nuvem" / "DOCAN H2525" / "chapa.prt").exists()
     assert not (tmp_path / "nuvem" / "DOCAN R5200").exists()
+
+
+# ---------- a raiz nao e a mesma nas duas maquinas ----------
+#
+# No PC principal o ripado mora no D:. Na maquina da DOCAN, que ripa
+# desde 03/10/2026, nao existe D: nenhum: e um disco so, e o ripado cai
+# em C:\RIPADOS. Com o caminho fixo em D:, o separador varria pasta que
+# nao existe e nao separava nada -- calado.
+
+
+def test_raiz_e_a_padrao_quando_ela_existe(tmp_path, monkeypatch):
+    padrao = tmp_path / "D_RIPADOS"
+    padrao.mkdir()
+    alternativa = tmp_path / "C_RIPADOS"
+    alternativa.mkdir()
+    monkeypatch.setattr(rpn, "_PASTA_RIPADOS_PADRAO", padrao)
+    monkeypatch.setattr(rpn, "PASTA_RIPADOS", padrao)
+
+    assert rpn.raiz_dos_ripados(alternativas=[alternativa]) == padrao
+
+
+def test_raiz_cai_na_alternativa_quando_nao_ha_disco_d(tmp_path, monkeypatch):
+    padrao = tmp_path / "D_que_nao_existe"
+    alternativa = tmp_path / "C_RIPADOS"
+    alternativa.mkdir()
+    monkeypatch.setattr(rpn, "_PASTA_RIPADOS_PADRAO", padrao)
+    monkeypatch.setattr(rpn, "PASTA_RIPADOS", padrao)
+
+    assert rpn.raiz_dos_ripados(alternativas=[alternativa]) == alternativa
+
+
+def test_sem_nenhuma_pasta_devolve_a_padrao(tmp_path, monkeypatch):
+    """
+    Assim o erro aparece no lugar certo ("nao achei a pasta") em vez de o
+    separador concluir que nao ha nada pra separar.
+    """
+    padrao = tmp_path / "D_que_nao_existe"
+    monkeypatch.setattr(rpn, "_PASTA_RIPADOS_PADRAO", padrao)
+    monkeypatch.setattr(rpn, "PASTA_RIPADOS", padrao)
+
+    assert rpn.raiz_dos_ripados(alternativas=[tmp_path / "C_que_nao_existe"]) == padrao
+
+
+def test_constante_desviada_nunca_procura_alternativa(tmp_path):
+    r"""
+    A TRAVA DO TESTE. A fixture autouse aponta PASTA_RIPADOS pra tmp_path,
+    que pode nem existir ainda; sem esta regra a procura por alternativa
+    acharia o C:\RIPADOS ou o D:\RIPADOS DE VERDADE, onde tem ripado de
+    trabalho em andamento, de gigabytes.
+    """
+    assert rpn.PASTA_RIPADOS != rpn._PASTA_RIPADOS_PADRAO, "a fixture desviou a constante"
+    assert not rpn.PASTA_RIPADOS.exists(), "e a pasta desviada ainda nao existe"
+
+    assert rpn.raiz_dos_ripados() == rpn.PASTA_RIPADOS

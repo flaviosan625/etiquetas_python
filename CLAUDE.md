@@ -97,9 +97,28 @@ quando há giro e as DOCAN não giram. A hot folder do SAi **nunca** pode ser a 
 direto: arquivo que o OneDrive ainda não baixou é marcador, e o RIP ripa o que vê. O ganho grande é
 a segunda perna: com o RIP do lado da impressora, o `.prt` nasce lá e para de subir pelo OneDrive.
 
-Consequência prática: **editar `rasterlink_hotfolder.py` muda a DOCAN na hora** (o PC principal roda
-do repositório), mas **não muda a UJV nem a SWJ** — aquelas só mudam quando o arquivo é levado pro
-PC do RIP. Ver `maquina_rip/atualizar.bat`.
+Consequência prática desde 03/10/2026: **editar `rasterlink_hotfolder.py` não muda máquina nenhuma
+na hora.** O PC principal roda do repositório, mas ele atende só o posto do RIP — e as duas máquinas
+que importam rodam CÓPIAS: `C:\RasterLink` (UJV, SWJ) e `C:\VigiaDocan` (as DOCAN). Cada uma só muda
+quando o arquivo é levado: `maquina_rip/atualizar.bat` e `maquina_docan/atualizar.bat`.
+
+**E o vigia não viaja mais sozinho.** Desde 04/10/2026 ele separa o ripado por máquina também na
+máquina da DOCAN, e pra isso leva `separar_ripados.py`, `ripados_para_nuvem.py` e `caminhos.py` —
+145 KB nos quatro, todos só de biblioteca padrão. O import é tardio em `try`: instalação antiga, com
+um arquivo só, continua entregando e só não separa. O `maquina_docan/atualizar.bat` guarda os quatro
+antes de copiar e devolve **o conjunto** quando o `--autoteste` falha: vigia novo com separador velho
+é combinação que nunca foi testada.
+
+**A raiz do ripado NÃO é a mesma nas duas máquinas.** No PC principal é `D:\RIPADOS`; na máquina da
+DOCAN não existe D: nenhum (um disco só de 1,8 TB) e o ripado cai em `C:\RIPADOS` e no
+`Desktop\RIPADOS`. Com o caminho fixo em D:, o separador varria pasta inexistente e não separava
+nada, calado. Hoje quem responde é `ripados_para_nuvem.raiz_dos_ripados()`: `PASTA_RIPADOS` quando
+ela existe, senão a primeira das `RAIZES_ALTERNATIVAS`. A procura por alternativa só acontece quando
+`PASTA_RIPADOS` é o padrão de fábrica (`_PASTA_RIPADOS_PADRAO`) — é a trava que impede teste de
+apontar a constante pra `tmp_path` e, porque ela ainda não existe, cair no `D:\RIPADOS` DE VERDADE,
+onde tem ripado de gigabytes de trabalho em andamento. `rasterlink_hotfolder --preparar-ripados` cria
+a pasta de cada máquina do posto e imprime a raiz, pro atualizador fazer o atalho sem adivinhar
+caminho.
 
 ### Máquina de rolo e máquina plana decidem o giro por regras diferentes
 
@@ -304,6 +323,16 @@ ainda vai sair, e ripar de novo custa horas de máquina. Então: só `.prt`, só
 (`PASTAS_RIPADOS_LOCAIS`), só o que imprimiu, e **sem a lista não apaga nada**. Três dias é decisão
 dele. O que está velho e não imprimiu vira aviso uma vez, e disco abaixo de
 `ESPACO_MINIMO_RIPADOS_GB` também — disco cheio trava a máquina com o RIP junto.
+
+**Arquivo do programa da impressora se PROCURA, não se supõe.** Em 04/10/2026 o registro de
+impressão passou a noite inteira na máquina da DOCAN sem anotar uma linha: o `PrintedArea.Log` não
+está na RAIZ de `C:\PrinterManager`, e eu tinha escrito o caminho de cabeça — o `coletar_historico_byhx.ps1`
+que rodou lá já procurava recursivamente e eu não copiei esse cuidado pro vigia. Hoje quem acha é
+`arquivo_do_byhx`: raiz primeiro, depois as subpastas, ficando com o MAIOR homônimo (há mais de um
+`Setting.xml` e mais de um `Print.log` lá dentro). E duas regras que vieram com o defeito: **não achar
+vira aviso** (uma vez, dizendo que a faxina não vai apagar nada), e **arquivo que existe e não abre
+também** — silêncio ali era o pior resultado possível. Sem o log, `registrar_impressoes` **não desiste
+mais**: o trabalho `Printed` da lista é prova independente, com o tamanho que a máquina usou.
 
 Tudo isso roda em `_cuidar_do_ripado`, no fim da passada do posto do SAi e **fora** de
 `vigiar_fila_uma_vez` (teste chama aquela com o posto do SAi e passaria a apagar arquivo de

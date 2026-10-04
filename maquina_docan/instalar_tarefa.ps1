@@ -48,11 +48,22 @@ $NOME_TAREFA = "Vigia DOCAN (SAi)"
 $PASTA       = "C:\VigiaDocan"
 # O vigia vem ao lado deste instalador (é assim que a pasta do OneDrive é
 # montada). Rodando de dentro do repositório, ele está uma pasta acima.
-$ORIGEM      = Join-Path $PSScriptRoot "rasterlink_hotfolder.py"
-if (-not (Test-Path $ORIGEM)) {
-    $acima = Join-Path (Split-Path -Parent $PSScriptRoot) "rasterlink_hotfolder.py"
-    if (Test-Path $acima) { $ORIGEM = $acima }
+#
+# E DESDE 04/10/2026 ELE NÃO VIAJA MAIS SOZINHO: nesta máquina ele também
+# separa o ripado de cada DOCAN na pasta dela, e pra isso precisa do
+# separador. Os três continuam só de biblioteca padrão do Python — nada
+# pra instalar. Faltando algum, o vigia segue entregando e só não separa
+# (o import é tardio, dentro de try).
+$ARQUIVOS = @("rasterlink_hotfolder.py", "separar_ripados.py",
+              "ripados_para_nuvem.py", "caminhos.py")
+function Origem($nome) {
+    $aqui = Join-Path $PSScriptRoot $nome
+    if (Test-Path $aqui) { return $aqui }
+    $acima = Join-Path (Split-Path -Parent $PSScriptRoot) $nome
+    if (Test-Path $acima) { return $acima }
+    return $aqui
 }
+$ORIGEM      = Origem "rasterlink_hotfolder.py"
 $SCRIPT      = Join-Path $PASTA "rasterlink_hotfolder.py"
 $LOG         = Join-Path $PASTA "rasterlink_hotfolder.log"
 $POSTO       = "sai"
@@ -216,7 +227,16 @@ if (Test-Path $SCRIPT) {
     $antigo = Get-Item $SCRIPT
     Write-Host "  Antes: $($antigo.Length) bytes, de $($antigo.LastWriteTime)" -ForegroundColor DarkGray
 }
-Copy-Item $ORIGEM $SCRIPT -Force
+foreach ($nome in $ARQUIVOS) {
+    $de = Origem $nome
+    if (-not (Test-Path $de)) {
+        Write-Host "  (não achei $nome — o vigia vai entregar sem separar o ripado)" -ForegroundColor Yellow
+        continue
+    }
+    Copy-Item $de (Join-Path $PASTA $nome) -Force
+    $item = Get-Item (Join-Path $PASTA $nome)
+    Write-Host ("  {0,-26} {1,8:N0} KB" -f $nome, ($item.Length/1KB)) -ForegroundColor Green
+}
 $novo = Get-Item $SCRIPT
 Write-Host "  Depois: $($novo.Length) bytes, de $($novo.LastWriteTime)" -ForegroundColor Green
 
