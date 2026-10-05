@@ -198,6 +198,7 @@ def passada(forcar=False, raiz=None):
         regenerados = [c.nome for c in clientes.com_checklist(raiz) if passada_do_cliente(c, forcar)]
         _conferir_cadernos(raiz)
         _montar_artes()
+        _conferir_fila()
         return regenerados
     finally:
         if trava is not None:
@@ -225,6 +226,40 @@ def _conferir_cadernos(raiz=None):
         _log(None, "ok", "caderno mudou: %s" % "; ".join(
             "%s (%d)" % (nome, len(itens)) for nome, itens in sorted(avisados.items())))
     return avisados
+
+
+def _conferir_fila():
+    """
+    De carona também, o aviso de FILA PARADA — e aqui ele é de outra
+    natureza: não é funcionalidade nova, é o mesmo `aviso_fila` de
+    23/09/2026 tocando no lugar CERTO.
+
+    Ele já era chamado no fim de cada passada do `rasterlink_hotfolder`,
+    mas esse roda no PC do RIP e na máquina da DOCAN — a notificação
+    aparecia em telas que ninguém olha. Em 05/10/2026 um arquivo de
+    524 MB ficou 65 minutos na fila da UJV e quem descobriu foi ELE,
+    abrindo a pasta. Era exatamente o que esse alarme existe pra evitar:
+    *"quem descobre o problema não pode ser só a tela"*.
+
+    Aqui a passada é do PC em que ele trabalha, e de minuto em minuto.
+    Cada máquina tem seu `_aviso_fila.json` ao lado do módulo, então as
+    três se seguram sozinhas e ninguém vira alarme repetido.
+
+    Import tardio em try/except pelo mesmo motivo do caderno e da
+    montagem: isto é carona, e nada aqui pode derrubar a regeneração da
+    OS, que é o trabalho desta tarefa.
+    """
+    try:
+        import aviso_fila
+        avisadas = aviso_fila.conferir()
+    except Exception as e:      # noqa: BLE001
+        _log(None, "warn", "aviso de fila parada não rodou: %s: %s" % (type(e).__name__, e))
+        return {}
+    if avisadas:
+        _log(None, "warn", "fila parada: %s" % "; ".join(
+            "%s (%d arquivo(s) há %d min)" % (maquina, quantos, minutos)
+            for maquina, (quantos, minutos) in sorted(avisadas.items())))
+    return avisadas
 
 
 def _montar_artes():

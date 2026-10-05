@@ -649,6 +649,15 @@ Ele mede o FATO — arquivo parado —, não a causa, e por isso serve igual pro
 OneDrive travado e pra hot folder sumida. Fila vazia não avisa nada, e o mesmo aviso não repete
 antes de uma hora: alarme que toca sessenta vezes por hora vira alarme que se aprende a ignorar.
 
+**Mas alarme que toca na sala errada é alarme que não toca.** Até 05/10/2026 o `aviso_fila` só era
+chamado no fim da passada do `rasterlink_hotfolder` — que roda no PC do RIP e na máquina da DOCAN.
+A notificação aparecia em duas telas que ninguém olha. Naquele dia um arquivo de 524 MB ficou
+**65 minutos** parado na fila da UJV e quem descobriu foi ELE, abrindo a pasta — exatamente o que
+esse alarme existe pra evitar. Hoje ele pega carona também na passada do **Checklist de Produção**
+(`vigia_checklist._conferir_fila`), que roda de minuto em minuto no PC em que ele trabalha. As três
+máquinas continuam com seu próprio `_aviso_fila.json` ao lado do módulo, então cada uma se segura
+sozinha e ninguém vira alarme repetido.
+
 ### O que a máquina imprimiu é outro registro
 
 Até 03/10/2026 o sistema provava o que foi **entregue** à máquina. O que ela **imprimiu** só o

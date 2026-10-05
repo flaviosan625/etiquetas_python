@@ -192,3 +192,43 @@ def test_o_vigia_nao_cai_quando_o_proprio_modulo_do_aviso_nao_carrega(monkeypatc
     rasterlink_hotfolder._avisar_fila_parada()  # não levanta
 
     assert any("módulo do aviso de fila não carregou" in texto for _, texto in registrado)
+
+
+def test_o_checklist_leva_o_aviso_de_fila_de_carona(monkeypatch):
+    """
+    O alarme de fila parada existe desde 23/09/2026, mas so era chamado
+    no fim da passada do rasterlink_hotfolder -- que roda no PC do RIP e
+    na maquina da DOCAN. A notificacao aparecia em telas que ninguem
+    olha.
+
+    Em 05/10/2026 um arquivo de 524 MB ficou 65 minutos na fila da UJV e
+    quem descobriu foi o usuario, abrindo a pasta. Era exatamente o que
+    esse alarme existe pra evitar. Agora ele pega carona na passada que
+    roda no PC em que ele trabalha.
+    """
+    import vigia_checklist
+    import aviso_fila
+
+    chamadas = []
+    monkeypatch.setattr(aviso_fila, "conferir",
+                        lambda **k: chamadas.append(k) or {"UJV 100 UNY CV": (1, 65)})
+
+    avisadas = vigia_checklist._conferir_fila()
+
+    assert chamadas, "a passada do checklist tem que conferir a fila"
+    assert avisadas == {"UJV 100 UNY CV": (1, 65)}
+
+
+def test_aviso_de_fila_que_quebra_nao_derruba_o_checklist(monkeypatch, tmp_path):
+    """Carona que explode nunca pode parar a regeneracao da OS."""
+    import caminhos
+    import vigia_checklist
+    import aviso_fila
+
+    monkeypatch.setattr(caminhos, "ETIQUETAS_GERADAS", tmp_path)
+
+    def explodir(**k):
+        raise RuntimeError("sem bandeja")
+
+    monkeypatch.setattr(aviso_fila, "conferir", explodir)
+    assert vigia_checklist._conferir_fila() == {}
