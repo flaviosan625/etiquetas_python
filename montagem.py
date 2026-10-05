@@ -349,6 +349,28 @@ def ajuste_para(alvo, atual):
 # --- juntar tudo o que a pasta tem ---------------------------------
 
 
+def e_folha_montada(arquivo):
+    """
+    Se este arquivo é uma folha que a montagem JÁ produziu.
+
+    Aconteceu em 05/10/2026, às 01:45, na pasta de verdade: a folha
+    pronta fica na própria pasta da máquina, e a passada seguinte a leu
+    como peça — nome com medida e material, como todas as outras. Montou
+    a folha de 8 peças DENTRO de outra folha, de uma peça só, com 6,68 m
+    e sem o cliente no nome. Sozinho isso repetiria pra sempre, a cada
+    passada, e o que ele mandaria pra máquina seria uma folha com os
+    rótulos das peças enterrados no meio.
+
+    Duas provas, porque uma delas pode faltar: a ficha `.json` ao lado
+    (que só a montagem escreve) e o padrão do nome de saída (que vale
+    mesmo se ele apagar a ficha).
+    """
+    arquivo = pathlib.Path(arquivo)
+    if arquivo.with_suffix(".json").is_file():
+        return True
+    return re.search(r"_MONTAGEM_\d+pecas", arquivo.stem) is not None
+
+
 def pecas_da_pasta(pasta, config=None, maquinas=None):
     """
     Lê a pasta e devolve (peças, recusadas).
@@ -370,6 +392,8 @@ def pecas_da_pasta(pasta, config=None, maquinas=None):
         if not arquivo.is_file() or arquivo.name.startswith("~"):
             continue
         if arquivo.suffix.lower() not in (".pdf",) + IMAGENS:
+            continue
+        if e_folha_montada(arquivo):
             continue
 
         alvo = medida_do_nome(arquivo.name, config)

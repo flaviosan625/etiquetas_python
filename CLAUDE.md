@@ -406,6 +406,15 @@ A montagem pega carona na passada do **Checklist de Produção** (como o `vigia_
 pasta **parada** há `MINUTOS_PARADA`: largando dez arquivos seguidos, montar no primeiro faria uma
 folha de uma peça e jogaria as outras nove numa segunda.
 
+**E a folha PRONTA não pode virar peça** (`e_folha_montada`). Aconteceu na pasta de verdade em
+05/10/2026 às 01:45: a folha fica na própria pasta da máquina — é de lá que ele a manda pra fila — e
+a passada seguinte a leu como peça, porque o nome dela traz medida e material como o de qualquer
+arte. Montou a folha de 8 peças DENTRO de outra, de uma peça só, com 6,68 m e sem o cliente no nome;
+sozinho isso repetiria a cada passada, pra sempre, e o que ele mandaria pra máquina seria uma folha
+com os rótulos das peças enterrados no meio. São duas provas, porque uma delas pode faltar: a ficha
+`.json` ao lado (que só a montagem escreve) e o padrão `_MONTAGEM_<n>pecas` do nome de saída, que
+vale mesmo se a ficha for apagada.
+
 ### Consumo de material é do LOTE, não da peça
 
 Regra do usuário (28/09/2026): *"tirar melhor proveito do material sempre, independente se for chapa

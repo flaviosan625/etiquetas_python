@@ -1072,3 +1072,33 @@ def test_o_nome_da_folha_diz_o_QUE_A_PAGINA_MEDE(pasta):
     assert medida["altura_m"] == pytest.approx(pagina_m[1], abs=0.006), \
         "o nome declara menos material do que a folha gasta"
     assert ficha["folha_m"][1] == pytest.approx(pagina_m[1], abs=0.0006)
+
+
+def test_a_folha_PRONTA_nao_e_montada_de_novo(pasta):
+    """
+    Aconteceu na pasta de verdade em 05/10/2026, as 01:45: a folha pronta
+    fica na propria pasta da maquina e a passada seguinte a leu como peca
+    -- nome com medida e material, como todas as outras. Montou a folha
+    de 8 pecas DENTRO de outra, de uma peca so, com 6,68 m e sem o
+    cliente no nome. Sozinho isso repetiria pra sempre.
+    """
+    for i in range(2):
+        arte(pasta, f"1UN LONA IMPRESSA 2.00X1.00M_VIBRA_PECA_{i}.pdf", 2.00, 1.00)
+
+    primeira = montagem.montar_pasta(pasta, raiz_clientes=pasta.parent / "x")
+    folha = primeira["folhas"][0]["arquivo"]
+    assert folha.is_file() and folha.parent == pasta, \
+        "a folha pronta fica na pasta da maquina: e de la que ele a manda pra fila"
+
+    # a passada seguinte nao pode achar peca nenhuma
+    pecas, recusadas = montagem.pecas_da_pasta(pasta)
+    assert pecas == [] and recusadas == [], \
+        "a folha pronta virou peca: a montagem esta se comendo"
+
+    segunda = montagem.montar_pasta(pasta, raiz_clientes=pasta.parent / "x")
+    assert segunda["folhas"] == []
+    assert folha.is_file(), "a folha pronta nao pode ir pros _originais"
+
+    # e sem a ficha ao lado tambem nao: o nome de saida e prova sozinho
+    folha.with_suffix(".json").unlink()
+    assert montagem.pecas_da_pasta(pasta)[0] == []
