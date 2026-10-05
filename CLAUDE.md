@@ -469,6 +469,14 @@ O cabeçalho também tem faixa própria: escrever sobre a arte estraga a peça. 
 especificação** — cortar pelo fim deixava `1UN DECORFLEX 4.30X0.80M_~` e jogava fora o
 `SPFW26_PASSARELA_PISO`, que é o que diz qual peça é.
 
+**A QUANTIDADE do nome vira cópias na folha**, nas duas máquinas (regra dele, 05/10/2026: *"a pasta de
+montagem também deve ler a quantidade; se no nome do arquivo pede 2 UN ou mais, precisa fazer as
+cópias para montar — ambas as máquinas"*). O leitor já fazia, mas só `pecas_da_pasta` era testado;
+hoje a prova é o PDF pronto, nas duas. Cada cópia sai NUMERADA no rótulo (`(2/3)`), senão quem refila
+não sabe se são três peças da mesma arte ou a mesma repetida por engano. `3UN`, `3 UN`, `3un` — as
+três grafias valem, e a quantidade só conta no **começo do nome**, como em todo o resto do sistema:
+um `_3UN_` no meio da descrição não pode virar três cópias caladas.
+
 **Uma folha por MATERIAL**, porque lona e adesivo não dividem bobina — a mesma regra do m² que nunca
 mistura material. O nome de saída segue o padrão do sistema (`1UN LONA 4.93X6.50M_<CLIENTE>_MONTAGEM_
 8pecas_<carimbo>.pdf`): a folha montada é UMA peça de material, e é assim que a etiqueta, a OS e o

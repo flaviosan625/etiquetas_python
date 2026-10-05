@@ -2055,3 +2055,82 @@ def test_arquivo_que_nao_abre_nao_derruba_a_montagem(pasta):
     """Resolucao e conforto: nunca pode virar barreira."""
     assert montagem.resolucao_da_arte(pasta / "nao_existe.pdf", 0, 1.0) is None
     assert montagem.qualidade_da_resolucao(None) == "vetor"
+
+
+# ---------- a QUANTIDADE do nome vira copias na folha ----------
+#
+# Ele, 05/10/2026: "a pasta de montagem tambem deve ler a quantidade; se
+# no nome do arquivo pede 2 UN ou mais, precisa fazer as copias para
+# montar, ok, ambas as maquinas".
+#
+# O leitor ja fazia isso, mas so test_quantidade_do_nome_vira_varias_pecas
+# cobria -- e ele olha pecas_da_pasta, nao a folha PRONTA. Aqui a prova e
+# o PDF que sai, nas DUAS maquinas que montam.
+
+
+@pytest.mark.parametrize("maquina", sorted(montagem.maquinas_que_montam()))
+def test_a_quantidade_vira_copias_na_folha_das_DUAS_maquinas(tmp_path, maquina):
+    pasta = tmp_path / maquina
+    pasta.mkdir()
+    arte(pasta, "1UN LONA IMPRESSA 0.80X1.20M_VIBRA_SOZINHA.pdf", 0.80, 1.20)
+    arte(pasta, "3UN LONA IMPRESSA 0.60X1.20M_VIBRA_TRIPLA.pdf", 0.60, 1.20)
+    arte(pasta, "5UN LONA IMPRESSA 0.40X0.60M_VIBRA_CINCO.pdf", 0.40, 0.60)
+
+    resultado = montagem.montar_pasta(pasta, maquina, raiz_clientes=tmp_path / "x")
+
+    saiu = {}
+    for folha in resultado["folhas"]:
+        ficha = json.loads(folha["arquivo"].with_suffix(".json").read_text(
+            encoding="utf-8"))
+        for peca in ficha["pecas"]:
+            saiu[peca["arquivo"]] = saiu.get(peca["arquivo"], 0) + 1
+
+    assert saiu == {
+        "1UN LONA IMPRESSA 0.80X1.20M_VIBRA_SOZINHA.pdf": 1,
+        "3UN LONA IMPRESSA 0.60X1.20M_VIBRA_TRIPLA.pdf": 3,
+        "5UN LONA IMPRESSA 0.40X0.60M_VIBRA_CINCO.pdf": 5,
+    }, f"{maquina}: a quantidade do nome nao virou copia"
+    assert sum(f["pecas"] for f in resultado["folhas"]) == 9
+
+
+def test_cada_copia_sai_NUMERADA_no_rotulo(pasta):
+    """
+    Tres copias iguais na folha, e quem refila precisa saber que sao as
+    tres da mesma arte -- e nao a mesma peca repetida por engano.
+    """
+    arte(pasta, "3UN LONA IMPRESSA 0.60X1.20M_VIBRA_TRIPLA.pdf", 0.60, 1.20)
+
+    resultado = montagem.montar_pasta(pasta, raiz_clientes=pasta.parent / "x")
+    with pymupdf.open(str(resultado["folhas"][0]["arquivo"])) as doc:
+        texto = doc.load_page(0).get_text()
+
+    for qual in (1, 2, 3):
+        assert f"({qual}/3)" in texto, f"faltou o rotulo da copia {qual}"
+
+
+def test_a_quantidade_e_lida_com_e_sem_espaco_antes_do_UN(pasta):
+    """
+    Ele escreveu "2 UN" com espaco. As duas grafias valem, e a minuscula
+    tambem -- quem nomeia na correria escreve de um jeito por dia.
+    """
+    import dimensoes
+
+    for escrito in ("3UN", "3 UN", "3un", "3 un"):
+        assert dimensoes.extrair_quantidade(f"{escrito} LONA 1.00X1.00M_X.pdf")[0] == 3
+
+    arte(pasta, "2 UN LONA IMPRESSA 0.50X0.50M_VIBRA_PAR.pdf", 0.50, 0.50)
+    pecas, recusadas = montagem.pecas_da_pasta(pasta)
+    assert not recusadas and len(pecas) == 2
+
+
+def test_a_quantidade_so_vale_no_COMECO_do_nome(pasta):
+    """
+    O limite, e ele e de propósito: a especificacao abre o nome em todo o
+    sistema (a etiqueta, a OS e o relatorio leem igual). Um "_3UN_" no
+    meio da descricao nao pode virar tres copias caladas.
+    """
+    arte(pasta, "1UN LONA IMPRESSA 0.50X0.50M_VIBRA_LOTE_3UN_DO_CLIENTE.pdf",
+         0.50, 0.50)
+
+    pecas, _ = montagem.pecas_da_pasta(pasta)
+    assert len(pecas) == 1, "leu a quantidade do meio da descricao"
