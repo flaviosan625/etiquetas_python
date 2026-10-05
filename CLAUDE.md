@@ -280,7 +280,9 @@ sairia com o nome do vizinho.
 fim do nome, e isso mostrava a SEGUNDA medida ao lado de uma peça feita na PRIMEIRA: dizia
 `1,50x0,25m` numa peça de 1,80 × 0,55 e parecia que o tamanho estava errado quando não estava. A
 largura do rótulo é a da **própria peça**, não 20 cm fixos — nome exato é longo, e em peça larga cabe
-inteiro com letra grande. `_escrever_rotulo` **encolhe antes de cortar** (cortar é último recurso) e
+inteiro em vez de sair cortado. Mas a LETRA não cresce com a peça: é `ROTULO_LETRA_MM` (10 mm) e só
+encolhe dali pra baixo. Antes ela usava o maior tamanho que coubesse, e numa peça larga isso dava
+2 cm de altura — *"não quero os nomes grandes"* (ele, 04/10/2026). `_escrever_rotulo` **encolhe antes de cortar** (cortar é último recurso) e
 recalcula a caixa a cada tamanho, ancorada por baixo, pra o texto descer junto com a letra. Dois
 números medidos ali: o `insert_textbox` precisa de **1,8×** a letra de altura (com 1,4× ele recusava
 tudo, devolvendo negativo sem desenhar), e o teto é a meia-folga menos a folguinha de 1 mm.
@@ -293,16 +295,21 @@ bobina de 5,00 — **a arte saía 2,18 m pra fora da folha, calada**. Hoje
 `tests/test_montagem.py::test_arte_nunca_sai_da_folha` lê os desenhos do PDF e confere que nada
 ultrapassa a página.
 
-**A DOCAN R5200 tem 5,20 m de área útil, não 5,00** (correção dele, 04/10/2026: *"se a máquina é uma
-DOCAN 5200 ela tem 5 metros e 20 centímetros de área útil, ou seja arte de 5 metros vai
-tranquilamente"*). Estava 5,00 porque o BYHX mostrava `Media/Width = 5000.00 mm` e eu li aquilo como
-o limite da máquina — **era o rolo carregado naquele dia**. Os dois fatos convivem. Antes de usar
-número de tela de máquina como limite, confira se não é a mídia do momento.
+**A DOCAN R5200 está cadastrada com 5,04 m, e esse número tem história.** Estava 5,00 porque o BYHX
+mostrava `Media/Width = 5000.00 mm` e eu li aquilo como o limite da máquina — **era o rolo carregado
+naquele dia**. Ele corrigiu (04/10/2026): a máquina faz **5,20**. E no fim do mesmo dia escolheu o
+número de TRABALHO: *"a máquina DOCAN pode mudar para 504cm de largura; com isso, descontando os 2 cm
+de cada lado de folga, os arquivos finais ficam com 500cm"* — **5,04 pra a montagem fechar em 5,00
+redondos de arte**.
 
-O que isso muda na prática: com 5,00 cadastrado, uma peça de 5,00 × 0,50 m **não cabia atravessada**
-(a montagem tira 2 cm de borda de cada lado) e era obrigada a girar, gastando **5,00 m de bobina em
-vez de 0,55**. Travado em `test_docan_esta_cadastrada_com_os_5_20_de_area_util`, com o motivo escrito,
-pra ninguém "corrigir" de volta olhando a tela da máquina com outra bobina montada.
+Então hoje `largura_util_m` guarda o número de trabalho, não o físico. O que isso custa, dito de
+frente: o aviso de "não cabe" reclama de arte entre 5,04 e 5,20, que a máquina imprimiria. É aviso,
+nunca barreira ("DOCAN só entrega"), e errar pro lado conservador é o certo — querendo os dois, é
+separar a largura da MONTAGEM da largura da MÁQUINA.
+
+**A lição que fica: antes de usar número de tela de máquina como limite, confira se não é a mídia do
+momento.** Travado em `test_docan_esta_cadastrada_com_os_5_04_que_fecham_5_00_de_arte`, com o motivo
+escrito, pra ninguém "corrigir" de volta olhando a tela com outra bobina montada.
 
 **Os 5 cm entre peças fazem as duas coisas**: é por onde a lâmina passa no refile e é onde mora o
 nome (*"entre um arquivo e outro vamos usar espaço de 5cm, ali já podemos fazer anotação com nome do
