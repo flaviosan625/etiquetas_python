@@ -415,9 +415,45 @@ especificação** — cortar pelo fim deixava `1UN DECORFLEX 4.30X0.80M_~` e jog
 `SPFW26_PASSARELA_PISO`, que é o que diz qual peça é.
 
 **Uma folha por MATERIAL**, porque lona e adesivo não dividem bobina — a mesma regra do m² que nunca
-mistura material. O nome de saída segue o padrão do sistema (`1UN LONA 5.00X9.86M_<CLIENTE>_MONTAGEM_
-13pecas_<carimbo>.pdf`): a folha montada é UMA peça de material, e é assim que a etiqueta, a OS e o
+mistura material. O nome de saída segue o padrão do sistema (`1UN LONA 4.93X6.50M_<CLIENTE>_MONTAGEM_
+8pecas_<carimbo>.pdf`): a folha montada é UMA peça de material, e é assim que a etiqueta, a OS e o
 relatório a leem. O cliente sai dos nomes dos arquivos (`cliente_das_pecas`), como ele pediu.
+
+**A folha pronta sai pra `SAIDA <MÁQUINA>`, ao lado da pasta de entrada** (pedido dele, 05/10/2026:
+*"precisamos de uma pasta de saída depois de montado — saída DOCAN, saída SWJ"*). Isso resolve de vez
+o que mordeu em 05/10 às 01:45: a folha ficava na entrada e a passada seguinte a lia como peça,
+montando folha dentro de folha. `e_folha_montada` continua valendo como cinto de segurança, pra quem
+arrastar a folha de volta.
+
+**A folha FECHA na largura que usa, sem branco nas laterais** (ele, no mesmo dia: *"depois que montar
+a arte precisa salvar ela sempre centralizada, ou sem margem em branco nas laterais — eu centralizo
+ela na máquina... temos até 5,00 m na DOCAN; se a arte bater 4,70, pode fechar sem branco em volta"*).
+Folha de 5,00 m não dá pra centralizar: ela ocupa tudo. As oito lonas da LOJINHA passaram a fechar em
+**4,93**, sobrando 5 cm pra ele acertar o alinhamento. `largura_usada` conta o RÓTULO junto: ele
+começa na borda esquerda da peça e tem 300 mm, então numa peça estreita no canto direito é ele quem
+manda na largura — aparar por cima dele economizaria 10 cm de branco e deixaria o refile sem saber
+que peça é aquela. O teto continua sendo o `largura_montagem_m`: aparar é aparar branco, nunca abrir
+espaço.
+
+**No máximo 10 m por arquivo, e a divisão é por FILEIRA** (*"o arquivo montado deve conter no máximo
+10 metros; se for maior, dividir em PDF de 10 em 10 metros"*). `dividir_por_fileira` corta só ENTRE
+fileiras, porque *"jamais deve cortar algum pedaço da imagem"* — e por isso uma fileira mais alta que
+o máximo sai inteira e **estoura o limite, com aviso no log**: entre quebrar a regra do tamanho e
+cortar arte, quem cede é o tamanho. Cada parte é uma peça de material por si (`_parte2de3` no nome,
+com a medida DELA), e o carimbo de hora é o mesmo nas partes do mesmo lote, pra ficarem juntas na
+listagem.
+
+**Os formatos são os do SISTEMA, não uma lista própria** (*"as pastas precisa ler também todos os
+formatos de arquivos que já usamos no sistema, pra depois sair em PDF"*). `EXTENSOES_DE_ARTE` cobre o
+que o vigia aceita (`rasterlink_hotfolder.EXTENSOES_ACEITAS`) mais `.bmp` e `.psd`, em três caminhos:
+`COMO_PDF` abre direto (o `.ai` salvo com compatibilidade PDF É PDF), `IMAGENS` passa pelo
+`convert_to_pdf`, e `PRECISA_ADOBE` (`.eps`, `.psd`) só abre pelo Illustrator/Photoshop. Esse último
+é um passo **à parte** (`converter_o_que_precisa`), nunca dentro da prévia: ele ESCREVE, e a prévia só
+olha. Na tela é um botão, e o que está esperando conversão aparece escrito — senão a conta mostrada
+não bate com a que vai sair. Travado em teste: **nenhum teste pode abrir o Illustrator**. Um `.eps`
+numa pasta de teste fez o `montar_pasta` subir o Illustrator invisível por COM e travar a suíte
+(05/10/2026); hoje a fixture `autouse` zera `conversao_adobe.CONVERSORES_POR_EXTENSAO`, e quem testa
+conversão passa o conversor na mão.
 
 **O `.json` ao lado da folha é o que impede a montagem de APAGAR a comprovação.** Pro registro de
 produção a folha é UM arquivo entregue; sem a ficha, as 13 peças sumiriam do relatório do cliente.

@@ -129,7 +129,25 @@ DIFERENCA_MAXIMA_M = 0.10
 FRANJA_MAXIMA_FRACAO = 0.10
 TOLERANCIA_PROPORCAO = 0.05
 
+# OS FORMATOS SÃO OS DO SISTEMA, não uma lista própria (ele, 05/10/2026:
+# *"as pastas precisa ler também todos os formatos de arquivos que já
+# usamos no sistema, pra depois sair em PDF"*). Três caminhos:
+#
+#   COMO_PDF      abre direto — o .ai salvo com compatibilidade PDF é PDF
+#   IMAGENS       vira PDF com o convert_to_pdf do PyMuPDF
+#   PRECISA_ADOBE só abre passando pelo Illustrator/Photoshop
+#                 (conversao_adobe), e por isso é um passo À PARTE: ele
+#                 ESCREVE, e a prévia não pode escrever nada
+COMO_PDF = (".pdf", ".ai")
 IMAGENS = (".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp")
+PRECISA_ADOBE = (".eps", ".psd")
+EXTENSOES_DE_ARTE = COMO_PDF + IMAGENS + PRECISA_ADOBE
+
+# A folha montada não passa de 10 m (ele, 05/10/2026: *"o arquivo montado
+# deve conter no máximo 10 metros; se for maior, dividir em PDF de 10 em
+# 10 metros"*). A divisão é por FILEIRA, nunca cortando peça — "jamais
+# deve cortar algum pedaço da imagem".
+MAXIMO_COMPRIMENTO_M = 10.0
 
 
 def _pymupdf():
@@ -180,12 +198,27 @@ def maquinas_que_montam(maquinas=None):
             and (config.get("largura_util_m") or config.get("mesa_util_m"))]
 
 
+def pasta_de_saida(nome_maquina, raiz=None):
+    """
+    Onde a folha PRONTA vai parar: `<raiz>/SAIDA <nome da máquina>`.
+
+    Pedido dele de 05/10/2026: *"precisamos de uma pasta de saída depois
+    de montado — saída DOCAN, saída SWJ"*. Separar entrada de saída
+    resolve de vez o que já mordeu em 05/10 às 01:45: a folha pronta
+    ficava na pasta de entrada e a passada seguinte a lia como peça, e
+    montava a folha dentro de outra folha. `e_folha_montada` continua
+    valendo como cinto de segurança, pra quem arrastar a folha de volta.
+    """
+    return pathlib.Path(raiz or PASTA_RAIZ) / f"SAIDA {nome_maquina}"
+
+
 def garantir_pastas(raiz=None, maquinas=None):
-    """Cria uma pasta por máquina e devolve {máquina: pasta}."""
+    """Cria a pasta de entrada e a de saída de cada máquina; devolve {máquina: pasta}."""
     criadas = {}
     for nome_maquina in maquinas_que_montam(maquinas):
         pasta = pasta_da_maquina(nome_maquina, raiz)
         pasta.mkdir(parents=True, exist_ok=True)
+        pasta_de_saida(nome_maquina, raiz).mkdir(parents=True, exist_ok=True)
         criadas[nome_maquina] = pasta
     return criadas
 
@@ -481,7 +514,7 @@ def pecas_da_pasta(pasta, config=None, maquinas=None):
     for arquivo in sorted(pathlib.Path(pasta).iterdir()):
         if not arquivo.is_file() or arquivo.name.startswith("~"):
             continue
-        if arquivo.suffix.lower() not in (".pdf",) + IMAGENS:
+        if arquivo.suffix.lower() not in EXTENSOES_DE_ARTE:
             continue
         if e_folha_montada(arquivo):
             continue
@@ -571,7 +604,7 @@ def cliente_das_pecas(pecas, raiz=None):
 
 
 def nome_da_folha(cliente, categoria, largura_m, comprimento_m, quantas,
-                  quando=None, chapas=None):
+                  quando=None, chapas=None, parte=None):
     """
     O nome do arquivo de saída, no MESMO padrão que o resto do sistema lê.
 
@@ -580,6 +613,12 @@ def nome_da_folha(cliente, categoria, largura_m, comprimento_m, quantas,
     folha montada é UMA peça de material, de 5,00 x 9,86 m. O cliente
     entra em seguida, como ele pediu, e a descrição diz que é montagem e
     de quantas peças.
+
+    'parte' é (qual, de quantas) quando a montagem passou de 10 m e saiu
+    dividida. A MEDIDA do nome é a DESTA parte, não a do conjunto: cada
+    arquivo é uma peça de material por si, e é assim que o m² e o estoque
+    o leem. O carimbo de hora é o mesmo nas partes do mesmo lote, então
+    elas ficam juntas na listagem.
     """
     quando = quando or datetime.datetime.now()
     partes = [f"1UN {categoria} {largura_m:.2f}X{comprimento_m:.2f}M"]
@@ -588,6 +627,8 @@ def nome_da_folha(cliente, categoria, largura_m, comprimento_m, quantas,
     miolo = f"MONTAGEM_{quantas}pecas"
     if chapas:
         miolo += f"_{chapas}chapas"
+    if parte and parte[1] > 1:
+        miolo += f"_parte{parte[0]}de{parte[1]}"
     partes.append(f"{miolo}_{quando:%d-%m-%Y_%H-%M}")
     return "_".join(partes) + ".pdf"
 
@@ -952,6 +993,120 @@ def _mover_para(arquivo, destino):
     return alvo
 
 
+def converter_o_que_precisa(pasta, logger=None, conversores=None):
+    """
+    Passa pelo Illustrator/Photoshop o que o PyMuPDF não abre (`.eps`,
+    `.psd`) e devolve os PDFs gerados.
+
+    É um passo À PARTE, e nunca dentro da prévia: isto ESCREVE (gera o
+    PDF e tira o original da vista, em `_originais`), e a prévia só pode
+    olhar. Quem chama é a montagem de verdade — e a tela, num botão, pra
+    ele ver o resultado antes de montar.
+
+    Programa fechado ou pywin32 faltando vira aviso, nunca exceção: o
+    resto da pasta continua montando sem o que não deu pra converter.
+    """
+    pasta = pathlib.Path(pasta)
+    logger = logger or (lambda nivel, mensagem: None)
+    gerados = []
+    pendentes = [a for a in sorted(pasta.iterdir())
+                 if a.is_file() and a.suffix.lower() in PRECISA_ADOBE]
+    if not pendentes:
+        return gerados
+    try:
+        import conversao_adobe
+    except Exception as erro:   # noqa: BLE001
+        logger("warn", f"não consegui carregar a conversão Adobe: "
+                       f"{type(erro).__name__}: {erro}")
+        return gerados
+
+    def contar(nivel, mensagem, *_resto):
+        logger("warn" if nivel == "err" else "ok", mensagem)
+
+    for arquivo in pendentes:
+        try:
+            novo = conversao_adobe.converter_se_necessario(
+                pasta, arquivo.name, pasta / NOME_SUBPASTA_ORIGINAIS, contar,
+                conversores=conversores)
+        except Exception as erro:   # noqa: BLE001
+            logger("warn", f"'{arquivo.name}' não converteu: "
+                           f"{type(erro).__name__}: {erro}")
+            continue
+        if novo:
+            gerados.append(pasta / novo)
+    return gerados
+
+
+def a_converter(pasta):
+    """Os arquivos da pasta que só entram depois de passar pelo Adobe."""
+    pasta = pathlib.Path(pasta)
+    if not pasta.is_dir():
+        return []
+    return sorted(a for a in pasta.iterdir()
+                  if a.is_file() and a.suffix.lower() in PRECISA_ADOBE)
+
+
+def dividir_por_fileira(postas, maximo_m=None):
+    """
+    Divide o encaixe em folhas de no máximo `maximo_m`, devolvendo
+    [(postas rebaixadas pro topo da folha, comprimento), ...].
+
+    O corte é só ENTRE FILEIRAS — peça nenhuma é partida. Regra dele de
+    05/10/2026: *"jamais deve cortar algum pedaço da imagem"*. Por isso
+    uma fileira mais alta que o máximo sai inteira e estoura o limite:
+    entre quebrar a regra do tamanho e cortar arte, quem cede é o
+    tamanho. Quem avisa é `montar_pasta`.
+    """
+    maximo = MAXIMO_COMPRIMENTO_M if maximo_m is None else maximo_m
+    if not postas:
+        return []
+    fileiras = {}
+    for posta in postas:
+        fileiras.setdefault(round(posta[2], 6), []).append(posta)
+
+    grupos, atual, topo = [], [], None
+    for y in sorted(fileiras):
+        da_fileira = fileiras[y]
+        fundo = max(p[2] + p[7] for p in da_fileira)
+        if atual and (fundo - topo) > maximo:
+            grupos.append((atual, topo))
+            atual, topo = [], None
+        if topo is None:
+            topo = y
+        atual.extend(da_fileira)
+    if atual:
+        grupos.append((atual, topo))
+
+    folhas = []
+    for da_folha, topo in grupos:
+        rebaixadas = [(p[0], p[1], p[2] - topo) + tuple(p[3:]) for p in da_folha]
+        folhas.append((rebaixadas, max(p[2] + p[7] for p in rebaixadas)))
+    return folhas
+
+
+def largura_usada(postas, margem_m=0.0):
+    """
+    A largura que a folha realmente ocupa — e é com ela que a folha FECHA.
+
+    Regra dele de 05/10/2026: *"depois que montar a arte precisa salvar
+    ela sempre centralizada, ou sem margem em branco nas laterais — eu
+    centralizo ela na máquina... temos até 5,00 m na DOCAN; se a arte
+    bater 4,70, pode fechar sem branco em volta"*. Folha de 5,00 m não
+    dá pra centralizar na máquina: ela ocupa tudo. Fechando em 4,70,
+    sobram 17 cm de cada lado pra ele acertar o alinhamento.
+
+    O RÓTULO entra na conta: ele começa na borda esquerda da peça e tem
+    300 mm, então numa peça estreita no canto direito é ELE quem manda
+    na largura. Cortar o nome pra economizar 10 cm de branco deixaria o
+    refile sem saber que peça é aquela.
+    """
+    if not postas:
+        return 0.0
+    direita = max(x + max(largura, ROTULO_LARGURA_M)
+                  for _i, x, _y, largura, *_resto in postas)
+    return direita + 2 * margem_m
+
+
 def planejar_pasta(pasta, nome_maquina=None, config=None, maquinas=None,
                    raiz_clientes=None):
     """
@@ -1023,19 +1178,40 @@ def planejar_pasta(pasta, nome_maquina=None, config=None, maquinas=None,
                            f"{margem_m * 100:.0f} cm de borda de cada lado)")})
         if not postas:
             continue
-        area_pecas = sum(p["largura_m"] * p["altura_m"] for p in do_material)
-        folha_m = chapa[1] if chapa else comprimento_da_folha(comprimento, margem_m)
-        area_folha = (chapa[0] * chapa[1] * len(paginas)) if chapa else largura * folha_m
-        plano["folhas"].append({
-            "categoria": categoria, "pecas": do_material, "postas": postas,
-            "paginas": paginas, "comprimento_m": comprimento, "folha_m": folha_m,
-            "largura_m": chapa[0] if chapa else largura,
-            "chapas": len(paginas) if chapa else None,
-            "area_pecas_m2": area_pecas, "area_folha_m2": area_folha,
-            "aproveitamento": (area_pecas / area_folha) if area_folha else 0.0,
-            "tamanho": (f"{len(paginas)} chapa(s) de {chapa[0]:.2f} x {chapa[1]:.2f} m"
-                        if chapa else f"{largura:.2f} x {folha_m:.2f} m"),
-        })
+        if chapa:
+            # a plana já sai uma página por chapa: nada a dividir nem a aparar
+            area_pecas = sum(p["largura_m"] * p["altura_m"] for p in do_material)
+            area_folha = chapa[0] * chapa[1] * len(paginas)
+            plano["folhas"].append({
+                "categoria": categoria, "pecas": do_material, "postas": postas,
+                "paginas": paginas, "comprimento_m": chapa[1], "folha_m": chapa[1],
+                "largura_m": chapa[0], "chapas": len(paginas),
+                "parte": 1, "partes": 1,
+                "area_pecas_m2": area_pecas, "area_folha_m2": area_folha,
+                "aproveitamento": (area_pecas / area_folha) if area_folha else 0.0,
+                "tamanho": f"{len(paginas)} chapa(s) de {chapa[0]:.2f} x {chapa[1]:.2f} m",
+            })
+            continue
+
+        # ROLO: no máximo 10 m por arquivo, cortando só entre fileiras
+        partes = dividir_por_fileira(postas)
+        for numero, (da_parte, comprimento_parte) in enumerate(partes, start=1):
+            # a folha FECHA na largura que usa, sem branco nas laterais
+            largura_parte = min(largura_usada(da_parte, margem_m), largura)
+            folha_m = comprimento_da_folha(comprimento_parte, margem_m)
+            area_folha = largura_parte * folha_m
+            indices = {p[0] for p in da_parte}
+            area_pecas = sum(do_material[i]["largura_m"] * do_material[i]["altura_m"]
+                             for i in indices)
+            plano["folhas"].append({
+                "categoria": categoria, "pecas": do_material, "postas": da_parte,
+                "paginas": [da_parte], "comprimento_m": comprimento_parte,
+                "folha_m": folha_m, "largura_m": largura_parte, "chapas": None,
+                "parte": numero, "partes": len(partes),
+                "area_pecas_m2": area_pecas, "area_folha_m2": area_folha,
+                "aproveitamento": (area_pecas / area_folha) if area_folha else 0.0,
+                "tamanho": f"{largura_parte:.2f} x {folha_m:.2f} m",
+            })
     return plano
 
 
@@ -1056,6 +1232,9 @@ def montar_pasta(pasta, nome_maquina=None, config=None, maquinas=None, logger=No
     pasta = pathlib.Path(pasta)
     quando = quando or datetime.datetime.now()
     logger = logger or (lambda nivel, mensagem: None)
+    # EPS e PSD viram PDF antes de qualquer conta: o PyMuPDF não os abre,
+    # e sem isto eles seriam recusados por "não consegui abrir pra medir"
+    converter_o_que_precisa(pasta, logger)
     plano = planejar_pasta(pasta, nome_maquina, config, maquinas, raiz_clientes)
     nome_maquina, largura = plano["maquina"], plano["largura_util_m"]
     chapa, margem_m, cliente = plano["mesa_m"], plano["margem_m"], plano["cliente"]
@@ -1081,24 +1260,40 @@ def montar_pasta(pasta, nome_maquina=None, config=None, maquinas=None, logger=No
         postas, paginas = folha["postas"], folha["paginas"]
         comprimento, folha_m = folha["comprimento_m"], folha["folha_m"]
         area_pecas, area_folha = folha["area_pecas_m2"], folha["area_folha_m2"]
-        tamanho = folha["tamanho"]
+        tamanho, largura_folha = folha["tamanho"], folha["largura_m"]
+        de_quantas = (f"  ·  parte {folha['parte']} de {folha['partes']}"
+                      if folha["partes"] > 1 else "")
         titulo = (f"MONTAGEM  ·  {cliente or 'SEM CLIENTE NO NOME'}  ·  {categoria}  ·  "
-                  f"{len(postas)} pecas  ·  {tamanho}  ·  "
+                  f"{len(postas)} pecas  ·  {tamanho}{de_quantas}  ·  "
                   f"aproveitamento {area_pecas / area_folha * 100:.0f}%  ·  "
                   f"RIPAR A 100%, NAO REDIMENSIONAR")
+        if folha["partes"] > 1 and folha_m > MAXIMO_COMPRIMENTO_M + 0.001:
+            # fileira mais alta que o máximo: entre cortar arte e estourar
+            # o tamanho, quem cede é o tamanho — mas isso sai ESCRITO
+            logger("warn", f"a parte {folha['parte']} ficou com {folha_m:.2f} m "
+                           f"(acima dos {MAXIMO_COMPRIMENTO_M:.0f} m): tem peça mais "
+                           f"alta que isso, e dividir cortaria a arte")
         if chapa:
             doc = desenhar_chapas(do_material, paginas, chapa, titulo, margem_m)
         else:
-            doc = desenhar(do_material, postas, comprimento, largura, titulo, margem_m)
+            doc = desenhar(do_material, postas, comprimento, largura_folha, titulo,
+                           margem_m)
+        # A folha PRONTA sai da pasta de entrada (ele, 05/10/2026). Era de
+        # lá que a passada seguinte a lia como peça, e montava folha
+        # dentro de folha.
+        saida = pasta_de_saida(nome_maquina, pasta.parent)
+        saida.mkdir(parents=True, exist_ok=True)
         if chapa:
-            destino = pasta / nome_da_folha(cliente, categoria, chapa[0], chapa[1],
+            destino = saida / nome_da_folha(cliente, categoria, chapa[0], chapa[1],
                                             len(postas), quando, len(paginas))
         else:
             # O comprimento do NOME é o da folha que vai ser IMPRESSA, o
-            # mesmo que a página tem — é por ele que o m², a escolha de
-            # máquina e a baixa de estoque contam.
-            destino = pasta / nome_da_folha(cliente, categoria, largura,
-                                            folha_m, len(postas), quando)
+            # mesmo que a página tem — e a largura também, que agora é a
+            # APARADA. É por eles que o m², a escolha de máquina e a baixa
+            # de estoque contam.
+            destino = saida / nome_da_folha(
+                cliente, categoria, largura_folha, folha_m, len(postas), quando,
+                parte=(folha["parte"], folha["partes"]))
         doc.save(str(destino), garbage=4, deflate=True)
         doc.close()
 
@@ -1109,7 +1304,8 @@ def montar_pasta(pasta, nome_maquina=None, config=None, maquinas=None, logger=No
             "quando": quando.strftime("%Y-%m-%dT%H:%M:%S"),
             "cliente": cliente, "maquina": nome_maquina, "categoria": categoria,
             "folha_m": ([round(chapa[0], 3), round(chapa[1], 3)] if chapa
-                        else [round(largura, 3), round(folha_m, 3)]),
+                        else [round(largura_folha, 3), round(folha_m, 3)]),
+            "parte": folha["parte"], "partes": folha["partes"],
             "chapas": len(paginas) if chapa else None,
             "area_folha_m2": round(area_folha, 3), "area_pecas_m2": round(area_pecas, 3),
             "folga_m": FOLGA_M, "margem_m": margem_m,
@@ -1175,9 +1371,13 @@ def prever_pasta(pasta, nome_maquina=None, config=None, maquinas=None,
     """
     plano = planejar_pasta(pasta, nome_maquina, config, maquinas, raiz_clientes)
     previa = {"pasta": plano["pasta"], "maquina": plano["maquina"],
+              "saida": pasta_de_saida(plano["maquina"], plano["pasta"].parent),
               "cliente": plano["cliente"], "folhas": [],
               "recusadas": [{"arquivo": pathlib.Path(r["arquivo"]).name,
                              "motivo": r["motivo"]} for r in plano["recusadas"]],
+              # o que só entra depois de passar pelo Illustrator/Photoshop:
+              # a prévia não converte nada, então ele precisa ver que estão ali
+              "a_converter": [a.name for a in a_converter(plano["pasta"])],
               "pior_diferenca_mm": 0.0}
 
     for folha in plano["folhas"]:
@@ -1201,6 +1401,7 @@ def prever_pasta(pasta, nome_maquina=None, config=None, maquinas=None,
             "categoria": folha["categoria"], "tamanho": folha["tamanho"],
             "largura_m": folha["largura_m"], "folha_m": folha["folha_m"],
             "chapas": folha["chapas"], "pecas": len(folha["postas"]),
+            "parte": folha["parte"], "partes": folha["partes"],
             "aproveitamento": folha["aproveitamento"],
             "area_pecas_m2": folha["area_pecas_m2"],
             "itens": itens,
@@ -1218,8 +1419,10 @@ def resumo_da_previa(previa):
     linhas = [f"{previa['maquina']}"
               + (f" · {previa['cliente']}" if previa["cliente"] else "")]
     for folha in previa["folhas"]:
+        qual = (f" (parte {folha['parte']} de {folha['partes']})"
+                if folha["partes"] > 1 else "")
         linhas.append(f"{folha['categoria']}: {folha['pecas']} peças em "
-                      f"{folha['tamanho']} ({folha['aproveitamento'] * 100:.0f}%)")
+                      f"{folha['tamanho']}{qual} ({folha['aproveitamento'] * 100:.0f}%)")
     if previa["folhas"]:
         pior = previa["pior_diferenca_mm"]
         linhas.append("largura bate; comprimento até "
@@ -1237,7 +1440,7 @@ def montar_todas(raiz=None, config=None, maquinas=None, logger=None, quando=None
         pasta = pasta_da_maquina(nome_maquina, raiz)
         if not pasta.is_dir():
             continue
-        if not any(a.is_file() and a.suffix.lower() in (".pdf",) + IMAGENS
+        if not any(a.is_file() and a.suffix.lower() in EXTENSOES_DE_ARTE
                    for a in pasta.iterdir()):
             continue
         resultados.append(montar_pasta(pasta, nome_maquina, config, maquinas, logger,
@@ -1274,7 +1477,7 @@ def pasta_parada(pasta, minutos=None, agora=None):
 
     tem_o_que_montar = False
     for arquivo in pasta.iterdir():
-        if not arquivo.is_file() or arquivo.suffix.lower() not in (".pdf",) + IMAGENS:
+        if not arquivo.is_file() or arquivo.suffix.lower() not in EXTENSOES_DE_ARTE:
             continue
         tem_o_que_montar = True
         try:

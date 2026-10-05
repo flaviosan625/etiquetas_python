@@ -28,8 +28,22 @@ PT_M = montagem.PT_M
 
 @pytest.fixture(autouse=True)
 def _isolar(tmp_path, monkeypatch):
-    """montagem.PASTA_RAIZ e o OneDrive de verdade: sem isto, teste cria pasta la."""
+    """
+    Duas isolacoes, e as duas ja morderam:
+
+    - montagem.PASTA_RAIZ e o OneDrive de verdade: sem isto, teste cria
+      pasta la.
+    - os conversores do Adobe abrem o ILLUSTRATOR DE VERDADE por COM. Um
+      teste com .eps na pasta chamou montar_pasta, que converte antes de
+      medir, e o Illustrator subiu invisivel e travou a suite (05/10/2026).
+      Zerado aqui: quem quer testar conversao passa o conversor na mao.
+    """
     monkeypatch.setattr(montagem, "PASTA_RAIZ", tmp_path / "_onedrive_isolado")
+    try:
+        import conversao_adobe
+    except Exception:       # noqa: BLE001 - sem pywin32 nao ha o que isolar
+        return
+    monkeypatch.setattr(conversao_adobe, "CONVERSORES_POR_EXTENSAO", {})
 
 
 def arte(pasta, nome, largura_m, altura_m, cor=(0.3, 0.5, 0.8), paginas=1):
@@ -223,10 +237,16 @@ def test_cada_material_vira_UMA_folha(pasta):
     assert all(f["arquivo"].is_file() for f in resultado["folhas"])
 
 
-def test_a_folha_FECHA_na_largura_redonda_que_ele_pediu(pasta):
+def test_a_folha_FECHA_na_largura_QUE_USA_sem_branco_em_volta(pasta):
     """
-    5,00 na DOCAN, cravado -- e no NOME tambem, que e de onde o m², a
-    maquina e o estoque leem.
+    Regra dele de 05/10/2026: *"depois que montar a arte precisa salvar
+    ela sempre centralizada, ou sem margem em branco nas laterais -- eu
+    centralizo ela na maquina... temos ate 5,00 m na DOCAN; se a arte
+    bater 4,70, pode fechar sem branco em volta"*.
+
+    Folha de 5,00 m nao da pra centralizar: ela ocupa tudo. Fechando no
+    que usa, sobra margem pra ele acertar o alinhamento na maquina -- e o
+    NOME diz a medida certa, que e de onde o m² e o estoque leem.
     """
     arte(pasta, "1UN LONA IMPRESSA 2.00X1.00M_PAINEL.pdf", 2.00, 1.00)
 
@@ -234,11 +254,44 @@ def test_a_folha_FECHA_na_largura_redonda_que_ele_pediu(pasta):
     folha = resultado["folhas"][0]["arquivo"]
 
     with pymupdf.open(str(folha)) as doc:
-        assert round(doc.load_page(0).rect.width / PT_M, 2) == 5.00
+        largura = doc.load_page(0).rect.width / PT_M
+    assert round(largura, 2) == 2.00, "sobrariam 3 m de branco na folha de 5,00"
 
     import dimensoes
 
-    assert dimensoes.extrair_dimensoes(folha.name)["largura_m"] == 5.00
+    assert dimensoes.extrair_dimensoes(folha.name)["largura_m"] == 2.00
+
+
+def test_a_folha_NUNCA_passa_da_largura_da_maquina(pasta):
+    """
+    Aparar e aparar branco, nunca abrir espaco: o teto continua sendo o
+    fechamento da maquina (5,00 na DOCAN).
+    """
+    for i in range(6):
+        arte(pasta, f"1UN LONA IMPRESSA 1.50X1.00M_PECA_{i}.pdf", 1.50, 1.00)
+
+    resultado = montagem.montar_pasta(pasta, raiz_clientes=pasta.parent / "x")
+
+    with pymupdf.open(str(resultado["folhas"][0]["arquivo"])) as doc:
+        for n in range(doc.page_count):
+            assert doc.load_page(n).rect.width / PT_M <= 5.0001
+
+
+def test_a_peca_estreita_no_canto_nao_corta_o_proprio_nome(pasta):
+    """
+    O rotulo comeca na borda esquerda da peca e tem 300 mm: numa peca
+    estreita no canto direito e ELE quem manda na largura da folha.
+    Aparar por cima dele economizaria 10 cm de branco e deixaria o refile
+    sem saber que peca e aquela.
+    """
+    arte(pasta, "1UN LONA IMPRESSA 0.20X0.20M_VIBRA_TIRA.pdf", 0.20, 0.20)
+
+    resultado = montagem.montar_pasta(pasta, raiz_clientes=pasta.parent / "x")
+    with pymupdf.open(str(resultado["folhas"][0]["arquivo"])) as doc:
+        largura = doc.load_page(0).rect.width / PT_M
+
+    assert largura == pytest.approx(montagem.ROTULO_LARGURA_M, abs=0.001), \
+        "a folha tem que caber o rotulo inteiro, nao so a peca"
 
 
 def test_os_originais_saem_da_pasta_depois_de_montados(pasta):
@@ -276,7 +329,8 @@ def test_duas_pecas_de_mesma_medida_nao_trocam_de_rotulo(pasta):
 
     montagem.montar_pasta(pasta, raiz_clientes=pasta.parent / "x")
 
-    ficha = json.loads(next(pasta.glob("*.json")).read_text(encoding="utf-8"))
+    saida = montagem.pasta_de_saida("DOCAN R5200", pasta.parent)
+    ficha = json.loads(next(saida.glob("*.json")).read_text(encoding="utf-8"))
     nomes = {p["arquivo"] for p in ficha["pecas"]}
     assert len(nomes) == 2, "cada arte tem que aparecer uma vez, com o nome dela"
 
@@ -321,7 +375,8 @@ def test_o_json_ao_lado_guarda_as_pecas(pasta):
         encoding="utf-8"))
     assert len(ficha["pecas"]) == 2
     assert ficha["area_pecas_m2"] == 2.0
-    assert ficha["folha_m"][0] == 5.00
+    assert ficha["folha_m"][0] == 2.05, \
+        "duas pecas de 1,00 lado a lado: a folha fecha em 2,05, nao nos 5,00 da bobina"
     assert ficha["pecas"][0]["posicao_m"] and ficha["pecas"][0]["medida_m"] == [1.0, 1.0]
 
 
@@ -1087,20 +1142,28 @@ def test_a_folha_PRONTA_nao_e_montada_de_novo(pasta):
 
     primeira = montagem.montar_pasta(pasta, raiz_clientes=pasta.parent / "x")
     folha = primeira["folhas"][0]["arquivo"]
-    assert folha.is_file() and folha.parent == pasta, \
-        "a folha pronta fica na pasta da maquina: e de la que ele a manda pra fila"
+    assert folha.is_file()
+    assert folha.parent == montagem.pasta_de_saida("DOCAN R5200", pasta.parent), \
+        "a folha pronta sai da pasta de ENTRADA (pedido dele, 05/10/2026)"
 
-    # a passada seguinte nao pode achar peca nenhuma
+    # a saida em outra pasta ja resolve; o cinto de seguranca e pra quando
+    # alguem arrastar a folha pronta de volta pra entrada
+    import shutil
+
+    de_volta = pasta / folha.name
+    shutil.copy2(folha, de_volta)
+    shutil.copy2(folha.with_suffix(".json"), de_volta.with_suffix(".json"))
+
     pecas, recusadas = montagem.pecas_da_pasta(pasta)
     assert pecas == [] and recusadas == [], \
         "a folha pronta virou peca: a montagem esta se comendo"
 
     segunda = montagem.montar_pasta(pasta, raiz_clientes=pasta.parent / "x")
     assert segunda["folhas"] == []
-    assert folha.is_file(), "a folha pronta nao pode ir pros _originais"
+    assert de_volta.is_file(), "a folha pronta nao pode ir pros _originais"
 
     # e sem a ficha ao lado tambem nao: o nome de saida e prova sozinho
-    folha.with_suffix(".json").unlink()
+    de_volta.with_suffix(".json").unlink()
     assert montagem.pecas_da_pasta(pasta)[0] == []
 
 
@@ -1329,7 +1392,7 @@ def test_o_aviso_sai_ANTES_de_a_folha_existir(pasta, monkeypatch):
     texto, pdfs_na_hora = vistos[0]
     assert "DOCAN R5200" in texto, "o aviso tem que dizer de qual máquina é"
     assert "LONA" in texto and "1 peças" in texto
-    assert "5.00" in texto, "e com que medida a folha vai fechar"
+    assert "2.00" in texto, "e com que medida a folha vai fechar"
     assert not any("MONTAGEM" in nome for nome in pdfs_na_hora), \
         "o aviso saiu depois da folha: deixou de ser aviso"
 
@@ -1362,3 +1425,197 @@ def test_pasta_vazia_nao_avisa_nada(pasta):
     assert montagem._avisar_o_que_vai_sair(
         pasta, "DOCAN R5200", None, None, lambda n, m: None,
         notificar=lambda *a, **k: pytest.fail("não podia avisar")) is None
+
+
+# ---------- a saida, os 10 m e os formatos ----------
+#
+# Tres pedidos dele de 05/10/2026: "precisamos de uma pasta de saida
+# depois de montado, saida DOCAN, saida SWJ"; "o arquivo montado deve
+# conter no maximo 10 metros, se for maior dividir em PDF de 10 em 10
+# metros"; "as pastas precisa ler tambem todos os formatos de arquivos
+# que ja usamos no sistema, pra depois sair em PDF".
+
+
+def test_a_folha_pronta_vai_pra_pasta_de_SAIDA(pasta):
+    arte(pasta, "1UN LONA IMPRESSA 2.00X1.00M_VIBRA_PECA.pdf", 2.00, 1.00)
+
+    resultado = montagem.montar_pasta(pasta, raiz_clientes=pasta.parent / "x")
+    folha = resultado["folhas"][0]["arquivo"]
+    saida = montagem.pasta_de_saida("DOCAN R5200", pasta.parent)
+
+    assert folha.parent == saida
+    assert saida.name == "SAIDA DOCAN R5200", "o nome da pasta carrega o da maquina"
+    assert folha.with_suffix(".json").is_file(), "a ficha acompanha a folha"
+    assert not list(pasta.glob("*.pdf")), "nada de folha pronta na entrada"
+
+
+def test_garantir_pastas_cria_entrada_E_saida(tmp_path):
+    montagem.garantir_pastas(raiz=tmp_path)
+    for maquina in montagem.maquinas_que_montam():
+        assert (tmp_path / maquina).is_dir()
+        assert (tmp_path / ("SAIDA " + maquina)).is_dir()
+
+
+def test_a_saida_NAO_e_lida_como_entrada(pasta):
+    """
+    A pasta de saida fica ao LADO da de entrada, nunca dentro: dentro, a
+    passada seguinte leria a folha pronta como peca.
+    """
+    saida = montagem.pasta_de_saida("DOCAN R5200", pasta.parent)
+    assert saida.parent == pasta.parent and saida != pasta
+    assert montagem.maquina_da_pasta(saida) is None, \
+        "a pasta de saida nao pode ser confundida com a da maquina"
+
+
+def test_montagem_comprida_sai_dividida_de_10_em_10_metros(pasta):
+    # 12 pecas de 2,40 x 2,00 numa bobina de 5,00: duas por fileira,
+    # 6 fileiras de 2,05 = 12,30 m de encaixe
+    for i in range(12):
+        arte(pasta, "1UN LONA IMPRESSA 2.40X2.00M_VIBRA_PECA_%d.pdf" % i, 2.40, 2.00)
+
+    previa = montagem.prever_pasta(pasta, raiz_clientes=pasta.parent / "x")
+    assert len(previa["folhas"]) > 1, "passou de 10 m e tinha que sair dividida"
+    for folha in previa["folhas"]:
+        assert folha["folha_m"] <= montagem.MAXIMO_COMPRIMENTO_M + 0.001
+
+    resultado = montagem.montar_pasta(pasta, raiz_clientes=pasta.parent / "x")
+    assert len(resultado["folhas"]) == len(previa["folhas"])
+    nomes = [f["arquivo"].name for f in resultado["folhas"]]
+    assert all("parte" in nome for nome in nomes), \
+        "o nome tem que dizer qual parte e, senao as duas parecem a mesma folha"
+
+    # e NENHUMA peca se perdeu no corte
+    montadas = 0
+    for f in resultado["folhas"]:
+        ficha = json.loads(f["arquivo"].with_suffix(".json").read_text(encoding="utf-8"))
+        montadas += len(ficha["pecas"])
+        with pymupdf.open(str(f["arquivo"])) as doc:
+            assert doc.load_page(0).rect.height / PT_M <= \
+                montagem.MAXIMO_COMPRIMENTO_M + 0.001
+    assert montadas == 12
+
+
+def test_a_divisao_nunca_parte_uma_peca(pasta):
+    """
+    "Jamais deve cortar algum pedaco da imagem" (05/10/2026). O corte e
+    entre FILEIRAS: cada peca sai inteira numa folha so.
+    """
+    for i in range(12):
+        arte(pasta, "1UN LONA IMPRESSA 2.40X2.00M_VIBRA_PECA_%d.pdf" % i, 2.40, 2.00)
+
+    pecas, _ = montagem.pecas_da_pasta(pasta)
+    postas, _comprimento = montagem.encaixar(pecas, 5.00, 0.0)
+    folhas = montagem.dividir_por_fileira(postas, 10.0)
+
+    vistas = [p[0] for folha, _c in folhas for p in folha]
+    assert sorted(vistas) == sorted(p[0] for p in postas), \
+        "peca sumiu ou foi duplicada na divisao"
+    assert len(vistas) == len(set(vistas)), "a mesma peca ficou em duas folhas"
+    for folha, comprimento in folhas:
+        assert comprimento <= 10.001
+        assert min(p[2] for p in folha) == pytest.approx(0.0, abs=1e-9), \
+            "cada folha comeca no proprio topo"
+
+
+def test_peca_mais_alta_que_o_maximo_sai_INTEIRA(pasta):
+    """
+    Entre quebrar a regra dos 10 m e cortar arte, quem cede e o tamanho.
+    Uma lona de 12 m e uma peca so: dividi-la seria corta-la.
+    """
+    arte(pasta, "1UN LONA IMPRESSA 2.00X12.00M_VIBRA_GIGANTE.pdf", 2.00, 12.00)
+
+    pecas, recusadas = montagem.pecas_da_pasta(pasta)
+    assert not recusadas
+    postas, _c = montagem.encaixar(pecas, 5.00, 0.0)
+    folhas = montagem.dividir_por_fileira(postas, 10.0)
+
+    assert len(folhas) == 1, "nao da pra dividir uma peca so"
+    assert folhas[0][1] > 10.0
+
+    montagem.montar_pasta(pasta, raiz_clientes=pasta.parent / "x")
+    saida = montagem.pasta_de_saida("DOCAN R5200", pasta.parent)
+    folha = next(saida.glob("*.pdf"))
+    with pymupdf.open(str(folha)) as doc:
+        assert doc.load_page(0).rect.height / PT_M > 12.0
+
+
+def test_a_pasta_le_TODOS_os_formatos_do_sistema():
+    """
+    A lista nao e propria: e a do sistema (rasterlink_hotfolder), mais o
+    .bmp e o .psd que ja aparecem noutras partes. Lista separada vira
+    lista que diverge, e ai a pasta ignora calada um arquivo que o resto
+    do sistema aceita.
+    """
+    import rasterlink_hotfolder as rl_hf
+
+    for extensao in rl_hf.EXTENSOES_ACEITAS:
+        assert extensao in montagem.EXTENSOES_DE_ARTE, \
+            "%s entra no vigia e a montagem ignorava" % extensao
+    assert ".psd" in montagem.EXTENSOES_DE_ARTE
+    # e cada uma tem um caminho: ou abre, ou vira imagem, ou passa no Adobe
+    for extensao in montagem.EXTENSOES_DE_ARTE:
+        assert (extensao in montagem.COMO_PDF or extensao in montagem.IMAGENS
+                or extensao in montagem.PRECISA_ADOBE)
+
+
+def test_imagem_entra_na_montagem_e_sai_em_PDF(pasta):
+    """PNG/JPG/TIF entram pelo convert_to_pdf, no mesmo caminho do PDF."""
+    doc = pymupdf.open()
+    pagina = doc.new_page(width=1.00 * PT_M, height=0.50 * PT_M)
+    pagina.draw_rect(pagina.rect, color=None, fill=(0.2, 0.4, 0.8))
+    pix = pagina.get_pixmap(dpi=72)
+    pix.save(str(pasta / "1UN LONA IMPRESSA 1.00X0.50M_VIBRA_FOTO.png"))
+    doc.close()
+
+    resultado = montagem.montar_pasta(pasta, raiz_clientes=pasta.parent / "x")
+
+    assert len(resultado["folhas"]) == 1 and not resultado["recusadas"]
+    assert resultado["folhas"][0]["arquivo"].suffix == ".pdf"
+
+
+def test_eps_e_psd_sao_convertidos_ANTES_de_medir(pasta):
+    """
+    O PyMuPDF nao abre EPS nem PSD: sem a conversao eles seriam recusados
+    por "nao consegui abrir pra medir". A conversao e um passo A PARTE
+    porque ESCREVE -- e a previa so pode olhar.
+    """
+    falso = pasta / "1UN LONA IMPRESSA 1.00X0.50M_VIBRA_ARTE.eps"
+    falso.write_bytes(b"nao e um eps de verdade")
+
+    assert [a.name for a in montagem.a_converter(pasta)] == [falso.name]
+
+    # a previa NAO converte: ela so olha
+    montagem.prever_pasta(pasta, raiz_clientes=pasta.parent / "x")
+    assert falso.is_file(), "a previa converteu: ela nao pode escrever nada"
+
+    def falso_conversor(origem, destino):
+        doc = pymupdf.open()
+        pagina = doc.new_page(width=1.00 * PT_M, height=0.50 * PT_M)
+        pagina.draw_rect(pagina.rect, color=None, fill=(0.9, 0.3, 0.1))
+        doc.save(destino)
+        doc.close()
+
+    gerados = montagem.converter_o_que_precisa(
+        pasta, conversores={".eps": falso_conversor})
+
+    assert [p.name for p in gerados] == ["1UN LONA IMPRESSA 1.00X0.50M_VIBRA_ARTE.pdf"]
+    assert not falso.exists(), "o original sai da vista, senao converte de novo toda rodada"
+    pecas, recusadas = montagem.pecas_da_pasta(pasta)
+    assert len(pecas) == 1 and not recusadas
+
+
+def test_conversao_que_falha_nao_derruba_a_montagem(pasta):
+    """Programa fechado nao pode impedir o resto da pasta de montar."""
+    (pasta / "1UN LONA IMPRESSA 1.00X0.50M_VIBRA_QUEBRADA.eps").write_bytes(b"x")
+    arte(pasta, "1UN LONA IMPRESSA 2.00X1.00M_VIBRA_BOA.pdf", 2.00, 1.00)
+    avisos = []
+
+    def conversor_quebrado(origem, destino):
+        raise RuntimeError("Illustrator nao esta instalado")
+
+    montagem.converter_o_que_precisa(pasta, logger=lambda n, m: avisos.append((n, m)),
+                                     conversores={".eps": conversor_quebrado})
+    assert any(nivel == "warn" for nivel, _m in avisos)
+
+    resultado = montagem.montar_pasta(pasta, raiz_clientes=pasta.parent / "x")
+    assert len(resultado["folhas"]) == 1, "a arte boa tinha que montar do mesmo jeito"

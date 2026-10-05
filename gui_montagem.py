@@ -99,9 +99,12 @@ class _AbaMaquina(tk.Frame):
             dito = f"fecha em {medida:.2f} m de largura"
         tk.Label(linha, text=dito, font=("Segoe UI", 9, "bold"),
                  bg=cores.fundo, fg=cores.texto).pack(side="left")
+        tk.Button(linha, text="📤  abrir a saída", relief="flat", cursor="hand2",
+                  bg=cores.cartao, fg=cores.acento, activebackground=cores.cartao,
+                  command=self._abrir_saida).pack(side="right")
         tk.Button(linha, text="📂  abrir a pasta", relief="flat", cursor="hand2",
                   bg=cores.cartao, fg=cores.acento, activebackground=cores.cartao,
-                  command=self._abrir_pasta).pack(side="right")
+                  command=self._abrir_pasta).pack(side="right", padx=(0, 10))
         tk.Label(self, text=str(self.pasta), font=("Segoe UI", 8),
                  bg=cores.fundo, fg=cores.texto2, anchor="w",
                  justify="left").grid(row=1, column=0, sticky="ew", padx=16)
@@ -167,6 +170,10 @@ class _AbaMaquina(tk.Frame):
             activeforeground=cores.sobre_acento, font=("Segoe UI", 10, "bold"),
             padx=14, pady=6, command=self._montar_agora)
         self.btn_montar.pack(side="right")
+        self.btn_converter = tk.Button(
+            linha, text="converter EPS/PSD", relief="flat", cursor="hand2",
+            bg=cores.cartao, fg=cores.acento, activebackground=cores.cartao,
+            command=self._converter)
         self.btn_abrir_pdf = tk.Button(
             linha, text="abrir o PDF", relief="flat", cursor="hand2",
             bg=cores.cartao, fg=cores.acento, activebackground=cores.cartao,
@@ -208,10 +215,21 @@ class _AbaMaquina(tk.Frame):
             return
 
         self._previa = previa
-        self.var_recusadas.set(
-            "" if not previa["recusadas"] else
-            "Fica de fora: " + " · ".join(
+        recados = []
+        if previa["a_converter"]:
+            # a prévia não converte nada (ela só olha), então ele precisa
+            # ver que esses arquivos ainda não entraram na conta
+            recados.append(
+                f"{len(previa['a_converter'])} arquivo(s) precisam passar pelo "
+                f"Illustrator/Photoshop e ainda NÃO estão na conta: "
+                + ", ".join(previa["a_converter"]))
+            self.btn_converter.pack(side="left", padx=(8, 0))
+        else:
+            self.btn_converter.pack_forget()
+        if previa["recusadas"]:
+            recados.append("Fica de fora: " + " · ".join(
                 f"{r['arquivo']} ({r['motivo']})" for r in previa["recusadas"]))
+        self.var_recusadas.set("\n".join(recados))
 
         if not previa["folhas"]:
             self.var_resumo.set("Nada para montar nesta pasta")
@@ -234,9 +252,12 @@ class _AbaMaquina(tk.Frame):
 
         for folha in previa["folhas"]:
             if len(previa["folhas"]) > 1:
+                qual = (f"  ·  parte {folha['parte']} de {folha['partes']}"
+                        if folha["partes"] > 1 else "")
                 self.tabela.insert(
-                    "", "end", values=("", f"— {folha['categoria']} —", "", "", "", "", ""),
-                    tags=("folha",))
+                    "", "end", tags=("folha",),
+                    values=("", f"— {folha['categoria']}{qual}  ({folha['tamanho']}) —",
+                            "", "", "", "", ""))
             for item in folha["itens"]:
                 mudou = abs(item["diferenca_comprimento_mm"]) >= 0.5
                 self.tabela.insert("", "end", tags=("mudou",) if mudou else (), values=(
@@ -295,9 +316,51 @@ class _AbaMaquina(tk.Frame):
 
     # ------------------------------------------------------------ abrir
 
+    def _converter(self):
+        """
+        EPS e PSD passam pelo Illustrator/Photoshop. É um botão, e não
+        parte do recalcular, porque isto ESCREVE: gera o PDF e tira o
+        original da vista. A prévia só pode olhar.
+        """
+        if self._ocupada:
+            return
+        self._ocupada = True
+        self.btn_converter.configure(state="disabled", text="convertendo...")
+        self.btn_montar.configure(state="disabled")
+        self.btn_atualizar.configure(state="disabled")
+        recado = []
+
+        def trabalhar():
+            try:
+                gerados = montagem.converter_o_que_precisa(
+                    self.pasta, logger=lambda nivel, msg: recado.append(msg))
+                erro = None
+            except Exception as e:                       # noqa: BLE001
+                gerados, erro = [], f"{type(e).__name__}: {e}"
+            self.after(0, lambda: self._converteu(gerados, erro, recado))
+
+        threading.Thread(target=trabalhar, daemon=True).start()
+
+    def _converteu(self, gerados, erro, recado):
+        self._ocupada = False
+        self.btn_converter.configure(state="normal", text="converter EPS/PSD")
+        if erro is not None:
+            messagebox.showerror("A conversão parou", erro, parent=self)
+        elif not gerados:
+            messagebox.showwarning(
+                "Nada foi convertido",
+                "\n".join(recado) or "O Illustrator/Photoshop não respondeu. "
+                "Abra o programa e tente de novo.", parent=self)
+        self.calcular()
+
     def _abrir_pasta(self):
         self.pasta.mkdir(parents=True, exist_ok=True)
         self._abrir(self.pasta)
+
+    def _abrir_saida(self):
+        saida = montagem.pasta_de_saida(self.nome_maquina)
+        saida.mkdir(parents=True, exist_ok=True)
+        self._abrir(saida)
 
     def _abrir_pdf(self):
         if self._feitas:
