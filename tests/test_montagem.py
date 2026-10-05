@@ -1227,3 +1227,138 @@ def test_franja_grande_e_DESIGN_e_nao_e_aparada(pasta):
         arte_m = montagem.caixa_da_arte(pagina, pymupdf)
         assert arte_m == pagina.rect, \
             "franja de meio metro nao e sobra de exportacao, e design"
+
+
+# ---------- a previa: os dados na tela ANTES de gerar ----------
+#
+# Ele, 05/10/2026: *"antes de gerar quero que me passe os dados como um
+# aviso de como vai ficar depois de montado, mostrando a margem de
+# erro"*, e logo depois *"ele vai pegar os arquivos que joguei na pasta,
+# calcular e passar os dados na tela"*.
+
+
+def test_a_previa_nao_escreve_nem_move_NADA(pasta):
+    """
+    E o que a separa de montar: ela e so olhar. Se ela movesse os
+    originais, abrir a tela ja teria montado o pedido.
+    """
+    original = arte(pasta, "1UN LONA IMPRESSA 2.00X1.00M_VIBRA_PECA.pdf", 2.00, 1.00)
+    antes = sorted(p.name for p in pasta.iterdir())
+
+    previa = montagem.prever_pasta(pasta, raiz_clientes=pasta.parent / "x")
+
+    assert previa["folhas"], "tinha peca pra montar"
+    assert original.exists()
+    assert sorted(p.name for p in pasta.iterdir()) == antes, \
+        "a previa mexeu na pasta: ela so pode OLHAR"
+
+
+def test_a_previa_e_a_MESMA_conta_que_monta(pasta):
+    """
+    Previa calculada por fora e previa que mente no dia em que uma das
+    duas mudar. Entao as duas saem do mesmo planejar_pasta, e este teste
+    compara numero por numero com o PDF que sai depois.
+    """
+    for i in range(3):
+        arte(pasta, f"1UN LONA IMPRESSA 2.40X1.60M_VIBRA_PECA_{i}.pdf", 2.40, 1.60)
+
+    previa = montagem.prever_pasta(pasta, raiz_clientes=pasta.parent / "x")
+    resultado = montagem.montar_pasta(pasta, raiz_clientes=pasta.parent / "x")
+    ficha = json.loads(resultado["folhas"][0]["arquivo"].with_suffix(".json").read_text(
+        encoding="utf-8"))
+
+    assert previa["folhas"][0]["pecas"] == len(ficha["pecas"])
+    assert previa["folhas"][0]["folha_m"] == pytest.approx(ficha["folha_m"][1], abs=0.0006)
+    assert previa["cliente"] == ficha["cliente"]
+    for item, gravada in zip(previa["folhas"][0]["itens"], ficha["pecas"]):
+        assert item["arquivo"] == gravada["arquivo"]
+        assert item["medida_m"][0] == pytest.approx(gravada["medida_m"][0], abs=0.0006)
+        assert item["medida_m"][1] == pytest.approx(gravada["medida_m"][1], abs=0.0006)
+        assert item["girada"] == gravada["girada"]
+
+
+def test_a_previa_diz_a_margem_de_erro_de_cada_peca(pasta):
+    """
+    A coluna da LARGURA e zero por construcao -- ela e a ancora -- e sai
+    escrita justamente por isso: e a prova, na tela que ele le antes de
+    mandar imprimir, de que a regra esta valendo. Quem muda e o
+    comprimento.
+    """
+    # arte 2% fora de proporcao: entra, e o comprimento anda
+    arte(pasta, "1UN LONA IMPRESSA 1.00X0.50M_VIBRA_PECA.pdf", 1.02, 0.50)
+
+    previa = montagem.prever_pasta(pasta, raiz_clientes=pasta.parent / "x")
+    item = previa["folhas"][0]["itens"][0]
+
+    assert item["nome_m"] == (1.00, 0.50)
+    assert item["erro_largura_mm"] == pytest.approx(0.0, abs=0.001), \
+        "a largura e a ancora: a margem de erro dela e zero"
+    esperado = (1.00 * 0.50 / 1.02 - 0.50) * 1000
+    assert item["diferenca_comprimento_mm"] == pytest.approx(esperado, abs=0.6)
+    assert previa["pior_diferenca_mm"] == pytest.approx(abs(esperado), abs=0.6)
+
+
+def test_a_previa_lista_o_que_vai_ficar_de_fora_com_o_motivo(pasta):
+    arte(pasta, "1UN LONA IMPRESSA 2.00X1.00M_VIBRA_DEFORMADA.pdf", 2.00, 1.80)
+    arte(pasta, "1UN LONA IMPRESSA 2.00X1.00M_VIBRA_BOA.pdf", 2.00, 1.00)
+
+    previa = montagem.prever_pasta(pasta, raiz_clientes=pasta.parent / "x")
+
+    assert [r["arquivo"] for r in previa["recusadas"]] == \
+        ["1UN LONA IMPRESSA 2.00X1.00M_VIBRA_DEFORMADA.pdf"]
+    assert "Confira a arte ou o nome" in previa["recusadas"][0]["motivo"]
+    assert previa["folhas"][0]["pecas"] == 1, "a boa continua entrando"
+
+
+def test_o_aviso_sai_ANTES_de_a_folha_existir(pasta, monkeypatch):
+    """
+    'Antes de gerar' e literal: quando a notificacao e escrita, o PDF
+    ainda nao esta na pasta. Se sair depois, o aviso deixa de ser aviso.
+    """
+    arte(pasta, "1UN LONA IMPRESSA 2.00X1.00M_VIBRA_PECA.pdf", 2.00, 1.00)
+    monkeypatch.setattr(montagem, "PASTA_RAIZ", pasta.parent)
+    vistos = []
+
+    def falso_notificar(texto, titulo=None):
+        vistos.append((texto, sorted(p.name for p in pasta.glob("*.pdf"))))
+
+    montagem._avisar_o_que_vai_sair(pasta, "DOCAN R5200", None, None,
+                                    lambda n, m: None, notificar=falso_notificar)
+
+    assert len(vistos) == 1
+    texto, pdfs_na_hora = vistos[0]
+    assert "DOCAN R5200" in texto, "o aviso tem que dizer de qual máquina é"
+    assert "LONA" in texto and "1 peças" in texto
+    assert "5.00" in texto, "e com que medida a folha vai fechar"
+    assert not any("MONTAGEM" in nome for nome in pdfs_na_hora), \
+        "o aviso saiu depois da folha: deixou de ser aviso"
+
+
+def test_avisar_que_falha_NUNCA_impede_a_montagem(pasta, caplog):
+    """
+    Avisar e conforto, montar e o trabalho. E a falha vai pro log: um
+    except calado aqui esconderia um alarme que parou de tocar.
+    """
+    arte(pasta, "1UN LONA IMPRESSA 2.00X1.00M_VIBRA_PECA.pdf", 2.00, 1.00)
+    recado = []
+
+    def notificar_quebrado(texto, titulo=None):
+        raise RuntimeError("sem bandeja de notificacao")
+
+    saida = montagem._avisar_o_que_vai_sair(
+        pasta, "DOCAN R5200", None, None,
+        lambda nivel, msg: recado.append((nivel, msg)),
+        notificar=notificar_quebrado)
+
+    assert saida is None
+    assert any(nivel == "warn" and "não consegui avisar" in msg for nivel, msg in recado)
+
+    # e a montagem segue inteira
+    resultado = montagem.montar_pasta(pasta, raiz_clientes=pasta.parent / "x")
+    assert len(resultado["folhas"]) == 1
+
+
+def test_pasta_vazia_nao_avisa_nada(pasta):
+    assert montagem._avisar_o_que_vai_sair(
+        pasta, "DOCAN R5200", None, None, lambda n, m: None,
+        notificar=lambda *a, **k: pytest.fail("não podia avisar")) is None

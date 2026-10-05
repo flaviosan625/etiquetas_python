@@ -428,6 +428,28 @@ A montagem pega carona na passada do **Checklist de Produção** (como o `vigia_
 pasta **parada** há `MINUTOS_PARADA`: largando dez arquivos seguidos, montar no primeiro faria uma
 folha de uma peça e jogaria as outras nove numa segunda.
 
+**Os dados ANTES de gerar, e a prévia é a MESMA conta que monta.** Pedido dele de 05/10/2026:
+*"antes de gerar quero que me passe os dados como um aviso de como vai ficar depois de montado,
+mostrando a margem de erro"*, e em seguida *"ele vai pegar os arquivos que joguei na pasta, calcular e
+passar os dados na tela"*. Por isso `planejar_pasta` existe: ela faz o encaixe inteiro **sem escrever
+nem mover nada**, e quem monta (`montar_pasta`) e quem mostra (`prever_pasta`) chamam ela. Prévia
+calculada por fora é prévia que mente no dia em que uma das duas mudar — travado por um teste que
+compara a prévia com o `.json` da folha que sai depois, número por número.
+
+Nos dois caminhos:
+
+- **Botão "Montar arte para impressão"** (`gui_montagem.py`), com uma **aba por máquina que monta** —
+  o separador DOCAN / SWJ que ele pediu. Cada aba lê a pasta dela, calcula e mostra: como a folha
+  fecha, o aproveitamento, o que fica de fora com o motivo, e peça por peça o que o nome pede, o que
+  vai sair e a diferença dos dois lados em milímetros. Montar é um botão à parte.
+- **Aviso do Windows** na passada automática (`_avisar_o_que_vai_sair`, chamado de dentro de
+  `conferir`), antes de a folha existir. "Antes de gerar" é literal e tem teste: quando a notificação
+  é escrita, o PDF ainda não está na pasta — saindo depois, o aviso deixa de ser aviso. Notificação
+  não cabe tabela, então ali vai só o que decide se ele precisa olhar agora; a tabela está na tela.
+
+A coluna da LARGURA na tabela é zero por construção — ela é a âncora — e aparece justamente por isso:
+é a prova, no documento que ele lê antes de mandar imprimir, de que a regra está valendo.
+
 **E a folha PRONTA não pode virar peça** (`e_folha_montada`). Aconteceu na pasta de verdade em
 05/10/2026 às 01:45: a folha fica na própria pasta da máquina — é de lá que ele a manda pra fila — e
 a passada seguinte a leu como peça, porque o nome dela traz medida e material como o de qualquer

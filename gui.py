@@ -282,6 +282,8 @@ class JanelaPrincipal(tk.Tk):
         """
         atalhos = [
             ("📥", "Receber artes", "Drive, WeTransfer, pasta ou ZIP", self._abrir_receber),
+            ("🧩", "Montar arte para impressão", "encaixa as artes na bobina da máquina",
+             self._abrir_montagem),
             ("👥", "Clientes", "recebimento de artes por cliente", self._abrir_clientes),
             ("📦", "Controle de estoque", "material, entradas e saídas", self._abrir_estoque),
             ("🤖", "Agentes", "o que roda sozinho", self._abrir_agentes),
@@ -446,6 +448,17 @@ class JanelaPrincipal(tk.Tk):
             janela.focus_force()
             return
         self._janela_receber = JanelaReceber(self)
+
+    def _abrir_montagem(self):
+        # import aqui dentro pelo mesmo motivo de _abrir_agentes
+        from gui_montagem import JanelaMontagem
+
+        janela = getattr(self, "_janela_montagem", None)
+        if janela is not None and janela.winfo_exists():
+            janela.lift()
+            janela.focus_force()
+            return
+        self._janela_montagem = JanelaMontagem(self)
 
     def _abrir_agentes(self):
         # import aqui dentro: gui_agentes importa as cores deste módulo, e

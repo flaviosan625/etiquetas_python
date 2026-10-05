@@ -952,48 +952,45 @@ def _mover_para(arquivo, destino):
     return alvo
 
 
-def montar_pasta(pasta, nome_maquina=None, config=None, maquinas=None, logger=None,
-                 guardar_originais=True, quando=None, raiz_clientes=None):
+def planejar_pasta(pasta, nome_maquina=None, config=None, maquinas=None,
+                   raiz_clientes=None):
     """
-    Monta tudo o que está na pasta e devolve
-    {'folhas': [...], 'recusadas': [...], 'maquina', 'largura_util_m'}.
+    O que a montagem FARIA com esta pasta — sem escrever nada, sem mover
+    nada.
 
-    UMA FOLHA POR MATERIAL: lona e adesivo não dividem bobina, e o m²
-    deste projeto nunca mistura material.
+    Devolve {'maquina', 'largura_util_m', 'mesa_m', 'margem_m', 'cliente',
+    'folhas': [...], 'recusadas': [...]}, e cada folha já traz o encaixe
+    pronto: as peças, onde cada uma fica, o tamanho que a folha vai ter e
+    o aproveitamento.
 
-    Os originais vão pra `_originais/<carimbo>` depois de montados — se
-    ficassem na pasta, a próxima passada montaria tudo de novo. O que foi
-    recusado vai pra `_conferir`, com o motivo num .txt ao lado: peça que
-    some sem explicação é peça que não vai ser produzida.
+    É a MESMA conta que monta de verdade — `montar_pasta` chama esta —, e
+    isso é de propósito: prévia calculada por fora é prévia que mente no
+    dia em que uma das duas mudar.
+
+    A recusa diz de onde veio: `leitura` é arte que o leitor não aceitou
+    (essa vai pra `_conferir`), `encaixe` é arte que não coube na bobina
+    (essa fica com as outras, e só vira aviso).
     """
     pasta = pathlib.Path(pasta)
-    quando = quando or datetime.datetime.now()
-    logger = logger or (lambda nivel, mensagem: None)
     nome_maquina = nome_maquina or maquina_da_pasta(pasta)
     largura = largura_util(nome_maquina, maquinas)
     chapa = mesa(nome_maquina, maquinas)
-    resultado = {"maquina": nome_maquina, "largura_util_m": largura,
-                 "mesa_m": chapa, "margem_m": margem(nome_maquina, maquinas),
-                 "folhas": [], "recusadas": []}
+    margem_m = margem(nome_maquina, maquinas)
+    plano = {"maquina": nome_maquina, "largura_util_m": largura, "mesa_m": chapa,
+             "margem_m": margem_m, "cliente": "", "pasta": pasta,
+             "folhas": [], "recusadas": []}
     # máquina de MESA não tem largura de rolo, e é o caso da H2525: pedir
     # 'largura' aqui a deixava de fora da montagem inteira, calada
     if not pasta.is_dir() or not (largura or chapa):
-        return resultado
+        return plano
 
-    margem_m = margem(nome_maquina, maquinas)
     pecas, recusadas = pecas_da_pasta(pasta, config, maquinas)
-    for recusada in recusadas:
-        logger("warn", f"'{recusada['arquivo'].name}' ficou de fora: {recusada['motivo']}")
-        if guardar_originais:
-            alvo = _mover_para(recusada["arquivo"], pasta / NOME_SUBPASTA_PROBLEMAS)
-            alvo.with_suffix(alvo.suffix + ".motivo.txt").write_text(
-                recusada["motivo"] + "\n", encoding="utf-8")
-        resultado["recusadas"].append({"arquivo": recusada["arquivo"].name,
-                                       "motivo": recusada["motivo"]})
+    plano["recusadas"] = [{"arquivo": r["arquivo"], "motivo": r["motivo"],
+                           "origem": "leitura"} for r in recusadas]
     if not pecas:
-        return resultado
+        return plano
 
-    cliente = cliente_das_pecas(pecas, raiz_clientes)
+    plano["cliente"] = cliente_das_pecas(pecas, raiz_clientes)
     por_material = {}
     for peca in pecas:
         por_material.setdefault(peca["categoria"], []).append(peca)
@@ -1012,25 +1009,79 @@ def montar_pasta(pasta, nome_maquina=None, config=None, maquinas=None, logger=No
 
         # Peça que não cabe na bobina de jeito nenhum NÃO pode sumir da
         # folha em silêncio: o encaixe simplesmente a ignora, e aí ela
-        # não é produzida e ninguém fica sabendo. Vira recusa, com o
-        # motivo escrito, como todas as outras.
+        # não é produzida e ninguém fica sabendo.
         colocadas = {posta[0] for posta in postas}
         for indice, peca in enumerate(do_material):
             if indice in colocadas:
                 continue
-            teto = f"{chapa[0]:.2f} x {chapa[1]:.2f} m de mesa" if chapa else f"largura útil {largura:.2f} m"
-            motivo = (f"{peca['largura_m']:.2f} x {peca['altura_m']:.2f} m não cabe na "
-                      f"{nome_maquina} nem girada ({teto}, menos "
-                      f"{margem_m * 100:.0f} cm de borda de cada lado)")
-            logger("warn", f"'{peca['nome']}' ficou de fora: {motivo}")
-            resultado["recusadas"].append({"arquivo": peca["nome"], "motivo": motivo})
+            teto = (f"{chapa[0]:.2f} x {chapa[1]:.2f} m de mesa" if chapa
+                    else f"largura útil {largura:.2f} m")
+            plano["recusadas"].append({
+                "arquivo": peca["arquivo"], "origem": "encaixe",
+                "motivo": (f"{peca['largura_m']:.2f} x {peca['altura_m']:.2f} m não cabe na "
+                           f"{nome_maquina} nem girada ({teto}, menos "
+                           f"{margem_m * 100:.0f} cm de borda de cada lado)")})
         if not postas:
             continue
         area_pecas = sum(p["largura_m"] * p["altura_m"] for p in do_material)
         folha_m = chapa[1] if chapa else comprimento_da_folha(comprimento, margem_m)
         area_folha = (chapa[0] * chapa[1] * len(paginas)) if chapa else largura * folha_m
-        tamanho = (f"{len(paginas)} chapa(s) de {chapa[0]:.2f} x {chapa[1]:.2f} m"
-                   if chapa else f"{largura:.2f} x {folha_m:.2f} m")
+        plano["folhas"].append({
+            "categoria": categoria, "pecas": do_material, "postas": postas,
+            "paginas": paginas, "comprimento_m": comprimento, "folha_m": folha_m,
+            "largura_m": chapa[0] if chapa else largura,
+            "chapas": len(paginas) if chapa else None,
+            "area_pecas_m2": area_pecas, "area_folha_m2": area_folha,
+            "aproveitamento": (area_pecas / area_folha) if area_folha else 0.0,
+            "tamanho": (f"{len(paginas)} chapa(s) de {chapa[0]:.2f} x {chapa[1]:.2f} m"
+                        if chapa else f"{largura:.2f} x {folha_m:.2f} m"),
+        })
+    return plano
+
+
+def montar_pasta(pasta, nome_maquina=None, config=None, maquinas=None, logger=None,
+                 guardar_originais=True, quando=None, raiz_clientes=None):
+    """
+    Monta tudo o que está na pasta e devolve
+    {'folhas': [...], 'recusadas': [...], 'maquina', 'largura_util_m'}.
+
+    UMA FOLHA POR MATERIAL: lona e adesivo não dividem bobina, e o m²
+    deste projeto nunca mistura material.
+
+    Os originais vão pra `_originais/<carimbo>` depois de montados — se
+    ficassem na pasta, a próxima passada montaria tudo de novo. O que foi
+    recusado na LEITURA vai pra `_conferir`, com o motivo num .txt ao
+    lado: peça que some sem explicação é peça que não vai ser produzida.
+    """
+    pasta = pathlib.Path(pasta)
+    quando = quando or datetime.datetime.now()
+    logger = logger or (lambda nivel, mensagem: None)
+    plano = planejar_pasta(pasta, nome_maquina, config, maquinas, raiz_clientes)
+    nome_maquina, largura = plano["maquina"], plano["largura_util_m"]
+    chapa, margem_m, cliente = plano["mesa_m"], plano["margem_m"], plano["cliente"]
+    resultado = {"maquina": nome_maquina, "largura_util_m": largura,
+                 "mesa_m": chapa, "margem_m": margem_m,
+                 "folhas": [], "recusadas": []}
+
+    for recusada in plano["recusadas"]:
+        arquivo = pathlib.Path(recusada["arquivo"])
+        logger("warn", f"'{arquivo.name}' ficou de fora: {recusada['motivo']}")
+        if guardar_originais and recusada["origem"] == "leitura":
+            alvo = _mover_para(arquivo, pasta / NOME_SUBPASTA_PROBLEMAS)
+            alvo.with_suffix(alvo.suffix + ".motivo.txt").write_text(
+                recusada["motivo"] + "\n", encoding="utf-8")
+        resultado["recusadas"].append({"arquivo": arquivo.name,
+                                       "motivo": recusada["motivo"]})
+    if not plano["folhas"]:
+        return resultado
+
+    pecas = [peca for folha in plano["folhas"] for peca in folha["pecas"]]
+    for folha in plano["folhas"]:
+        categoria, do_material = folha["categoria"], folha["pecas"]
+        postas, paginas = folha["postas"], folha["paginas"]
+        comprimento, folha_m = folha["comprimento_m"], folha["folha_m"]
+        area_pecas, area_folha = folha["area_pecas_m2"], folha["area_folha_m2"]
+        tamanho = folha["tamanho"]
         titulo = (f"MONTAGEM  ·  {cliente or 'SEM CLIENTE NO NOME'}  ·  {categoria}  ·  "
                   f"{len(postas)} pecas  ·  {tamanho}  ·  "
                   f"aproveitamento {area_pecas / area_folha * 100:.0f}%  ·  "
@@ -1104,6 +1155,81 @@ def montar_pasta(pasta, nome_maquina=None, config=None, maquinas=None, logger=No
     return resultado
 
 
+def prever_pasta(pasta, nome_maquina=None, config=None, maquinas=None,
+                 raiz_clientes=None):
+    """
+    A PRÉVIA, em números prontos pra tela: como a folha vai ficar e qual
+    a margem de erro de cada peça.
+
+    Pedido dele de 05/10/2026: *"antes de gerar quero que me passe os
+    dados como um aviso de como vai ficar depois de montado, mostrando a
+    margem de erro"*, e depois *"ele vai pegar os arquivos que joguei na
+    pasta, calcular e passar os dados na tela"*.
+
+    Cada item traz o que o NOME pede, o que vai SAIR e a diferença nos
+    dois lados, em milímetros. A da largura é zero por construção — é a
+    âncora —, e ela sai escrita justamente por isso: é a prova de que a
+    regra está valendo, no documento que ele lê antes de mandar imprimir.
+
+    Nada é escrito nem movido: isto só olha.
+    """
+    plano = planejar_pasta(pasta, nome_maquina, config, maquinas, raiz_clientes)
+    previa = {"pasta": plano["pasta"], "maquina": plano["maquina"],
+              "cliente": plano["cliente"], "folhas": [],
+              "recusadas": [{"arquivo": pathlib.Path(r["arquivo"]).name,
+                             "motivo": r["motivo"]} for r in plano["recusadas"]],
+              "pior_diferenca_mm": 0.0}
+
+    for folha in plano["folhas"]:
+        itens = []
+        for numero, posta in enumerate(folha["postas"], start=1):
+            peca = folha["pecas"][posta[0]]
+            pede_l, pede_a = peca["nome_m"]
+            sai_l, sai_a = peca["largura_m"], peca["altura_m"]
+            diferenca = (sai_a - pede_a) * 1000
+            previa["pior_diferenca_mm"] = max(previa["pior_diferenca_mm"],
+                                              abs(diferenca))
+            itens.append({
+                "numero": numero, "arquivo": peca["nome"],
+                "nome_m": (pede_l, pede_a), "medida_m": (sai_l, sai_a),
+                "erro_largura_mm": (sai_l - pede_l) * 1000,
+                "diferenca_comprimento_mm": diferenca,
+                "girada": posta[5], "ajuste": peca["ajuste"]["acao"],
+                "fator": peca["ajuste"]["fator"],
+            })
+        previa["folhas"].append({
+            "categoria": folha["categoria"], "tamanho": folha["tamanho"],
+            "largura_m": folha["largura_m"], "folha_m": folha["folha_m"],
+            "chapas": folha["chapas"], "pecas": len(folha["postas"]),
+            "aproveitamento": folha["aproveitamento"],
+            "area_pecas_m2": folha["area_pecas_m2"],
+            "itens": itens,
+        })
+    return previa
+
+
+def resumo_da_previa(previa):
+    """
+    A prévia em poucas linhas, pro aviso do Windows — que não cabe tabela.
+
+    Curto de propósito: quem quer a tabela abre a tela. Aqui vale o que
+    decide se ele precisa olhar agora.
+    """
+    linhas = [f"{previa['maquina']}"
+              + (f" · {previa['cliente']}" if previa["cliente"] else "")]
+    for folha in previa["folhas"]:
+        linhas.append(f"{folha['categoria']}: {folha['pecas']} peças em "
+                      f"{folha['tamanho']} ({folha['aproveitamento'] * 100:.0f}%)")
+    if previa["folhas"]:
+        pior = previa["pior_diferenca_mm"]
+        linhas.append("largura bate; comprimento até "
+                      f"{pior:.0f} mm fora do nome" if pior >= 0.5
+                      else "largura e comprimento batem o nome")
+    if previa["recusadas"]:
+        linhas.append(f"{len(previa['recusadas'])} ficaram de fora — veja _conferir")
+    return "\n".join(linhas)
+
+
 def montar_todas(raiz=None, config=None, maquinas=None, logger=None, quando=None):
     """Uma passada por todas as pastas de montagem. Devolve [resultado por pasta]."""
     resultados = []
@@ -1159,6 +1285,39 @@ def pasta_parada(pasta, minutos=None, agora=None):
     return tem_o_que_montar
 
 
+def _avisar_o_que_vai_sair(pasta, nome_maquina, config, maquinas, logger,
+                           notificar=None):
+    """
+    O aviso do Windows com a prévia, ANTES de a folha ser gerada.
+
+    Pedido dele de 05/10/2026: *"eu jogo os arquivos na pasta,
+    automaticamente já vai ser montado e salvo em um PDF; antes de gerar,
+    quero que me passe os dados como um aviso de como vai ficar depois de
+    montado, mostrando a margem de erro"*. Na tela ele vê a tabela
+    inteira; aqui, que é notificação, vai o que decide se ele precisa
+    olhar agora.
+
+    Nunca derruba a montagem: avisar é conforto, montar é o trabalho.
+    E registra a falha no log — `except` calado aqui esconderia um aviso
+    que parou de sair, que é o pior resultado possível num alarme.
+    """
+    try:
+        previa = prever_pasta(pasta, nome_maquina, config, maquinas)
+        if not previa["folhas"]:
+            return None
+        if notificar is None:
+            from monitor_onedrive import notificar_windows
+            notificar = notificar_windows
+        texto = resumo_da_previa(previa)
+        notificar(texto, titulo="Montagem de arte")
+        logger("info", f"Montagem da {nome_maquina}: avisei o que vai sair")
+        return texto
+    except Exception as erro:   # noqa: BLE001 - ver docstring
+        logger("warn", f"não consegui avisar a prévia da montagem: "
+                       f"{type(erro).__name__}: {erro}")
+        return None
+
+
 def conferir(raiz=None, config=None, maquinas=None, logger=None, agora=None, minutos=None):
     """
     Uma passada pelas pastas de montagem: monta as que pararam de
@@ -1174,6 +1333,7 @@ def conferir(raiz=None, config=None, maquinas=None, logger=None, agora=None, min
         if not pasta_parada(pasta, minutos, agora):
             continue
         try:
+            _avisar_o_que_vai_sair(pasta, nome_maquina, config, maquinas, logger)
             feitas.append(montar_pasta(pasta, nome_maquina, config, maquinas, logger,
                                        quando=agora))
         except Exception as erro:   # noqa: BLE001 - ver docstring
