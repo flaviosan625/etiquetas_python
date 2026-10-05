@@ -1328,7 +1328,13 @@ def montar_pasta(pasta, nome_maquina=None, config=None, maquinas=None, logger=No
             destino = saida / nome_da_folha(
                 cliente, categoria, largura_folha, folha_m, len(postas), quando,
                 parte=(folha["parte"], folha["partes"]))
-        doc.save(str(destino), garbage=4, deflate=True)
+        # deflate_images=False EXPLÍCITO, e não por padrão da biblioteca:
+        # a arte sai da montagem com os mesmos bytes que entrou (regra dele,
+        # 05/10/2026: *"a qualidade precisa ser 100% igual o cliente
+        # entregou"*). Hoje o PyMuPDF já não mexe em imagem sem pedir, mas
+        # um padrão que muda numa atualização reescreveria a arte de todo
+        # mundo calado — e recompressão não se desfaz.
+        doc.save(str(destino), garbage=4, deflate=True, deflate_images=False)
         doc.close()
 
         # O JSON ao lado é o que impede a montagem de APAGAR a comprovação:

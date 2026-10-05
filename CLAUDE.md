@@ -334,6 +334,22 @@ duas gasta menos bobina, não mais. A borda da folha é ZERO: a folga lateral é
 máquina. O rótulo é **preto, sem fundo
 pintado**: a folga é sobra que vai pro lixo, e pintá-la só gastaria tinta.
 
+**A arte sai da montagem com os MESMOS BYTES que entrou** (regra dele, 05/10/2026: *"é regra manter a
+mesma resolução que entra na montagem; qualidade precisa ser 100% igual o cliente entregou, sem
+distorcer, sempre na proporção"*). Medido, não suposto: um JPEG de 700.778 bytes dentro de um PDF sai
+da folha montada com o MESMO sha1, o mesmo DCTDecode e os mesmos 1200 × 600 px — e um `.jpg` solto,
+que passa pelo `convert_to_pdf`, também. `show_pdf_page` põe a página de origem **por referência**:
+a imagem é copiada como objeto, nunca rasterizada nem reamostrada. Escalar (×10 na arte em 1:10) e
+girar são MATRIZ. O `deflate_images=False` do `save` é **explícito** e não herdado do padrão da
+biblioteca — padrão que mude numa atualização reescreveria a arte de todo mundo calado, e recompressão
+não se desfaz. Travado em cinco testes, inclusive um que proíbe `get_pixmap`/`insert_image` no caminho
+da arte.
+
+**O que a montagem NÃO consegue resolver, e precisa estar dito:** a arte em 1:10 ampliada ×10 fica com
+**um décimo do DPI** — 152 dpi no arquivo viram 15 dpi na peça de 2 m. A imagem é a mesma, byte a
+byte; o que muda é quantos pixels sobram por centímetro impresso. Isso vem do arquivo que o cliente
+mandou, não da montagem, e só se resolve pedindo a arte em escala 1:1 ou em resolução maior.
+
 **A peça que ENCHE a bobina deita, mesmo quando a folga não cabe junto.** Ele, 05/10/2026, olhando a
 folha da SWJ: *"essa peça não girou, mesmo ela passando um pouco de 3,20 m na largura ela deve girar
 — lembra que tenho um pouco de folga e fico ajustando na máquina"*. O que travava era somar os 5 cm a

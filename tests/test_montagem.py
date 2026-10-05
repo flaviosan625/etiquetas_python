@@ -1731,3 +1731,150 @@ def test_a_trava_de_orientacao_atravessa_o_encaixe():
         "trancada, ela tem que sair com a largura que entrou"
     assert trancadas[0][5] is False, "trancada nao gira"
     assert len(soltas) == 1, "solta ela continua cabendo, so que podendo girar"
+
+
+# ---------- a arte sai com os MESMOS BYTES que entrou ----------
+#
+# Ele, 05/10/2026: "pode me garantir que quando a gente for montar
+# arquivos com desenhos nao vai perder qualidade? E regra manter a mesma
+# resolucao que entra na montagem, qualidade precisa ser 100% igual
+# cliente entregou, sem distorcer, sempre na proporcao".
+#
+# Medido, nao suposto: o show_pdf_page poe a pagina de origem POR
+# REFERENCIA, entao a imagem e copiada como objeto -- nao e rasterizada,
+# nao e reamostrada e nao e recomprimida. Escalar e girar sao matriz.
+# Estes testes guardam isso, porque e o tipo de coisa que uma linha
+# inocente (um deflate_images=True "pra economizar") desfaz calada.
+
+
+def _imagem_jpeg(caminho, largura_px=400, altura_px=200):
+    """JPEG de verdade, com detalhe fino pra artefato de recompressao aparecer."""
+    pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, largura_px, altura_px))
+    for y in range(altura_px):
+        for x in range(0, largura_px, 3):
+            pix.set_pixel(x, y, ((x * 7) % 256, (y * 11) % 256, ((x + y) * 3) % 256))
+    pix.save(str(caminho))
+    return caminho
+
+
+def _imagens_do_pdf(caminho):
+    """{sha1 dos bytes crus: (ext, largura_px, altura_px, bytes)} de cada imagem."""
+    import hashlib
+
+    achadas = {}
+    with pymupdf.open(str(caminho)) as doc:
+        for numero in range(doc.page_count):
+            for info in doc.load_page(numero).get_images(full=True):
+                bruto = doc.extract_image(info[0])
+                achadas[hashlib.sha1(bruto["image"]).hexdigest()] = (
+                    bruto["ext"], bruto["width"], bruto["height"], len(bruto["image"]))
+    return achadas
+
+
+def test_a_imagem_dentro_do_PDF_sai_BYTE_A_BYTE_igual(pasta):
+    jpg = _imagem_jpeg(pasta.parent / "fundo.jpg")
+    doc = pymupdf.open()
+    pagina = doc.new_page(width=2.00 * PT_M, height=1.00 * PT_M)
+    pagina.insert_image(pagina.rect, filename=str(jpg))
+    origem = pasta / "1UN LONA IMPRESSA 2.00X1.00M_VIBRA_FOTO.pdf"
+    doc.save(str(origem))
+    doc.close()
+    antes = _imagens_do_pdf(origem)
+    assert antes, "o teste precisa de uma imagem de verdade pra valer alguma coisa"
+
+    resultado = montagem.montar_pasta(pasta, raiz_clientes=pasta.parent / "x")
+    depois = _imagens_do_pdf(resultado["folhas"][0]["arquivo"])
+
+    assert set(depois) == set(antes), \
+        "a imagem mudou de bytes: alguem a recomprimiu ou reamostrou"
+    assert list(depois.values()) == list(antes.values()), \
+        "mesmo formato, mesmos pixels, mesmo tamanho"
+
+
+def test_imagem_SOLTA_tambem_entra_sem_reencodar(pasta):
+    """
+    JPG/PNG/TIF passam pelo convert_to_pdf. Se ele reencodasse, a arte do
+    cliente chegaria na maquina pior do que saiu dele.
+    """
+    import hashlib
+
+    jpg = _imagem_jpeg(pasta / "1UN LONA IMPRESSA 2.00X1.00M_VIBRA_FOTO.jpg")
+    sha_do_arquivo = hashlib.sha1(jpg.read_bytes()).hexdigest()
+
+    resultado = montagem.montar_pasta(pasta, raiz_clientes=pasta.parent / "x")
+    depois = _imagens_do_pdf(resultado["folhas"][0]["arquivo"])
+
+    assert sha_do_arquivo in depois, \
+        "o JPEG original nao sobreviveu ao convert_to_pdf"
+
+
+def test_ampliar_10x_nao_toca_na_imagem(pasta):
+    """
+    A arte em 1:10 e multiplicada por 10. Isso e MATRIZ, nao reamostragem:
+    a imagem continua com os mesmos pixels e os mesmos bytes. O que cai e
+    o DPI efetivo, e isso ja vem assim do arquivo do cliente -- a montagem
+    nao piora nada.
+    """
+    jpg = _imagem_jpeg(pasta.parent / "fundo.jpg")
+    doc = pymupdf.open()
+    pagina = doc.new_page(width=0.200 * PT_M, height=0.100 * PT_M)
+    pagina.insert_image(pagina.rect, filename=str(jpg))
+    origem = pasta / "1UN LONA IMPRESSA 2.00X1.00M_VIBRA_ESCALA.pdf"
+    doc.save(str(origem))
+    doc.close()
+    antes = _imagens_do_pdf(origem)
+
+    resultado = montagem.montar_pasta(pasta, raiz_clientes=pasta.parent / "x")
+    depois = _imagens_do_pdf(resultado["folhas"][0]["arquivo"])
+
+    assert set(depois) == set(antes), "ampliar reamostrou a imagem"
+
+
+def test_girar_nao_toca_na_imagem(pasta):
+    """Girar e matriz tambem: nunca pixel novo."""
+    jpg = _imagem_jpeg(pasta.parent / "fundo.jpg")
+    doc = pymupdf.open()
+    # alta e estreita: o encaixe deita pra economizar bobina
+    pagina = doc.new_page(width=0.60 * PT_M, height=2.40 * PT_M)
+    pagina.insert_image(pagina.rect, filename=str(jpg))
+    origem = pasta / "1UN LONA IMPRESSA 0.60X2.40M_VIBRA_ALTA.pdf"
+    doc.save(str(origem))
+    doc.close()
+    antes = _imagens_do_pdf(origem)
+
+    resultado = montagem.montar_pasta(pasta, raiz_clientes=pasta.parent / "x")
+    folha = resultado["folhas"][0]["arquivo"]
+    ficha = json.loads(folha.with_suffix(".json").read_text(encoding="utf-8"))
+
+    assert ficha["pecas"][0]["girada"], "o teste so vale se a peca tiver girado"
+    assert set(_imagens_do_pdf(folha)) == set(antes), "girar reamostrou a imagem"
+
+
+def test_a_folha_e_salva_SEM_recomprimir_imagem():
+    """
+    deflate_images=False e explicito no codigo, nao herdado do padrao da
+    biblioteca: um padrao que mude numa atualizacao reescreveria a arte de
+    todo mundo calado, e recompressao nao se desfaz.
+    """
+    import inspect
+
+    fonte = inspect.getsource(montagem.montar_pasta)
+    assert "deflate_images=False" in fonte, \
+        "a folha tem que ser salva sem recomprimir imagem, e dito por escrito"
+
+
+def test_nada_no_desenho_rasteriza_a_arte():
+    """
+    A arte entra por show_pdf_page (por REFERENCIA). Rasterizar seria
+    get_pixmap/insert_image, e isso nunca pode aparecer no caminho da
+    arte -- uma lona de 29 m rasterizada nem caberia na memoria, e sairia
+    borrada na maquina.
+    """
+    import inspect
+
+    for funcao in (montagem.colocar_arte, montagem.desenhar,
+                   montagem._desenhar_peca, montagem.desenhar_chapas):
+        fonte = inspect.getsource(funcao)
+        assert "get_pixmap" not in fonte, f"{funcao.__name__} rasteriza a arte"
+        assert "insert_image" not in fonte, f"{funcao.__name__} rasteriza a arte"
+    assert "show_pdf_page" in inspect.getsource(montagem.colocar_arte)
