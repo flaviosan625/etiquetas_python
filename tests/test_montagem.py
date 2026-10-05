@@ -1878,3 +1878,180 @@ def test_nada_no_desenho_rasteriza_a_arte():
         assert "get_pixmap" not in fonte, f"{funcao.__name__} rasteriza a arte"
         assert "insert_image" not in fonte, f"{funcao.__name__} rasteriza a arte"
     assert "show_pdf_page" in inspect.getsource(montagem.colocar_arte)
+
+
+# ---------- o aviso de resolucao ----------
+#
+# Ele, 05/10/2026: "pode gerar o aviso com imagens; determine voce um
+# padrao que seja aceitavel para impressao baseado em site dos
+# fabricantes das maquinas, assim vamos ter alguma coisa mais solida".
+#
+# O padrao e a ACUIDADE VISUAL (1 minuto de arco, visao 20/20), nao um
+# numero de gosto: dpi = 3438 / distancia em polegadas. E as maquinas
+# nao sao o limite -- a DOCAN R5200 faz de 600x600 a 720x1440 dpi
+# (docanuv.com) e as Mimaki chegam a 1200-1440 --, entao quem limita e
+# sempre o arquivo do cliente e a distancia de quem olha.
+
+
+def _arte_com_pixels(pasta, nome, largura_m, altura_m, pixels_no_maior_lado):
+    """Uma arte RASTER com um numero conhecido de pixels."""
+    pasta.mkdir(parents=True, exist_ok=True)
+    proporcao = altura_m / largura_m
+    largura_px = int(pixels_no_maior_lado)
+    altura_px = max(1, int(round(largura_px * proporcao)))
+    pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, largura_px, altura_px))
+    pix.set_rect(pix.irect, (200, 80, 40))
+    jpg = pasta.parent / (nome + ".jpg")
+    pix.save(str(jpg))
+
+    doc = pymupdf.open()
+    pagina = doc.new_page(width=largura_m * PT_M, height=altura_m * PT_M)
+    pagina.insert_image(pagina.rect, filename=str(jpg))
+    caminho = pasta / nome
+    doc.save(str(caminho))
+    doc.close()
+    return caminho
+
+
+def test_a_conta_da_resolucao_e_a_ACUIDADE_VISUAL():
+    """
+    1 minuto de arco: dpi = 3438 / distancia em polegadas. Numero de
+    fisica, nao de gosto -- e e por isso que da pra defender.
+    """
+    assert montagem.dpi_necessario(0.50) == pytest.approx(175, abs=1)
+    assert montagem.dpi_necessario(1.00) == pytest.approx(87, abs=1)
+    assert montagem.dpi_necessario(3.00) == pytest.approx(29, abs=1)
+
+    # e a volta: de que distancia pra frente o pixel some
+    assert montagem.distancia_limpa_m(150) == pytest.approx(0.58, abs=0.01)
+    assert montagem.distancia_limpa_m(15) == pytest.approx(5.82, abs=0.01)
+
+    # as duas sao a MESMA conta, de ida e volta
+    for distancia in (0.4, 1.0, 2.5, 6.0):
+        assert montagem.distancia_limpa_m(
+            montagem.dpi_necessario(distancia)) == pytest.approx(distancia, rel=1e-9)
+
+
+def test_os_limites_sao_DISTANCIA_e_nao_dpi_de_gosto():
+    """
+    Os dois limites se leem em metros -- a peca de encostar e a de olhar
+    de longe --, e o dpi sai deles. Ao contrario, viraria numero sem
+    defesa.
+    """
+    assert montagem.DISTANCIA_DE_PERTO_M == 0.50
+    assert montagem.DISTANCIA_DE_LONGE_M == 1.50
+
+    de_perto = montagem.dpi_necessario(montagem.DISTANCIA_DE_PERTO_M)
+    de_longe = montagem.dpi_necessario(montagem.DISTANCIA_DE_LONGE_M)
+    assert de_perto > de_longe, "quanto mais perto, mais pixel"
+
+    assert montagem.qualidade_da_resolucao(de_perto + 1) == "ok"
+    assert montagem.qualidade_da_resolucao(de_longe + 1) == "atencao"
+    assert montagem.qualidade_da_resolucao(de_longe - 1) == "aviso"
+
+
+def test_arte_VETOR_nao_vira_aviso(pasta):
+    """
+    None nao e "nao sei", e "nao ha pixel que acabe". As oito lonas da
+    LOJINHA sao vetor puro -- confundir os dois faria o aviso gritar no
+    trabalho inteiro dele.
+    """
+    arte(pasta, "1UN LONA IMPRESSA 2.00X1.00M_VIBRA_VETOR.pdf", 2.00, 1.00)
+
+    previa = montagem.prever_pasta(pasta, raiz_clientes=pasta.parent / "x")
+    item = previa["folhas"][0]["itens"][0]
+
+    assert item["dpi"] is None
+    assert item["qualidade"] == "vetor"
+    assert previa["pior_resolucao"] is None, "vetor nunca pode acender o aviso"
+
+
+def test_a_arte_de_pouco_pixel_vira_AVISO_com_a_distancia(pasta):
+    """
+    600 px numa peca de 2,00 m = 7,6 dpi: so fica limpa a mais de 11 m.
+    O aviso diz a DISTANCIA, que e o que ele decide olhando -- ele sabe
+    onde a peca vai ficar na loja.
+    """
+    _arte_com_pixels(pasta, "1UN LONA IMPRESSA 2.00X1.00M_VIBRA_FOTO.pdf",
+                     2.00, 1.00, 600)
+
+    previa = montagem.prever_pasta(pasta, raiz_clientes=pasta.parent / "x")
+    item = previa["folhas"][0]["itens"][0]
+
+    assert item["dpi"] == pytest.approx(600 / (2.00 / 0.0254), rel=0.02)
+    assert item["qualidade"] == "aviso"
+    assert item["distancia_limpa_m"] > 10
+    assert previa["pior_resolucao"] == pytest.approx(item["dpi"], rel=1e-9)
+    assert "dpi" in montagem.resumo_da_previa(previa)
+    assert "limpa" in montagem.resumo_da_previa(previa)
+
+
+def test_arte_de_boa_resolucao_nao_avisa_nada(pasta):
+    """
+    1600 px numa peca de 0,20 m = 203 dpi: boa ate de encostar.
+
+    Peca PEQUENA de proposito: pra provar 175 dpi numa de 2 m seriam
+    13.780 px, e o pixmap de teste passaria de 290 MB.
+    """
+    _arte_com_pixels(pasta, "1UN LONA IMPRESSA 0.20X0.10M_VIBRA_BOA.pdf",
+                     0.20, 0.10, 1600)
+
+    previa = montagem.prever_pasta(pasta, raiz_clientes=pasta.parent / "x")
+    item = previa["folhas"][0]["itens"][0]
+
+    assert item["qualidade"] == "ok"
+    assert previa["pior_resolucao"] is None
+
+
+def test_a_resolucao_conta_a_AMPLIACAO_da_escala(pasta):
+    """
+    O pulo do gato: a mesma imagem num arquivo 1:10 tem dez vezes o dpi
+    do arquivo 1:1. Medir o arquivo sem contar o fator diria 152 dpi
+    numa peca que vai sair com 15.
+    """
+    # arte em 1:10 (0,20 x 0,10) pro nome de 2,00 x 1,00, com 1200 px
+    _arte_com_pixels(pasta, "1UN LONA IMPRESSA 2.00X1.00M_VIBRA_ESCALA.pdf",
+                     0.200, 0.100, 1200)
+
+    pecas, recusadas = montagem.pecas_da_pasta(pasta)
+    assert not recusadas
+    assert pecas[0]["ajuste"]["fator"] == pytest.approx(10.0, rel=0.01)
+    # 1200 px em 0,20 m sao 152 dpi; ampliado 10x, 15
+    assert pecas[0]["dpi"] == pytest.approx(15, abs=1), \
+        "mediu o arquivo e esqueceu que ele vai ser ampliado 10x"
+
+
+def test_a_pior_imagem_manda_no_aviso(pasta):
+    """
+    Uma foto de fundo em boa resolucao nao salva o logo de pouco pixel
+    colado em cima dela.
+    """
+    import tempfile
+
+    temporaria = pathlib.Path(tempfile.mkdtemp())
+    boa = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 1600, 800))
+    boa.set_rect(boa.irect, (30, 60, 200))
+    boa.save(str(temporaria / "fundo.jpg"))
+    ruim = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 60, 60))
+    ruim.set_rect(ruim.irect, (250, 250, 30))
+    ruim.save(str(temporaria / "logo.jpg"))
+
+    doc = pymupdf.open()
+    pagina = doc.new_page(width=0.20 * PT_M, height=0.10 * PT_M)
+    pagina.insert_image(pagina.rect, filename=str(temporaria / "fundo.jpg"))
+    pagina.insert_image(pymupdf.Rect(0, 0, 0.05 * PT_M, 0.05 * PT_M),
+                        filename=str(temporaria / "logo.jpg"))
+    caminho = pasta / "1UN LONA IMPRESSA 0.20X0.10M_VIBRA_MISTA.pdf"
+    doc.save(str(caminho))
+    doc.close()
+
+    dpi = montagem.resolucao_da_arte(caminho, 0, 1.0)
+    # o fundo da 203 dpi; o logo, 60 px em 0,05 m, da 30
+    assert dpi == pytest.approx(60 / (0.05 / 0.0254), rel=0.02), \
+        "ficou com a MELHOR imagem: a pior e que estraga a peca"
+
+
+def test_arquivo_que_nao_abre_nao_derruba_a_montagem(pasta):
+    """Resolucao e conforto: nunca pode virar barreira."""
+    assert montagem.resolucao_da_arte(pasta / "nao_existe.pdf", 0, 1.0) is None
+    assert montagem.qualidade_da_resolucao(None) == "vetor"

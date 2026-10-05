@@ -35,6 +35,21 @@ from tema import cores
 _MOSTRA_RESULTADO_MS = 20000
 
 
+def _resolucao_em_palavras(item):
+    """
+    A resolução dita como DISTÂNCIA, que é o que ele decide olhando.
+
+    "15 dpi" não diz nada sozinho; "só fica limpa a 5,8 m" diz tudo — ele
+    sabe onde a peça vai ficar na loja.
+    """
+    if item["qualidade"] == "vetor":
+        return "vetor — amplia sem perder"
+    dpi, distancia = item["dpi"], item["distancia_limpa_m"]
+    if item["qualidade"] == "ok":
+        return f"{dpi:.0f} dpi — boa de perto"
+    return f"{dpi:.0f} dpi — limpa a partir de {distancia:.1f} m"
+
+
 class JanelaMontagem(tk.Toplevel):
     def __init__(self, master):
         super().__init__(master)
@@ -134,16 +149,18 @@ class _AbaMaquina(tk.Frame):
         quadro.grid(row=2, column=0, sticky="nsew", padx=16, pady=(8, 0))
         quadro.columnconfigure(0, weight=1)
         quadro.rowconfigure(0, weight=1)
-        colunas = ("numero", "arquivo", "pede", "sai", "largura", "comprimento", "giro")
+        colunas = ("numero", "arquivo", "pede", "sai", "largura", "comprimento",
+                   "giro", "resolucao")
         self.tabela = ttk.Treeview(quadro, columns=colunas, show="headings", height=10)
         titulos = {
             "numero": ("nº", 36, "center"),
-            "arquivo": ("arquivo", 380, "w"),
-            "pede": ("o nome pede", 120, "center"),
-            "sai": ("vai sair", 120, "center"),
-            "largura": ("maior lado", 90, "e"),
-            "comprimento": ("o outro", 90, "e"),
-            "giro": ("giro", 60, "center"),
+            "arquivo": ("arquivo", 330, "w"),
+            "pede": ("o nome pede", 110, "center"),
+            "sai": ("vai sair", 110, "center"),
+            "largura": ("maior lado", 85, "e"),
+            "comprimento": ("o outro", 80, "e"),
+            "giro": ("giro", 50, "center"),
+            "resolucao": ("resolução", 190, "w"),
         }
         for coluna, (titulo, largura, alinhar) in titulos.items():
             self.tabela.heading(coluna, text=titulo)
@@ -156,6 +173,7 @@ class _AbaMaquina(tk.Frame):
         # a linha cuja medida mudou sai assinalada: número deduzido nunca
         # se passa por declarado, nem na tela
         self.tabela.tag_configure("mudou", foreground=cores.alerta)
+        self.tabela.tag_configure("pouco_pixel", foreground=cores.parado)
         self.tabela.tag_configure("folha", font=("Segoe UI", 9, "bold"))
 
     def _montar_rodape(self):
@@ -247,10 +265,14 @@ class _AbaMaquina(tk.Frame):
                          f"({f['aproveitamento'] * 100:.0f}% de aproveitamento)"
                          for f in previa["folhas"]))
         pior = previa["pior_diferenca_mm"]
-        self.var_margem.set(
-            "O maior lado de cada peça fecha cravado, do nome. "
-            + (f"A diferença fica no outro lado: até {pior:.0f} mm."
-               if pior >= 0.5 else "O outro lado também bate o nome."))
+        recado = ("O maior lado de cada peça fecha cravado, do nome. "
+                  + (f"A diferença fica no outro lado: até {pior:.0f} mm."
+                     if pior >= 0.5 else "O outro lado também bate o nome."))
+        if previa["pior_resolucao"] is not None:
+            recado += (f"   ⚠ Tem peça com {previa['pior_resolucao']:.0f} dpi — só "
+                       f"fica limpa a "
+                       f"{montagem.distancia_limpa_m(previa['pior_resolucao']):.1f} m.")
+        self.var_margem.set(recado)
 
         for folha in previa["folhas"]:
             if len(previa["folhas"]) > 1:
@@ -261,8 +283,15 @@ class _AbaMaquina(tk.Frame):
                     values=("", f"— {folha['categoria']}{qual}  ({folha['tamanho']}) —",
                             "", "", "", "", ""))
             for item in folha["itens"]:
-                mudou = abs(item["diferenca_mm"]) >= 0.5
-                self.tabela.insert("", "end", tags=("mudou",) if mudou else (), values=(
+                # a RESOLUÇÃO manda na cor: medida fora do nome é
+                # milímetro, pixel que falta é a peça impressa borrada
+                if item["qualidade"] == "aviso":
+                    marca = ("pouco_pixel",)
+                elif item["qualidade"] == "atencao" or abs(item["diferenca_mm"]) >= 0.5:
+                    marca = ("mudou",)
+                else:
+                    marca = ()
+                self.tabela.insert("", "end", tags=marca, values=(
                     f"{item['numero']:02d}",
                     item["arquivo"],
                     f"{item['nome_m'][0]:.2f} x {item['nome_m'][1]:.2f}",
@@ -270,6 +299,7 @@ class _AbaMaquina(tk.Frame):
                     f"{item['erro_ancora_mm']:+.2f} mm",
                     f"{item['diferenca_mm']:+.0f} mm",
                     "sim" if item["girada"] else "",
+                    _resolucao_em_palavras(item),
                 ))
         self.btn_montar.configure(state="normal")
 

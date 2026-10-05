@@ -349,6 +349,35 @@ da arte.
 **um décimo do DPI** — 152 dpi no arquivo viram 15 dpi na peça de 2 m. A imagem é a mesma, byte a
 byte; o que muda é quantos pixels sobram por centímetro impresso. Isso vem do arquivo que o cliente
 mandou, não da montagem, e só se resolve pedindo a arte em escala 1:1 ou em resolução maior.
+Ampliar **dentro do RIP dá exatamente o mesmo número** — ninguém cria pixel. O que seria pior é
+ampliar no Photoshop e exportar bitmap antes de ripar: aí são DUAS reamostragens em vez da única que
+o RIP faz.
+
+**O aviso de resolução é ACUIDADE VISUAL, não um dpi de gosto** (ele, 05/10/2026: *"determine você um
+padrão que seja aceitável para impressão baseado em site dos fabricantes das máquinas, assim vamos ter
+alguma coisa mais sólida"*). O olho com visão 20/20 separa 1 minuto de arco, e daí sai a única
+conta não arbitrária:
+
+```
+dpi necessário = 3438 / distância (polegadas)       distância limpa = 3438 / dpi
+```
+
+Conferido nos fabricantes, e o resultado foi o contrário do esperado: **a máquina nunca é o limite.**
+A DOCAN R5200 imprime de 600 × 600 a 720 × 1440 dpi conforme a cabeça (Kyocera KJ4A, Ricoh Gen5 ou
+KM-1024i — docanuv.com), e as Mimaki chegam a 1200–1440. As duas põem muito mais ponto do que qualquer
+arte grande traz de pixel, então quem limita é **sempre o arquivo do cliente e a distância de quem
+olha**. Por isso o aviso fala em METROS, não em "qualidade": `0,50 m` (peça de encostar — placa,
+adesivo, totem) pede 175 dpi e `1,50 m` (lona de fachada, painel alto) pede 58. Os dois limites são
+distância no código (`DISTANCIA_DE_PERTO_M`, `DISTANCIA_DE_LONGE_M`) e o dpi sai deles — ao contrário,
+seria número sem defesa.
+
+Três coisas que o aviso precisa acertar e que estão travadas em teste:
+
+- **Vetor não é "não sei", é "não há pixel que acabe"** — `dpi` vem `None` e a peça nunca acende o
+  aviso. As oito lonas da LOJINHA são vetor puro (medido, as oito); confundir os dois faria o alarme
+  gritar no trabalho inteiro dele.
+- **A ampliação conta.** Medir o arquivo sem o `fator` diria 152 dpi numa peça que vai sair com 15.
+- **A PIOR imagem manda.** Uma foto de fundo em 203 dpi não salva o logo de 30 dpi colado em cima.
 
 **A peça que ENCHE a bobina deita, mesmo quando a folga não cabe junto.** Ele, 05/10/2026, olhando a
 folha da SWJ: *"essa peça não girou, mesmo ela passando um pouco de 3,20 m na largura ela deve girar

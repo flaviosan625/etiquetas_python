@@ -289,6 +289,99 @@ def medida_do_nome(nome, config=None):
     return dimensao["largura_m"], dimensao["altura_m"]
 
 
+# --- resolução: até que distância a peça fica limpa -------------------
+#
+# A conta NÃO é inventada, é a ACUIDADE VISUAL: o olho com visão 20/20
+# separa detalhe de 1 minuto de arco, e daí sai
+#
+#     dpi necessário = 3438 / distância (em polegadas)
+#     distância em que a peça fica limpa = 3438 / dpi (em polegadas)
+#
+# As MÁQUINAS não são o limite, e isso foi conferido no fabricante: a
+# DOCAN R5200 imprime de 600 × 600 a 720 × 1440 dpi conforme a cabeça
+# (Kyocera KJ4A, Ricoh Gen5 ou KM-1024i — docanuv.com), e as Mimaki
+# chegam a 1200–1440 dpi. As duas põem muito mais ponto do que qualquer
+# arte grande traz de pixel: quem limita é SEMPRE o arquivo do cliente e
+# a distância de quem olha, nunca a impressora. Por isso o aviso fala de
+# distância, não de "qualidade".
+ACUIDADE_POLEGADAS = 3438
+METROS_POR_POLEGADA = 0.0254
+
+# Os dois limites são DISTÂNCIA de propósito: é o que ele conhece da
+# peça, e dpi solto não quer dizer nada sem ela.
+DISTANCIA_DE_PERTO_M = 0.50    # placa, adesivo, totem: dá pra encostar
+DISTANCIA_DE_LONGE_M = 1.50    # lona de fachada, painel alto
+
+
+def dpi_necessario(distancia_m):
+    """Quantos dpi o olho pede pra não ver pixel a esta distância."""
+    if distancia_m <= 0:
+        return float("inf")
+    return ACUIDADE_POLEGADAS / (distancia_m / METROS_POR_POLEGADA)
+
+
+def distancia_limpa_m(dpi):
+    """De que distância pra frente esta resolução deixa de aparecer."""
+    if dpi <= 0:
+        return float("inf")
+    return ACUIDADE_POLEGADAS / dpi * METROS_POR_POLEGADA
+
+
+def resolucao_da_arte(arquivo, numero_pagina, fator, pymupdf=None):
+    """
+    O MENOR dpi efetivo da arte depois de posta no tamanho final, ou
+    None quando ela é vetor puro.
+
+    None não é "não sei": é "não há pixel que acabe". Arte vetorial
+    amplia sem perder nada, e foi o caso das oito lonas da LOJINHA —
+    medido, as oito. Confundir os dois faria o aviso gritar no trabalho
+    inteiro dele.
+
+    Mede a MENOR das imagens colocadas, nos dois eixos: uma foto de
+    fundo em 300 dpi não salva o logo de 40 dpi em cima dela.
+    """
+    pymupdf = pymupdf or _pymupdf()
+    arquivo = pathlib.Path(arquivo)
+    fator = fator or 1.0
+    try:
+        if arquivo.suffix.lower() in IMAGENS:
+            with pymupdf.open(str(arquivo)) as imagem:
+                bytes_pdf = imagem.convert_to_pdf()
+            doc = pymupdf.open("pdf", bytes_pdf)
+            numero_pagina = 0
+        else:
+            doc = pymupdf.open(str(arquivo))
+        try:
+            pagina = doc.load_page(numero_pagina)
+            pior = None
+            for info in pagina.get_image_info():
+                caixa = pymupdf.Rect(info["bbox"])
+                largura_m = caixa.width / PT_M * fator
+                altura_m = caixa.height / PT_M * fator
+                for pixels, medida in ((info["width"], largura_m),
+                                       (info["height"], altura_m)):
+                    if medida <= 0 or not pixels:
+                        continue
+                    dpi = pixels / (medida / METROS_POR_POLEGADA)
+                    pior = dpi if pior is None else min(pior, dpi)
+            return pior
+        finally:
+            doc.close()
+    except Exception:       # noqa: BLE001 - resolução é conforto, nunca barreira
+        return None
+
+
+def qualidade_da_resolucao(dpi):
+    """'vetor', 'ok', 'atencao' ou 'aviso' — pelos dois limites de distância."""
+    if dpi is None:
+        return "vetor"
+    if dpi >= dpi_necessario(DISTANCIA_DE_PERTO_M):
+        return "ok"
+    if dpi >= dpi_necessario(DISTANCIA_DE_LONGE_M):
+        return "atencao"
+    return "aviso"
+
+
 def _itens_desenhados(pagina):
     """Os traçados da página com o recorte ativo de cada um, ou [] se a
     versão do PyMuPDF não souber dizer o recorte."""
@@ -572,6 +665,9 @@ def pecas_da_pasta(pasta, config=None, maquinas=None):
                     # coisas quando elas diferem — número deduzido nunca
                     # se passa por declarado
                     "nome_m": (alvo[0], alvo[1]),
+                    # o dpi que a arte TEM depois de posta no tamanho
+                    # final; None quando é vetor e não há pixel que acabe
+                    "dpi": resolucao_da_arte(arquivo, pagina, ajuste["fator"]),
                     "quantidade": int(quantidade), "copia": copia + 1,
                     "categoria": categoria, "ajuste": ajuste,
                 })
@@ -1423,7 +1519,7 @@ def prever_pasta(pasta, nome_maquina=None, config=None, maquinas=None,
               # o que só entra depois de passar pelo Illustrator/Photoshop:
               # a prévia não converte nada, então ele precisa ver que estão ali
               "a_converter": [a.name for a in a_converter(plano["pasta"])],
-              "pior_diferenca_mm": 0.0}
+              "pior_diferenca_mm": 0.0, "pior_resolucao": None}
 
     for folha in plano["folhas"]:
         itens = []
@@ -1439,6 +1535,12 @@ def prever_pasta(pasta, nome_maquina=None, config=None, maquinas=None,
                          else (sai_a - pede_a)) * 1000
             previa["pior_diferenca_mm"] = max(previa["pior_diferenca_mm"],
                                               abs(diferenca))
+            dpi = peca.get("dpi")
+            qualidade = qualidade_da_resolucao(dpi)
+            if qualidade == "aviso":
+                previa["pior_resolucao"] = (
+                    dpi if previa["pior_resolucao"] is None
+                    else min(previa["pior_resolucao"], dpi))
             itens.append({
                 "numero": numero, "arquivo": peca["nome"],
                 "nome_m": (pede_l, pede_a), "medida_m": (sai_l, sai_a),
@@ -1446,6 +1548,8 @@ def prever_pasta(pasta, nome_maquina=None, config=None, maquinas=None,
                 "erro_ancora_mm": ((sai_l - pede_l) if ancorado == "largura"
                                    else (sai_a - pede_a)) * 1000,
                 "diferenca_mm": diferenca,
+                "dpi": dpi, "qualidade": qualidade,
+                "distancia_limpa_m": None if dpi is None else distancia_limpa_m(dpi),
                 "girada": posta[5], "ajuste": peca["ajuste"]["acao"],
                 "fator": peca["ajuste"]["fator"],
             })
@@ -1480,6 +1584,13 @@ def resumo_da_previa(previa):
         linhas.append("largura bate; comprimento até "
                       f"{pior:.0f} mm fora do nome" if pior >= 0.5
                       else "largura e comprimento batem o nome")
+    if previa["pior_resolucao"] is not None:
+        # a resolução vem ANTES das recusadas: recusada ele vê na pasta
+        # _conferir, mas arte de pouco pixel entra calada e só aparece
+        # impressa
+        linhas.append(
+            f"ATENÇÃO: peça com {previa['pior_resolucao']:.0f} dpi — só fica "
+            f"limpa a {distancia_limpa_m(previa['pior_resolucao']):.1f} m")
     if previa["recusadas"]:
         linhas.append(f"{len(previa['recusadas'])} ficaram de fora — veja _conferir")
     return "\n".join(linhas)
