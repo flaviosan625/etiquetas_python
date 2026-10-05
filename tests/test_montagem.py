@@ -701,20 +701,23 @@ def test_quem_decide_e_quanto_sai_fora_em_MILIMETROS_nao_a_porcentagem():
     nao erro de proporcao. Em porcentagem a peca mais estreita dava 1,5%
     e era recusada. A regua errada recusava arte boa.
     """
-    # a peca de 0,40 x 3,00 com o arquivo em 1:10 mais 0,7 mm: a largura
-    # fecha em 0,40 e o comprimento cai 45 mm -- ENTRA
+    # a peca de 0,40 x 3,00 com o arquivo em 1:10 mais 0,7 mm: o MAIOR
+    # lado (3,00) fecha cravado e o outro anda 6 mm -- ENTRA
     ajuste = montagem.ajuste_para((0.40, 3.00), (0.0407, 0.3007, 1))
     assert ajuste["acao"] == "escalar"
-    assert "-45 mm" in ajuste["motivo"], "o motivo tem que dizer QUANTO o comprimento andou"
+    assert "+6 mm" in ajuste["motivo"], "o motivo tem que dizer QUANTO o outro lado andou"
 
-    # a MESMA proporcao numa peca dez vezes maior tira quase meio metro
-    assert montagem.ajuste_para((4.00, 30.00), (0.407, 3.007, 1))["acao"] == "recusar"
+    # a MESMA proporcao dez vezes maior ainda cabe (61 mm)...
+    assert montagem.ajuste_para((4.00, 30.00), (0.407, 3.007, 1))["acao"] == "escalar"
+    # ...e cem vezes maior nao cabe mais: 610 mm. A regua e em MILIMETROS,
+    # entao a mesma porcentagem passa na peca pequena e para na grande
+    assert montagem.ajuste_para((40.0, 300.0), (0.407, 3.007, 1))["acao"] == "recusar"
 
     # mesma proporcao, 1% maior nos dois lados: escala uniforme resolve
-    # e o comprimento nem se mexe
+    # e o outro lado nem se mexe
     ajuste = montagem.ajuste_para((2.00, 1.00), (2.02, 1.01, 1))
     assert ajuste["acao"] == "escalar"
-    assert "comprimento" not in ajuste["motivo"], \
+    assert "o outro lado" not in ajuste["motivo"], \
         "sem diferenca nenhuma, nao ha o que avisar"
 
 
@@ -801,15 +804,20 @@ def test_a_peca_guarda_as_DUAS_medidas_quando_elas_diferem(pasta):
         "o que o nome pedia tem que continuar escrito, senao a prova esconde a diferenca"
 
 
-def test_nada_e_aparado_a_largura_fecha_e_a_arte_entra_inteira():
+def test_nada_e_aparado_e_o_MAIOR_LADO_fecha_cravado():
     """
-    A ancora na largura (05/10/2026) acabou com o recorte: antes a arte
-    era cortada no centro pra fechar as duas medidas, e isso comia
-    beirada. Agora o fator sai da largura e NADA e descartado.
+    A ancora acabou com o recorte: antes a arte era cortada no centro pra
+    fechar as duas medidas, e isso comia beirada. Agora o fator sai de um
+    lado so e NADA e descartado.
+
+    E esse lado e o MAIOR (regra dele de 05/10/2026, depois de ver o 3,20
+    sair com erro numa peca de 2,12 x 3,20): *"sempre pelo maior lado, ou
+    seja 3,20 m precisa ser cravado"*.
     """
     for alvo, arquivo in (((1.00, 1.00), (0.98, 1.00)),
                           ((3.77, 3.15), (3.70, 3.15)),
                           ((0.40, 3.00), (0.0407, 0.3007)),
+                          ((2.12, 3.20), (0.2127, 0.3207)),
                           ((7.14, 1.10), (0.714, 0.1105))):
         ajuste = montagem.ajuste_para(alvo, (arquivo[0], arquivo[1], 1))
         if ajuste["acao"] not in ("escalar", "girar", "igual"):
@@ -817,8 +825,9 @@ def test_nada_e_aparado_a_largura_fecha_e_a_arte_entra_inteira():
         w, h = arquivo
         if ajuste["girar"]:
             w, h = h, w
-        assert w * ajuste["fator"] == pytest.approx(alvo[0], abs=0.0006), \
-            f"{alvo}: a largura TEM que fechar redonda, e a ancora"
+        lado = w if alvo[0] >= alvo[1] else h
+        assert lado * ajuste["fator"] == pytest.approx(max(alvo), abs=0.0006), \
+            f"{alvo}: o MAIOR lado tem que fechar cravado, e a ancora"
 
 
 def test_o_resto_do_sistema_tambem_nao_estica():
@@ -1354,11 +1363,25 @@ def test_a_previa_diz_a_margem_de_erro_de_cada_peca(pasta):
     item = previa["folhas"][0]["itens"][0]
 
     assert item["nome_m"] == (1.00, 0.50)
-    assert item["erro_largura_mm"] == pytest.approx(0.0, abs=0.001), \
-        "a largura e a ancora: a margem de erro dela e zero"
+    assert item["ancorado"] == "largura", "1,00 e o maior lado desta peca"
+    assert item["erro_ancora_mm"] == pytest.approx(0.0, abs=0.001), \
+        "o maior lado e a ancora: a margem de erro dele e zero"
     esperado = (1.00 * 0.50 / 1.02 - 0.50) * 1000
-    assert item["diferenca_comprimento_mm"] == pytest.approx(esperado, abs=0.6)
+    assert item["diferenca_mm"] == pytest.approx(esperado, abs=0.6)
     assert previa["pior_diferenca_mm"] == pytest.approx(abs(esperado), abs=0.6)
+
+
+def test_a_previa_diz_qual_lado_foi_ancorado_quando_e_a_ALTURA(pasta):
+    """A peca em pe ancora na altura, e e ela que sai cravada."""
+    arte(pasta, "1UN LONA IMPRESSA 0.50X1.00M_VIBRA_PECA.pdf", 0.50, 1.02)
+
+    previa = montagem.prever_pasta(pasta, raiz_clientes=pasta.parent / "x")
+    item = previa["folhas"][0]["itens"][0]
+
+    assert item["ancorado"] == "altura"
+    assert item["erro_ancora_mm"] == pytest.approx(0.0, abs=0.001)
+    assert item["medida_m"][1] == pytest.approx(1.00, abs=1e-6), \
+        "o 1,00 e o maior lado: sai cravado"
 
 
 def test_a_previa_lista_o_que_vai_ficar_de_fora_com_o_motivo(pasta):
@@ -1619,3 +1642,92 @@ def test_conversao_que_falha_nao_derruba_a_montagem(pasta):
 
     resultado = montagem.montar_pasta(pasta, raiz_clientes=pasta.parent / "x")
     assert len(resultado["folhas"]) == 1, "a arte boa tinha que montar do mesmo jeito"
+
+
+# ---------- a ancora e o MAIOR LADO, e a peca que enche a bobina deita ----------
+#
+# Ele, 05/10/2026, olhando a folha da SWJ: "reparar que essa peca nao
+# girou, mesmo ela passando um pouco de 3.20M na largura ela deve girar,
+# lembra que tenho um pouco de folga e fico ajustar na maquina. Quando me
+# refiro ajustar pela largura pode criar a regra que e sempre pelo maior
+# lado ou seja 3.20M precisa ser cravado, isso serve para a DOCAN tambem:
+# ajustar pelo lado maior da peca".
+
+
+def test_o_maior_lado_do_nome_fecha_cravado_mesmo_sendo_a_ALTURA(pasta):
+    """
+    O caso que ele achou: numa peca de 2,12 x 3,20 a ancora antiga era a
+    LARGURA, e o erro caia justamente no 3,20 -- o lado que encosta na
+    bobina e o que a producao confere.
+    """
+    # arte 1% fora de proporcao, pra haver diferenca a algum lado
+    arte(pasta, "1UN LONA IMPRESSA 2.12X3.20M_VIBRA_PECA.pdf", 0.2141, 0.3200)
+
+    pecas, recusadas = montagem.pecas_da_pasta(pasta)
+    assert not recusadas
+    peca = pecas[0]
+
+    assert peca["altura_m"] == pytest.approx(3.20, abs=1e-4), \
+        "o 3,20 e o maior lado: tem que sair cravado"
+    assert peca["largura_m"] != pytest.approx(2.12, abs=0.0005), \
+        "a diferenca tinha que ter ido pro lado menor"
+    assert peca["largura_m"] / peca["altura_m"] == pytest.approx(0.2141 / 0.3200, rel=1e-6), \
+        "e a escala continua uniforme"
+
+
+def test_peca_que_enche_a_bobina_DEITA_mesmo_sem_folga(pasta):
+    """
+    3,20 + 5 cm de folga nao cabe numa bobina de 3,20, e por isso o
+    encaixe descartava a orientacao deitada. Mas na borda da bobina nao
+    ha vizinha, entao nao ha folga a reservar ali -- e ele tem folga na
+    maquina.
+    """
+    arte(pasta, "1UN LONA IMPRESSA 2.12X3.20M_VIBRA_PECA.pdf", 2.12, 3.20)
+
+    pecas, _ = montagem.pecas_da_pasta(pasta)
+    postas, _comprimento = montagem.encaixar(pecas, 3.20, 0.0)
+
+    assert len(postas) == 1
+    _i, _x, _y, largura, altura, girada, reservada_l, reservada_a = postas[0]
+    assert girada, "a peca tinha que deitar: o maior lado atravessa a bobina"
+    assert largura == pytest.approx(3.20, abs=1e-4)
+    assert altura == pytest.approx(2.12, abs=1e-4)
+    assert reservada_l == pytest.approx(3.20, abs=1e-4), \
+        "deitada ela ocupa a bobina inteira, sem folga sobrando ao lado"
+    assert reservada_a - altura == pytest.approx(montagem.FOLGA_M, abs=1e-4), \
+        "e a faixa do rotulo continua inteira em cima dela"
+
+
+def test_a_peca_deitada_na_borda_NAO_pode_ser_virada_de_volta(pasta):
+    """
+    Se o encaixe a virasse de volta, o retangulo reservado ficaria com
+    3,20 de ALTURA pra uma arte de 3,20 -- o rotulo ficaria sem faixa e
+    sairia por cima da peca de cima. Por isso a orientacao entra trancada.
+    """
+    arte(pasta, "1UN LONA IMPRESSA 2.12X3.20M_VIBRA_A.pdf", 2.12, 3.20)
+    arte(pasta, "1UN LONA IMPRESSA 2.12X3.20M_VIBRA_B.pdf", 2.12, 3.20)
+
+    pecas, _ = montagem.pecas_da_pasta(pasta)
+    postas, _c = montagem.encaixar(pecas, 3.20, 0.0)
+
+    for posta in postas:
+        _i, _x, _y, _l, altura, _g, _rl, reservada_a = posta
+        assert reservada_a - altura >= montagem.RECUO_CORTE_M - 1e-9, \
+            "peca sem faixa pro rotulo: ele sairia por cima da vizinha"
+
+
+def test_a_trava_de_orientacao_atravessa_o_encaixe():
+    """
+    O encaixe aceita (w, h, marca, fixa) e respeita o 'fixa'. Sem isso a
+    montagem nao consegue garantir a orientacao de peca nenhuma.
+    """
+    import aproveitamento
+
+    # 3,20 x 2,17 numa bobina de 3,20: solta, a peca viraria em pe
+    soltas, _m = aproveitamento.posicoes_no_rolo([(3.20, 2.17, "a")], 3.20)
+    trancadas, _m2 = aproveitamento.posicoes_no_rolo([(3.20, 2.17, "a", True)], 3.20)
+
+    assert trancadas[0][3] == pytest.approx(3.20, abs=1e-4), \
+        "trancada, ela tem que sair com a largura que entrou"
+    assert trancadas[0][5] is False, "trancada nao gira"
+    assert len(soltas) == 1, "solta ela continua cabendo, so que podendo girar"

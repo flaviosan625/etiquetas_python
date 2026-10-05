@@ -334,6 +334,16 @@ duas gasta menos bobina, não mais. A borda da folha é ZERO: a folga lateral é
 máquina. O rótulo é **preto, sem fundo
 pintado**: a folga é sobra que vai pro lixo, e pintá-la só gastaria tinta.
 
+**A peça que ENCHE a bobina deita, mesmo quando a folga não cabe junto.** Ele, 05/10/2026, olhando a
+folha da SWJ: *"essa peça não girou, mesmo ela passando um pouco de 3,20 m na largura ela deve girar
+— lembra que tenho um pouco de folga e fico ajustando na máquina"*. O que travava era somar os 5 cm a
+um lado que já mede a bobina inteira (3,20 + 0,05 = 3,25 > 3,20): `_orientacoes` descartava a
+orientação deitada e a peça ficava em pé. **Na borda da bobina não há vizinha, então não há folga a
+reservar ali.** Hoje `encaixar` entrega a peça JÁ deitada e com a orientação TRANCADA
+(`aproveitamento._orientacoes(fixa=True)`) — virada de volta, o retângulo reservado ficaria com 3,20
+de altura pra uma arte de 3,20 e o rótulo sairia por cima da peça vizinha. Na folha real da SWJ isso
+mudou de **duas partes a 77%** para **uma folha de 3,20 × 9,72 m a 91%**.
+
 **A folga é reservada nos DOIS sentidos, e por isso o rótulo nunca erra de lugar.** Com
 `(largura+folga) × (altura+folga)`, girado vira `(altura+folga) × (largura+folga)`: sobra folga nos
 dois sentidos de qualquer jeito. Então a arte encosta sempre no canto de BAIXO e o nome vai sempre no
@@ -353,17 +363,17 @@ pode ser esticado apenas por um lado"*). Todo lugar que põe arte numa caixa usa
 `miniaturas.encaixar` (OS, checklist, relatórios) e `processamento` (etiqueta) calculam `min()` dos
 dois lados; os demais usam o `keep_proportion` do PyMuPDF, que é o padrão. Nenhum estica.
 
-**A ÂNCORA É A LARGURA** (regra dele, 05/10/2026: *"sabemos que algumas artes vai dar diferença,
-então sempre que redimensionar crie um padrão que deve ser pela largura, ou seja, a largura vai bater
-sempre que redimensionar na proporção"*). O fator sai da largura do nome e o comprimento é o que a
-proporção da arte der — medido nas oito lonas dele, a largura fecha com **0,001 mm** de erro e o
-comprimento anda de −4 a −45 mm. É um fator só pros dois lados, nunca um por eixo (*"as artes não
-podem ser mexidas em absolutamente nada, manter sempre parâmetros originais, podemos apenas deixar no
-tamanho, rotacionar para melhorar o encaixe"*).
+**A ÂNCORA É O MAIOR LADO DA PEÇA** (regra dele, 05/10/2026: *"quando me refiro ajustar pela largura,
+pode criar a regra que é sempre pelo maior lado — ou seja, 3,20 m precisa ser cravado. Isso serve para
+a DOCAN também: ajustar pelo lado maior da peça"*). O fator sai desse lado e o outro é o que a
+proporção da arte der. É um fator só pros dois lados, nunca um por eixo (*"as artes não podem ser
+mexidas em absolutamente nada, manter sempre parâmetros originais, podemos apenas deixar no tamanho,
+rotacionar para melhorar o encaixe"*).
 
-Por que a largura e não a altura: é ela que divide a bobina e decide o encaixe; no rolo o comprimento
-é o lado que anda. Numa folha, 4 cm a mais de comprimento é material; 4 cm a mais de largura é peça
-que não cabe.
+Começou sendo a LARGURA, no mesmo dia (*"sempre que redimensionar crie um padrão que deve ser pela
+largura"*), e ele corrigiu olhando a folha pronta: numa peça de **2,12 × 3,20** a âncora na largura
+deixava o erro cair justamente no 3,20 — o lado que encosta na bobina e o que a produção confere. O
+maior lado é o que tem que fechar.
 
 **Antes disso a arte era RECORTADA no centro pra fechar as duas medidas.** Fechava — o bloco media o
 nome ao décimo de milímetro —, mas comia beirada de arte pra isso. Com a âncora na largura o arquivo
@@ -483,7 +493,7 @@ Nos dois caminhos:
   é escrita, o PDF ainda não está na pasta — saindo depois, o aviso deixa de ser aviso. Notificação
   não cabe tabela, então ali vai só o que decide se ele precisa olhar agora; a tabela está na tela.
 
-A coluna da LARGURA na tabela é zero por construção — ela é a âncora — e aparece justamente por isso:
+A coluna do MAIOR LADO na tabela é zero por construção — ele é a âncora — e aparece justamente por isso:
 é a prova, no documento que ele lê antes de mandar imprimir, de que a regra está valendo.
 
 **E a folha PRONTA não pode virar peça** (`e_folha_montada`). Aconteceu na pasta de verdade em

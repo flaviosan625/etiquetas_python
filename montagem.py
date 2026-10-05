@@ -427,26 +427,32 @@ def ajuste_para(alvo, atual):
             return {"acao": "girar" if girar else "igual", "girar": girar,
                     "fator": 1.0, "motivo": ""}
 
-    # A ÂNCORA É A LARGURA. Regra dele de 05/10/2026: *"sabemos que
-    # algumas artes vai dar diferença, então sempre que redimensionar
-    # crie um padrão que deve ser pela largura, ou seja, a largura vai
-    # bater sempre que redimensionar na proporção"*.
+    # A ÂNCORA É O MAIOR LADO DA PEÇA. Regra dele de 05/10/2026: *"quando
+    # me refiro ajustar pela largura, pode criar a regra que é sempre
+    # pelo maior lado — ou seja, 3,20 m precisa ser cravado. Isso serve
+    # para a DOCAN também: ajustar pelo lado maior da peça"*.
     #
-    # Então o fator sai da LARGURA e a altura é o que a proporção da arte
-    # der. Nada é esticado e nada é cortado: a largura fecha redonda — é
-    # ela que divide a bobina e decide o encaixe — e a diferença, quando
-    # existe, aparece no COMPRIMENTO, que no rolo é o lado que anda.
+    # Antes a âncora era a LARGURA (a primeira medida do nome), e numa
+    # peça de 2,12 x 3,20 isso deixava o erro cair justamente no 3,20 —
+    # que é o lado que encosta na bobina e o que a produção confere.
     #
-    # Antes disso a arte era recortada no centro pra fechar as duas
-    # medidas. Fechava, mas comia beirada de arte pra isso; com a âncora
-    # na largura o arquivo chega inteiro na folha.
+    # O fator sai desse lado e o outro é o que a proporção da arte der.
+    # Nada é esticado e nada é cortado: o maior lado fecha redondo e a
+    # diferença, quando existe, aparece no menor.
     #
-    # Fica com a orientação cujo comprimento chega mais perto do nome.
+    # Fica com a orientação cujo OUTRO lado chega mais perto do nome.
+    ancora_na_largura = largura_alvo >= altura_alvo
     melhor = None
     for girar, (w, h) in ((False, (largura, altura)), (True, (altura, largura))):
-        fator = largura_alvo / w
-        diferenca = h * fator - altura_alvo
-        relativa = abs(diferenca) / altura_alvo if altura_alvo else 1.0
+        if ancora_na_largura:
+            fator = largura_alvo / w
+            diferenca = h * fator - altura_alvo
+            outro_alvo = altura_alvo
+        else:
+            fator = altura_alvo / h
+            diferenca = w * fator - largura_alvo
+            outro_alvo = largura_alvo
+        relativa = abs(diferenca) / outro_alvo if outro_alvo else 1.0
         if melhor is None or abs(diferenca) < abs(melhor[0]):
             melhor = (diferenca, relativa, girar, fator)
 
@@ -454,17 +460,18 @@ def ajuste_para(alvo, atual):
     if abs(diferenca) <= DIFERENCA_MAXIMA_M and relativa <= TOLERANCIA_PROPORCAO:
         # arredondado: 9,999999805 é 10x, e número feio num documento de
         # produção faz quem lê duvidar do resto
-        motivo = (f"arquivo {largura:.3f} x {altura:.3f} m ajustado {fator:.2f}x pela "
-                  f"LARGURA do nome")
+        maior = max(largura_alvo, altura_alvo)
+        motivo = (f"arquivo {largura:.3f} x {altura:.3f} m ajustado {fator:.2f}x pelo "
+                  f"MAIOR LADO do nome ({maior:.2f} m)")
         if abs(diferenca) >= 0.001:
-            motivo += f"; o comprimento saiu {diferenca * 1000:+.0f} mm do que o nome diz"
+            motivo += f"; o outro lado saiu {diferenca * 1000:+.0f} mm do que o nome diz"
         return {"acao": "escalar", "girar": girar, "fator": round(fator, 3),
                 "motivo": motivo}
 
     return {"acao": "recusar", "girar": False, "fator": None,
             "motivo": f"o arquivo tem {largura:.2f} x {altura:.2f} m e o nome pede "
-                      f"{largura_alvo:.2f} x {altura_alvo:.2f} m — pondo na LARGURA do nome sem "
-                      f"deformar, o comprimento sai {diferenca * 1000:+.0f} mm fora (o limite é "
+                      f"{largura_alvo:.2f} x {altura_alvo:.2f} m — pondo no MAIOR LADO do nome "
+                      f"sem deformar, o outro sai {diferenca * 1000:+.0f} mm fora (o limite é "
                       f"{DIFERENCA_MAXIMA_M * 1000:.0f} mm, ou {TOLERANCIA_PROPORCAO:.0%}). "
                       f"Confira a arte ou o nome"}
 
@@ -541,17 +548,20 @@ def pecas_da_pasta(pasta, config=None, maquinas=None):
                               "motivo": "não reconheci o material no nome — ele escolhe a bobina"})
             continue
 
-        # A MEDIDA REAL DA PEÇA: largura do nome (a âncora, que fecha
-        # sempre) e comprimento pela proporção da arte. Guardar a medida
-        # do NOME aqui faria o encaixe reservar espaço que a peça não
-        # ocupa — ou, pior, menos do que ela ocupa, e aí a peça de baixo
+        # A MEDIDA REAL DA PEÇA: o MAIOR LADO do nome (a âncora, que fecha
+        # sempre) e o outro pela proporção da arte. Guardar a medida do
+        # NOME aqui faria o encaixe reservar espaço que a peça não ocupa
+        # — ou, pior, menos do que ela ocupa, e aí a peça de baixo
         # entraria por cima dela.
         largura_peca, altura_peca = alvo
         w_arte, h_arte = atual[0], atual[1]
         if ajuste["girar"]:
             w_arte, h_arte = h_arte, w_arte
-        if w_arte > 0:
-            altura_peca = largura_peca * h_arte / w_arte
+        if w_arte > 0 and h_arte > 0:
+            if alvo[0] >= alvo[1]:
+                altura_peca = alvo[0] * h_arte / w_arte
+            else:
+                largura_peca = alvo[1] * w_arte / h_arte
 
         for pagina in range(atual[2]):
             for copia in range(int(quantidade)):
@@ -663,20 +673,44 @@ def encaixar(pecas, largura_util_m, margem_m=None):
     margem_m = MARGEM_M if margem_m is None else margem_m
     util = largura_util_m - 2 * margem_m
     inflar = []
+    deitadas = {}
     for i, peca in enumerate(pecas):
-        largura = max(peca["largura_m"] + FOLGA_M, rotulo)
+        larga, alta = peca["largura_m"], peca["altura_m"]
+        # A PEÇA QUE ENCHE A BOBINA DEITA, mesmo quando a folga não cabe
+        # junto. Ele, 05/10/2026, olhando a folha da SWJ: *"essa peça não
+        # girou, mesmo ela passando um pouco de 3,20 m na largura ela deve
+        # girar — lembra que tenho um pouco de folga e fico ajustando na
+        # máquina"*.
+        #
+        # Na borda da bobina não há vizinha, então não há folga a reservar
+        # ali: o que trava era somar os 5 cm a um lado que já mede a
+        # largura inteira (3,20 + 0,05 = 3,25 > 3,20) e o encaixe descartar
+        # essa orientação. Aqui a peça entra JÁ deitada, com o lado grande
+        # cravado na bobina, e com a orientação TRANCADA — virada de volta
+        # ela ficaria sem a faixa do rótulo, que sairia por cima da peça
+        # vizinha.
+        deitar = (alta > larga and alta <= util + TOLERANCIA_MEDIDA_M
+                  and alta + FOLGA_M > util and larga + FOLGA_M <= util)
+        if deitar:
+            larga, alta = alta, larga
+        deitadas[i] = deitar
+
+        largura = max(larga + FOLGA_M, rotulo)
         # O teto é a largura útil, MAS NUNCA ABAIXO DA PRÓPRIA PEÇA. Com
         # o teto cru, uma lona de 7,14 m virava um retângulo reservado de
         # 4,96 e o encaixe "cabia" com ela deitada — a arte saía 2,18 m
         # pra fora da folha, calada (visto em 04/10/2026). O teto existe
         # só pra peça que cabe e cuja FOLGA é que não caberia.
-        largura = min(largura, max(util, peca["largura_m"]))
-        inflar.append((largura, peca["altura_m"] + FOLGA_M, i))
+        largura = min(largura, max(util, larga))
+        inflar.append((largura, alta + FOLGA_M, i, deitar))
     postas, comprimento = aproveitamento.posicoes_no_rolo(inflar, util)
 
     arte = []
     for indice, x, y, largura, altura, girada in postas:
         peca = pecas[indice]
+        # 'girada' é em relação ao que ENTROU no encaixe; a peça deitada
+        # na entrada já estava girada em relação à arte
+        girada = girada != deitadas[indice]
         largura_arte = peca["altura_m"] if girada else peca["largura_m"]
         altura_arte = peca["largura_m"] if girada else peca["altura_m"]
         # 'largura'/'altura' são o RETÂNGULO RESERVADO como ele foi posto.
@@ -1317,11 +1351,15 @@ def montar_pasta(pasta, nome_maquina=None, config=None, maquinas=None, logger=No
                 "medida_m": [round(do_material[i]["largura_m"], 3),
                              round(do_material[i]["altura_m"], 3)],
                 # e o que o nome pedia, quando não é a mesma coisa —
-                # número deduzido nunca se passa por declarado
+                # número deduzido nunca se passa por declarado. Confere os
+                # DOIS lados: a âncora é o maior, então quem anda é ora a
+                # altura, ora a largura
                 "medida_do_nome_m": (
                     [round(v, 3) for v in do_material[i]["nome_m"]]
-                    if abs(do_material[i]["nome_m"][1]
-                           - do_material[i]["altura_m"]) >= 0.001 else None),
+                    if (abs(do_material[i]["nome_m"][0]
+                            - do_material[i]["largura_m"]) >= 0.001
+                        or abs(do_material[i]["nome_m"][1]
+                               - do_material[i]["altura_m"]) >= 0.001) else None),
                 "posicao_m": [round(v, 3) for v in
                               posicao_na_folha(posta, margem_m, 0.0 if chapa else None)],
                 "girada": girada,
@@ -1362,10 +1400,11 @@ def prever_pasta(pasta, nome_maquina=None, config=None, maquinas=None,
     margem de erro"*, e depois *"ele vai pegar os arquivos que joguei na
     pasta, calcular e passar os dados na tela"*.
 
-    Cada item traz o que o NOME pede, o que vai SAIR e a diferença nos
-    dois lados, em milímetros. A da largura é zero por construção — é a
-    âncora —, e ela sai escrita justamente por isso: é a prova de que a
-    regra está valendo, no documento que ele lê antes de mandar imprimir.
+    Cada item traz o que o NOME pede, o que vai SAIR e a diferença, em
+    milímetros. A do MAIOR LADO é zero por construção — é a âncora —, e
+    ela sai escrita justamente por isso: é a prova de que a regra está
+    valendo, no documento que ele lê antes de mandar imprimir. 'ancorado'
+    diz qual dos dois lados é o maior nesta peça.
 
     Nada é escrito nem movido: isto só olha.
     """
@@ -1386,14 +1425,21 @@ def prever_pasta(pasta, nome_maquina=None, config=None, maquinas=None,
             peca = folha["pecas"][posta[0]]
             pede_l, pede_a = peca["nome_m"]
             sai_l, sai_a = peca["largura_m"], peca["altura_m"]
-            diferenca = (sai_a - pede_a) * 1000
+            # a ÂNCORA é o maior lado: ele fecha cravado, e o que anda é o
+            # outro. Os dois saem escritos, porque qual deles é o maior
+            # muda de peça pra peça
+            ancorado = "largura" if pede_l >= pede_a else "altura"
+            diferenca = ((sai_l - pede_l) if ancorado == "altura"
+                         else (sai_a - pede_a)) * 1000
             previa["pior_diferenca_mm"] = max(previa["pior_diferenca_mm"],
                                               abs(diferenca))
             itens.append({
                 "numero": numero, "arquivo": peca["nome"],
                 "nome_m": (pede_l, pede_a), "medida_m": (sai_l, sai_a),
-                "erro_largura_mm": (sai_l - pede_l) * 1000,
-                "diferenca_comprimento_mm": diferenca,
+                "ancorado": ancorado,
+                "erro_ancora_mm": ((sai_l - pede_l) if ancorado == "largura"
+                                   else (sai_a - pede_a)) * 1000,
+                "diferenca_mm": diferenca,
                 "girada": posta[5], "ajuste": peca["ajuste"]["acao"],
                 "fator": peca["ajuste"]["fator"],
             })

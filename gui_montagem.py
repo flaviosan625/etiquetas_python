@@ -12,9 +12,11 @@ como a folha vai fechar, quanto aproveita, e peça por peça o que o nome
 pede, o que vai sair e a diferença entre os dois em milímetros. Montar é
 um botão à parte.
 
-A coluna da largura é zero por construção (ela é a âncora) e aparece
-justamente por isso: é a prova, na tela que ele lê antes de mandar
-imprimir, de que a regra está valendo. Quem muda é o comprimento.
+A coluna do MAIOR LADO é zero por construção (ele é a âncora, regra dele
+de 05/10/2026: *"sempre pelo maior lado, ou seja 3,20 m precisa ser
+cravado"*) e aparece justamente por isso: é a prova, na tela que ele lê
+antes de mandar imprimir, de que a regra está valendo. Quem muda é o
+outro lado.
 
 A conta aqui não existe: é `montagem.prever_pasta`, a MESMA que monta de
 verdade. Prévia calculada por fora é prévia que mente no dia em que uma
@@ -139,8 +141,8 @@ class _AbaMaquina(tk.Frame):
             "arquivo": ("arquivo", 380, "w"),
             "pede": ("o nome pede", 120, "center"),
             "sai": ("vai sair", 120, "center"),
-            "largura": ("largura", 80, "e"),
-            "comprimento": ("comprimento", 100, "e"),
+            "largura": ("maior lado", 90, "e"),
+            "comprimento": ("o outro", 90, "e"),
             "giro": ("giro", 60, "center"),
         }
         for coluna, (titulo, largura, alinhar) in titulos.items():
@@ -246,9 +248,9 @@ class _AbaMaquina(tk.Frame):
                          for f in previa["folhas"]))
         pior = previa["pior_diferenca_mm"]
         self.var_margem.set(
-            "A largura fecha exata, do nome. "
-            + (f"A diferença fica no comprimento: até {pior:.0f} mm."
-               if pior >= 0.5 else "O comprimento também bate o nome."))
+            "O maior lado de cada peça fecha cravado, do nome. "
+            + (f"A diferença fica no outro lado: até {pior:.0f} mm."
+               if pior >= 0.5 else "O outro lado também bate o nome."))
 
         for folha in previa["folhas"]:
             if len(previa["folhas"]) > 1:
@@ -259,14 +261,14 @@ class _AbaMaquina(tk.Frame):
                     values=("", f"— {folha['categoria']}{qual}  ({folha['tamanho']}) —",
                             "", "", "", "", ""))
             for item in folha["itens"]:
-                mudou = abs(item["diferenca_comprimento_mm"]) >= 0.5
+                mudou = abs(item["diferenca_mm"]) >= 0.5
                 self.tabela.insert("", "end", tags=("mudou",) if mudou else (), values=(
                     f"{item['numero']:02d}",
                     item["arquivo"],
                     f"{item['nome_m'][0]:.2f} x {item['nome_m'][1]:.2f}",
                     f"{item['medida_m'][0]:.3f} x {item['medida_m'][1]:.3f}",
-                    f"{item['erro_largura_mm']:+.2f} mm",
-                    f"{item['diferenca_comprimento_mm']:+.0f} mm",
+                    f"{item['erro_ancora_mm']:+.2f} mm",
+                    f"{item['diferenca_mm']:+.0f} mm",
                     "sim" if item["girada"] else "",
                 ))
         self.btn_montar.configure(state="normal")

@@ -154,9 +154,18 @@ class _Pedaco:
         return max([(lw * lh, lw, lh) for _, _, lw, lh in self.livres] + [self.maior_descartado])
 
 
-def _orientacoes(w, h, largura, altura, politica="livre"):
-    """As orientações da peça que cabem no pedaço (sem repetir quadrado)."""
-    if politica == "estreita":
+def _orientacoes(w, h, largura, altura, politica="livre", fixa=False):
+    """
+    As orientações da peça que cabem no pedaço (sem repetir quadrado).
+
+    'fixa' tranca a peça como ela entrou. Quem usa é a montagem, pra peça
+    que enche a bobina: ela só cabe deitada, e deitada o retângulo
+    reservado não tem folga sobrando — virada de volta, o rótulo ficaria
+    sem a faixa dele e sairia por cima da peça vizinha.
+    """
+    if fixa:
+        candidatas = [(w, h)]
+    elif politica == "estreita":
         # como se corta por hábito: o lado menor atravessando a largura do rolo
         candidatas = [(min(w, h), max(w, h))]
     else:
@@ -248,9 +257,10 @@ def _encaixar_no_rolo(pecas, largura, ordem, politica, divisao):
     O rolo (_Pedaco) encaixado — 'topo' é o que ele gasta —, ou None se a
     política não serve.
 
-    'pecas' é [(w, h)] ou [(w, h, marca)]. A marca atravessa o encaixe sem
-    participar da conta e volta em _Pedaco.marcas: é o que deixa quem
-    desenha saber qual arte é cada posição (ver posicoes_no_rolo).
+    'pecas' é [(w, h)], [(w, h, marca)] ou [(w, h, marca, fixa)]. A marca
+    atravessa o encaixe sem participar da conta e volta em _Pedaco.marcas:
+    é o que deixa quem desenha saber qual arte é cada posição (ver
+    posicoes_no_rolo). 'fixa' tranca a orientação daquela peça.
     """
     altura = sum(max(p[0], p[1]) for p in pecas) + 1
     rolo = _Pedaco(largura, altura)
@@ -258,7 +268,8 @@ def _encaixar_no_rolo(pecas, largura, ordem, politica, divisao):
     for peca in sorted(pecas, key=lambda p: ordem(p[:2])):
         w, h = peca[0], peca[1]
         marca = peca[2] if len(peca) > 2 else None
-        orientacoes = _orientacoes(w, h, largura, altura, politica)
+        orientacoes = _orientacoes(w, h, largura, altura, politica,
+                                   fixa=len(peca) > 3 and peca[3])
         if not orientacoes:
             return None
         lugar = rolo.melhor_lugar(orientacoes, "baixo")
@@ -323,7 +334,8 @@ def posicoes_no_rolo(pecas, largura_m):
         w, h = _mm(item[0]), _mm(item[1])
         if w <= 0 or h <= 0 or w > largura and h > largura:
             continue
-        entrada.append((w, h, item[2] if len(item) > 2 else None))
+        entrada.append((w, h, item[2] if len(item) > 2 else None,
+                        len(item) > 3 and item[3]))
     if not entrada:
         return [], 0.0
 
@@ -339,7 +351,7 @@ def posicoes_no_rolo(pecas, largura_m):
 
     # a peça saiu girada quando a largura posta não é a que entrou
     medida = {}
-    for w, h, marca in entrada:
+    for w, h, marca, _fixa in entrada:
         medida.setdefault(marca, (w, h))
     postas = []
     for (x, y, pw, ph), marca in zip(melhor.postas, melhor.marcas):
