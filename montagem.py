@@ -1214,6 +1214,32 @@ def dividir_por_fileira(postas, maximo_m=None):
     return folhas
 
 
+def _reencaixar(pecas, postas, comprimento, largura_util_m, margem_m):
+    """
+    Reencaixa uma parte SOZINHA e fica com o resultado só se ele gastar
+    menos bobina. Devolve (postas, comprimento).
+
+    A divisão herda as posições de um encaixe feito pra bobina SEM
+    limite: a peça que sobra pro fim vai do jeito que estava lá. Numa
+    folha real da SWJ (05/10/2026) isso custou 1,20 m — uma lona de
+    1,20 × 2,40 ficou EM PÉ sozinha numa folha de 2,58, quando deitada
+    sozinha cabe em 1,38.
+
+    Reencaixar só a sobra foi medido contra as alternativas: encaixar
+    direto com teto de 10 m (como chapa) é PIOR, porque aquele encaixe
+    minimiza NÚMERO DE FOLHAS e não metros — gastou 4,72 m a mais em dez
+    lotes sorteados. Este aqui nunca piora, por construção: se o encaixe
+    novo não for menor, fica o antigo.
+    """
+    indices = [p[0] for p in postas]
+    refeitas, novo = encaixar([pecas[i] for i in indices], largura_util_m, margem_m)
+    if len(refeitas) != len(postas) or novo >= comprimento:
+        return postas, comprimento
+    # o encaixe devolve índice da lista NOVA: desfaz o mapeamento, senão
+    # cada peça sai com o rótulo de outra
+    return [(indices[p[0]],) + tuple(p[1:]) for p in refeitas], novo
+
+
 def largura_usada(postas, margem_m=0.0):
     """
     A largura que a folha realmente ocupa — e é com ela que a folha FECHA.
@@ -1325,6 +1351,9 @@ def planejar_pasta(pasta, nome_maquina=None, config=None, maquinas=None,
 
         # ROLO: no máximo 10 m por arquivo, cortando só entre fileiras
         partes = dividir_por_fileira(postas)
+        if len(partes) > 1:
+            partes = [_reencaixar(do_material, p, c, largura, margem_m)
+                      for p, c in partes]
         for numero, (da_parte, comprimento_parte) in enumerate(partes, start=1):
             # a folha FECHA na largura que usa, sem branco nas laterais
             largura_parte = min(largura_usada(da_parte, margem_m), largura)

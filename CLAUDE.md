@@ -506,6 +506,14 @@ cortar arte, quem cede é o tamanho. Cada parte é uma peça de material por si 
 com a medida DELA), e o carimbo de hora é o mesmo nas partes do mesmo lote, pra ficarem juntas na
 listagem.
 
+**Dividida, cada parte é REENCAIXADA sozinha** (`_reencaixar`). A divisão herda as posições de um
+encaixe feito pra bobina SEM limite, e a peça que sobra pro fim vai do jeito que estava lá. Numa folha
+real da SWJ (05/10/2026) isso custou **1,20 m**: uma lona de 1,20 × 2,40 ficou EM PÉ sozinha numa
+folha de 2,58, quando deitada sozinha cabe em 1,38. As alternativas foram MEDIDAS antes de escolher —
+encaixar direto com teto de 10 m (pelo caminho da chapa) é **pior**, porque aquele encaixe minimiza
+NÚMERO DE FOLHAS e não metros: gastou 4,72 m a mais em dez lotes sorteados. O reencaixe nunca piora
+por construção: se o novo não for menor, fica o antigo.
+
 **Os formatos são os do SISTEMA, não uma lista própria** (*"as pastas precisa ler também todos os
 formatos de arquivos que já usamos no sistema, pra depois sair em PDF"*). `EXTENSOES_DE_ARTE` cobre o
 que o vigia aceita (`rasterlink_hotfolder.EXTENSOES_ACEITAS`) mais `.bmp` e `.psd`, em três caminhos:
@@ -974,7 +982,24 @@ Decisões do usuário de 2026-09-13, que valem pro sistema inteiro:
   cliente: medida obtida abrindo o arquivo, ou unidade corrigida, sai assinalada na linha.
 - **Teste nunca pode tocar pasta real.** As constantes de módulo apontam pro OneDrive de verdade;
   um teste distraído já apagou o `estoque.json`. Use a fixture `autouse` que já existe em
-  `tests/test_rasterlink_hotfolder.py`, `test_relatorio_producao.py` e outros três.
+  `tests/test_rasterlink_hotfolder.py`, `test_relatorio_producao.py` e outros três. **Isolar o
+  OneDrive não basta: o LOG também é pasta real.** Dois testes do vigia do caderno chamavam
+  `_conferir_cadernos`, que escreve em `etiquetas_geradas/_vigia_checklist.log` — e cada rodada da
+  suíte carimbava lá um `RuntimeError: boom` (a exceção de mentira do teste). Em 05/10/2026 eu li
+  essas 70 linhas como falha de produção e fui investigar um vigia que estava são. Log de diagnóstico
+  sujo é exatamente como a falha de verdade passa batido. Quando o que escreve é um SUBPROCESSO
+  (`--autoteste`), monkeypatch não alcança: aí o teste devolve o arquivo como encontrou, tirando só as
+  linhas que ele mesmo criou — ver `tests/test_modulos_rodam_como_script.py`.
+- **Teste que só IMPORTA o módulo não prova que ele RODA.** Em 05/10/2026 a tarefa "Checklist de
+  Produção" falhava a cada passada, de minuto em minuto, com `NameError: name '_montar_artes' is not
+  defined` — e **a montagem automática nunca tinha rodado uma vez sequer** desde que foi escrita. A
+  função estava definida DEPOIS do `if __name__ == "__main__":`, então rodando como script o bloco
+  principal executava antes de a `def` ser alcançada. Importando, o arquivo roda inteiro e tudo
+  existe; é por isso que 1.293 testes passavam. E o erro se escondia mais ainda porque acontece DEPOIS
+  do trabalho útil: a OS era regerada, o caderno conferido, e só então o processo morria — de fora,
+  uma tarefa com resultado 1 e nenhuma montagem. Hoje `tests/test_modulos_rodam_como_script.py` varre
+  TODOS os módulos atrás de definição depois do `__main__` e roda o `--autoteste` de quem o tem, como
+  script de verdade.
 - **Antes de dizer "a API não permite X", sonde.** Já afirmei um limite do Aspire a partir de nota
   antiga, sem testar, e refiz um caminho que ele tinha recusado. A sonda aqui é barata.
 

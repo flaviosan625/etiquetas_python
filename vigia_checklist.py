@@ -227,27 +227,6 @@ def _conferir_cadernos(raiz=None):
     return avisados
 
 
-if __name__ == "__main__":
-    import argparse
-    parser = argparse.ArgumentParser(description="Vigia do checklist de produção (uma passada).")
-    parser.add_argument("--uma-vez", action="store_true", help="uma passada e sai (padrão)")
-    parser.add_argument("--forcar", action="store_true", help="regenera mesmo sem mudança")
-    parser.add_argument("--autoteste", action="store_true", help="só diz se consegue iniciar")
-    args = parser.parse_args()
-
-    if args.autoteste:
-        _log(None, "info", "autoteste ok — vigia_checklist iniciou")
-        print("autoteste ok")
-    else:
-        regenerados = passada(forcar=args.forcar)
-        if regenerados is None:
-            print("outra passada já está rodando")
-        elif regenerados:
-            print("regenerou: " + ", ".join(regenerados))
-        else:
-            print("sem mudança")
-
-
 def _montar_artes():
     """
     De carona também, a montagem das artes (2026-10-04): ele larga os
@@ -273,3 +252,24 @@ def _montar_artes():
             _log(None, "ok", "montagem pronta: %s (%d peças, %.0f%% de aproveitamento)"
                  % (folha["arquivo"].name, folha["pecas"], folha["aproveitamento"] * 100))
     return feitas
+
+
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description="Vigia do checklist de produção (uma passada).")
+    parser.add_argument("--uma-vez", action="store_true", help="uma passada e sai (padrão)")
+    parser.add_argument("--forcar", action="store_true", help="regenera mesmo sem mudança")
+    parser.add_argument("--autoteste", action="store_true", help="só diz se consegue iniciar")
+    args = parser.parse_args()
+
+    if args.autoteste:
+        _log(None, "info", "autoteste ok — vigia_checklist iniciou")
+        print("autoteste ok")
+    else:
+        regenerados = passada(forcar=args.forcar)
+        if regenerados is None:
+            print("outra passada já está rodando")
+        elif regenerados:
+            print("regenerou: " + ", ".join(regenerados))
+        else:
+            print("sem mudança")

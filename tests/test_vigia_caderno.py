@@ -34,7 +34,15 @@ def nada_real(tmp_path, monkeypatch):
     monkeypatch.setattr(caminhos, "ONEDRIVE_UNY", onedrive)
     monkeypatch.setattr(caminhos, "RECEBIMENTO_DE_ARTES", onedrive / "Recebimento de Artes")
     monkeypatch.setattr(caminhos, "PASTA_RECEBENDO", tmp_path / "recebendo")
+    # ETIQUETAS_GERADAS é onde mora o LOG do vigia do checklist, e os dois
+    # testes de carona daqui chamam _conferir_cadernos, que escreve nele.
+    # Sem isto, cada rodada da suíte carimbava "RuntimeError: boom" no log
+    # DE VERDADE — e em 05/10/2026 eu li essas linhas como falha de
+    # produção e fui investigar um vigia que estava são. Log de
+    # diagnóstico sujo é como a falha de verdade passa batido.
+    monkeypatch.setattr(caminhos, "ETIQUETAS_GERADAS", tmp_path / "etiquetas_geradas")
     (onedrive / "Recebimento de Artes").mkdir(parents=True)
+    (tmp_path / "etiquetas_geradas").mkdir()
 
     def proibido(*a, **k):
         raise AssertionError("teste tentou sair pra rede de verdade")
