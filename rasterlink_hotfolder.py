@@ -125,7 +125,17 @@ POSTO_PADRAO = POSTO_RIP
 # 'margem_montagem_m' é a borda de branco que a MONTAGEM deixa de cada
 # lado da folha (ver montagem.py). É por máquina porque ele deu uma pra
 # cada, em 04/10/2026 — e faz sentido: cada uma agarra o material de um
-# jeito e erra o alinhamento de um tanto diferente.
+# jeito e erra o alinhamento de um tanto diferente. Nas duas que MONTAM
+# ela virou zero em 05/10/2026, junto com o campo abaixo.
+#
+# 'largura_montagem_m' é a largura com que a folha montada FECHA, e não
+# se confunde com 'largura_util_m': *"quando fechar a arte não vai poder
+# passar de 5 metros na largura; a folga de 2 cm de cada lado eu coloco
+# manualmente na máquina na hora da impressão. Todo fechamento deve ter
+# 5 metros de largura na DOCAN e na SWJ 320 cm de largura — eu me
+# preocupo com a folga"* (05/10/2026). É número REDONDO de propósito: é
+# ele que vai no nome do arquivo, e é por ele que o m², a escolha de
+# máquina e a baixa de estoque contam.
 MAQUINAS = {
     "UJV 100 UNY CV": {
         "hot_folder": r"C:\MijCtrl\Hot\UJV 100 UNY CV",
@@ -143,7 +153,10 @@ MAQUINAS = {
         "hot_folder": r"C:\MijCtrl\Hot\SWJ320A",
         # 3,24 m (ele, 04/10/2026). Estava 3,20, também sem fonte.
         "largura_util_m": 3.24,
-        "margem_montagem_m": 0.05,
+        # mas a folha montada FECHA em 3,20 redondo, sem borda: a folga é
+        # dele, posta na máquina (05/10/2026)
+        "largura_montagem_m": 3.20,
+        "margem_montagem_m": 0.0,
         "montagem": True,
         "posto": POSTO_RIP,
     },
@@ -190,7 +203,10 @@ MAQUINAS = {
     "DOCAN R5200": {
         "hot_folder": r"C:\Program Files\SAi\SAi Production Suite 22\Jobs and Settings\Jobs\Docan\Docan",
         "largura_util_m": 5.04,
-        "margem_montagem_m": 0.02,
+        # a folha montada FECHA em 5,00 redondo, sem borda: a folga de
+        # 2 cm por lado é dele, posta na máquina (05/10/2026)
+        "largura_montagem_m": 5.00,
+        "margem_montagem_m": 0.0,
         "montagem": True,
         "posto": POSTO_SAI,
         # nome da configuração dentro do SAi: é como o RIPLOG chama esta

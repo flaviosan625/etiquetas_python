@@ -97,22 +97,37 @@ def test_a_plana_so_precisa_do_campo_pra_voltar(tmp_path):
     assert "DOCAN H2525" in criadas
 
 
-def test_a_margem_e_por_maquina():
-    """Ele deu uma pra cada (04/10/2026): cada maquina agarra o material de um jeito."""
-    assert montagem.margem("DOCAN R5200") == 0.02
+def test_a_margem_e_por_maquina_e_ZERO_em_quem_monta():
+    """
+    Ele deu uma pra cada (04/10/2026) -- cada maquina agarra o material
+    de um jeito. Nas duas que MONTAM ela zerou em 05/10/2026: *"a folga
+    de 2 cm de cada lado eu coloco manualmente na maquina na hora da
+    impressao... eu me preocupo com a folga"*. Borda desenhada aqui seria
+    folga DUAS vezes, e a arte sairia de 4,96 em vez de 5,00.
+    """
+    assert montagem.margem("DOCAN R5200") == 0.0
+    assert montagem.margem("SWJ320A") == 0.0
     assert montagem.margem("DOCAN H2525") == 0.02
     assert montagem.margem("UJV 100 UNY CV") == 0.03
-    assert montagem.margem("SWJ320A") == 0.05
 
 
-def test_a_largura_vem_do_cadastro_da_maquina():
+def test_a_largura_do_FECHAMENTO_vem_do_cadastro_e_nao_e_a_da_maquina():
     """
-    As larguras nao estao escritas na montagem: mudam no cadastro da
-    maquina e valem aqui. Foi assim que a correcao de 5,00 pra 5,20 na
-    DOCAN (04/10/2026) chegou na montagem sem eu mexer nela.
+    Sao duas coisas: 'largura_util_m' e o que a maquina imprime e responde
+    "cabe?" no vigia; 'largura_montagem_m' e o numero REDONDO com que a
+    folha fecha (5,00 e 3,20, pedido dele em 05/10/2026).
+
+    Nenhuma das duas esta escrita aqui: mudam no cadastro da maquina e
+    valem na montagem. Foi assim que a correcao de 5,00 pra 5,20 na DOCAN
+    (04/10/2026) chegou aqui sem eu mexer nesta linha.
     """
-    assert montagem.largura_util("DOCAN R5200") == 5.04
-    assert montagem.largura_util("SWJ320A") == 3.24
+    assert montagem.largura_util("DOCAN R5200") == 5.00
+    assert montagem.largura_util("SWJ320A") == 3.20
+    import rasterlink_hotfolder as rl_hf
+
+    assert rl_hf.MAQUINAS["DOCAN R5200"]["largura_util_m"] == 5.04, \
+        "o que a maquina imprime nao muda porque o fechamento mudou"
+    # maquina sem o campo cai na largura dela, como sempre
     assert montagem.largura_util("UJV 100 UNY CV") == 1.27
     assert montagem.mesa("DOCAN H2525") == (2.50, 2.50)
 
@@ -156,7 +171,7 @@ def test_proporcao_que_nao_bate_e_RECUSADA_nunca_distorcida():
     """
     ajuste = montagem.ajuste_para((2.00, 1.00), (2.00, 1.80, 1))
     assert ajuste["acao"] == "recusar"
-    assert "400 mm por lado" in ajuste["motivo"], "o motivo tem que dizer QUANTO sobraria"
+    assert "+800 mm fora" in ajuste["motivo"], "o motivo tem que dizer QUANTO sai fora"
 
 
 def test_meio_centimetro_de_diferenca_e_a_mesma_medida():
@@ -208,13 +223,22 @@ def test_cada_material_vira_UMA_folha(pasta):
     assert all(f["arquivo"].is_file() for f in resultado["folhas"])
 
 
-def test_a_folha_sai_na_largura_da_maquina(pasta):
+def test_a_folha_FECHA_na_largura_redonda_que_ele_pediu(pasta):
+    """
+    5,00 na DOCAN, cravado -- e no NOME tambem, que e de onde o m², a
+    maquina e o estoque leem.
+    """
     arte(pasta, "1UN LONA IMPRESSA 2.00X1.00M_PAINEL.pdf", 2.00, 1.00)
 
     resultado = montagem.montar_pasta(pasta, raiz_clientes=pasta.parent / "x")
+    folha = resultado["folhas"][0]["arquivo"]
 
-    with pymupdf.open(str(resultado["folhas"][0]["arquivo"])) as doc:
-        assert round(doc.load_page(0).rect.width / PT_M, 2) == 5.04
+    with pymupdf.open(str(folha)) as doc:
+        assert round(doc.load_page(0).rect.width / PT_M, 2) == 5.00
+
+    import dimensoes
+
+    assert dimensoes.extrair_dimensoes(folha.name)["largura_m"] == 5.00
 
 
 def test_os_originais_saem_da_pasta_depois_de_montados(pasta):
@@ -238,7 +262,7 @@ def test_recusada_vai_pro_conferir_COM_O_MOTIVO_escrito(pasta):
     assert (conferir / "1UN LONA IMPRESSA 2.00X1.00M_DEFORMADA.pdf").is_file()
     motivo = (conferir / "1UN LONA IMPRESSA 2.00X1.00M_DEFORMADA.pdf.motivo.txt").read_text(
         encoding="utf-8")
-    assert "mm por lado" in motivo and "Confira a arte ou o nome" in motivo
+    assert "mm fora" in motivo and "Confira a arte ou o nome" in motivo
 
 
 def test_duas_pecas_de_mesma_medida_nao_trocam_de_rotulo(pasta):
@@ -297,7 +321,7 @@ def test_o_json_ao_lado_guarda_as_pecas(pasta):
         encoding="utf-8"))
     assert len(ficha["pecas"]) == 2
     assert ficha["area_pecas_m2"] == 2.0
-    assert ficha["folha_m"][0] == 5.04
+    assert ficha["folha_m"][0] == 5.00
     assert ficha["pecas"][0]["posicao_m"] and ficha["pecas"][0]["medida_m"] == [1.0, 1.0]
 
 
@@ -588,42 +612,55 @@ def test_a_posicao_do_json_e_onde_a_arte_esta_DE_VERDADE(pasta):
 # ---------- a arte nao pode ser mexida ----------
 
 
-def test_escala_e_sempre_UNIFORME_nunca_estica(pasta):
+def test_a_LARGURA_e_a_ancora_e_fecha_sempre_redonda(pasta):
     """
-    "As artes nao podem ser mexidas em absolutamente nada" (04/10/2026).
-    A caixa que a arte cobre mantem a proporcao do arquivo: um fator so
-    pros dois lados.
+    Regra dele de 05/10/2026: *"sabemos que algumas artes vai dar
+    diferenca, entao sempre que redimensionar crie um padrao que deve ser
+    pela largura, ou seja, a largura vai bater sempre que redimensionar
+    na proporcao"*.
+
+    Entao a peca sai com a largura do NOME, redonda, e o comprimento e o
+    que a proporcao da arte der. A escala continua UNIFORME -- "as artes
+    nao podem ser mexidas em absolutamente nada" (04/10/2026).
     """
-    import pymupdf as mupdf
+    # o nome pede 2,00 x 1,00; o arquivo tem proporcao 1,99
+    arte(pasta, "1UN LONA IMPRESSA 2.00X1.00M_VIBRA_PAINEL.pdf", 1.990, 1.00)
 
-    caixa = mupdf.Rect(0, 0, 200, 100)          # proporcao 2,00
-    onde = montagem._caixa_que_a_arte_cobre(caixa, 199, 100, mupdf)   # arte 1,99
+    pecas, recusadas = montagem.pecas_da_pasta(pasta)
+    assert not recusadas
+    peca = pecas[0]
 
-    assert onde.width / onde.height == pytest.approx(199 / 100, rel=1e-6)
-    assert onde.width >= caixa.width - 0.001 and onde.height >= caixa.height - 0.001, \
-        "a arte tem que COBRIR a caixa: por dentro deixaria tira branca na peca"
+    assert peca["largura_m"] == pytest.approx(2.00, abs=1e-9), \
+        "a largura e a ancora: ela fecha redonda, sempre"
+    assert peca["altura_m"] == pytest.approx(2.00 / 1.99, rel=1e-6), \
+        "o comprimento e o que a proporcao da arte der"
+    assert peca["largura_m"] / peca["altura_m"] == pytest.approx(1.990 / 1.00, rel=1e-6), \
+        "um fator so pros dois lados: arte esticada e arte mexida"
 
 
-def test_quem_decide_e_quanto_sobra_em_MILIMETROS_nao_a_porcentagem():
+def test_quem_decide_e_quanto_sai_fora_em_MILIMETROS_nao_a_porcentagem():
     """
-    A regua mudou em 04/10/2026, e quem a mudou foi arte REAL dele: oito
-    lonas da LOJINHA tinham TODAS as medidas exatamente +0,7 mm acima do
-    nome -- offset constante da exportacao, nao erro de proporcao. Em
-    porcentagem, a peca mais estreita dava 1,5% e era recusada; em
-    milimetros, a sobra era de 3 mm por lado, dentro dos 25 mm de folga.
-    A regua errada recusava arte boa.
+    A regua e em MILIMETROS, e quem a mudou foi arte REAL dele
+    (04/10/2026): oito lonas da LOJINHA tinham TODAS as medidas
+    exatamente +0,7 mm acima do nome -- offset constante da exportacao,
+    nao erro de proporcao. Em porcentagem a peca mais estreita dava 1,5%
+    e era recusada. A regua errada recusava arte boa.
     """
-    # a peca de 0,40 x 3,00 com o arquivo em 1:10 mais 0,7 mm: 1,5% de
-    # desvio, 3 mm aparados -- ENTRA
+    # a peca de 0,40 x 3,00 com o arquivo em 1:10 mais 0,7 mm: a largura
+    # fecha em 0,40 e o comprimento cai 45 mm -- ENTRA
     ajuste = montagem.ajuste_para((0.40, 3.00), (0.0407, 0.3007, 1))
     assert ajuste["acao"] == "escalar"
-    assert "3 mm aparados" in ajuste["motivo"]
+    assert "-45 mm" in ajuste["motivo"], "o motivo tem que dizer QUANTO o comprimento andou"
 
-    # o MESMO 1,5% numa peca dez vezes maior ja nao cabe na folga
+    # a MESMA proporcao numa peca dez vezes maior tira quase meio metro
     assert montagem.ajuste_para((4.00, 30.00), (0.407, 3.007, 1))["acao"] == "recusar"
 
     # mesma proporcao, 1% maior nos dois lados: escala uniforme resolve
-    assert montagem.ajuste_para((2.00, 1.00), (2.02, 1.01, 1))["acao"] == "escalar"
+    # e o comprimento nem se mexe
+    ajuste = montagem.ajuste_para((2.00, 1.00), (2.02, 1.01, 1))
+    assert ajuste["acao"] == "escalar"
+    assert "comprimento" not in ajuste["motivo"], \
+        "sem diferenca nenhuma, nao ha o que avisar"
 
 
 def test_peca_maior_que_a_bobina_nao_some_calada(pasta):
@@ -690,51 +727,43 @@ def test_a_meia_folga_continua_mandando_onde_o_rotulo_fica(pasta):
         assert bloco.y0 >= (y - montagem.RECUO_CORTE_M) * PT_M - 1,             "o rotulo passou da meia-folga e sairia com a peca de cima"
 
 
-def test_a_proporcao_desenhada_e_a_do_ARQUIVO_nao_a_da_caixa(pasta):
+def test_a_peca_guarda_as_DUAS_medidas_quando_elas_diferem(pasta):
     """
-    O defeito que isto pega: passar a medida do NOME pra conta de cobrir
-    a torna um no-op (ela devolve a propria caixa), e a arte com
-    proporcao um tiquinho diferente entra encaixada POR DENTRO, deixando
-    tira branca na peca.
+    Numero deduzido nunca se passa por declarado: quando o comprimento
+    sai diferente do que o nome diz, a peca carrega os dois valores e o
+    JSON ao lado escreve os dois.
     """
-    # o nome pede 2,00 x 1,00 (proporcao 2,000); o arquivo tem 1,992 x 1,00
     arte(pasta, "1UN LONA IMPRESSA 2.00X1.00M_VIBRA_PAINEL.pdf", 1.992, 1.00)
 
-    pecas, recusadas = montagem.pecas_da_pasta(pasta)
-    assert not recusadas and pecas[0]["ajuste"]["acao"] == "escalar"
+    resultado = montagem.montar_pasta(pasta, raiz_clientes=pasta.parent / "x")
+    ficha = json.loads(resultado["folhas"][0]["arquivo"].with_suffix(".json").read_text(
+        encoding="utf-8"))
+    peca = ficha["pecas"][0]
 
-    import pymupdf as mupdf
-
-    caixa = mupdf.Rect(0, 0, 2.00 * PT_M, 1.00 * PT_M)
-    arquivo_l, arquivo_a = pecas[0]["arquivo_m"]
-    onde = montagem._caixa_que_a_arte_cobre(caixa, arquivo_l, arquivo_a, mupdf)
-
-    assert onde.width / onde.height == pytest.approx(arquivo_l / arquivo_a, rel=1e-6), \
-        "a proporcao desenhada tem que ser a do ARQUIVO"
-    assert onde != caixa, "se devolveu a propria caixa, a conta virou no-op de novo"
-    assert onde.width >= caixa.width - 0.01 and onde.height >= caixa.height - 0.01, \
-        "a arte tem que COBRIR a caixa: por dentro deixaria tira branca na peca"
+    assert peca["medida_m"][0] == 2.00, "a largura e a do nome"
+    assert peca["medida_m"][1] == pytest.approx(2.00 / 1.992, abs=0.0006)
+    assert peca["medida_do_nome_m"] == [2.00, 1.00], \
+        "o que o nome pedia tem que continuar escrito, senao a prova esconde a diferenca"
 
 
-def test_nada_que_passa_apara_mais_que_a_folga_de_corte():
+def test_nada_e_aparado_a_largura_fecha_e_a_arte_entra_inteira():
     """
-    Cobrir faz a arte passar das marcas, e esse "passar" nao pode invadir
-    a peca vizinha. Agora e a propria REGRA que garante: o limite de
-    aceitacao E a folga de corte, entao o que entra nunca a estoura.
+    A ancora na largura (05/10/2026) acabou com o recorte: antes a arte
+    era cortada no centro pra fechar as duas medidas, e isso comia
+    beirada. Agora o fator sai da largura e NADA e descartado.
     """
-    assert montagem.SOBRA_MAXIMA_M == montagem.RECUO_CORTE_M, \
-        "o limite de aceitacao e a folga de corte: sao a mesma coisa, de proposito"
-
     for alvo, arquivo in (((1.00, 1.00), (0.98, 1.00)),
                           ((3.77, 3.15), (3.70, 3.15)),
+                          ((0.40, 3.00), (0.0407, 0.3007)),
                           ((7.14, 1.10), (0.714, 0.1105))):
         ajuste = montagem.ajuste_para(alvo, (arquivo[0], arquivo[1], 1))
-        if ajuste["acao"] != "escalar":
+        if ajuste["acao"] not in ("escalar", "girar", "igual"):
             continue
-        fator = ajuste["fator"]
-        sobra = max(arquivo[0] * fator - alvo[0], arquivo[1] * fator - alvo[1]) / 2
-        assert sobra <= montagem.RECUO_CORTE_M + 0.0005, \
-            f"{alvo}: sobra {sobra * 1000:.1f} mm por lado"
+        w, h = arquivo
+        if ajuste["girar"]:
+            w, h = h, w
+        assert w * ajuste["fator"] == pytest.approx(alvo[0], abs=0.0006), \
+            f"{alvo}: a largura TEM que fechar redonda, e a ancora"
 
 
 def test_o_resto_do_sistema_tambem_nao_estica():
@@ -910,3 +939,136 @@ def test_a_largura_da_docan_fecha_5_metros_redondos_de_arte():
     margem = montagem.margem("DOCAN R5200")
 
     assert round(largura - 2 * margem, 2) == 5.00
+
+
+# ---------- a peca sai do tamanho EXATO que o nome pede ----------
+#
+# Ele, 04/10/2026, olhando a primeira folha: *"As medidas tbm nao esta
+# precisa conforme a arte"*. Estava certo -- a arte COBRIA a caixa e
+# passava dela, com erro de -13 a +14,5 mm. Hoje a arte entra em
+# cover+CLIP: enche a caixa sem esticar e o excedente e RECORTADO.
+
+
+def test_a_peca_ocupa_no_PDF_a_largura_do_nome_ate_o_decimo_de_milimetro(pasta):
+    """
+    A conferencia que vale e a GEOMETRICA, nunca a varredura de cor: arte
+    com faixa branca na propria borda faz o scanner de pixel acusar erro
+    que nao existe (foi o que me custou uma rodada em 05/10/2026, lendo
+    +9,7 mm que eram o texto preto do rotulo).
+
+    Aqui a arte vem 2% fora de proporcao -- dentro da tolerancia, entao
+    ela entra -- e o que tem que fechar redondo no PDF e a LARGURA.
+    """
+    arte(pasta, "1UN LONA IMPRESSA 1.00X0.50M_VIBRA_PECA.pdf", 1.02, 0.50)
+
+    resultado = montagem.montar_pasta(pasta, raiz_clientes=pasta.parent / "x")
+    folha = resultado["folhas"][0]["arquivo"]
+    ficha = json.loads(folha.with_suffix(".json").read_text(encoding="utf-8"))
+    peca = ficha["pecas"][0]
+
+    largura, altura = peca["medida_m"]
+    if peca["girada"]:
+        largura, altura = altura, largura
+
+    with pymupdf.open(str(folha)) as doc:
+        pagina = doc.load_page(0)
+        alto = pagina.rect.height
+        # get_xobjects devolve a DEFINICAO junto com a colocacao: a que
+        # vale e a que esta na posicao da peca. E a caixa vem em
+        # coordenada de PDF, de baixo pra cima.
+        postas = [pymupdf.Rect(item[3]) for item in pagina.get_xobjects()
+                  if item[2] == 0]
+        assert len(postas) == 1
+        caixa = postas[0]
+
+    assert caixa.width / PT_M == pytest.approx(largura, abs=0.0001), \
+        "a peca nao saiu com a largura que o nome pede"
+    assert caixa.height / PT_M == pytest.approx(altura, abs=0.0006), \
+        "o desenho tem que bater com o comprimento que o JSON declara"
+    assert altura == pytest.approx(1.00 * 0.50 / 1.02, abs=0.0006), \
+        "o comprimento e o da proporcao da arte, nao o do nome"
+    assert (alto - caixa.y1) / PT_M == pytest.approx(peca["posicao_m"][1], abs=0.0006)
+    assert caixa.x0 / PT_M == pytest.approx(peca["posicao_m"][0], abs=0.0006)
+
+
+def test_o_rotulo_mede_300mm_e_nunca_estoura_a_meia_folga():
+    """
+    Pedido dele de 04/10/2026: *"os nomes precisa ficar todos com 300mm
+    de largura"*. A letra nao e escolhida, e CALCULADA pra isso -- entao
+    o que se confere e a LARGURA DO TEXTO, nao o corpo da letra.
+
+    E 300 mm e TETO tambem: passar disso quebra a linha no insert_textbox
+    e o nome sai cortado. Por isso o tamanho arredonda pra baixo.
+    """
+    doc = pymupdf.open()
+    pagina = doc.new_page(width=5.04 * PT_M, height=1.0 * PT_M)
+
+    nomes = [
+        "01  1UN LONA IMPRESSA_0.40x3.00m_LONA_16_0,10x2,70m_loja_de_incoveniencia_vibra_sangria15cm",
+        "02  1UN LONA IMPRESSA 2.12X3.20M_VIBRA_LATERAL_ESQUERDA",
+    ]
+    for i, nome in enumerate(nomes):
+        corpo, escrito = montagem._escrever_rotulo(
+            pagina, 0.02 * PT_M, (0.3 + i * 0.2) * PT_M, 0.45, nome, pymupdf,
+            montagem.RECUO_CORTE_M - 0.001)
+        assert escrito == nome, "nome comprido nao pode sair cortado: encolhe a letra"
+        largura = pymupdf.get_text_length(escrito, fontname="hebo",
+                                          fontsize=corpo / 1000 * PT_M) / PT_M
+        assert largura <= montagem.ROTULO_LARGURA_M + 0.0005, \
+            f"o rotulo passou de 300 mm ({largura * 1000:.1f} mm): a linha quebra"
+        assert largura >= montagem.ROTULO_LARGURA_M - 0.005, \
+            f"o rotulo saiu com {largura * 1000:.1f} mm em vez de 300"
+        assert corpo / 1000 * 1.8 <= montagem.RECUO_CORTE_M, \
+            "letra mais alta que a meia-folga sai junto com a peca de cima no refile"
+    doc.close()
+
+
+def test_nome_curto_para_na_meia_folga_em_vez_de_virar_letra_gigante():
+    """
+    O limite honesto dos 300 mm: num nome CURTO, a letra que mediria
+    300 mm teria 7 cm de altura e invadiria a peca de cima. Entao o teto
+    ganha e o rotulo sai mais estreito -- com letra MAIOR, que e o que
+    ele pediu de verdade ("a informacao visivel na hora da impressao").
+    """
+    doc = pymupdf.open()
+    pagina = doc.new_page(width=5.04 * PT_M, height=1.0 * PT_M)
+
+    corpo, escrito = montagem._escrever_rotulo(
+        pagina, 0.02 * PT_M, 0.5 * PT_M, 0.45, "07  PECA", pymupdf,
+        montagem.RECUO_CORTE_M - 0.001)
+
+    assert escrito == "07  PECA"
+    assert corpo / 1000 * 1.8 <= montagem.RECUO_CORTE_M
+    largura = pymupdf.get_text_length(escrito, fontname="hebo",
+                                      fontsize=corpo / 1000 * PT_M) / PT_M
+    assert largura < montagem.ROTULO_LARGURA_M, \
+        "nome curto a 300 mm daria letra de 7 cm, mais alta que a folga inteira"
+    doc.close()
+
+
+def test_o_nome_da_folha_diz_o_QUE_A_PAGINA_MEDE(pasta):
+    """
+    O nome do arquivo e o banco de dados do sistema: m2, escolha de
+    maquina e baixa de estoque saem dele. Enquanto o comprimento era
+    calculado em dois lugares, o nome dizia 6,45 m numa folha de 6,52 --
+    7 cm de lona por folha saindo do rolo sem aparecer em lugar nenhum.
+    """
+    for i in range(3):
+        arte(pasta, f"1UN LONA IMPRESSA 2.40X1.60M_VIBRA_PECA_{i}.pdf", 2.40, 1.60)
+
+    resultado = montagem.montar_pasta(pasta, raiz_clientes=pasta.parent / "x")
+    folha = resultado["folhas"][0]["arquivo"]
+    ficha = json.loads(folha.with_suffix(".json").read_text(encoding="utf-8"))
+
+    with pymupdf.open(str(folha)) as doc:
+        pagina_m = (doc.load_page(0).rect.width / PT_M,
+                    doc.load_page(0).rect.height / PT_M)
+
+    import dimensoes
+
+    medida = dimensoes.extrair_dimensoes(folha.name)
+    assert medida is not None, "o nome da folha tem que trazer medida: e por ela que tudo conta"
+    assert medida["largura_m"] == pytest.approx(pagina_m[0], abs=0.006)
+    assert medida["altura_m"] == pytest.approx(pagina_m[1], abs=0.006), \
+        "o nome declara menos material do que a folha gasta"
+    assert ficha["folha_m"][1] == pytest.approx(pagina_m[1], abs=0.0006)

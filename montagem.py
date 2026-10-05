@@ -77,7 +77,10 @@ NOME_SUBPASTA_PROBLEMAS = "_conferir"
 # podemos fazer anotação com nome do arquivo", 04/10/2026).
 FOLGA_M = 0.05            # entre peças: passa a lâmina E leva o nome
 MARGEM_M = 0.02           # a borda LATERAL da folha, que ninguém usa
-ROTULO_LARGURA_M = 0.20   # largura MÍNIMA reservada pro nome
+# O rótulo tem 300 mm de largura, SEMPRE (ele, 04/10/2026: *"os nomes
+# precisa ficar todos com 300mm de largura"*). É também a largura mínima
+# que cada peça reserva no encaixe, pra o rótulo nunca invadir a vizinha.
+ROTULO_LARGURA_M = 0.30
 # O tamanho da letra do rótulo, em milímetros. Era "o maior que couber",
 # e numa peça larga isso dava 20 mm — letra de 2 cm de altura, que ele
 # recusou em 04/10/2026: *"não quero os nomes grandes"*. 10 mm lê de pé,
@@ -108,9 +111,14 @@ TOLERANCIA_MEDIDA_M = 0.005
 # Isso veio de arte real (04/10/2026). Oito lonas da LOJINHA tinham TODAS
 # as medidas exatamente +0,7 mm acima do nome — offset constante da
 # exportação, não erro de proporção. Em porcentagem a peça mais estreita
-# dava 1,5% de desvio e era recusada; em milímetros, a sobra era de 3 mm
-# por lado, dentro dos 25 mm de folga. A régua errada recusava arte boa.
-SOBRA_MAXIMA_M = 0.025
+# dava 1,5% de desvio e era recusada; em milímetros, a diferença era de
+# 7 mm no lado. A régua errada recusava arte boa.
+#
+# O limite é no COMPRIMENTO porque é lá que a diferença cai: a largura é
+# âncora e fecha sempre (regra dele, 05/10/2026). E ele é generoso de
+# propósito — nada mais é cortado, então o que sobra é material, não
+# arte perdida; quem recusa arte trocada é a trava relativa logo abaixo.
+DIFERENCA_MAXIMA_M = 0.10
 # E uma trava de bom senso por cima, pra peça pequena: 5% de desvio ainda
 # é a mesma arte exportada torta; mais que isso é OUTRA arte, e aí o
 # problema é o nome ou o arquivo, não o encaixe.
@@ -183,12 +191,26 @@ def _config(nome_maquina, maquinas=None):
 
 
 def largura_util(nome_maquina, maquinas=None):
-    """A largura útil da máquina, em metros — de MAQUINAS, nunca escrita aqui."""
+    """
+    A largura com que a folha MONTADA fecha, em metros.
+
+    Não é a mesma coisa que a largura útil da máquina, e ele separou as
+    duas em 05/10/2026: *"quando fechar a arte não vai poder passar de
+    5 metros na largura; a folga de 2 cm de cada lado eu coloco
+    manualmente na máquina na hora da impressão. Todo fechamento deve ter
+    5 metros de largura na DOCAN e na SWJ 320 cm de largura — eu me
+    preocupo com a folga"*.
+
+    Então `largura_montagem_m` é o número REDONDO que ele quer fechar
+    (5,00 e 3,20) e `largura_util_m` continua sendo o que a máquina
+    consegue imprimir, que é quem responde "cabe?" lá no vigia. Sem o
+    campo, vale a largura da máquina.
+    """
     maquinas = MAQUINAS if maquinas is None else maquinas
     config = maquinas.get(nome_maquina)
     if config is None:
         return None
-    return _config_maquina(config)[1]
+    return config.get("largura_montagem_m") or _config_maquina(config)[1]
 
 
 def mesa(nome_maquina, maquinas=None):
@@ -201,8 +223,11 @@ def margem(nome_maquina, maquinas=None):
     """
     A borda de branco que esta máquina pede, em metros.
 
-    Vem do cadastro porque ele deu uma por máquina (04/10/2026): 2 cm nas
-    DOCAN, 3 cm na UJV, 5 cm na SWJ. Sem cadastro, MARGEM_M.
+    Vem do cadastro porque ele deu uma por máquina. Nas duas que montam
+    ela é ZERO desde 05/10/2026: *"a folga de 2 cm de cada lado eu
+    coloco manualmente na máquina na hora da impressão... eu me preocupo
+    com a folga"*. A folha fecha redonda e quem dá a folga é ele, na
+    máquina — borda desenhada aqui viraria folga DUAS vezes.
     """
     return _config(nome_maquina, maquinas).get("margem_montagem_m", MARGEM_M)
 
@@ -279,31 +304,46 @@ def ajuste_para(alvo, atual):
             return {"acao": "girar" if girar else "igual", "girar": girar,
                     "fator": 1.0, "motivo": ""}
 
-    # A arte entra com escala UNIFORME e cobrindo a caixa, então a
-    # pergunta não é "a proporção bate?" e sim "o que sobra cabe na folga
-    # de corte?". Fica com a orientação que apara menos.
+    # A ÂNCORA É A LARGURA. Regra dele de 05/10/2026: *"sabemos que
+    # algumas artes vai dar diferença, então sempre que redimensionar
+    # crie um padrão que deve ser pela largura, ou seja, a largura vai
+    # bater sempre que redimensionar na proporção"*.
+    #
+    # Então o fator sai da LARGURA e a altura é o que a proporção da arte
+    # der. Nada é esticado e nada é cortado: a largura fecha redonda — é
+    # ela que divide a bobina e decide o encaixe — e a diferença, quando
+    # existe, aparece no COMPRIMENTO, que no rolo é o lado que anda.
+    #
+    # Antes disso a arte era recortada no centro pra fechar as duas
+    # medidas. Fechava, mas comia beirada de arte pra isso; com a âncora
+    # na largura o arquivo chega inteiro na folha.
+    #
+    # Fica com a orientação cujo comprimento chega mais perto do nome.
     melhor = None
     for girar, (w, h) in ((False, (largura, altura)), (True, (altura, largura))):
-        fator_w, fator_h = largura_alvo / w, altura_alvo / h
-        fator = max(fator_w, fator_h)
-        sobra = max(w * fator - largura_alvo, h * fator - altura_alvo) / 2
-        desvio = abs(fator_w / fator_h - 1)
-        if melhor is None or sobra < melhor[0]:
-            melhor = (sobra, desvio, girar, fator)
+        fator = largura_alvo / w
+        diferenca = h * fator - altura_alvo
+        relativa = abs(diferenca) / altura_alvo if altura_alvo else 1.0
+        if melhor is None or abs(diferenca) < abs(melhor[0]):
+            melhor = (diferenca, relativa, girar, fator)
 
-    sobra, desvio, girar, fator = melhor
-    if sobra <= SOBRA_MAXIMA_M and desvio <= TOLERANCIA_PROPORCAO:
+    diferenca, relativa, girar, fator = melhor
+    if abs(diferenca) <= DIFERENCA_MAXIMA_M and relativa <= TOLERANCIA_PROPORCAO:
         # arredondado: 9,999999805 é 10x, e número feio num documento de
         # produção faz quem lê duvidar do resto
+        motivo = (f"arquivo {largura:.3f} x {altura:.3f} m ajustado {fator:.2f}x pela "
+                  f"LARGURA do nome")
+        if abs(diferenca) >= 0.001:
+            motivo += f"; o comprimento saiu {diferenca * 1000:+.0f} mm do que o nome diz"
         return {"acao": "escalar", "girar": girar, "fator": round(fator, 3),
-                "motivo": f"arquivo {largura:.3f} x {altura:.3f} m ajustado {fator:.2f}x pro "
-                          f"tamanho do nome ({sobra * 1000:.0f} mm aparados por lado)"}
+                "motivo": motivo}
 
     return {"acao": "recusar", "girar": False, "fator": None,
             "motivo": f"o arquivo tem {largura:.2f} x {altura:.2f} m e o nome pede "
-                      f"{largura_alvo:.2f} x {altura_alvo:.2f} m — pondo no tamanho do nome sem "
-                      f"deformar, sobrariam {sobra * 1000:.0f} mm por lado (o limite é "
-                      f"{SOBRA_MAXIMA_M * 1000:.0f} mm, a folga de corte). Confira a arte ou o nome"}
+                      f"{largura_alvo:.2f} x {altura_alvo:.2f} m — pondo na LARGURA do nome sem "
+                      f"deformar, o comprimento sai {diferenca * 1000:+.0f} mm fora (o limite é "
+                      f"{DIFERENCA_MAXIMA_M * 1000:.0f} mm, ou {TOLERANCIA_PROPORCAO:.0%}). "
+                      f"Confira a arte ou o nome"}
 
 
 # --- juntar tudo o que a pasta tem ---------------------------------
@@ -354,16 +394,27 @@ def pecas_da_pasta(pasta, config=None, maquinas=None):
                               "motivo": "não reconheci o material no nome — ele escolhe a bobina"})
             continue
 
+        # A MEDIDA REAL DA PEÇA: largura do nome (a âncora, que fecha
+        # sempre) e comprimento pela proporção da arte. Guardar a medida
+        # do NOME aqui faria o encaixe reservar espaço que a peça não
+        # ocupa — ou, pior, menos do que ela ocupa, e aí a peça de baixo
+        # entraria por cima dela.
+        largura_peca, altura_peca = alvo
+        w_arte, h_arte = atual[0], atual[1]
+        if ajuste["girar"]:
+            w_arte, h_arte = h_arte, w_arte
+        if w_arte > 0:
+            altura_peca = largura_peca * h_arte / w_arte
+
         for pagina in range(atual[2]):
             for copia in range(int(quantidade)):
                 pecas.append({
                     "arquivo": arquivo, "nome": arquivo.name, "pagina": pagina,
-                    "largura_m": alvo[0], "altura_m": alvo[1],
-                    # a medida do ARQUIVO, não a do nome: é dela que sai a
-                    # PROPORÇÃO na hora de desenhar. Sem guardá-la, quem
-                    # desenha só tem a medida do nome e não tem como
-                    # manter a proporção da arte (defeito de 04/10/2026)
-                    "arquivo_m": (atual[0], atual[1]),
+                    "largura_m": largura_peca, "altura_m": altura_peca,
+                    # o que o NOME pede, pro documento poder dizer as duas
+                    # coisas quando elas diferem — número deduzido nunca
+                    # se passa por declarado
+                    "nome_m": (alvo[0], alvo[1]),
                     "quantidade": int(quantidade), "copia": copia + 1,
                     "categoria": categoria, "ajuste": ajuste,
                 })
@@ -500,10 +551,24 @@ def _escrever_rotulo(pagina, x0_pt, base_pt, largura_m, texto, pymupdf,
     apareceram ampliando a prévia; por isso aqui ele ESTOURA em vez de
     deixar a peça sem identificação.
     """
-    # começa no tamanho PEDIDO e só desce: o rótulo não cresce porque a
-    # peça é larga. "Não quero os nomes grandes" (ele, 04/10/2026).
-    tamanhos = tuple(mm for mm in (20, 18, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5)
-                     if mm <= ROTULO_LETRA_MM) or (5,)
+    # O RÓTULO TEM 300 mm DE LARGURA, SEMPRE (ele, 04/10/2026: *"os nomes
+    # precisa ficar todos com 300mm de largura... preciso só que a
+    # informação seja visível na hora da impressão"*).
+    #
+    # Então a letra não é escolhida, é CALCULADA: o tamanho que faz este
+    # texto medir 300 mm. Nome comprido sai com letra menor, nome curto
+    # com letra maior, e toda etiqueta ocupa a mesma faixa. O teto é a
+    # altura disponível — letra que não cabe na meia-folga sairia junto
+    # com a peça de cima no refile.
+    largura_1pt = pymupdf.get_text_length(texto, fontname="hebo", fontsize=1)
+    if largura_1pt > 0:
+        pedido = ROTULO_LARGURA_M * PT_M / largura_1pt / PT_M * 1000   # em mm
+        teto = (altura_max_m if altura_max_m is not None else RECUO_CORTE_M) / 1.8 * 1000
+        # arredonda pra BAIXO: 0,05 mm de letra a mais estoura os 300 mm,
+        # o insert_textbox quebra a linha e aí o nome sai CORTADO
+        tamanhos = (max(1.0, int(min(pedido, teto) * 100) / 100),)
+    else:
+        tamanhos = (ROTULO_LETRA_MM,)
 
     def tentar(milimetros, conteudo):
         # 1,8x a letra, medido: o insert_textbox precisa da linha MAIS o
@@ -570,25 +635,32 @@ def posicao_na_folha(posta, margem_m=None, deslocamento_m=None):
     return x + margem_m, y + deslocamento_m + margem_m + (reservada_a - altura)
 
 
-def _caixa_que_a_arte_cobre(caixa, largura_arte, altura_arte, pymupdf):
+def colocar_arte(pagina, caixa, arquivo, numero_pagina, girar, pymupdf):
     """
-    O retângulo a passar pro PyMuPDF pra arte COBRIR a caixa sem ser
-    esticada, centrada nela.
+    Põe a arte INTEIRA na caixa, com escala uniforme.
 
-    A escala é uniforme — um fator só pros dois lados —, então a arte
-    nunca deforma: "as artes não podem ser mexidas em absolutamente nada"
-    (regra dele, 04/10/2026). Quando a proporção do arquivo difere um
-    tiquinho da do nome (até TOLERANCIA_PROPORCAO), o que sobra passa das
-    marcas de corte e sai no refile, que é o destino dele de qualquer
-    jeito. Encaixar POR DENTRO deixaria uma tira branca na peça.
+    Não há recorte nenhum: a caixa já nasce com a proporção da arte,
+    porque a largura é a do nome e o comprimento veio dessa proporção
+    (`pecas_da_pasta`). Então `keep_proportion` preenche a caixa exata
+    sem esticar e sem deixar tira branca.
+
+    Imagem vira PDF antes (`convert_to_pdf`), pra PDF e imagem seguirem o
+    mesmo caminho — dois caminhos diferentes pra mesma regra é como a
+    medida de um deles sai errada sem ninguém ver.
     """
-    if largura_arte <= 0 or altura_arte <= 0:
-        return caixa
-    fator = max(caixa.width / largura_arte, caixa.height / altura_arte)
-    largura, altura = largura_arte * fator, altura_arte * fator
-    meio_x, meio_y = (caixa.x0 + caixa.x1) / 2, (caixa.y0 + caixa.y1) / 2
-    return pymupdf.Rect(meio_x - largura / 2, meio_y - altura / 2,
-                        meio_x + largura / 2, meio_y + altura / 2)
+    arquivo = pathlib.Path(arquivo)
+    if arquivo.suffix.lower() in IMAGENS:
+        with pymupdf.open(str(arquivo)) as imagem:
+            bytes_pdf = imagem.convert_to_pdf()
+        origem = pymupdf.open("pdf", bytes_pdf)
+        numero_pagina = 0
+    else:
+        origem = pymupdf.open(str(arquivo))
+    try:
+        pagina.show_pdf_page(caixa, origem, numero_pagina,
+                             rotate=girar, keep_proportion=True)
+    finally:
+        origem.close()
 
 
 def encaixar_na_mesa(pecas, mesa_m, margem_m=None):
@@ -627,6 +699,20 @@ def encaixar_na_mesa(pecas, mesa_m, margem_m=None):
     return saida
 
 
+def comprimento_da_folha(comprimento_m, margem_m):
+    """
+    O comprimento da folha IMPRESSA: o encaixe, mais o cabeçalho, mais a
+    margem de baixo e a folga.
+
+    Fonte única de propósito. É esta medida que vai no NOME do arquivo, e
+    é pelo nome que o m², a escolha de máquina e a baixa de estoque
+    contam — enquanto ela era calculada em dois lugares, o nome dizia
+    6,45 m numa folha de 6,52 m, e 7 cm de lona saíam do rolo por folha
+    sem aparecer em lugar nenhum.
+    """
+    return comprimento_m + CABECALHO_M + margem_m + FOLGA_M
+
+
 def desenhar(pecas, postas, comprimento_m, largura_util_m, titulo, margem_m=None):
     """
     A folha pronta: cada arte no tamanho do NOME, o nome no canto
@@ -644,7 +730,7 @@ def desenhar(pecas, postas, comprimento_m, largura_util_m, titulo, margem_m=None
     # 2,5 cm abaixo disso
     pagina = doc.new_page(
         width=largura_util_m * PT_M,
-        height=(comprimento_m + CABECALHO_M + margem_m + FOLGA_M) * PT_M)
+        height=comprimento_da_folha(comprimento_m, margem_m) * PT_M)
     pagina.draw_rect(pagina.rect, color=None, fill=(1, 1, 1))
 
     for numero, posta in enumerate(postas, start=1):
@@ -682,22 +768,10 @@ def _desenhar_peca(pagina, pecas, posta, numero, margem_m, largura_pagina_m,
         # arquivo de origem: o PDF entra por referência e a imagem é
         # embutida como está.
         arquivo = peca["arquivo"]
-        # A PROPORÇÃO é a do ARQUIVO, nunca a da caixa. Passar a medida do
-        # nome aqui (que foi o que eu fiz primeiro) torna a conta um
-        # no-op: ela devolve a própria caixa, e a arte com proporção um
-        # tiquinho diferente entra encaixada POR DENTRO, deixando tira
-        # branca na peça. Girada, a proporção inverte junto.
-        arquivo_l, arquivo_a = peca["arquivo_m"]
-        if girar:
-            arquivo_l, arquivo_a = arquivo_a, arquivo_l
-        onde = _caixa_que_a_arte_cobre(caixa, arquivo_l, arquivo_a, pymupdf)
-        if arquivo.suffix.lower() in IMAGENS:
-            pagina.insert_image(onde, filename=str(arquivo), rotate=girar,
-                                keep_proportion=True)
-        else:
-            with pymupdf.open(str(arquivo)) as origem:
-                pagina.show_pdf_page(onde, origem, peca["pagina"], rotate=girar,
-                                     keep_proportion=True)
+        # A arte entra INTEIRA e preenche a caixa exata: a caixa já tem a
+        # proporção dela (largura do nome, comprimento pela proporção da
+        # arte), então não há o que recortar nem o que esticar.
+        colocar_arte(pagina, caixa, arquivo, peca["pagina"], girar, pymupdf)
 
         # SEM MARCA DE CORTE: ele tirou em 04/10/2026, olhando a primeira
         # folha com elas. A folga de 5 cm entre as peças já diz onde a
@@ -836,9 +910,10 @@ def montar_pasta(pasta, nome_maquina=None, config=None, maquinas=None, logger=No
         if not postas:
             continue
         area_pecas = sum(p["largura_m"] * p["altura_m"] for p in do_material)
-        area_folha = (chapa[0] * chapa[1] * len(paginas)) if chapa else largura * comprimento
+        folha_m = chapa[1] if chapa else comprimento_da_folha(comprimento, margem_m)
+        area_folha = (chapa[0] * chapa[1] * len(paginas)) if chapa else largura * folha_m
         tamanho = (f"{len(paginas)} chapa(s) de {chapa[0]:.2f} x {chapa[1]:.2f} m"
-                   if chapa else f"{largura:.2f} x {comprimento:.2f} m")
+                   if chapa else f"{largura:.2f} x {folha_m:.2f} m")
         titulo = (f"MONTAGEM  ·  {cliente or 'SEM CLIENTE NO NOME'}  ·  {categoria}  ·  "
                   f"{len(postas)} pecas  ·  {tamanho}  ·  "
                   f"aproveitamento {area_pecas / area_folha * 100:.0f}%  ·  "
@@ -851,8 +926,11 @@ def montar_pasta(pasta, nome_maquina=None, config=None, maquinas=None, logger=No
             destino = pasta / nome_da_folha(cliente, categoria, chapa[0], chapa[1],
                                             len(postas), quando, len(paginas))
         else:
+            # O comprimento do NOME é o da folha que vai ser IMPRESSA, o
+            # mesmo que a página tem — é por ele que o m², a escolha de
+            # máquina e a baixa de estoque contam.
             destino = pasta / nome_da_folha(cliente, categoria, largura,
-                                            comprimento + CABECALHO_M, len(postas), quando)
+                                            folha_m, len(postas), quando)
         doc.save(str(destino), garbage=4, deflate=True)
         doc.close()
 
@@ -863,15 +941,23 @@ def montar_pasta(pasta, nome_maquina=None, config=None, maquinas=None, logger=No
             "quando": quando.strftime("%Y-%m-%dT%H:%M:%S"),
             "cliente": cliente, "maquina": nome_maquina, "categoria": categoria,
             "folha_m": ([round(chapa[0], 3), round(chapa[1], 3)] if chapa
-                        else [round(largura, 3), round(comprimento + CABECALHO_M, 3)]),
+                        else [round(largura, 3), round(folha_m, 3)]),
             "chapas": len(paginas) if chapa else None,
             "area_folha_m2": round(area_folha, 3), "area_pecas_m2": round(area_pecas, 3),
             "folga_m": FOLGA_M, "margem_m": margem_m,
             "pecas": [{
                 "numero": numero, "arquivo": do_material[i]["nome"],
                 "pagina": do_material[i]["pagina"],
+                # a medida REAL da peça na folha: largura do nome,
+                # comprimento pela proporção da arte
                 "medida_m": [round(do_material[i]["largura_m"], 3),
                              round(do_material[i]["altura_m"], 3)],
+                # e o que o nome pedia, quando não é a mesma coisa —
+                # número deduzido nunca se passa por declarado
+                "medida_do_nome_m": (
+                    [round(v, 3) for v in do_material[i]["nome_m"]]
+                    if abs(do_material[i]["nome_m"][1]
+                           - do_material[i]["altura_m"]) >= 0.001 else None),
                 "posicao_m": [round(v, 3) for v in
                               posicao_na_folha(posta, margem_m, 0.0 if chapa else None)],
                 "girada": girada,

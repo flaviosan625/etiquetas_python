@@ -1664,21 +1664,31 @@ def test_posto_e_lido_das_duas_formas_de_escrever():
     assert rl_hf.posto_pedido(["x.py", "--posto=SAI"]) == rl_hf.POSTO_SAI
 
 
-def test_docan_esta_cadastrada_com_os_5_04_que_fecham_5_00_de_arte():
+def test_a_docan_imprime_5_04_e_a_montagem_FECHA_em_5_00():
     """
-    5,04 m, escolha dele no fim de 04/10/2026: "a maquina DOCAN pode
-    mudar para 504cm de largura; com isso, descontando os 2 cm de cada
-    lado de folga, os arquivos finais ficam com 500cm de largura".
+    Sao DOIS numeros, e ele separou os dois em 05/10/2026: *"quando
+    fechar a arte nao vai poder passar de 5 metros na largura; a folga de
+    2 cm de cada lado eu coloco manualmente na maquina na hora da
+    impressao"*.
 
-    E numero de TRABALHO, nao limite fisico: a maquina faz 5,20 (ele
-    corrigiu isso no mesmo dia, quando aqui estava 5,00 por leitura
-    errada minha do BYHX -- era o rolo carregado, nao o limite). Este
-    teste existe pra ninguem "corrigir" de volta olhando a tela da
-    maquina com outra bobina montada.
+    'largura_util_m' e o que a maquina imprime -- e numero de TRABALHO,
+    nao limite fisico: a maquina faz 5,20 (ele corrigiu isso em
+    04/10/2026, quando aqui estava 5,00 por leitura errada minha do BYHX
+    -- era o rolo carregado, nao o limite). Este teste existe pra ninguem
+    "corrigir" de volta olhando a tela da maquina com outra bobina.
+
+    'largura_montagem_m' e o que a FOLHA fecha, redondo, e a borda e zero
+    porque quem da a folga e ele, na maquina. Desenhar borda aqui faria
+    folga duas vezes e a arte sairia de 4,96.
     """
     hot, largura = rl_hf._config_maquina(rl_hf.MAQUINAS["DOCAN R5200"])
     assert largura == 5.04
-    assert round(largura - 2 * rl_hf.MAQUINAS["DOCAN R5200"]["margem_montagem_m"], 2) == 5.00,         "o 5,04 so existe pra a montagem fechar em 5,00 redondos de arte"
+    for maquina, fecha in (("DOCAN R5200", 5.00), ("SWJ320A", 3.20)):
+        cadastro = rl_hf.MAQUINAS[maquina]
+        assert cadastro["largura_montagem_m"] == fecha, \
+            "o fechamento tem que ser o numero redondo que ele pediu"
+        assert cadastro["margem_montagem_m"] == 0.0, \
+            "a folga e dele, posta na maquina: borda aqui seria folga duas vezes"
     assert "SAi" in hot, "a hot folder da DOCAN e o Setup do SAi, nao uma pasta inventada"
     assert rl_hf._posto_da_maquina(rl_hf.MAQUINAS["DOCAN R5200"]) == rl_hf.POSTO_SAI
     for mimaki in ("UJV 100 UNY CV", "SWJ320A"):

@@ -244,7 +244,17 @@ mentira no dia em que a medida muda, e mudou duas vezes só nesta semana.
 **Só a DOCAN R5200 e a SWJ320A têm pasta** (decisão dele, 04/10/2026: *"deixar apenas a DOCAN 5200
 e a SWJ 320A, o restante nós fazemos manualmente"*). O interruptor é o campo `montagem` no cadastro,
 e máquina sem ele não ganha pasta — assim uma máquina nova não passa a montar sozinha sem alguém
-decidir. Cada uma com a borda que ele deu (`margem_montagem_m`): 2 cm na DOCAN, 5 cm na SWJ.
+decidir.
+
+**A folha FECHA num número redondo, e a folga é dele** (05/10/2026: *"quando fechar a arte não vai
+poder passar de 5 metros na largura; a folga de 2 cm de cada lado eu coloco manualmente na máquina na
+hora da impressão. Todo fechamento deve ter 5 metros de largura na DOCAN e na SWJ 320 cm de largura —
+eu me preocupo com a folga"*). São **dois campos diferentes** e confundi-los custa material:
+`largura_util_m` é o que a máquina imprime e é quem responde "cabe?" no vigia; `largura_montagem_m`
+é com quanto a folha fecha — 5,00 e 3,20, redondos, porque é esse número que vai no NOME e é por ele
+que o m², a escolha de máquina e a baixa de estoque contam. O `margem_montagem_m` das duas que montam
+é **zero**: desenhar borda aqui somada à que ele põe na máquina daria folga duas vezes, e a arte
+sairia de 4,96.
 
 **O código da máquina PLANA continua aqui e testado**, desligado só pelo campo: a montagem em chapas
 sai —
@@ -278,11 +288,16 @@ sairia com o nome do vizinho.
 
 **O rótulo é o NOME DO ARQUIVO, exato**, numa linha só, encostado na peça. Antes eu escrevia só o
 fim do nome, e isso mostrava a SEGUNDA medida ao lado de uma peça feita na PRIMEIRA: dizia
-`1,50x0,25m` numa peça de 1,80 × 0,55 e parecia que o tamanho estava errado quando não estava. A
-largura do rótulo é a da **própria peça**, não 20 cm fixos — nome exato é longo, e em peça larga cabe
-inteiro em vez de sair cortado. Mas a LETRA não cresce com a peça: é `ROTULO_LETRA_MM` (10 mm) e só
-encolhe dali pra baixo. Antes ela usava o maior tamanho que coubesse, e numa peça larga isso dava
-2 cm de altura — *"não quero os nomes grandes"* (ele, 04/10/2026). `_escrever_rotulo` **encolhe antes de cortar** (cortar é último recurso) e
+`1,50x0,25m` numa peça de 1,80 × 0,55 e parecia que o tamanho estava errado quando não estava.
+
+**O rótulo tem 300 mm de largura, SEMPRE** (ele, 04/10/2026: *"os nomes precisa ficar todos com 300mm
+de largura... preciso só que a informação seja visível na hora da impressão"*). Então a letra não é
+escolhida, é **calculada**: `get_text_length` do texto a 1 pt dá o corpo que faz ele medir 300 mm, e
+isso arredonda **pra baixo** — 0,05 mm de letra a mais estoura os 300, o `insert_textbox` quebra a
+linha e o nome sai cortado. Medido nas oito lonas: 299,6 a 300,0 mm. O teto é a meia-folga, e ele
+ganha em nome CURTO, onde 300 mm dariam letra de 7 cm — aí o rótulo sai mais estreito, com letra
+maior, que é o que ele pediu de verdade. Por isso a largura reservada no encaixe tem piso de 0,30 m.
+`_escrever_rotulo` **encolhe antes de cortar** (cortar é último recurso) e
 recalcula a caixa a cada tamanho, ancorada por baixo, pra o texto descer junto com a letra. Dois
 números medidos ali: o `insert_textbox` precisa de **1,8×** a letra de altura (com 1,4× ele recusava
 tudo, devolvendo negativo sem desenhar), e o teto é a meia-folga menos a folguinha de 1 mm.
@@ -302,26 +317,28 @@ número de TRABALHO: *"a máquina DOCAN pode mudar para 504cm de largura; com is
 de cada lado de folga, os arquivos finais ficam com 500cm"* — **5,04 pra a montagem fechar em 5,00
 redondos de arte**.
 
-Então hoje `largura_util_m` guarda o número de trabalho, não o físico. O que isso custa, dito de
-frente: o aviso de "não cabe" reclama de arte entre 5,04 e 5,20, que a máquina imprimiria. É aviso,
-nunca barreira ("DOCAN só entrega"), e errar pro lado conservador é o certo — querendo os dois, é
-separar a largura da MONTAGEM da largura da MÁQUINA.
+No dia seguinte ele separou as duas coisas de vez, e o 5,04 parou de ser o fechamento: hoje
+`largura_montagem_m` (5,00) é quem fecha a folha e `largura_util_m` (5,04) só responde "cabe?". O que
+o 5,04 ainda custa, dito de frente: o aviso de "não cabe" reclama de arte entre 5,04 e 5,20, que a
+máquina imprimiria. É aviso, nunca barreira ("DOCAN só entrega"), e errar pro lado conservador é o
+certo — se um dia incomodar, o número a mexer é esse, e só esse.
 
 **A lição que fica: antes de usar número de tela de máquina como limite, confira se não é a mídia do
-momento.** Travado em `test_docan_esta_cadastrada_com_os_5_04_que_fecham_5_00_de_arte`, com o motivo
-escrito, pra ninguém "corrigir" de volta olhando a tela com outra bobina montada.
+momento.** Travado em `test_a_docan_imprime_5_04_e_a_montagem_FECHA_em_5_00`, com o motivo escrito,
+pra ninguém "corrigir" de volta olhando a tela com outra bobina montada.
 
 **Os 5 cm entre peças fazem as duas coisas**: é por onde a lâmina passa no refile e é onde mora o
 nome (*"entre um arquivo e outro vamos usar espaço de 5cm, ali já podemos fazer anotação com nome do
 arquivo"*, 04/10/2026). Antes eram 1 cm de folga MAIS 5 cm de canaleta reservada à parte — juntar as
-duas gasta menos bobina, não mais. A borda da folha leva 2 cm. O rótulo é **preto, sem fundo
+duas gasta menos bobina, não mais. A borda da folha é ZERO: a folga lateral é dele, posta na
+máquina. O rótulo é **preto, sem fundo
 pintado**: a folga é sobra que vai pro lixo, e pintá-la só gastaria tinta.
 
 **A folga é reservada nos DOIS sentidos, e por isso o rótulo nunca erra de lugar.** Com
 `(largura+folga) × (altura+folga)`, girado vira `(altura+folga) × (largura+folga)`: sobra folga nos
 dois sentidos de qualquer jeito. Então a arte encosta sempre no canto de BAIXO e o nome vai sempre no
 **canto superior esquerdo** dela, como o RasterLink faz — reservar só embaixo punha o rótulo dentro
-da peça vizinha quando o encaixe girava. Na largura ainda vale o piso do rótulo (0,39 m), senão um
+da peça vizinha quando o encaixe girava. Na largura ainda vale o piso do rótulo (0,30 m), senão um
 rodapé de 0,30 m tem rótulo maior que ele; o teto é a bobina, mas **nunca abaixo da própria peça**.
 
 **O `insert_textbox` do PyMuPDF não avisa quando desiste** — devolve negativo e não desenha nada. O
@@ -336,30 +353,44 @@ pode ser esticado apenas por um lado"*). Todo lugar que põe arte numa caixa usa
 `miniaturas.encaixar` (OS, checklist, relatórios) e `processamento` (etiqueta) calculam `min()` dos
 dois lados; os demais usam o `keep_proportion` do PyMuPDF, que é o padrão. Nenhum estica.
 
-**Mas a proporção é a do ARQUIVO, nunca a da caixa.** `_caixa_que_a_arte_cobre` recebia a medida do
-NOME e virava um **no-op** — devolvia a própria caixa, e arte com proporção um tiquinho diferente
-entrava encaixada POR DENTRO, deixando tira branca na peça. Por isso a peça guarda `arquivo_m` (a
-medida medida do arquivo) e o desenho inverte os lados quando gira. Conferido medindo o PDF pronto:
-a lona em 1:10 sai com proporção 6,4909 contra 6,4909 do arquivo, erro 0,0000%.
+**A ÂNCORA É A LARGURA** (regra dele, 05/10/2026: *"sabemos que algumas artes vai dar diferença,
+então sempre que redimensionar crie um padrão que deve ser pela largura, ou seja, a largura vai bater
+sempre que redimensionar na proporção"*). O fator sai da largura do nome e o comprimento é o que a
+proporção da arte der — medido nas oito lonas dele, a largura fecha com **0,001 mm** de erro e o
+comprimento anda de −4 a −45 mm. É um fator só pros dois lados, nunca um por eixo (*"as artes não
+podem ser mexidas em absolutamente nada, manter sempre parâmetros originais, podemos apenas deixar no
+tamanho, rotacionar para melhorar o encaixe"*).
 
-**A escala é sempre UNIFORME**, um fator só pros dois lados (regra dele:
-*"as artes não podem ser mexidas em absolutamente nada, manter sempre parâmetros originais, podemos
-apenas deixar no tamanho, rotacionar para melhorar o encaixe"*). Quando a proporção difere um
-tiquinho, a arte **cobre** a caixa e a sobra sai no refile — encaixar por dentro deixaria tira branca
-na peça. **E quem decide se a arte entra é QUANTO SERIA APARADO, em milímetros — não a porcentagem.** A régua
-era percentual e foi arte real dele que a derrubou (04/10/2026): oito lonas da LOJINHA tinham TODAS
-as medidas exatamente **+0,7 mm** acima do nome — offset constante da exportação, não erro de
-proporção. Em porcentagem a peça mais estreita dava 1,5% de desvio e era **recusada**; em milímetros,
-a sobra era de **3 mm por lado**, dentro dos 25 mm de folga. Metade do lote caía fora por uma régua
-errada. Hoje `SOBRA_MAXIMA_M` **é** `RECUO_CORTE_M`, de propósito: o que entra nunca estoura a folga
-de corte. Por cima fica uma trava relativa de 5%, pra peça pequena onde 25 mm seriam a arte inteira.
+Por que a largura e não a altura: é ela que divide a bobina e decide o encaixe; no rolo o comprimento
+é o lado que anda. Numa folha, 4 cm a mais de comprimento é material; 4 cm a mais de largura é peça
+que não cabe.
+
+**Antes disso a arte era RECORTADA no centro pra fechar as duas medidas.** Fechava — o bloco media o
+nome ao décimo de milímetro —, mas comia beirada de arte pra isso. Com a âncora na largura o arquivo
+chega inteiro na folha e nada é descartado, então `recorte_que_preenche` e `_caixa_que_a_arte_cobre`
+não existem mais: a caixa já nasce com a proporção da arte e o `keep_proportion` do PyMuPDF basta.
+
+**E quem decide se a arte entra é QUANTO O COMPRIMENTO SAI FORA, em milímetros — não a porcentagem.**
+A régua era percentual e foi arte real dele que a derrubou (04/10/2026): oito lonas da LOJINHA tinham
+TODAS as medidas exatamente **+0,7 mm** acima do nome — offset constante da exportação, não erro de
+proporção. Em porcentagem a peça mais estreita dava 1,5% de desvio e era **recusada**. Hoje o limite é
+`DIFERENCA_MAXIMA_M` (10 cm), generoso de propósito porque nada mais é cortado — o que sobra é
+material, não arte perdida —, com a trava relativa de 5% por cima, que é quem recusa arte trocada.
+Quando o comprimento anda, a peça guarda **as duas medidas** e o JSON escreve `medida_do_nome_m`:
+número deduzido nunca se passa por declarado.
+
+**O nome da folha diz o que a PÁGINA mede.** O comprimento era calculado em dois lugares e o nome
+saía com `6,45` numa folha de `6,52` — 7 cm de lona por folha que saíam do rolo sem aparecer em lugar
+nenhum, num sistema em que o nome do arquivo É o banco de dados. Hoje `comprimento_da_folha` é fonte
+única e o título, o nome e o `folha_m` do JSON dizem o mesmo número.
 
 **O `posicao_m` do JSON é onde a arte está NA FOLHA**, não onde o encaixe a pôs: a arte encosta
 embaixo da reserva e a folha ainda tem cabeçalho e margem na frente. O JSON é a planta de quem vai
-procurar a peça 07 numa lona de 9 m, e um metro de diferença manda a pessoa procurar no lugar errado. O cabeçalho também tem faixa própria: escrever sobre a arte estraga a peça. Medidas dele:
-folga de 1 cm, canaleta de 5 cm, nome em 30 cm. O rótulo encolhe de 18 até 9 mm e, no limite, corta
-**a descrição, nunca a especificação** — cortar pelo fim deixava `1UN DECORFLEX 4.30X0.80M_~` e
-jogava fora o `SPFW26_PASSARELA_PISO`, que é o que diz qual peça é.
+procurar a peça 07 numa lona de 9 m, e um metro de diferença manda a pessoa procurar no lugar errado.
+O cabeçalho também tem faixa própria: escrever sobre a arte estraga a peça. Medidas dele: folga de
+5 cm entre peças, nome em 30 cm, borda zero. No limite o rótulo corta **a descrição, nunca a
+especificação** — cortar pelo fim deixava `1UN DECORFLEX 4.30X0.80M_~` e jogava fora o
+`SPFW26_PASSARELA_PISO`, que é o que diz qual peça é.
 
 **Uma folha por MATERIAL**, porque lona e adesivo não dividem bobina — a mesma regra do m² que nunca
 mistura material. O nome de saída segue o padrão do sistema (`1UN LONA 5.00X9.86M_<CLIENTE>_MONTAGEM_
