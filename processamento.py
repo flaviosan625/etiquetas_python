@@ -84,6 +84,19 @@ EXTENSOES_SUPORTADAS = (".pdf", ".ai", ".png", ".jpg", ".jpeg")
 # precisa mexer") — só avisa que foi visto, não lido.
 EXTENSOES_RECONHECIDAS_SEM_SUPORTE = (".cdr",)
 
+# Até quantas chapas uma peça de verdade pode ocupar. Acima disso, a
+# medida do nome é tratada como erro de digitação e o programa mede a
+# arte (ver o guarda em processar_etiquetas).
+#
+# O número separa os dois casos reais que já apareceram: a letra caixa
+# de fachada do SPFW (2,25 x 1,90 m) sai de 2 chapas de PVC e é legítima;
+# o "1.46X094M" de 2026-08-30 (zero à esquerda engolido pelo float, devia
+# ser 0,94 m) sairia de 39. Doze é folgado pra peça grande de verdade e
+# longe de qualquer erro de ordem de grandeza — e, sendo folgado, erra
+# pro lado de CONFIAR no nome, que é o lado certo: medida descartada
+# estraga etiqueta, OS, m² e baixa de estoque de uma vez só.
+MAXIMO_CHAPAS_POR_PECA = 12
+
 # Onde vai o arquivo original depois de convertido com sucesso (ver
 # conversao_adobe.converter_se_necessario) — nunca apagado, só sai da
 # vista pra não tentar converter de novo na rodada seguinte.
@@ -593,15 +606,29 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
             largura_max_cm = info_material_atual.get("largura_cm")
             comprimento_max_cm = info_material_atual.get("comprimento_cm")
             if largura_max_cm and comprimento_max_cm:
-                largura_peca_cm = dimensao["largura_m"] * 100
-                altura_peca_cm = dimensao["altura_m"] * 100
-                cabe_direto = largura_peca_cm <= largura_max_cm and altura_peca_cm <= comprimento_max_cm
-                cabe_rotacionado = largura_peca_cm <= comprimento_max_cm and altura_peca_cm <= largura_max_cm
-                if not cabe_direto and not cabe_rotacionado:
+                # PEÇA MAIOR QUE A CHAPA É CENÁRIO REAL, não erro de
+                # digitação — ela é cortada em pedaços e emendada, e o
+                # resto do sistema já conta assim ("entra no consumo em N
+                # partes, emenda não contada", logo abaixo). Até
+                # 05/10/2026 este guarda jogava a medida fora assim que
+                # ela passasse de UMA chapa, e aí o programa media a arte:
+                # a letra caixa de fachada do SPFW (2,25 x 1,90 m, 2 UN,
+                # 4 chapas de PVC) virou uma etiqueta de 0,21 x 0,19 m —
+                # a medida da arte, que estava em escala 1:10. Etiqueta,
+                # OS, m² e baixa de estoque, todos errados de uma vez.
+                #
+                # O que o guarda tem que pegar continua sendo o erro de
+                # ORDEM DE GRANDEZA ("094M" virando 94 metros). Por isso
+                # o teste passou a ser EM QUANTAS CHAPAS a peça sairia: a
+                # da fachada sai de 2, a de 94 m sairia de 39.
+                partes_na_chapa = partes_da_peca(
+                    dimensao["largura_m"], dimensao["altura_m"], "chapa",
+                    largura_max_cm / 100, comprimento_max_cm / 100)
+                if partes_na_chapa > MAXIMO_CHAPAS_POR_PECA:
                     logger.emitir(
                         "warn",
                         f"'{arquivo}': medida do nome ({dimensao['largura_m']:.2f}x{dimensao['altura_m']:.2f}m) "
-                        f"não cabe na chapa de {categoria_encontrada} cadastrada "
+                        f"sairia de {partes_na_chapa} chapas de {categoria_encontrada} "
                         f"({largura_max_cm / 100:.2f}x{comprimento_max_cm / 100:.2f}m) — provável erro de "
                         f"digitação no nome, medindo pela arte em vez de confiar nele.",
                         arquivo=arquivo, status_csv="AVISO - MEDIDA IMPOSSIVEL, USANDO ARTE",

@@ -475,7 +475,8 @@ def test_medida_impossivel_para_chapa_recorre_a_arte(tmp_path):
     )
 
     assert resultado["arquivos_novos"] == 1
-    assert any("não cabe na chapa" in a for a in avisos), "deveria avisar que a medida do nome é impossível"
+    assert any("sairia de" in a and "chapas" in a for a in avisos), \
+        "deveria avisar que a medida do nome e impossivel, dizendo de quantas chapas"
 
     doc = pymupdf.open(resultado["os"])
     texto = "".join(p.get_text() for p in doc)
@@ -893,3 +894,76 @@ def test_arte_grande_demais_reduz_resolucao_automaticamente_sem_mexer_no_origina
     arquivos_finais = list(entrada.glob("*.pdf"))
     assert len(arquivos_finais) == 1
     assert arquivos_finais[0].read_bytes() == conteudo_original, "conteúdo original não pode ser alterado"
+
+
+def test_peca_maior_que_a_chapa_CONTINUA_valendo(tmp_path):
+    """
+    Caso real do SPFW (05/10/2026): letra caixa de fachada em PVC 10 mm,
+    2,25 x 1,90 m, 2 UN. A chapa cadastrada e 1,22 x 2,44 -- a peca nao
+    cabe em UMA, sai de DUAS por unidade, QUATRO no total. E isso e o
+    trabalho normal: corta e emenda.
+
+    Ate aquele dia o guarda de "medida impossivel" descartava a medida
+    assim que ela passasse de uma chapa, e o programa media a arte: a
+    etiqueta saiu com 0,21 x 0,19 m, que e a arte em escala 1:10.
+    Etiqueta, OS, m² e baixa de estoque errados de uma vez.
+
+    O resto do sistema sempre soube lidar com isso -- a propria rodada
+    escreve "Peca maior que a chapa, entra no consumo em N partes". Era
+    so o guarda de cima que contradizia.
+    """
+    config = copy.deepcopy(CONFIG_PADRAO)
+    pasta_saida_base = tmp_path / "saida"
+    entrada = tmp_path / "entrada"
+    entrada.mkdir()
+
+    # a ARTE em escala 1:10, como veio do cliente de verdade
+    _pdf_com_desenho(entrada / "2UN PVC 2.25X1.90M_cliente_LETRA CAIXA FACHADA.pdf",
+                     round(0.225 / 0.0254 * 72), round(0.190 / 0.0254 * 72))
+
+    avisos, infos = [], []
+
+    def on_log(nivel, msg):
+        if nivel == "warn":
+            avisos.append(msg)
+        elif nivel in ("ok", "info"):
+            infos.append(msg)
+
+    resultado = processar_etiquetas(
+        str(entrada), "CLIENTE TESTE", "Gerente", "Produtor",
+        config, pasta_saida_base=str(pasta_saida_base), on_log=on_log,
+    )
+
+    assert resultado["arquivos_novos"] == 1
+    assert not any("medindo pela arte" in a for a in avisos), \
+        "peca maior que a chapa nao e erro de digitacao: e corte emendado"
+
+    doc = pymupdf.open(resultado["os"])
+    texto = "".join(p.get_text() for p in doc)
+    doc.close()
+    assert "2.25" in texto and "1.90" in texto, \
+        "a OS tem que trazer a medida do NOME, nao a da arte em 1:10"
+    assert "0.21" not in texto, "mediu a arte em escala e nao percebeu"
+
+    # e a rodada avisa que ela sai emendada, que e o que a producao precisa
+    assert any("maior que a chapa" in m for m in infos + avisos), \
+        "tem que dizer que a peca sai em partes, com a emenda a conferir"
+
+
+def test_o_limite_e_de_ORDEM_DE_GRANDEZA_nao_de_uma_chapa():
+    """
+    Onde fica a linha: a peca da fachada sai de 2 chapas e vale; o
+    "1.46X094M" de 2026-08-30 (zero a esquerda engolido pelo float,
+    devia ser 0,94 m) sairia de dezenas e nao vale.
+    """
+    from aproveitamento import partes_da_peca
+    import processamento
+
+    # fachada de PVC: 2,25 x 1,90 na chapa de 1,22 x 2,44
+    assert partes_da_peca(2.25, 1.90, "chapa", 1.22, 2.44) == 2
+    assert 2 <= processamento.MAXIMO_CHAPAS_POR_PECA
+
+    # o erro de digitacao: 94 m
+    muitas = partes_da_peca(1.46, 94.0, "chapa", 1.22, 2.44)
+    assert muitas > processamento.MAXIMO_CHAPAS_POR_PECA, \
+        f"{muitas} chapas tinha que estourar o limite"

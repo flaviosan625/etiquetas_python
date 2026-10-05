@@ -59,6 +59,18 @@ Duas regras já fixadas: com **duas medidas no nome, vale a PRIMEIRA** (é a do 
 acréscimo da produção). Sem medida utilizável no nome, `relatorio_producao` abre o arquivo e mede
 **a arte** (não a folha do gabarito) — e aí o m² **não** é multiplicado pela quantidade.
 
+**Peça maior que a CHAPA é cenário real, não erro de digitação.** Ela é cortada em pedaços e
+emendada, e o resto do sistema sempre contou assim (*"entra no consumo em N partes, emenda não
+contada"*). Mesmo assim, até 05/10/2026 o guarda de "medida impossível" descartava a medida do nome
+assim que ela passasse de UMA chapa, e o programa media a arte: a letra caixa de fachada do SPFW
+(2,25 × 1,90 m, 2 UN, **4 chapas** de PVC) virou uma etiqueta de 0,21 × 0,19 m — a medida da arte,
+que estava em escala 1:10. Etiqueta, OS, m² e baixa de estoque errados de uma vez. Hoje o teste é
+**em quantas chapas a peça sairia** (`MAXIMO_CHAPAS_POR_PECA`, 12): a da fachada sai de 2 e vale; o
+`1.46X094M` de 2026-08-30 sairia de 39 e continua sendo pego. O limite é folgado de propósito —
+errar pro lado de CONFIAR no nome é o lado certo. É a mesma filosofia que o ramo do ROLO já tinha
+escrita ao lado (*"largura maior que o rolo é cenário real e legítimo"*); as duas estavam em
+contradição.
+
 Medida do nome que é impossível o relatório **não usa, e só corrige com o arquivo aberto na mão**:
 lado pequeno demais (`0.77X0.15CM`) vira a arte medida, e lado grande demais é vírgula perdida
 (`8.28X320M` é 8,28 x 3,20 m — lido ao pé da letra virava 2.649 m² no lugar de 26,5 m², em 18 e
