@@ -122,6 +122,11 @@ DIFERENCA_MAXIMA_M = 0.10
 # E uma trava de bom senso por cima, pra peça pequena: 5% de desvio ainda
 # é a mesma arte exportada torta; mais que isso é OUTRA arte, e aí o
 # problema é o nome ou o arquivo, não o encaixe.
+# A franja branca que a exportação deixa em volta da arte é descontada
+# (ver caixa_da_arte). Mas só quando é FRANJA: acima desta fração do lado
+# é design — um logo no meio de uma folha branca tem caixa de tinta
+# pequena, e esticá-la até a medida do nome seria desastre.
+FRANJA_MAXIMA_FRACAO = 0.10
 TOLERANCIA_PROPORCAO = 0.05
 
 IMAGENS = (".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp")
@@ -251,12 +256,97 @@ def medida_do_nome(nome, config=None):
     return dimensao["largura_m"], dimensao["altura_m"]
 
 
+def _itens_desenhados(pagina):
+    """Os traçados da página com o recorte ativo de cada um, ou [] se a
+    versão do PyMuPDF não souber dizer o recorte."""
+    try:
+        return pagina.get_drawings(extended=True)
+    except (TypeError, ValueError, RuntimeError):
+        return []
+
+
+def caixa_da_arte(pagina, pymupdf):
+    """
+    O retângulo que a ARTE ocupa dentro da página — não a página.
+
+    Regra dele, 05/10/2026: *"a arte deve bater o tamanho exato na largura
+    que pede no nome... conferi na arte, sempre falta medida na largura"*.
+    Ele estava certo, e a causa é a página: as oito lonas da LOJINHA têm
+    **1 ponto de branco em volta** (0,35 mm; 7,1 mm depois do ×10 da
+    escala), sobra da exportação. Medindo a PÁGINA, a arte entrava
+    encolhida por essa franja e faltava exatamente isso na largura.
+
+    Medindo a ARTE, as oito batem o nome CRAVADO: a de `0.40x3.00m` dá
+    113,386 × 850,394 pt, que é 0,0400 × 0,3000 m — ×10, os 0,40 × 3,00
+    do nome. O "+0,7 mm constante da exportação" que eu tinha anotado em
+    04/10 era essa franja o tempo todo; a resposta certa nunca foi tolerar
+    o desvio, era não contar o branco.
+
+    Vem do `get_bboxlog`, que lê o conteúdo sem renderizar — rasterizar
+    uma lona de 29 m pra achar a borda derrubaria a máquina.
+
+    **Franja grande não é franja, é design.** Arte que é um logo no meio
+    de uma folha branca tem caixa de tinta pequena, e esticá-la até a
+    medida do nome seria desastre. Por isso só vale quando a arte cobre
+    pelo menos `(1 - FRANJA_MAXIMA_FRACAO)` de cada lado; acima disso,
+    manda a página, como antes.
+    """
+    uniao = None
+
+    # TRAÇADO RECORTADO, não traçado: nestes arquivos o Illustrator deixa
+    # um `re W* n` 0,6 pt fora de esquadro com o desenho, e ele apara
+    # 2,2 mm (depois do ×10) do lado direito. Quem mede o traçado acha a
+    # medida do nome e imprime uma tira branca no refile; quem mede a
+    # TINTA acerta os dois. O 'scissor' do `get_drawings(extended=True)`
+    # é esse recorte, e o 'level' diz até onde ele vale.
+    tesouras = {}
+    for item in _itens_desenhados(pagina):
+        nivel = item.get("level", 0)
+        for aberto in [n for n in tesouras if n >= nivel]:
+            del tesouras[aberto]
+        tipo = item.get("type")
+        if tipo == "clip":
+            recorte = item.get("scissor")
+            if recorte is not None:
+                tesouras[nivel] = pymupdf.Rect(recorte)
+            continue
+        if tipo == "group":
+            continue
+        caixa = item.get("rect")
+        if caixa is None:
+            continue
+        caixa = pymupdf.Rect(caixa)
+        for recorte in tesouras.values():
+            caixa = caixa & recorte
+        if caixa.is_empty:
+            continue
+        uniao = caixa if uniao is None else (uniao | caixa)
+
+    # texto e imagem não saem no get_drawings. Entram sem recorte: é o
+    # lado conservador (caixa maior), que no pior caso devolve a página
+    for tipo, caixa in pagina.get_bboxlog():
+        if tipo.startswith("clip") or tipo.startswith("ignore") or "path" in tipo:
+            continue
+        retangulo = pymupdf.Rect(caixa)
+        uniao = retangulo if uniao is None else (uniao | retangulo)
+
+    if uniao is None:
+        return pagina.rect
+    uniao = uniao & pagina.rect
+    if uniao.is_empty or uniao.width <= 0 or uniao.height <= 0:
+        return pagina.rect
+    if (uniao.width < pagina.rect.width * (1 - FRANJA_MAXIMA_FRACAO)
+            or uniao.height < pagina.rect.height * (1 - FRANJA_MAXIMA_FRACAO)):
+        return pagina.rect
+    return uniao
+
+
 def medida_do_arquivo(caminho):
     """
-    (largura_m, altura_m, páginas) do arquivo, ou None quando não dá pra
-    abrir. Em imagem a medida física vem dos pixels e do DPI declarado;
-    sem DPI, o padrão de 96 é chute — por isso imagem sem DPI nunca
-    manda na medida, só o nome.
+    (largura_m, altura_m, páginas) da ARTE no arquivo, ou None quando não
+    dá pra abrir. Em imagem a medida física vem dos pixels e do DPI
+    declarado; sem DPI, o padrão de 96 é chute — por isso imagem sem DPI
+    nunca manda na medida, só o nome.
     """
     caminho = pathlib.Path(caminho)
     pymupdf = _pymupdf()
@@ -268,8 +358,8 @@ def medida_do_arquivo(caminho):
         with pymupdf.open(str(caminho)) as doc:
             if not doc.page_count:
                 return None
-            pagina = doc.load_page(0)
-            return (pagina.rect.width / PT_M, pagina.rect.height / PT_M, doc.page_count)
+            arte = caixa_da_arte(doc.load_page(0), pymupdf)
+            return (arte.width / PT_M, arte.height / PT_M, doc.page_count)
     except Exception:
         return None
 
@@ -681,7 +771,10 @@ def colocar_arte(pagina, caixa, arquivo, numero_pagina, girar, pymupdf):
     else:
         origem = pymupdf.open(str(arquivo))
     try:
-        pagina.show_pdf_page(caixa, origem, numero_pagina,
+        # recorta a FRANJA BRANCA da exportação (ver caixa_da_arte): sem
+        # isso a arte entra encolhida por ela e falta medida na largura
+        recorte = caixa_da_arte(origem.load_page(numero_pagina), pymupdf)
+        pagina.show_pdf_page(caixa, origem, numero_pagina, clip=recorte,
                              rotate=girar, keep_proportion=True)
     finally:
         origem.close()

@@ -1102,3 +1102,128 @@ def test_a_folha_PRONTA_nao_e_montada_de_novo(pasta):
     # e sem a ficha ao lado tambem nao: o nome de saida e prova sozinho
     folha.with_suffix(".json").unlink()
     assert montagem.pecas_da_pasta(pasta)[0] == []
+
+
+# ---------- a medida e a da TINTA, nao a da pagina ----------
+#
+# Ele, 05/10/2026: *"a arte deve bater o tamanho exato na largura que
+# pede no nome, a diferenca deve ficar somente na altura... conferi na
+# arte, sempre falta medida na largura"*. Estava certo, e eram DUAS
+# coisas na pagina das lonas da LOJINHA: 1 pt de branco em volta
+# (0,35 mm; 7,1 mm depois do x10 da escala) e um recorte do Illustrator
+# 0,6 pt fora de esquadro, que apara mais 2,2 mm de um lado so.
+
+
+def arte_com_franja(pasta, nome, largura_pt, altura_pt, franja_pt=1.0,
+                    recorte=None):
+    """
+    Arte como o Illustrator exporta: a pagina MAIOR que o desenho, e
+    opcionalmente um recorte (`re W n`) deslocado, que e o que de fato
+    limita a tinta.
+    """
+    pasta.mkdir(parents=True, exist_ok=True)
+    doc = pymupdf.open()
+    pagina = doc.new_page(width=largura_pt + 2 * franja_pt,
+                          height=altura_pt + 2 * franja_pt)
+    pagina.draw_rect(
+        pymupdf.Rect(franja_pt, franja_pt, franja_pt + largura_pt,
+                     franja_pt + altura_pt),
+        color=None, fill=(0.3, 0.6, 0.3))
+    if recorte is not None:
+        xref = pagina.get_contents()[0]
+        corpo = doc.xref_stream(xref)
+        x0, y0, x1, y1 = recorte
+        antes = f"q {x0} {y0} {x1 - x0} {y1 - y0} re W n\n".encode()
+        doc.update_stream(xref, antes + corpo + b"\nQ\n")
+    caminho = pasta / nome
+    doc.save(str(caminho))
+    doc.close()
+    return caminho
+
+
+def test_a_franja_branca_da_exportacao_nao_conta_na_medida(pasta):
+    """
+    A pagina tem 1 pt de branco de cada lado; a arte, nao. Medindo a
+    pagina, a peca entrava encolhida por isso e faltava medida na largura
+    -- que foi exatamente o que ele mediu na folha impressa.
+    """
+    caminho = arte_com_franja(pasta, "1UN LONA IMPRESSA 2.00X1.00M_VIBRA_PECA.pdf",
+                              2.00 * PT_M, 1.00 * PT_M, franja_pt=1.0)
+
+    with pymupdf.open(str(caminho)) as doc:
+        pagina = doc.load_page(0)
+        assert pagina.rect.width / PT_M > 2.0007, "a pagina TEM que ser maior que a arte aqui"
+        arte_m = montagem.caixa_da_arte(pagina, pymupdf)
+
+    assert arte_m.width / PT_M == pytest.approx(2.00, abs=1e-6)
+    assert arte_m.height / PT_M == pytest.approx(1.00, abs=1e-6)
+    assert montagem.medida_do_arquivo(caminho)[0] == pytest.approx(2.00, abs=1e-6)
+
+
+def test_o_recorte_do_Illustrator_e_quem_limita_a_tinta(pasta):
+    """
+    O defeito mais fino dos dois: o `re W n` que o Illustrator escreve
+    nao coincide com o desenho -- nas lonas dele estava 0,6 pt fora, e
+    aparava 2,2 mm do lado direito depois do x10. Quem mede o TRACADO
+    acha a medida do nome e manda imprimir uma tira branca pro refile.
+    """
+    caminho = arte_com_franja(
+        pasta, "1UN LONA IMPRESSA 2.00X1.00M_VIBRA_PECA.pdf",
+        2.00 * PT_M, 1.00 * PT_M, franja_pt=1.0,
+        # o recorte comeca meio ponto antes e termina meio ponto antes:
+        # apara 0,5 pt da direita
+        recorte=(0.5, 1.0, 0.5 + 2.00 * PT_M, 1.0 + 1.00 * PT_M))
+
+    with pymupdf.open(str(caminho)) as doc:
+        arte_m = montagem.caixa_da_arte(doc.load_page(0), pymupdf)
+
+    esperado = (2.00 * PT_M - 0.5) / PT_M
+    assert arte_m.width / PT_M == pytest.approx(esperado, abs=1e-6), \
+        "a medida tem que ser a da TINTA: o tracado fica por baixo do recorte"
+
+
+def test_a_LARGURA_da_tinta_fecha_redonda_na_folha(pasta):
+    """
+    O teste que prova o pedido inteiro: arte com franja E recorte entra,
+    e no PDF pronto a peca mede a largura do nome CRAVADA. A diferenca,
+    se houver, fica no comprimento.
+    """
+    arte_com_franja(pasta, "1UN LONA IMPRESSA 2.00X1.00M_VIBRA_PECA.pdf",
+                    2.00 * PT_M, 1.00 * PT_M, franja_pt=1.0,
+                    recorte=(0.5, 1.0, 0.5 + 2.00 * PT_M, 1.0 + 1.00 * PT_M))
+
+    resultado = montagem.montar_pasta(pasta, raiz_clientes=pasta.parent / "x")
+    folha = resultado["folhas"][0]["arquivo"]
+    ficha = json.loads(folha.with_suffix(".json").read_text(encoding="utf-8"))
+    peca = ficha["pecas"][0]
+
+    largura, altura = peca["medida_m"]
+    if peca["girada"]:
+        largura, altura = altura, largura
+
+    with pymupdf.open(str(folha)) as doc:
+        pagina = doc.load_page(0)
+        postas = [pymupdf.Rect(i[3]) for i in pagina.get_xobjects() if i[2] == 0]
+        assert len(postas) == 1
+        caixa = postas[0]
+
+    assert caixa.width / PT_M == pytest.approx(largura, abs=0.0006)
+    assert peca["medida_m"][0] == 2.00, "a largura do nome tem que fechar redonda"
+
+
+def test_franja_grande_e_DESIGN_e_nao_e_aparada(pasta):
+    """
+    O limite da regra, e e o que impede um desastre: arte que e um
+    desenho pequeno no meio de uma folha branca tem caixa de tinta
+    pequena, e estica-la ate a medida do nome entregaria a peca errada.
+    Acima de FRANJA_MAXIMA_FRACAO manda a PAGINA, como antes.
+    """
+    caminho = arte_com_franja(pasta, "1UN LONA IMPRESSA 2.00X1.00M_VIBRA_LOGO.pdf",
+                              1.00 * PT_M, 0.50 * PT_M,
+                              franja_pt=0.50 * PT_M)   # metade e branco
+
+    with pymupdf.open(str(caminho)) as doc:
+        pagina = doc.load_page(0)
+        arte_m = montagem.caixa_da_arte(pagina, pymupdf)
+        assert arte_m == pagina.rect, \
+            "franja de meio metro nao e sobra de exportacao, e design"

@@ -367,13 +367,35 @@ que não cabe.
 
 **Antes disso a arte era RECORTADA no centro pra fechar as duas medidas.** Fechava — o bloco media o
 nome ao décimo de milímetro —, mas comia beirada de arte pra isso. Com a âncora na largura o arquivo
-chega inteiro na folha e nada é descartado, então `recorte_que_preenche` e `_caixa_que_a_arte_cobre`
-não existem mais: a caixa já nasce com a proporção da arte e o `keep_proportion` do PyMuPDF basta.
+chega inteiro na folha e **nenhuma tinta** é descartada, então `recorte_que_preenche` e
+`_caixa_que_a_arte_cobre` não existem mais: a caixa já nasce com a proporção da arte e o
+`keep_proportion` do PyMuPDF basta. O único recorte que sobrou é o da franja BRANCA, logo abaixo.
+
+**A medida é a da TINTA, nunca a da página** — e foi ele quem achou isso, medindo a folha pronta
+(05/10/2026): *"a arte deve bater o tamanho exato na largura que pede no nome, a diferença deve ficar
+somente na altura... conferi na arte, sempre falta medida na largura"*. Estava certo, e eram **duas**
+coisas na página das lonas da LOJINHA:
+
+- **1 pt de branco em volta** (0,35 mm; 7,1 mm depois do ×10 da escala), sobra da exportação;
+- um **recorte do Illustrator** (`re W* n`) 0,6 pt fora de esquadro com o desenho, que apara mais
+  2,2 mm de um lado só.
+
+Medindo a página, a peça entrava encolhida pelos dois e faltava exatamente isso na largura. `caixa_da_arte`
+lê o `get_drawings(extended=True)`, cruza cada traçado com o `scissor` ativo (o `level` diz até onde
+ele vale) e une com o que o `get_bboxlog` traz de texto e imagem. Sem renderizar nada: rasterizar uma
+lona de 29 m pra achar a borda derruba a máquina. Depois disso as oito lonas fecham a largura com
+**0,001 mm** de erro e a diferença vai toda pro comprimento (−2 a +14 mm), que é o que ele pediu.
+
+**Franja grande não é franja, é design.** Arte que é um desenho pequeno no meio de uma folha branca
+tem caixa de tinta pequena, e esticá-la até a medida do nome entregaria a peça errada. Acima de
+`FRANJA_MAXIMA_FRACAO` (10% do lado) manda a PÁGINA, como antes.
 
 **E quem decide se a arte entra é QUANTO O COMPRIMENTO SAI FORA, em milímetros — não a porcentagem.**
 A régua era percentual e foi arte real dele que a derrubou (04/10/2026): oito lonas da LOJINHA tinham
-TODAS as medidas exatamente **+0,7 mm** acima do nome — offset constante da exportação, não erro de
-proporção. Em porcentagem a peça mais estreita dava 1,5% de desvio e era **recusada**. Hoje o limite é
+TODAS as medidas **+0,7 mm** acima do nome. Na época anotei isso como "offset constante da exportação"
+e afrouxei a régua pra tolerá-lo — **era a franja de 1 pt o tempo todo**, e a resposta certa nunca foi
+tolerar o desvio, era não contar o branco. Em porcentagem a peça mais estreita dava 1,5% de desvio e
+era **recusada**. Hoje o limite é
 `DIFERENCA_MAXIMA_M` (10 cm), generoso de propósito porque nada mais é cortado — o que sobra é
 material, não arte perdida —, com a trava relativa de 5% por cima, que é quem recusa arte trocada.
 Quando o comprimento anda, a peça guarda **as duas medidas** e o JSON escreve `medida_do_nome_m`:
