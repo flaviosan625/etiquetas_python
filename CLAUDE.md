@@ -675,6 +675,13 @@ Três coisas que a leitura descobriu e que mudam o desenho:
   janeiro vinha preenchida), e o percentual também. Então m² nunca sai dali: sai do tamanho em
   polegadas ou do nome do arquivo. O que presta no log é a **duração** e o fato da linha existir.
 
+**A máquina PLANA se descreve pela MESA no relatório.** Até 05/10/2026 o cabeçalho só sabia ler
+largura de bobina, e numa plana ela é `None`: a H2525 saía como *"largura útil não configurada"* —
+dizendo ao CLIENTE que a máquina está fora do cadastro quando ela está cadastrada com mesa de
+2,50 × 2,50. A regra de "não cabe" já estava certa (usa `LimiteDaMaquina.cabe`, que conhece os dois
+tetos); era só a exibição que mentia. Hoje a linha carrega `mesa_util` junto e o aviso de cadastro
+faltando fica só pra quem realmente não tem nenhum.
+
 No relatório, `provas_de_impressao` casa pelo nome do ripado sem extensão, em duas voltas (exato,
 depois o que começa com ele e cresceu até 12 letras — o SAi acrescenta `_1`, `_2`, ` U_impress`).
 Só conta passada do horário da entrega pra frente, senão a entrega de hoje herdaria a impressão de

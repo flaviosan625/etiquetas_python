@@ -823,3 +823,65 @@ def test_tempo_de_maquina_legivel():
     assert rp._tempo_de_maquina(0) is None
     assert rp._tempo_de_maquina(767) == "13 min"
     assert rp._tempo_de_maquina(4580) == "1h16"
+
+
+# ---------- a maquina PLANA se descreve pela MESA ----------
+#
+# Conferindo o relatorio das quatro maquinas em 05/10/2026, a H2525
+# aparecia como "DOCAN H2525 — largura util nao configurada": o
+# cabecalho so sabia ler largura de bobina, e numa plana ela e None.
+# Dizia que a maquina estava fora do cadastro quando ela esta cadastrada
+# com mesa de 2,50 x 2,50 -- e quem le o documento e o cliente.
+#
+# A regra de "nao cabe" ja estava certa (usa LimiteDaMaquina.cabe, que
+# conhece os dois tetos); era so a exibicao que mentia.
+
+MAQUINAS_COM_PLANA = {
+    "SWJ320A": {"hot_folder": r"C:\x\SWJ320A", "largura_util_m": 3.24},
+    "DOCAN H2525": {"hot_folder": r"C:\x\H2525", "mesa_util_m": (2.50, 2.50),
+                    "girar": False},
+}
+
+
+def _registro_plana(nome="1UN PS 1.00X0.80M_placa.pdf"):
+    return [{"quando": "2026-10-03T09:00:00", "maquina": "DOCAN H2525",
+             "bytes": 100, "girado": False, "arquivo": nome,
+             "_quando": datetime.datetime(2026, 10, 3, 9, 0)}]
+
+
+def test_a_linha_da_plana_carrega_a_MESA_e_nao_largura_de_bobina():
+    linha = rp.interpretar(_registro_plana(), maquinas=MAQUINAS_COM_PLANA)["DOCAN H2525"][0]
+
+    assert linha["largura_util"] is None, "plana nao tem largura de bobina"
+    assert linha["mesa_util"] == (2.50, 2.50), \
+        "sem a mesa, o cabecalho diz 'largura util nao configurada'"
+
+
+def test_o_PDF_descreve_a_plana_pela_mesa(tmp_path, monkeypatch):
+    pasta = tmp_path / "relatorios"
+    (pasta / "_registro").mkdir(parents=True)
+    linha = _registro_plana()[0]
+    bruto = {k: v for k, v in linha.items() if not k.startswith("_")}
+    (pasta / "_registro" / "2026-10.jsonl").write_text(
+        json.dumps(bruto, ensure_ascii=False) + "\n", encoding="utf-8")
+
+    destino = tmp_path / "saida.pdf"
+    rp.gerar_pdf(datetime.date(2026, 10, 3), pasta_relatorios=pasta,
+                 maquinas=MAQUINAS_COM_PLANA, caminho_saida=str(destino))
+
+    with pymupdf.open(str(destino)) as doc:
+        texto = "\n".join(p.get_text() for p in doc)
+
+    assert "mesa 2,50 × 2,50 m" in texto, \
+        "a plana tem que se descrever pela mesa, nao por largura de bobina"
+    assert "não configurada" not in texto, \
+        "maquina cadastrada aparecendo como fora do cadastro"
+
+
+def test_maquina_SEM_cadastro_nenhum_continua_dizendo_que_falta(tmp_path):
+    """O aviso continua existindo pra quem realmente nao tem cadastro."""
+    registros = [{"quando": "2026-10-03T09:00:00", "maquina": "MAQUINA NOVA",
+                  "bytes": 100, "girado": False, "arquivo": "1UN LONA 1.00X1.00M_x.pdf",
+                  "_quando": datetime.datetime(2026, 10, 3, 9, 0)}]
+    linha = rp.interpretar(registros, maquinas=MAQUINAS_COM_PLANA)["MAQUINA NOVA"][0]
+    assert linha["largura_util"] is None and linha["mesa_util"] is None

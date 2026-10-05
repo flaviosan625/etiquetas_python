@@ -467,6 +467,10 @@ def interpretar(registros, config=None, maquinas=None, pasta_fila=None, provas=N
             area_m2 = medida["area_m2"] if medida else None
         limite = _limite_da_maquina(registro["maquina"], maquinas)
         largura_util = limite.largura_util_m if limite else None
+        # a PLANA não tem largura de bobina, tem mesa — e sem isto o
+        # cabeçalho dela dizia "largura útil não configurada", como se a
+        # máquina estivesse fora do cadastro (visto na H2525, 05/10/2026)
+        mesa_util = limite.mesa_util_m if limite else None
         nao_cabe = False
         nao_cabe_porque = None
         if dimensao and limite:
@@ -491,6 +495,7 @@ def interpretar(registros, config=None, maquinas=None, pasta_fila=None, provas=N
             "nao_cabe": nao_cabe,
             "nao_cabe_porque": nao_cabe_porque,
             "largura_util": largura_util,
+            "mesa_util": mesa_util,
             "impressao": _prova_da_linha(provas, nome, registro["_quando"]),
         })
     return por_maquina
@@ -774,7 +779,15 @@ def gerar_pdf(data, pasta_relatorios=None, config=None, maquinas=None, caminho_s
     for nome_maquina in sorted(por_maquina):
         linhas = por_maquina[nome_maquina]
         largura_util = linhas[0]["largura_util"]
-        spec = f"largura útil {_num(largura_util)} m" if largura_util else "largura útil não configurada"
+        mesa_util = linhas[0].get("mesa_util")
+        if mesa_util:
+            # a plana se descreve pela MESA: dizer "largura útil" nela seria
+            # esconder que o segundo lado também é teto
+            spec = f"mesa {_num(mesa_util[0])} × {_num(mesa_util[1])} m"
+        elif largura_util:
+            spec = f"largura útil {_num(largura_util)} m"
+        else:
+            spec = "largura útil não configurada"
 
         folha.bloco(
             26,
