@@ -658,6 +658,21 @@ esse alarme existe pra evitar. Hoje ele pega carona também na passada do **Chec
 máquinas continuam com seu próprio `_aviso_fila.json` ao lado do módulo, então cada uma se segura
 sozinha e ninguém vira alarme repetido.
 
+**E fila parada não cobre o vigia MUDO.** No mesmo 05/10 os dois vigias ficaram sem dar sinal das
+19:11 às 23:00 — quase quatro horas — e só se soube porque havia arquivo esperando. Com a fila vazia,
+o primeiro arquivo do dia seguinte é que descobriria, com prazo em cima. O sinal de vida já media
+isso desde sempre; o que faltava era alguém **olhar por conta própria**. `aviso_fila.conferir_sinais`
+faz isso na mesma carona, com `MINUTOS_SINAL_MUDO` = 20 (quatro vezes os 5 min em que o vigia vivo
+reescreve o sinal: atraso de sincronização não acorda o alarme, vigia derrubado acorda).
+
+Os dois alarmes repetem de jeitos DIFERENTES, e isso é decisão, não descuido: fila parada repete de
+hora em hora porque é urgência que **continua** (tem material esperando); vigia mudo avisa **uma vez
+por apagão**, na borda — é um fato que não muda até alguém ir à máquina, e de madrugada, com os PCs
+desligados, repetir seria ensinar a ignorar o alarme. Por isso o estado dele mora em arquivo
+**separado** (`_aviso_sinal.json`): o da fila se apaga quando a fila anda, e um estado só faria o
+apagão ser reanunciado. Sinal que não existe **não** é apagão — é posto nunca instalado, e inventar
+alarme pra isso encheria a tela de quem não tem a máquina.
+
 ### O que a máquina imprimiu é outro registro
 
 Até 03/10/2026 o sistema provava o que foi **entregue** à máquina. O que ela **imprimiu** só o

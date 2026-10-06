@@ -252,6 +252,9 @@ def _conferir_fila():
     try:
         import aviso_fila
         avisadas = aviso_fila.conferir()
+        # e o vigia MUDO, que a fila parada não cobre: com a fila vazia,
+        # posto derrubado passava a noite sem ninguém saber (05/10/2026)
+        mudos = aviso_fila.conferir_sinais()
     except Exception as e:      # noqa: BLE001
         _log(None, "warn", "aviso de fila parada não rodou: %s: %s" % (type(e).__name__, e))
         return {}
@@ -259,6 +262,10 @@ def _conferir_fila():
         _log(None, "warn", "fila parada: %s" % "; ".join(
             "%s (%d arquivo(s) há %d min)" % (maquina, quantos, minutos)
             for maquina, (quantos, minutos) in sorted(avisadas.items())))
+    if mudos:
+        _log(None, "warn", "vigia sem sinal: %s" % "; ".join(
+            "%s em %s (há %.0f min)" % (posto, maquina, minutos)
+            for posto, (maquina, minutos) in sorted(mudos.items())))
     return avisadas
 
 

@@ -232,3 +232,116 @@ def test_aviso_de_fila_que_quebra_nao_derruba_o_checklist(monkeypatch, tmp_path)
 
     monkeypatch.setattr(aviso_fila, "conferir", explodir)
     assert vigia_checklist._conferir_fila() == {}
+
+
+# ---------- o vigia que emudece, com a fila VAZIA ----------
+#
+# Em 05/10/2026 os dois vigias ficaram mudos das 19:11 as 23:00 e so se
+# soube porque havia arquivo esperando. Com a fila vazia ninguem saberia,
+# e o primeiro arquivo do dia seguinte e que descobriria -- com prazo em
+# cima. O sinal de vida ja media isso; faltava alguem OLHAR sozinho.
+
+
+def _sinal(minutos, maquina="MIMAKI"):
+    return {"quando": None, "idade_minutos": minutos, "maquina": maquina,
+            "maquinas": {}, "registro_pendente": 0}
+
+
+def test_posto_mudo_vira_aviso(tmp_path, monkeypatch):
+    monkeypatch.setattr(caminhos, "PASTA_PROGRAMA", tmp_path)
+    vistos = []
+
+    mudos = aviso_fila.conferir_sinais(
+        sinais={"rip": _sinal(45), "sai": _sinal(2, "DOCAN")},
+        postos=("rip", "sai"),
+        notificar=lambda texto, titulo=None: vistos.append((titulo, texto)))
+
+    assert list(mudos) == ["rip"], "so o posto mudo entra"
+    assert len(vistos) == 1
+    titulo, texto = vistos[0]
+    assert "sinal" in titulo.lower()
+    assert "MIMAKI" in texto and "RIP" in texto
+    assert "5 min" in texto, "o texto tem que dizer a regua que foi usada"
+
+
+def test_avisa_UMA_vez_por_apagao_nao_uma_por_hora(tmp_path, monkeypatch):
+    """
+    Fila parada repete de hora em hora porque e urgencia que CONTINUA:
+    tem material esperando. Vigia mudo e um FATO que nao muda ate alguem
+    ir la -- e de madrugada, com as maquinas desligadas, repetir seria
+    ensinar a ignorar o alarme.
+    """
+    monkeypatch.setattr(caminhos, "PASTA_PROGRAMA", tmp_path)
+    vistos = []
+    avisar = lambda texto, titulo=None: vistos.append(texto)  # noqa: E731
+
+    for _ in range(5):
+        aviso_fila.conferir_sinais(sinais={"rip": _sinal(300)},
+                                   postos=("rip",), notificar=avisar)
+
+    assert len(vistos) == 1, "repetiu o mesmo apagao"
+
+
+def test_volta_a_avisar_depois_que_o_posto_FALA_de_novo(tmp_path, monkeypatch):
+    """Apagao novo e aviso novo: o estado zera quando o sinal volta."""
+    monkeypatch.setattr(caminhos, "PASTA_PROGRAMA", tmp_path)
+    vistos = []
+    avisar = lambda texto, titulo=None: vistos.append(texto)  # noqa: E731
+
+    aviso_fila.conferir_sinais(sinais={"rip": _sinal(300)}, postos=("rip",),
+                               notificar=avisar)
+    assert len(vistos) == 1
+
+    # o vigia voltou
+    aviso_fila.conferir_sinais(sinais={"rip": _sinal(1)}, postos=("rip",),
+                               notificar=avisar)
+    assert len(vistos) == 1, "voltar nao e motivo de alarme"
+
+    # e caiu de novo
+    aviso_fila.conferir_sinais(sinais={"rip": _sinal(300)}, postos=("rip",),
+                               notificar=avisar)
+    assert len(vistos) == 2, "apagao NOVO tem que avisar de novo"
+
+
+def test_posto_que_nunca_existiu_nao_vira_alarme(tmp_path, monkeypatch):
+    """
+    Sinal ausente e posto nunca instalado, nao apagao. Inventar alarme pra
+    isso encheria a tela de quem nao tem a maquina.
+    """
+    monkeypatch.setattr(caminhos, "PASTA_PROGRAMA", tmp_path)
+
+    def nunca(texto, titulo=None):
+        raise AssertionError("nao podia avisar")
+
+    assert aviso_fila.conferir_sinais(sinais={"rip": None}, postos=("rip",),
+                                      notificar=nunca) == {}
+
+
+def test_notificacao_que_falha_nao_grava_estado(tmp_path, monkeypatch):
+    """
+    Mesma disciplina do outro aviso: ninguem foi avisado, entao a proxima
+    passada tem que tentar de novo. O toast ja estourou 15 s de timeout de
+    verdade em 05/10/2026.
+    """
+    monkeypatch.setattr(caminhos, "PASTA_PROGRAMA", tmp_path)
+
+    def quebrado(texto, titulo=None):
+        raise RuntimeError("toast demorou demais")
+
+    with pytest.raises(RuntimeError):
+        aviso_fila.conferir_sinais(sinais={"rip": _sinal(300)}, postos=("rip",),
+                                   notificar=quebrado)
+
+    vistos = []
+    aviso_fila.conferir_sinais(sinais={"rip": _sinal(300)}, postos=("rip",),
+                               notificar=lambda t, titulo=None: vistos.append(t))
+    assert len(vistos) == 1, "a falha calou o alarme pra sempre"
+
+
+def test_os_dois_avisos_usam_arquivos_de_estado_DIFERENTES(tmp_path, monkeypatch):
+    """
+    Um estado so faria a fila parada apagar a memoria do sinal mudo (ela
+    zera o estado quando a fila anda) e o apagao seria reanunciado.
+    """
+    monkeypatch.setattr(caminhos, "PASTA_PROGRAMA", tmp_path)
+    assert aviso_fila.caminho_estado() != aviso_fila._caminho_estado_sinal()

@@ -41,6 +41,20 @@ MINUTOS_ENTRE_AVISOS = 60
 NOME_ESTADO = "_aviso_fila.json"
 TITULO = "A fila das máquinas parou"
 
+# --- e o buraco que a fila parada NÃO cobre -------------------------
+#
+# Em 05/10/2026 os dois vigias ficaram MUDOS das 19:11 às 23:00 e só se
+# soube porque havia arquivo esperando. Com a fila vazia, ninguém saberia
+# — e amanhã de manhã o primeiro arquivo do dia descobriria, com prazo
+# em cima. O sinal de vida já media isso desde sempre; o que faltava era
+# alguém OLHAR por conta própria.
+#
+# 20 min é quatro vezes os 5 min em que o vigia vivo reescreve o sinal:
+# atraso de sincronização não acorda o alarme, vigia derrubado acorda.
+MINUTOS_SINAL_MUDO = 20
+NOME_ESTADO_SINAL = "_aviso_sinal.json"
+TITULO_SINAL = "Vigia das máquinas sem dar sinal"
+
 
 def caminho_estado():
     # Lido na hora do uso, nunca guardado em constante de módulo: é assim
@@ -132,3 +146,105 @@ def conferir(agora=None, notificar=None, paradas=None):
     estado.update({maquina: agora.isoformat(timespec="seconds") for maquina in paradas})
     _gravar_estado(estado)
     return paradas
+
+
+# --- o vigia que emudece, mesmo com a fila vazia ---------------------
+
+
+def _caminho_estado_sinal():
+    return caminhos.PASTA_PROGRAMA / NOME_ESTADO_SINAL
+
+
+def _ler_mudos():
+    try:
+        dados = json.loads(_caminho_estado_sinal().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return dados if isinstance(dados, dict) else {}
+
+
+def mensagem_do_sinal(mudos):
+    """
+    Cada linha diz há quanto tempo o posto está mudo e o que isso
+    significa — quem lê está no meio de outra coisa.
+    """
+    from envio_impressao import _quanto_faz
+
+    linhas = [
+        f"{posto.upper()} ({maquina}): sem sinal há {_quanto_faz(minutos)}."
+        for posto, (maquina, minutos) in sorted(mudos.items())
+    ]
+    linhas.append(
+        "O vigia vivo reescreve o sinal a cada 5 min. Parado assim, ele não "
+        "está rodando — nada vai sair da fila até alguém ligar a tarefa "
+        "naquela máquina.")
+    return "\n".join(linhas)
+
+
+def conferir_sinais(agora=None, notificar=None, sinais=None, postos=None):
+    """
+    Uma passada: olha o SINAL DE VIDA de cada posto e notifica o que
+    emudeceu — mesmo com a fila vazia.
+
+    É o buraco que `conferir` não cobre, e que apareceu em 05/10/2026: os
+    dois vigias ficaram mudos das 19:11 às 23:00 e só se soube porque
+    havia arquivo esperando. Com a fila vazia, o primeiro arquivo do dia
+    seguinte é que descobriria — com prazo em cima.
+
+    AVISA UMA VEZ POR APAGÃO, não uma por hora. A fila parada repete de
+    hora em hora porque ela é urgência que continua (tem material
+    esperando); vigia mudo é um FATO que não muda até alguém ir lá, e de
+    madrugada, com as máquinas desligadas, repetir seria ensinar a
+    ignorar o alarme. Então o aviso é na BORDA: dispara quando o posto
+    emudece e só volta a poder disparar depois que ele fala de novo.
+    """
+    agora = agora or datetime.datetime.now()
+    if postos is None:
+        from rasterlink_hotfolder import POSTO_RIP, POSTO_SAI
+        postos = (POSTO_RIP, POSTO_SAI)
+
+    if sinais is None:
+        from rasterlink_hotfolder import ler_sinal_de_vida
+        sinais = {posto: ler_sinal_de_vida(agora=agora, posto=posto)
+                  for posto in postos}
+
+    estado = _ler_mudos()
+    mudos, voltaram = {}, []
+    for posto in postos:
+        sinal = sinais.get(posto)
+        # sinal que não existe ainda NÃO é apagão: é posto nunca instalado,
+        # e inventar alarme pra isso enche a tela de quem não tem a máquina
+        if sinal is None:
+            continue
+        if sinal["idade_minutos"] >= MINUTOS_SINAL_MUDO:
+            if not estado.get(posto):
+                mudos[posto] = (sinal["maquina"], sinal["idade_minutos"])
+        elif estado.get(posto):
+            voltaram.append(posto)
+
+    if voltaram:
+        for posto in voltaram:
+            estado.pop(posto, None)
+        _gravar_sinal(estado)
+    if not mudos:
+        return {}
+
+    if notificar is None:
+        from monitor_onedrive import notificar_windows
+        notificar = notificar_windows
+
+    # Mesma disciplina do outro aviso: estado só é gravado DEPOIS que a
+    # notificação passou. Falhou, ninguém foi avisado — tenta de novo.
+    notificar(mensagem_do_sinal(mudos), titulo=TITULO_SINAL)
+
+    estado.update({posto: agora.isoformat(timespec="seconds") for posto in mudos})
+    _gravar_sinal(estado)
+    return mudos
+
+
+def _gravar_sinal(estado):
+    try:
+        _caminho_estado_sinal().write_text(
+            json.dumps(estado, ensure_ascii=False, indent=2), encoding="utf-8")
+    except OSError:
+        pass
