@@ -206,6 +206,9 @@ def gerar(pasta_saida, pasta_producao, nome_cliente,
     Escreve a OS/Checklist da pasta de produção e devolve o caminho do PDF
     (pasta_saida/'OS - <CLIENTE>.pdf', como manda a convenção da casa).
 
+    Gera também RETIRADA - <CLIENTE>.pdf, separado, com as mesmas peças,
+    quantidades e miniaturas. Os dois são atualizados na mesma geração.
+
     Ao lado, quando houver preço cadastrado, sai a cópia da gerência
     'CUSTOS - <CLIENTE>.pdf' — que, sendo a pasta de produção inteira, é o
     custo de material do EVENTO. Falhar nela nunca derruba a OS: vira aviso
@@ -235,6 +238,7 @@ def gerar(pasta_saida, pasta_producao, nome_cliente,
     caminho = relatorios.gerar_os(
         str(pasta_saida), nome_cliente, nome_gerente, nome_produtor,
         itens, dados, ordem, data_hora, materiais_config=materiais,
+        tintas_docan=config.get("centro_custos_tintas"),
     )
 
     try:

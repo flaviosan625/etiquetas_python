@@ -83,13 +83,12 @@ def test_a_pasta_diz_qual_maquina_e(pasta):
 
 def test_so_as_duas_maquinas_que_ele_escolheu_tem_pasta(tmp_path):
     """
-    "Deixar apenas a DOCAN 5200 e a SWJ 320A, o restante nos fazemos
-    manualmente" (04/10/2026). O interruptor e o campo 'montagem' no
-    cadastro: maquina nova nao passa a montar sozinha sem alguem decidir.
+    A DOCAN, a SWJ e a UJV têm montagem habilitada no cadastro atualizado.
+    O interruptor e o campo 'montagem' continuam sendo a fonte da seleção.
     """
     criadas = montagem.garantir_pastas(raiz=tmp_path)
 
-    assert sorted(criadas) == ["DOCAN R5200", "SWJ320A"]
+    assert sorted(criadas) == ["DOCAN R5200", "SWJ320A", "UJV 100 UNY CV"]
     assert all(p.is_dir() for p in criadas.values())
     assert criadas["SWJ320A"].name == "SWJ320A", "o nome da pasta e o da maquina, igual a fila"
 
@@ -141,8 +140,9 @@ def test_a_largura_do_FECHAMENTO_vem_do_cadastro_e_nao_e_a_da_maquina():
 
     assert rl_hf.MAQUINAS["DOCAN R5200"]["largura_util_m"] == 5.04, \
         "o que a maquina imprime nao muda porque o fechamento mudou"
-    # maquina sem o campo cai na largura dela, como sempre
-    assert montagem.largura_util("UJV 100 UNY CV") == 1.27
+    # A largura de montagem da UJV é o fechamento do rolo cadastrado;
+    # a capacidade física para o vigia continua sendo 1,27 m.
+    assert montagem.largura_util("UJV 100 UNY CV") == 1.52
     assert montagem.mesa("DOCAN H2525") == (2.50, 2.50)
 
 
@@ -535,11 +535,11 @@ def test_toda_peca_sai_com_NUMERO_e_NOME_na_folha(pasta):
     assert "VIBRA_RODAPE" in texto
 
 
-def test_o_rotulo_ENCOLHE_antes_de_cortar(pasta):
+def test_o_rotulo_encolhe_sem_cortar_o_nome(pasta):
     """
     O nome tem que sair EXATO, igual ao do arquivo (regra dele,
-    04/10/2026). Entao encolher vem antes de cortar: cortar e ultimo
-    recurso, e so quando nem a menor letra couber.
+    04/10/2026). Encolhe enquanto legivel; se o nome nao couber inteiro,
+    a montagem exige revisao em vez de cortar a identificacao.
     """
     import pymupdf as mupdf
 
@@ -552,9 +552,8 @@ def test_o_rotulo_ENCOLHE_antes_de_cortar(pasta):
     assert escrito == nome, "cabendo, o nome sai inteiro -- nada de truncar por preguica"
     assert 0 < milimetros <= 20
 
-    # numa peca estreita demais ele corta, mas o NUMERO nunca e o cortado
-    _mm, curto = montagem._escrever_rotulo(pagina, 0, 500, 0.08, nome, mupdf)
-    assert curto.startswith("07") and curto.endswith("~")
+    with pytest.raises(AssertionError, match="nome inteiro"):
+        montagem._escrever_rotulo(pagina, 0, 500, 0.08, nome, mupdf)
 
     with pytest.raises(AssertionError):
         montagem._escrever_rotulo(pagina, 0, 100, 0.002, nome, mupdf)
@@ -870,7 +869,10 @@ def test_medindo_no_PDF_a_arte_saiu_na_proporcao_do_arquivo(pasta):
         pagina = doc.load_page(0)
         # get_xobjects devolve a DEFINICAO da pagina de origem junto com a
         # colocacao dela; a que interessa e a que esta na posicao da peca
-        caixas = [pymupdf.Rect(item[3]) for item in pagina.get_xobjects()]
+        # A caixa do XObject usa coordenadas PDF (origem embaixo); a
+        # ficha e a página usam origem em cima. Compare no mesmo sistema.
+        caixas = [pymupdf.Rect(item[3]) * pagina.transformation_matrix
+                  for item in pagina.get_xobjects() if item[2] == 0]
         desenhadas = [c for c in caixas
                       if abs(c.x0 / PT_M - x) < 0.06 and abs(c.y0 / PT_M - y) < 0.06]
         assert len(desenhadas) == 1, f"nao achei a arte em x={x:.2f} y={y:.2f}"
@@ -1475,8 +1477,9 @@ def test_a_folha_pronta_vai_pra_pasta_de_SAIDA(pasta):
 def test_garantir_pastas_cria_entrada_E_saida(tmp_path):
     montagem.garantir_pastas(raiz=tmp_path)
     for maquina in montagem.maquinas_que_montam():
-        assert (tmp_path / maquina).is_dir()
-        assert (tmp_path / ("SAIDA " + maquina)).is_dir()
+        nome_pasta = montagem.nome_pasta_maquina(maquina)
+        assert (tmp_path / nome_pasta).is_dir()
+        assert (tmp_path / ("SAIDA " + nome_pasta)).is_dir()
 
 
 def test_a_saida_NAO_e_lida_como_entrada(pasta):
@@ -1490,31 +1493,29 @@ def test_a_saida_NAO_e_lida_como_entrada(pasta):
         "a pasta de saida nao pode ser confundida com a da maquina"
 
 
-def test_montagem_comprida_sai_dividida_de_10_em_10_metros(pasta):
+def test_montagem_comprida_sai_continua_sem_limite_de_10_metros(pasta):
     # 12 pecas de 2,40 x 2,00 numa bobina de 5,00: duas por fileira,
     # 6 fileiras de 2,05 = 12,30 m de encaixe
     for i in range(12):
         arte(pasta, "1UN LONA IMPRESSA 2.40X2.00M_VIBRA_PECA_%d.pdf" % i, 2.40, 2.00)
 
     previa = montagem.prever_pasta(pasta, raiz_clientes=pasta.parent / "x")
-    assert len(previa["folhas"]) > 1, "passou de 10 m e tinha que sair dividida"
-    for folha in previa["folhas"]:
-        assert folha["folha_m"] <= montagem.MAXIMO_COMPRIMENTO_M + 0.001
+    assert len(previa["folhas"]) == 1
+    assert previa["folhas"][0]["folha_m"] > 10.0
 
     resultado = montagem.montar_pasta(pasta, raiz_clientes=pasta.parent / "x")
     assert len(resultado["folhas"]) == len(previa["folhas"])
     nomes = [f["arquivo"].name for f in resultado["folhas"]]
-    assert all("parte" in nome for nome in nomes), \
-        "o nome tem que dizer qual parte e, senao as duas parecem a mesma folha"
+    assert all("parte" not in nome for nome in nomes)
 
-    # e NENHUMA peca se perdeu no corte
+    # O lote inteiro cabe em uma folha contínua, sem perder peças.
     montadas = 0
     for f in resultado["folhas"]:
         ficha = json.loads(f["arquivo"].with_suffix(".json").read_text(encoding="utf-8"))
         montadas += len(ficha["pecas"])
         with pymupdf.open(str(f["arquivo"])) as doc:
-            assert doc.load_page(0).rect.height / PT_M <= \
-                montagem.MAXIMO_COMPRIMENTO_M + 0.001
+            assert doc.load_page(0).rect.height / PT_M == pytest.approx(
+                previa["folhas"][0]["folha_m"], abs=1e-4)
     assert montadas == 12
 
 

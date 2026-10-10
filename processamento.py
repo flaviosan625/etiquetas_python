@@ -50,6 +50,7 @@ from dimensoes import (
 from estado_pedido import carregar_estado, nomes_ja_processados, salvar_estado
 from pdf_layout import iniciar_pagina_com_banner, numerar_paginas_a_partir_de, estampar_conferencia_local
 from relatorios import salvar_log, gerar_os, salvar_dados_os
+from retirada_material import caminho_pdf as caminho_retirada
 from utils import cliente_do_pedido, remover_acentos, sanitizar_nome_arquivo
 
 LARGURA_A4 = 595.27
@@ -491,7 +492,7 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
             )
             return {
                 "pasta_saida": str(pasta_saida), "unificado": None, "log_csv": None,
-                "os": None, "os_json": None, "arquivos_novos": 0,
+                "os": None, "retirada": None, "os_json": None, "arquivos_novos": 0,
                 "arquivos_ignorados": arquivos_ignorados, "atualizacao": True,
             }
     else:
@@ -1184,8 +1185,10 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
         caminho_os = gerar_os(
             str(pasta_saida), nome_cliente_seguro, nome_gerente, nome_produtor,
             itens_para_os, dados_categorias_os, ordem_unificado, data_hora_atual, materiais,
+            tintas_docan=config.get("centro_custos_tintas"),
         )
         logger.emitir("ok", f"OS gerada: {pathlib.Path(caminho_os).name}")
+        logger.emitir("ok", f"Retirada de material gerada: {caminho_retirada(pasta_saida, nome_cliente_seguro).name}")
         # arquivo complementar, lido pelo controle de estoque pra baixa
         # automática (ver estoque.py) — nunca acontece sozinho, é sempre
         # o usuário quem escolhe enviar esse arquivo lá na tela de estoque.
@@ -1257,6 +1260,7 @@ def processar_etiquetas(pasta_entrada, nome_cliente, nome_gerente, nome_produtor
         "unificado": str(caminho_unificado) if caminho_unificado else None,
         "log_csv": caminho_log,
         "os": caminho_os,
+        "retirada": str(caminho_retirada(pasta_saida, nome_cliente_seguro)) if caminho_os else None,
         "os_json": caminho_os_json,
         "custos": caminho_custos,
         "arquivos_novos": len(arquivos_arte),

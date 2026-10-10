@@ -23,8 +23,9 @@ Três regras que vieram do usuário e que o código respeita literalmente:
     virou só alerta. A sugestão vem preenchida mas NUNCA fica travada:
     "não sabemos o que pode acontecer no meio de uma produção".
 
-    A DOCAN entrou na lista em 2026-09-07 e NÃO é sugerida por nada —
-    é escolha na mão. Chegaram a existir aqui um desempate por largura
+    A DOCAN entrou na lista em 2026-09-07 como escolha manual; desde
+    08/10/2026 é sugerida para DECORFLEX, por pedido do usuário.
+    Chegaram a existir aqui um desempate por largura
     entre as duas máquinas de lona e um seletor de rolo por arquivo;
     os dois foram retirados pelo usuário no mesmo dia: "não colocar
     medidas somente as máquinas" e "deixe que eu sugira as máquinas,
@@ -39,7 +40,7 @@ import datetime
 import pathlib
 import shutil
 
-from dimensoes import extrair_dimensoes, extrair_quantidade, identificar_categoria, identificar_categoria_extra
+from dimensoes import contem_palavra, extrair_dimensoes, extrair_quantidade, identificar_categoria, identificar_categoria_extra
 from producao import NOME_PASTA_PRODUCAO, NOME_SUBPASTA_PRONTOS, PASTA_CORTE, _pasta_de_trabalho_para
 from rasterlink_hotfolder import (
     EXTENSOES_ACEITAS, MAQUINAS, PASTA_FILA_ONEDRIVE, enviar_para_fila, limite_de,
@@ -51,16 +52,8 @@ from rasterlink_hotfolder import (
 MAQUINA_LONA = "SWJ320A"
 MAQUINA_ADESIVO = "UJV 100 UNY CV"
 
-# A DOCAN (2026-09-07). As duas imprimem lona, e o que separa é a
-# largura, dita pelo usuário: "a SWJ recebe porém a regra para ela é
-# lonas até 320 na largura, no caso da docan pode chegar até 500cm
-# largura".
-#
-# Isto ABRE UMA EXCEÇÃO na regra de 2026-09-05 ("a máquina é decidida
-# pelo material no nome, não pela largura"). Aquela regra continua
-# valendo pra escolher ENTRE MATERIAIS — adesivo na UJV, lona nas
-# outras, sem a largura opinar. A largura só entra depois, pra desempatar
-# QUAL das duas máquinas de lona, que é a única coisa que as distingue.
+# DECORFLEX vai para a R5200 (pedido de 08/10/2026), sem usar a largura
+# para escolher. Continua sendo sugestão: o operador pode trocar.
 MAQUINA_DOCAN = "DOCAN R5200"
 
 # A folga de 1mm (arte fechada exatamente na largura da bobina vira
@@ -108,18 +101,17 @@ def sugerir_maquina(nome_arquivo, config):
     palavra adesivo. Nome sem lona nem adesivo (ex: "PS IMPRESSO
     REFILE") também vai pra UJV.
 
-    A DOCAN NÃO é sugerida por nada, e isso é decisão do usuário, não
-    lacuna: "deixe que eu sugira as máquinas, só peço que deixe as
-    sugestões se baseando nas regras antigas" (2026-09-07). Chegou a
-    existir aqui um desempate por largura entre a SWJ e a DOCAN, e foi
-    retirado. Ela está na lista pra ser escolhida na mão, e é assim que
-    fica até ele pedir outra coisa.
+    DECORFLEX sugere DOCAN R5200 (pedido de 08/10/2026), inclusive quando
+    acompanhado de LONA no nome. As demais sugestões e a troca manual
+    permanecem; a largura não participa da escolha.
     """
     nome_upper = nome_arquivo.upper()
     materiais = config["materiais"]
     categoria, _ = identificar_categoria(nome_upper, materiais, config.get("sinonimos_categoria", {}))
     categoria_extra = identificar_categoria_extra(nome_upper, materiais, config.get("materiais_compostos", {}))
 
+    if categoria == "DECORFLEX" or contem_palavra(nome_upper, "DECORFLEX"):
+        return MAQUINA_DOCAN
     if _CATEGORIA_ADESIVO in (categoria, categoria_extra):
         return MAQUINA_ADESIVO
     if categoria == _CATEGORIA_LONA:
@@ -325,7 +317,7 @@ def listar(pasta_escolhida, config, envios_anteriores=None, maquinas=None):
             continue
         categoria, _ = identificar_categoria(nome_upper, materiais, sinonimos)
         quantidade, _ = extrair_quantidade(nome_upper)
-        dimensao = extrair_dimensoes(nome_upper, config)
+        dimensao = extrair_dimensoes(nome_upper, config.get("typos_unidade", {}))
         maquina = sugerir_maquina(caminho.name, config)
 
         itens.append({
@@ -632,6 +624,14 @@ def enviar(itens, pasta_producao, pasta_fila=None, maquinas=None, agora=None, lo
 
     for item in itens:
         caminho = item["caminho"]
+        # Planejamento apenas: a quantidade de passadas no RIP continua manual.
+        from tempo_impressao import estimar
+        try:
+            estimativa = estimar(item["maquina"], item.get("area_total_m2"),
+                                item.get("passadas_impressao"))
+        except ValueError as erro:
+            resultado["falhas"].append((item, str(erro)))
+            continue
         try:
             tamanho_origem = caminho.stat().st_size
         except OSError as e:
@@ -673,6 +673,8 @@ def enviar(itens, pasta_producao, pasta_fila=None, maquinas=None, agora=None, lo
             "girou_previsto": bool(item["giro"]),
             "bytes": tamanho_origem,
         })
+        if estimativa is not None:
+            resultado["enviados"][-1]["estimativa_impressao"] = estimativa
         if logger:
             logger("ok", f"'{item['arquivo']}' enviado pra fila da {item['maquina']}.")
 

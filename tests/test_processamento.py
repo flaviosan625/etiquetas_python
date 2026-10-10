@@ -563,7 +563,7 @@ def test_eps_e_convertido_e_entra_na_rodada(tmp_path, monkeypatch):
     import processamento as mod_processamento
 
     def conversor_fake(caminho_origem, caminho_pdf_destino):
-        _pdf_de_uma_pagina(caminho_pdf_destino)
+        _pdf_com_desenho(caminho_pdf_destino, 2 * 72 / 0.0254, 72 / 0.0254)
 
     def converter_fake(pasta_entrada, nome_arquivo, pasta_originais, logger_emitir, conversores=None):
         from conversao_adobe import converter_se_necessario

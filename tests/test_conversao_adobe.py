@@ -1,6 +1,8 @@
 import sys
 import pathlib
 
+import pymupdf
+
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 from conversao_adobe import CONVERSORES_POR_EXTENSAO, converter_se_necessario, converter_tif_para_pdf
@@ -47,7 +49,9 @@ def test_arquivo_sem_conversor_devolve_none(tmp_path):
 
 def test_converte_e_move_original_pra_subpasta(tmp_path):
     def conversor_fake(caminho_origem, caminho_pdf_destino):
-        pathlib.Path(caminho_pdf_destino).write_bytes(b"pdf fake gerado pelo conversor")
+        with pymupdf.open() as documento:
+            documento.new_page().insert_text((20, 20), "arte convertida de teste")
+            documento.save(caminho_pdf_destino)
 
     mensagens, emitir = _logger()
     (tmp_path / "arte.eps").write_bytes(b"conteudo eps fake")
@@ -65,7 +69,9 @@ def test_converte_e_move_original_pra_subpasta(tmp_path):
 
 def test_colisao_de_nome_ganha_sufixo_numerico(tmp_path):
     def conversor_fake(caminho_origem, caminho_pdf_destino):
-        pathlib.Path(caminho_pdf_destino).write_bytes(b"novo pdf")
+        with pymupdf.open() as documento:
+            documento.new_page().insert_text((20, 20), "nova arte de teste")
+            documento.save(caminho_pdf_destino)
 
     _, emitir = _logger()
     (tmp_path / "arte.pdf").write_bytes(b"pdf que ja existia, nao pode ser sobrescrito")

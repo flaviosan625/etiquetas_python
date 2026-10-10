@@ -10,7 +10,31 @@ alimentam tudo o mais.
 Lê os PDFs de uma pasta de entrada, identifica o material de cada um pelo nome (Lona, Adesivo, PS,
 MDF, PVC, Acrílico e quaisquer outros cadastrados), monta etiquetas em folhas A4 e gera o PDF
 unificado com sumário, um checklist por categoria, o log de processamento em CSV e a Ordem de
-Serviço resumida.
+Serviço resumida. O mesmo comando gera três PDFs: etiquetas (`Checklist CLIENTE.pdf`),
+OS (`OS - CLIENTE.pdf`) e retirada de material (`RETIRADA - CLIENTE.pdf`). A retirada traz
+as mesmas miniaturas, materiais, peças, medidas e quantidades da OS, com campos para
+motorista, transportadora, veículo, destino, data da retirada, ressalvas e assinaturas. Ao atualizar
+a OS, o PDF de retirada é reconstruído junto. A impressão do pedido envia os três arquivos,
+cada documento em suas próprias folhas. A retirada usa linhas compactas com miniaturas e
+aproveita a altura disponível para acomodar mais peças por página; os dados do transporte
+ficam na primeira folha e a declaração, as ressalvas e as assinaturas apenas na última,
+abrangendo todas as páginas. O total de
+unidades soma as quantidades indicadas nas etiquetas, sem duplicar peças de material composto.
+Uma etiqueta pode representar várias unidades da mesma peça. A data de atualização da OS é
+separada da data da retirada, preenchida na conferência física. O vigia atualiza também as OS
+antigas na próxima passada, mesmo que a pasta de produção não tenha mudado.
+
+O atalho **Centro de custos de tinta** cadastra Ciano, Magenta, Amarelo e Preto
+separadamente para a **Docan R5200** e a **Docan H2525**. Preço, capacidade e
+consumo por m² são editáveis por cor e máquina; os preços precisam ser
+cadastrados na configuração local antes de calcular custos. A H2525 pode usar
+uma referência de consumo provisória identificada na OS. A conta multiplica a
+área da arte pela quantidade; sobra sem impressão não consome tinta. É uma
+estimativa por área, sem limpeza/purga, e não registra baixa de estoque. O
+quadro com consumo e custo por cor aparece **somente na OS**, sem valores nas
+etiquetas ou na retirada. O vigia atualiza a OS quando preço ou consumo de
+tinta mudam, como já faz com os materiais. O total usa os valores antes de
+arredondar cada cor para centavos.
 
 ### 2. Envio para as impressoras
 
@@ -18,7 +42,7 @@ Organiza a pasta de produção de cada cliente e manda os arquivos prontos para 
 certa. Do outro lado, um vigia entrega na *hot folder* do RIP — sem nunca deixar o RIP ver arquivo
 pela metade, e girando 90° o que for mais largo que a bobina, para economizar material.
 
-Máquinas atendidas: **Mimaki UJV 100** (1,48 m), **Mimaki SWJ320A** (3,20 m) e **DOCAN R5200**
+Máquinas atendidas: **Mimaki UJV 100** (1,27 m), **Mimaki SWJ320A** (3,24 m úteis) e **DOCAN R5200**
 (5,00 m). A máquina é sugerida pelo material, nunca pela largura.
 
 ### 3. Comprovação do que foi produzido

@@ -688,7 +688,9 @@ def test_linha_que_nao_gravou_fica_guardada_e_entra_depois(tmp_path):
     """
     arquivo = tmp_path / "lona.pdf"
     arquivo.write_bytes(b"x")
-    quando = datetime.datetime(2026, 9, 16, 15, 27, 24)
+    # A recuperação precisa acontecer dentro dos 20 dias de guarda;
+    # uma data fixa envelhece e passa a testar a expiração sem querer.
+    quando = datetime.datetime.now().replace(hour=15, minute=27, second=24, microsecond=0)
 
     assert rl_hf.registrar_envio("SWJ320A", arquivo, False, pasta_relatorios=tmp_path / "in<>valido",
                                  quando=quando) is False
@@ -697,7 +699,7 @@ def test_linha_que_nao_gravou_fica_guardada_e_entra_depois(tmp_path):
     rel = tmp_path / "rel"
     assert rl_hf.conciliar_registro(pasta_relatorios=rel) == {"gravadas": 1, "pendentes": 0}
 
-    linhas = rl_hf._ler_jsonl(rel / "_registro" / "2026-09.jsonl")
+    linhas = rl_hf._ler_jsonl(rel / "_registro" / quando.strftime("%Y-%m.jsonl"))
     assert [l["arquivo"] for l in linhas] == ["lona.pdf"]
 
     [entrada] = rl_hf._ler_diario(rl_hf.CAMINHO_REGISTRO_PENDENTE)
@@ -713,16 +715,17 @@ def test_linha_apagada_do_registro_volta_na_passada_seguinte(tmp_path):
     arquivo = tmp_path / "lona.pdf"
     arquivo.write_bytes(b"x")
     rel = tmp_path / "rel"
-    registro = rel / "_registro" / "2026-09.jsonl"
+    quando = datetime.datetime.now().replace(hour=11, minute=34, second=58, microsecond=0)
+    registro = rel / "_registro" / quando.strftime("%Y-%m.jsonl")
 
     rl_hf.registrar_envio("SWJ320A", arquivo, False, pasta_relatorios=rel,
-                          quando=datetime.datetime(2026, 9, 16, 11, 34, 58))
+                          quando=quando)
     assert len(rl_hf._ler_jsonl(registro)) == 1
 
     registro.write_text("", encoding="utf-8")   # o OneDrive trocou o arquivo por uma versao sem ela
 
     rl_hf.registrar_envio("SWJ320A", arquivo, False, pasta_relatorios=rel,
-                          quando=datetime.datetime(2026, 9, 16, 11, 40, 0))
+                          quando=quando + datetime.timedelta(minutes=5))
     arquivos = [(l["arquivo"], l["quando"]) for l in rl_hf._ler_jsonl(registro)]
     assert len(arquivos) == 2, "a entrega antiga volta junto com a nova"
 

@@ -147,6 +147,8 @@ MAQUINAS = {
         # máquina, é aqui que se corrige.
         "largura_util_m": 1.27,
         "margem_montagem_m": 0.03,
+        "largura_montagem_m": 1.52,
+        "montagem": True,
         "posto": POSTO_RIP,
     },
     "SWJ320A": {
@@ -176,14 +178,14 @@ MAQUINAS = {
     # naquele dia). Os 5,04 existem pra a montagem fechar em 5,00
     # redondos de arte depois das bordas de 2 cm.
     #
-    # ANTES DE USAR NÚMERO DE TELA DE MÁQUINA COMO LIMITE, confira se não
+    # ANTES DE USAR NÚMERO DE TELA DE M�?QUINA COMO LIMITE, confira se não
     # é a mídia do momento.
     #
     # O que o 5,04 custa, dito de frente: o aviso de "não cabe" passa a
     # reclamar de arte entre 5,04 e 5,20, que a máquina imprimiria. É
     # aviso, nunca barreira ("DOCAN só entrega"), e errar pro lado
     # conservador é o certo. Querendo os dois números, é separar a
-    # largura da MONTAGEM da largura da MÁQUINA — hoje são a mesma.
+    # largura da MONTAGEM da largura da M�?QUINA — hoje são a mesma.
     #
     # A DOCAN roda mais de um rolo, mas 'largura_util_m' aqui é UMA só,
     # a maior. Chegou a existir escolha de rolo por arquivo e o usuário
@@ -220,7 +222,7 @@ MAQUINAS = {
         # como saiu da fila: sem giro automático. A medida continua servindo
         # pro aviso de "não cabe" e pro registro. Motivo concreto: lona em
         # escala 1:10 (página 0,70 x 0,32 de uma peça de 7 x 3,20) foi girada
-        # pela medida da PÁGINA, que não quer dizer nada numa arte em escala.
+        # pela medida da P�?GINA, que não quer dizer nada numa arte em escala.
         "girar": False,
     },
     # A segunda DOCAN (2026-09-23): PLANA, imprime em chapa rígida de até
@@ -243,7 +245,7 @@ MAQUINAS = {
     # D:\RIPADOS\DOCAN H2525; a entrada do SAi, esta aqui.
     #
     # 'mesa_util_m' e não largura: numa plana os dois lados são teto. Os
-    # 2,50 × 2,50 são a ÁREA DE IMPRESSÃO da ficha do fabricante — aqui
+    # 2,50 × 2,50 são a �?REA DE IMPRESSÃO da ficha do fabricante — aqui
     # o catálogo dá a medida certa, diferente da R5200, onde ele dava a
     # mídia (5,20) e a útil (5,00) só apareceu no BYHX. Confirmar no
     # BYHX dela assim que estiver montada.
@@ -330,7 +332,7 @@ PASTAS_RIPADOS_LOCAIS = (
 )
 
 # Abaixo disto o disco vira problema de gente, não de log. Um .prt
-# acompanha a ÁREA impressa — o maior achado em 03/10/2026 tinha 88 GB —,
+# acompanha a �?REA impressa — o maior achado em 03/10/2026 tinha 88 GB —,
 # então 150 GB é menos de dois arquivos grandes de folga.
 ESPACO_MINIMO_RIPADOS_GB = 150
 
@@ -344,7 +346,7 @@ ESPACO_MINIMO_RIPADOS_GB = 150
 #   PrintedArea.Log   uma linha por PASSADA, append-only desde janeiro:
 #                     hora, arquivo, início, duração e percentual. É a
 #                     única prova de que o .prt rodou na máquina, e a
-#                     única fonte de TEMPO DE MÁQUINA de verdade.
+#                     única fonte de TEMPO DE M�?QUINA de verdade.
 #   Joblist_His.xml   a lista de TRABALHOS, com status ('Printed' /
 #                     'Idle'), cópias e o tamanho em POLEGADAS — 196,96
 #                     x 19,69 pol do arquivo "5.00X0.50M", que é o
@@ -356,7 +358,7 @@ ESPACO_MINIMO_RIPADOS_GB = 150
 # entre duas passadas se perde. Quem guarda é o registro (ver
 # registrar_impressoes), e a cópia fica só como diagnóstico.
 #
-# O campo de ÁREA do log está zerado nos registros recentes (todas as 31
+# O campo de �?REA do log está zerado nos registros recentes (todas as 31
 # linhas de setembro/2026), então m² nunca sai dele: sai do tamanho em
 # polegadas do trabalho, ou do nome do arquivo no PC principal.
 PASTA_BYHX = pathlib.Path("C:/PrinterManager")
@@ -2021,7 +2023,7 @@ def trabalhos_do_byhx(pasta_byhx=None, maquinas=None):
     "Idle"), hora, cópias e o TAMANHO EM METROS.
 
     O tamanho é o número que mais vale aqui, porque é a medida que a
-    MÁQUINA usou — não a do nome do arquivo, que já veio errada vezes
+    M�?QUINA usou — não a do nome do arquivo, que já veio errada vezes
     demais. Vem em polegadas e é convertido.
 
     ATENÇÃO: esta lista é uma JANELA, não um histórico. Tinha 13
@@ -2096,7 +2098,7 @@ def ripados_ja_impressos(pasta_byhx=None):
 
 def faxina_dos_ripados(pastas=None, dias=None, logger=None, agora=None, impressos=None):
     """
-    Apaga o .prt que JÁ IMPRIMIU e passou do prazo, nas pastas locais de
+    Apaga o .prt que J�? IMPRIMIU e passou do prazo, nas pastas locais de
     ripado. Devolve (quantos, bytes liberados).
 
     Três travas, porque apagar arquivo de 88 GB não tem desfazer:
@@ -2156,7 +2158,7 @@ def avisar_disco_cheio(pastas=None, logger=None, minimo_gb=None):
     Avisa uma vez quando sobra pouco disco onde mora o ripado.
 
     A faxina não resolve tudo sozinha: ela só apaga o que já imprimiu, e
-    um .prt acompanha a ÁREA impressa (88 GB numa lona, medidos em
+    um .prt acompanha a �?REA impressa (88 GB numa lona, medidos em
     03/10/2026). Disco do Windows cheio trava a máquina inteira, com o
     RIP junto — e esse é o tipo de coisa que ninguém descobre olhando log.
     """
@@ -2206,7 +2208,7 @@ def _guardar_marca_byhx(marca, caminho=None):
 def registrar_impressoes(pasta_relatorios=None, pasta_byhx=None, logger=None, agora=None,
                         caminho_pendente=None, caminho_marca=None, maquinas=None):
     """
-    Anota no registro permanente o que a MÁQUINA imprimiu, lido do
+    Anota no registro permanente o que a M�?QUINA imprimiu, lido do
     programa dela. Devolve {'anotadas': n, 'pendentes': n}.
 
     Vai pra "_impressao/AAAA-MM.jsonl", ao lado do registro de entregas
@@ -2552,3 +2554,4 @@ if __name__ == "__main__":
         principal_uma_vez()
     else:
         principal()
+

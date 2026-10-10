@@ -11,6 +11,7 @@ derrubaria o trabalho dele sem aviso. Só fecha (Close) o documento
 específico que essa conversão abriu, sempre sem salvar em cima do
 arquivo original.
 """
+import math
 import pathlib
 
 try:
@@ -196,7 +197,40 @@ CONVERSORES_POR_EXTENSAO = {
 }
 
 
-def converter_se_necessario(pasta_entrada, nome_arquivo, pasta_originais, logger_emitir, conversores=None):
+def _validar_pdf_convertido(caminho_pdf):
+    """Confere o resultado antes de retirar a arte original da entrada."""
+    import pymupdf
+
+    if not caminho_pdf.is_file() or caminho_pdf.stat().st_size == 0:
+        raise ValueError("a conversão não gerou um PDF com conteúdo")
+    with pymupdf.open(str(caminho_pdf)) as documento:
+        if not documento.is_pdf:
+            raise ValueError("o arquivo gerado não é um PDF")
+        if documento.page_count <= 0:
+            raise ValueError("o PDF gerado não contém páginas")
+        for numero, pagina in enumerate(documento, start=1):
+            if not pagina.get_bboxlog():
+                raise ValueError(f"o PDF gerado está sem conteúdo de arte na página {numero}")
+            if any(not math.isfinite(valor) or valor <= 0
+                   for valor in (pagina.rect.width, pagina.rect.height)):
+                raise ValueError(f"o PDF gerado tem medida inválida na página {numero}")
+
+
+def _remover_pdf_da_tentativa(caminho_pdf, nome_arquivo, logger_emitir):
+    """Desfaz apenas a saída nova; nunca toca o original ou um PDF anterior."""
+    try:
+        caminho_pdf.unlink(missing_ok=True)
+    except OSError as erro:
+        logger_emitir(
+            "warn",
+            f"'{nome_arquivo}': a saída desta tentativa '{caminho_pdf.name}' não pôde ser removida "
+            f"({erro}). Não use esse PDF até resolver o aviso. O original foi mantido.",
+            nome_arquivo, "AVISO - SAIDA NAO REMOVIDA",
+        )
+
+
+def converter_se_necessario(pasta_entrada, nome_arquivo, pasta_originais, logger_emitir,
+                           conversores=None, guardar_original=True, pasta_pdf=None):
     """
     Se 'nome_arquivo' for um EPS/PSD (ver CONVERSORES_POR_EXTENSAO),
     converte pra PDF na mesma pasta de entrada (nome novo, nunca
@@ -209,6 +243,14 @@ def converter_se_necessario(pasta_entrada, nome_arquivo, pasta_originais, logger
     existe pra teste automatizado poder simular a conversão sem abrir
     Illustrator/Photoshop de verdade (lento e depende do programa estar
     instalado); em uso normal, sempre usa o dicionário real.
+
+    Com 'guardar_original=False', mantém a arte de entrada no lugar;
+    quem monta o lote pode arquivá-la só depois de publicar a montagem.
+    No modo padrão, falha ao arquivar também desfaz o PDF novo, para
+    evitar que original e conversão sejam produzidos separadamente.
+    'pasta_pdf' permite preparar a derivada em outra pasta, preservando
+    o caminho do original e o retorno do nome do PDF. Sem esse argumento,
+    o PDF continua sendo gerado na própria pasta de entrada.
 
     Retorna o nome do PDF gerado (pra entrar no processamento normal
     dessa mesma rodada), ou None se o arquivo não precisava de
@@ -228,26 +270,47 @@ def converter_se_necessario(pasta_entrada, nome_arquivo, pasta_originais, logger
     # 2026-08-29).
     pasta = pathlib.Path(pasta_entrada).resolve()
     caminho_original = pasta / nome_arquivo
-    caminho_pdf = pasta / (pathlib.Path(nome_arquivo).stem + ".pdf")
-    if caminho_pdf.exists():
+    pasta_destino = pasta if pasta_pdf is None else pathlib.Path(pasta_pdf).resolve()
+    caminho_pdf = None
+    destino_livre = False
+
+    erro_conversao = None
+    try:
+        if pasta_pdf is not None:
+            pasta_destino.mkdir(parents=True, exist_ok=True)
+        caminho_pdf = pasta_destino / (pathlib.Path(nome_arquivo).stem + ".pdf")
         contador = 2
         while caminho_pdf.exists():
-            caminho_pdf = pasta / f"{pathlib.Path(nome_arquivo).stem} ({contador}).pdf"
+            caminho_pdf = pasta_destino / f"{pathlib.Path(nome_arquivo).stem} ({contador}).pdf"
             contador += 1
-
-    try:
+        destino_livre = True
         conversor(str(caminho_original), str(caminho_pdf))
+        _validar_pdf_convertido(caminho_pdf)
     except Exception as e:
+        erro_conversao = str(e)
+    if erro_conversao is not None:
+        # Fora do except: o traceback do leitor de PDF pode manter o
+        # arquivo aberto no Windows até a exceção sair de contexto.
+        # Este destino estava livre antes da tentativa. Um PDF inválido
+        # não pode ficar na entrada para ser tratado como uma nova arte;
+        # o homônimo anterior e o original nunca são apagados aqui.
+        if destino_livre:
+            _remover_pdf_da_tentativa(caminho_pdf, nome_arquivo, logger_emitir)
         logger_emitir(
             "err",
-            f"'{nome_arquivo}': não foi possível converter pra PDF ({extensao.upper()} via Adobe): {e}",
+            f"'{nome_arquivo}': não foi possível converter e conferir o PDF "
+            f"({extensao.upper()} via Adobe): {erro_conversao}. O original foi mantido.",
             nome_arquivo, f"ERRO - CONVERSAO {extensao.upper()} FALHOU",
         )
         return None
 
-    logger_emitir("ok", f"'{nome_arquivo}' convertido pra PDF: {caminho_pdf.name}", nome_arquivo, "CONVERTIDO")
+    if not guardar_original:
+        logger_emitir("ok", f"'{nome_arquivo}' convertido pra PDF: {caminho_pdf.name}",
+                      nome_arquivo, "CONVERTIDO")
+        return caminho_pdf.name
 
     pasta_originais = pathlib.Path(pasta_originais)
+    erro_arquivo_original = None
     try:
         pasta_originais.mkdir(parents=True, exist_ok=True)
         destino_original = pasta_originais / nome_arquivo
@@ -258,11 +321,18 @@ def converter_se_necessario(pasta_entrada, nome_arquivo, pasta_originais, logger
                 contador += 1
         caminho_original.rename(destino_original)
     except OSError as e:
+        erro_arquivo_original = str(e)
+    if erro_arquivo_original is not None:
+        _remover_pdf_da_tentativa(caminho_pdf, nome_arquivo, logger_emitir)
         logger_emitir(
-            "warn",
-            f"'{nome_arquivo}': convertido com sucesso, mas não foi possível mover o original pra "
-            f"'{pasta_originais.name}': {e}. O arquivo original ficou onde estava.",
-            nome_arquivo, "AVISO - NAO MOVEU ORIGINAL",
+            "err",
+            f"'{nome_arquivo}': não foi possível arquivar o original em "
+            f"'{pasta_originais.name}': {erro_arquivo_original}. "
+            "A conversão não foi liberada; o original foi mantido. Feche a arte e tente novamente.",
+            nome_arquivo, "ERRO - NAO ARQUIVOU ORIGINAL",
         )
+        return None
 
+    logger_emitir("ok", f"'{nome_arquivo}' convertido pra PDF: {caminho_pdf.name}",
+                  nome_arquivo, "CONVERTIDO")
     return caminho_pdf.name

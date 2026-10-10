@@ -253,10 +253,10 @@ o NOME DA MÁQUINA — o mesmo do cadastro, da fila e do relatório. Nome igual 
 liga arquivo a máquina sem tabela de conversão, e **medida nunca entra em nome de pasta**: vira
 mentira no dia em que a medida muda, e mudou duas vezes só nesta semana.
 
-**Só a DOCAN R5200 e a SWJ320A têm pasta** (decisão dele, 04/10/2026: *"deixar apenas a DOCAN 5200
-e a SWJ 320A, o restante nós fazemos manualmente"*). O interruptor é o campo `montagem` no cadastro,
-e máquina sem ele não ganha pasta — assim uma máquina nova não passa a montar sozinha sem alguém
-decidir.
+**A DOCAN R5200, a SWJ320A e a UJV 100 têm pasta de montagem**, conforme pedido de 09/10/2026; a
+capacidade inicial da UJV usa o cadastro de 1,27 m. A execução automática é um interruptor separado
+em `config.json` (`montagem_automatica`, inicia falso); a tela permite pausar ou reativar o vigia.
+Montagem manual continua disponível.
 
 **A folha FECHA num número redondo, e a folga é dele** (05/10/2026: *"quando fechar a arte não vai
 poder passar de 5 metros na largura; a folga de 2 cm de cada lado eu coloco manualmente na máquina na
@@ -543,9 +543,10 @@ produção a folha é UM arquivo entregue; sem a ficha, as 13 peças sumiriam do
 Ela guarda posição, medida, giro e o fator de escala de cada peça — número deduzido nunca se passa
 por declarado.
 
-A montagem pega carona na passada do **Checklist de Produção** (como o `vigia_caderno`), e só monta
-pasta **parada** há `MINUTOS_PARADA`: largando dez arquivos seguidos, montar no primeiro faria uma
-folha de uma peça e jogaria as outras nove numa segunda.
+A montagem automática pode pegar carona na passada do **Checklist de Produção** quando
+`montagem_automatica` estiver verdadeira. Na revisão de 09/10/2026 inicia pausada; o botão na tela
+salva essa opção no config. A tela calcula a prévia sem montar. A largura máxima por máquina é
+escolhida em centímetros, conferida contra o limite do cadastro e usada pela prévia, encaixe e PDF.
 
 **Os dados ANTES de gerar, e a prévia é a MESMA conta que monta.** Pedido dele de 05/10/2026:
 *"antes de gerar quero que me passe os dados como um aviso de como vai ficar depois de montado,
@@ -558,10 +559,10 @@ compara a prévia com o `.json` da folha que sai depois, número por número.
 Nos dois caminhos:
 
 - **Botão "Montar arte para impressão"** (`gui_montagem.py`), com uma **aba por máquina que monta** —
-  o separador DOCAN / SWJ que ele pediu. Cada aba lê a pasta dela, calcula e mostra: como a folha
+  DOCAN / SWJ / UJV. Cada aba lê a pasta dela, calcula e mostra: como a folha
   fecha, o aproveitamento, o que fica de fora com o motivo, e peça por peça o que o nome pede, o que
   vai sair e a diferença dos dois lados em milímetros. Montar é um botão à parte.
-- **Aviso do Windows** na passada automática (`_avisar_o_que_vai_sair`, chamado de dentro de
+- **Aviso do Windows opcional** se a montagem automática for reativada (`_avisar_o_que_vai_sair`, chamado de dentro de
   `conferir`), antes de a folha existir. "Antes de gerar" é literal e tem teste: quando a notificação
   é escrita, o PDF ainda não está na pasta — saindo depois, o aviso deixa de ser aviso. Notificação
   não cabe tabela, então ali vai só o que decide se ele precisa olhar agora; a tabela está na tela.

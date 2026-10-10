@@ -86,3 +86,43 @@ def test_listar_impressoras_devolve_lista():
 def test_impressora_padrao_devolve_string_ou_none():
     resultado = impressao.impressora_padrao()
     assert resultado is None or isinstance(resultado, str)
+
+
+def test_um_comando_envia_etiquetas_os_e_retirada_em_arquivos_separados(monkeypatch):
+    import gui
+    chamadas = []
+    monkeypatch.setattr(gui, "imprimir_pdf", lambda arquivo, impressora: chamadas.append((arquivo, impressora)))
+    resultado = dict(unificado="Checklist CLIENTE.pdf", os="OS - CLIENTE.pdf", retirada="RETIRADA - CLIENTE.pdf")
+    gui.JanelaPrincipal._imprimir_os_checklist(None, resultado, "HP", lambda *args: None)
+    assert chamadas == [("Checklist CLIENTE.pdf", "HP"), ("OS - CLIENTE.pdf", "HP"),
+                        ("RETIRADA - CLIENTE.pdf", "HP")]
+
+
+def test_falha_ao_imprimir_os_nao_impede_retirada(monkeypatch):
+    import gui
+    chamadas, mensagens = [], []
+
+    def imprimir(arquivo, impressora):
+        chamadas.append(arquivo)
+        if arquivo == "OS.pdf":
+            raise RuntimeError("Falha na impressão da OS")
+
+    monkeypatch.setattr(gui, "imprimir_pdf", imprimir)
+    gui.JanelaPrincipal._imprimir_os_checklist(
+        None, dict(unificado="Etiquetas.pdf", os="OS.pdf", retirada="Retirada.pdf"),
+        "HP", lambda nivel, msg: mensagens.append((nivel, msg)))
+    assert chamadas == ["Etiquetas.pdf", "OS.pdf", "Retirada.pdf"]
+    assert ("err", "Falha na impressão da OS") in mensagens
+
+
+def test_reimpressao_encontra_os_etiquetas_e_retirada(tmp_path):
+    import gui
+    pasta = tmp_path / "CLIENTE"
+    pasta.mkdir()
+    for nome in ["Checklist CLIENTE.pdf", "OS - CLIENTE.pdf", "RETIRADA - CLIENTE.pdf"]:
+        (pasta / nome).write_bytes(b"PDF de teste")
+    pedidos = gui._pedidos_para_impressao(tmp_path)
+    assert len(pedidos) == 1
+    assert pedidos[0]["retirada"] == [pasta / "RETIRADA - CLIENTE.pdf"]
+    assert pedidos[0]["os"] == [pasta / "OS - CLIENTE.pdf"]
+    assert pedidos[0]["checklist"] == [pasta / "Checklist CLIENTE.pdf"]

@@ -20,7 +20,14 @@ import vigia_checklist as vc
 
 @pytest.fixture(autouse=True)
 def onedrive_de_mentira(tmp_path, monkeypatch):
+    import montagem
+    import conversao_adobe
+
     onedrive = tmp_path / "UNYCOMUNICACAO"
+    monkeypatch.setattr(montagem, "PASTA_RAIZ", onedrive / "MONTAGEM ARTES MAQUINAS")
+    monkeypatch.setattr(conversao_adobe, "CONVERSORES_POR_EXTENSAO", {})
+    # Estes testes são da OS: não consultam filas nem notificam máquinas reais.
+    monkeypatch.setattr(vc, "_conferir_fila", lambda: {})
     monkeypatch.setattr(caminhos, "ONEDRIVE_UNY", onedrive)
     monkeypatch.setattr(caminhos, "RECEBIMENTO_DE_ARTES", onedrive / "Recebimento de Artes")
     monkeypatch.setattr(caminhos, "EVENTOS", onedrive / "EVENTOS")
@@ -59,6 +66,40 @@ def test_primeira_passada_gera_a_os(repsol):
 def test_segunda_passada_sem_mudanca_nao_regenera(repsol):
     vc.passada()
 
+    assert vc.passada() == []
+
+
+def test_os_antiga_ganha_retirada_sem_movimento_na_producao(repsol):
+    vc.passada()
+    estado = vc._ler_estado(repsol)
+    estado.pop("versao_documentos")
+    vc._gravar_estado(repsol, estado)
+    assert vc.passada() == ["Repsol"]
+    assert "modelo da OS atualizado com retirada" in vc.arquivo_log(repsol).read_text(encoding="utf-8")
+    assert vc.passada() == []
+
+
+def test_mudar_quantidade_na_producao_atualiza_os_e_retirada(repsol):
+    import pymupdf
+    vc.passada()
+    original = repsol.pasta_producao / "UV/1UN LONA IMPRESSA 5.00X3.00M_L01.pdf"
+    original.rename(original.with_name("5UN LONA IMPRESSA 5.00X3.00M_L01.pdf"))
+    assert vc.passada() == ["Repsol"]
+    with pymupdf.open(vc.destino_pdf(repsol)) as doc:
+        os = "".join(p.get_text() for p in doc)
+    with pymupdf.open(vc.destino_retirada(repsol)) as doc:
+        retirada = "".join(p.get_text() for p in doc)
+    assert "COMPROVANTE DE RETIRADA" not in os
+    assert "5 UN" in os and "5 UN" in retirada
+    assert "1 UN" not in os + retirada
+    assert "Total da OS: 5 unidades" in retirada
+
+
+def test_retirada_apagada_e_recriada_junto_da_os_sem_movimento(repsol):
+    vc.passada()
+    vc.destino_retirada(repsol).unlink()
+    assert vc.passada() == ["Repsol"]
+    assert vc.destino_retirada(repsol).is_file()
     assert vc.passada() == []
 
 
@@ -200,6 +241,38 @@ def test_mudar_preco_atualiza_a_copia_de_custos_sem_mexer_na_pasta(repsol, monke
 
 
 # ------------------------------------------------------------ só Prontos
+
+@pytest.mark.parametrize("campo,valor,total", [("preco_frasco", 150, "R$ 1,53"),
+                                              ("consumo_ml_m2", 3, "R$ 1,46")])
+def test_mudar_preco_ou_consumo_de_tinta_atualiza_os_sem_mexer_na_pasta(repsol, monkeypatch, campo, valor, total):
+    import copy
+    import pymupdf
+    import config as modulo_config
+    import checklist_producao
+    import custos_tinta
+
+    cfg = copy.deepcopy(modulo_config.CONFIG_PADRAO)
+    for dados in cfg["centro_custos_tintas"]["maquinas"][custos_tinta.R5200]["cores"].values():
+        dados["preco_frasco"] = 100
+    monkeypatch.setattr(modulo_config, "carregar_config", lambda: cfg)
+    monkeypatch.setattr(checklist_producao, "carregar_config", lambda: cfg)
+    _por(repsol.pasta_producao, "UV/DOCAN R5200/1UN LONA IMPRESSA 5.00X0.50M_TINTA.pdf")
+
+    def texto_os():
+        with pymupdf.open(vc.destino_pdf(repsol)) as doc:
+            return "".join(p.get_text() for p in doc)
+
+    assert vc.passada() == ["Repsol"]
+    assert "R$ 1,26" in texto_os()
+    assert vc.passada() == []
+    cfg["centro_custos_tintas"]["maquinas"][custos_tinta.R5200]["cores"]["BLACK"][campo] = valor
+    assert vc.passada() == ["Repsol"]
+    assert total in texto_os()
+    assert "preço/consumo de tinta mudou" in vc.arquivo_log(repsol).read_text(encoding="utf-8")
+    with pymupdf.open(vc.destino_retirada(repsol)) as doc:
+        assert "R$" not in "".join(p.get_text() for p in doc)
+    assert vc.passada() == []
+
 
 def test_ligar_so_prontos_regera_a_os_sem_mexer_na_pasta(repsol):
     """Marcou na janela, a OS muda na passada seguinte — não quando alguém mexer na pasta."""

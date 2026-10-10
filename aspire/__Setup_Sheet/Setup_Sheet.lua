@@ -287,10 +287,11 @@ function GetJobVectorsSVG(job,path,activenum,sheets)
       selection:Remove(item,true)
    end
    selection:GroupSelectionFinished()   
-   local lfs = require "os"
-   local deletelayer =  layerm:GetLayerWithName(gBoundaryVectorLayerName)
-   layerm:RemoveLayer(layer)
-   lfs.remove(svgpath) 
+   local deletelayer = layerm:GetLayerWithName(gBoundaryVectorLayerName)
+   if deletelayer ~= nil then
+      layerm:RemoveLayer(deletelayer)
+   end
+   os.remove(svgpath)
     --[[ end of tidy up]]
 	-- add html together and add closing divs and then return html
 	table.insert(t,svg)

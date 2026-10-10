@@ -36,6 +36,8 @@ import pathlib
 import caminhos
 import checklist_producao
 import clientes
+import custos_tinta
+from retirada_material import caminho_pdf as caminho_retirada
 
 NOME_ESTADO = "vigia_estado.json"
 NOME_LOG = "vigia_checklist.log"
@@ -45,6 +47,8 @@ NOME_LOG_GERAL = "_vigia_checklist.log"
 # disparo, a passada agendada e a forçada podem se encontrar — e gravar a
 # mesma OS ao mesmo tempo.
 NOME_TRAVA = "_vigia_checklist.trava"
+# Migra OS antigas na próxima passada, mesmo sem mudança na produção.
+VERSAO_DOCUMENTOS = "os_v4_custos_tintas_docan"
 
 
 def arquivo_estado(cliente):
@@ -66,6 +70,10 @@ def arquivo_trava():
 def destino_pdf(cliente):
     # o nome é o que relatorios.gerar_os escreve — convenção da casa
     return cliente.pasta_documentos / ("OS - %s.pdf" % cliente.documento.upper())
+
+
+def destino_retirada(cliente):
+    return caminho_retirada(cliente.pasta_documentos, cliente.documento)
 
 
 def _log(cliente, nivel, texto):
@@ -141,15 +149,19 @@ def passada_do_cliente(cliente, forcar=False):
         # preço cadastrado também é "movimento": sem isto, a cópia de custos
         # do evento ficaria com o valor velho até alguém mexer na produção
         atual["precos"] = custos.assinatura_precos(carregar_config().get("materiais", {}))
+        atual["precos_tinta"] = custos_tinta.assinatura(carregar_config().get("centro_custos_tintas"))
         # a regra "só Prontos" também é movimento: ligou na janela, a OS
         # tem que mudar já, não quando alguém mexer na pasta de novo
         atual["so_prontos"] = bool(cliente.so_prontos)
+        atual["versao_documentos"] = VERSAO_DOCUMENTOS
         anterior = _ler_estado(cliente)
         mudou_pasta = atual["hash"] != anterior.get("hash")
         mudou_preco = atual["precos"] != anterior.get("precos", "")
+        mudou_tinta = atual["precos_tinta"] != anterior.get("precos_tinta")
         mudou_regra = atual["so_prontos"] != bool(anterior.get("so_prontos", False))
-        sem_pdf = not destino_pdf(cliente).is_file()
-        if not (mudou_pasta or mudou_preco or mudou_regra or sem_pdf or forcar):
+        mudou_modelo = atual["versao_documentos"] != anterior.get("versao_documentos")
+        sem_pdf = not destino_pdf(cliente).is_file() or not destino_retirada(cliente).is_file()
+        if not (mudou_pasta or mudou_preco or mudou_tinta or mudou_regra or mudou_modelo or sem_pdf or forcar):
             return False
 
         checklist_producao.gerar(cliente.pasta_documentos, cliente.pasta_producao,
@@ -164,6 +176,10 @@ def passada_do_cliente(cliente, forcar=False):
             motivo = "regra de Prontos mudou"
         elif mudou_preco:
             motivo = "preço mudou"
+        elif mudou_tinta:
+            motivo = "preço/consumo de tinta mudou"
+        elif mudou_modelo:
+            motivo = "modelo da OS atualizado com retirada"
         else:
             motivo = "OS faltando"
         _log(cliente, "ok", "OS regenerada (%s) — %d PDFs na pasta%s" % (
@@ -284,8 +300,12 @@ def _montar_artes():
     trabalho desta tarefa.
     """
     try:
+        from config import carregar_config
+        if not carregar_config().get("montagem_automatica", False):
+            return []
         import montagem
-        feitas = montagem.conferir(logger=lambda nivel, msg: _log(None, nivel, msg))
+        feitas = montagem.conferir(logger=lambda nivel, msg: _log(None, nivel, msg),
+                                   automatico=True)
     except Exception as e:      # noqa: BLE001
         _log(None, "warn", "montagem de artes não rodou: %s: %s" % (type(e).__name__, e))
         return []

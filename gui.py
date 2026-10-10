@@ -14,12 +14,15 @@ não mexe direto nos widgets (tkinter não é thread-safe); em vez disso,
 ela só coloca eventos numa fila, e a janela principal lê essa fila
 periodicamente com root.after(...).
 """
+import io
 import json
 import pathlib
 import queue
 import subprocess
 import threading
 import tkinter as tk
+from collections import OrderedDict
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 from tkinter import filedialog, messagebox, ttk
 
@@ -51,6 +54,7 @@ from processamento import processar_etiquetas
 from rasterlink import rastrear as rastrear_rip
 from rasterlink_hotfolder import MAQUINAS as MAQUINAS_RIP
 import caminhos
+import previas_impressao
 import tema
 from tema import cores
 from utils import sanitizar_nome_arquivo
@@ -131,9 +135,11 @@ def _pedidos_para_impressao(pasta_base="etiquetas_geradas"):
     def _ler(pasta, rotulo):
         arquivos_os = sorted(pasta.glob("OS - *.pdf"))
         arquivos_checklist = sorted(pasta.glob("Checklist *.pdf"))
-        if not arquivos_os and not arquivos_checklist:
+        arquivos_retirada = sorted(pasta.glob("RETIRADA - *.pdf"))
+        if not arquivos_os and not arquivos_checklist and not arquivos_retirada:
             return None
-        return {"pasta": pasta, "nome": rotulo, "os": arquivos_os, "checklist": arquivos_checklist}
+        return {"pasta": pasta, "nome": rotulo, "os": arquivos_os,
+                "checklist": arquivos_checklist, "retirada": arquivos_retirada}
 
     pedidos = []
     for pasta in pastas_de_lote(base):
@@ -264,21 +270,18 @@ class JanelaPrincipal(tk.Tk):
             font=("Segoe UI", 12, "bold"), relief="flat", padx=26, pady=9, cursor="hand2",
             activebackground=cores.acento_claro, command=self._iniciar_processamento)
         self.btn_processar.pack(side="left")
-        tk.Label(acao, text="gera etiquetas, OS e checklist da pasta acima",
+        tk.Label(acao, text="gera etiquetas, OS e retirada de material",
                  font=("Segoe UI", 8), bg=cores.cartao,
                  fg=cores.texto2).pack(side="left", padx=12)
 
     def _montar_atalhos(self):
         """
         As outras janelas, em cartões com uma linha dizendo o que cada
-        uma faz. Saíram daqui, a pedido dele (22/09): "Enviar para
-        impressão" e "Reimprimir OS/Checklist" — ele faz os dois abrindo
-        o PDF já gerado. As duas janelas continuam inteiras no código
-        (JanelaEnviarImpressao, JanelaImprimirPedido) e a um passo de
-        voltar: é só devolver a linha na lista abaixo. Cuidado ao
-        decidir: a tela de envio é a única que alimenta o documento
-        "Enviados" do cliente; arrastando o arquivo pra fila na mão, a
-        entrega entra no relatório mas não nesse documento.
+        uma faz. O envio voltou em 08/10 para dar acesso à seleção e à
+        escolha de impressora em lote. A tela de envio também alimenta
+        o documento "Enviados" do cliente; arrastando o arquivo pra fila
+        na mão, a entrega entra no relatório mas não nesse documento.
+        A impressão dos documentos reúne etiquetas, OS e retirada em uma ação.
         """
         atalhos = [
             ("📥", "Receber artes", "Drive, WeTransfer, pasta ou ZIP", self._abrir_receber),
@@ -288,8 +291,9 @@ class JanelaPrincipal(tk.Tk):
             ("📦", "Controle de estoque", "material, entradas e saídas", self._abrir_estoque),
             ("🤖", "Agentes", "o que roda sozinho", self._abrir_agentes),
             ("⚙", "Medidas de rolos e chapas", "configuração", self._abrir_configuracoes),
-            # ("📤", "Enviar para impressão", "da produção para a fila", self._abrir_envio_impressao),
-            # ("🖨", "Reimprimir OS/Checklist", "de um pedido já gerado", self._abrir_impressao_manual),
+            ("📤", "Enviar para impressão", "seleciona e envia arquivos em lote", self._abrir_envio_impressao),
+            ("🖨", "Imprimir documentos", "etiquetas, OS e retirada do pedido", self._abrir_impressao_manual),
+            ("💰", "Centro de custos de tinta", "preços e estimativas das Docan", self._abrir_custos_tinta),
             # ("🔀", "Cruzar pasta com lista do RIP", "", self._abrir_cruzamento_rip),
         ]
         colunas = 3
@@ -368,7 +372,7 @@ class JanelaPrincipal(tk.Tk):
         caixa.pack(side="left")
         tk.Label(caixa, text="Gerador de etiquetas", font=("Segoe UI", 15, "bold"),
                  bg=cores.fundo, fg=cores.texto).pack(anchor="w")
-        tk.Label(caixa, text="Etiquetas, OS e checklist a partir de uma pasta de artes",
+        tk.Label(caixa, text="Etiquetas, OS e retirada de material a partir de uma pasta de artes",
                  font=("Segoe UI", 9), bg=cores.fundo,
                  fg=cores.texto2).pack(anchor="w")
         self.btn_tema = tk.Button(
@@ -420,6 +424,10 @@ class JanelaPrincipal(tk.Tk):
 
     def _abrir_estoque(self):
         JanelaEstoque(self, self.config_dados)
+
+    def _abrir_custos_tinta(self):
+        from gui_custos_tinta import JanelaCustosTinta
+        JanelaCustosTinta(self, self._config_atualizada)
 
     def _abrir_impressao_manual(self):
         JanelaImprimirPedido(self, self.var_impressora.get())
@@ -632,11 +640,11 @@ class JanelaPrincipal(tk.Tk):
     def _imprimir_os_checklist(self, resultado, impressora, on_log):
         """
         Roda logo depois do processamento, na mesma thread, só quando o
-        checkbox "Imprimir OS e Checklist assim que gerar" estava
-        marcado. Erro numa impressão (ex: impressora desligada) não
-        impede a outra de tentar.
+        impressão ao gerar estava marcada. Envia as etiquetas, a OS e a
+        retirada no mesmo comando. Erro numa impressão não impede as outras.
         """
-        for rotulo, caminho in (("OS", resultado.get("os")), ("Checklist", resultado.get("unificado"))):
+        for rotulo, caminho in (("Etiquetas", resultado.get("unificado")), ("OS", resultado.get("os")),
+                                ("Retirada de material", resultado.get("retirada"))):
             if not caminho:
                 continue
             on_log("info", f"Imprimindo {rotulo}...")
@@ -758,14 +766,14 @@ class JanelaEscolherPedido(tk.Toplevel):
 
 class JanelaImprimirPedido(tk.Toplevel):
     """
-    Reimprime a OS e/ou o Checklist de um pedido já gerado — pra quando
+    Reimprime etiquetas, OS e retirada de um pedido já gerado — pra quando
     a via impressa se perde ou estraga na fábrica e precisa de outra
     via, sem regenerar nada.
     """
 
     def __init__(self, mestre, impressora_inicial):
         super().__init__(mestre)
-        self.title("Imprimir OS/Checklist de um pedido")
+        self.title("Imprimir etiquetas, OS e retirada")
         self.geometry("480x420")
         self.transient(mestre)
         self.pedidos = _pedidos_para_impressao()
@@ -778,7 +786,9 @@ class JanelaImprimirPedido(tk.Toplevel):
             if pedido["os"]:
                 rotulos.append("OS")
             if pedido["checklist"]:
-                rotulos.append("Checklist")
+                rotulos.append("Etiquetas")
+            if pedido["retirada"]:
+                rotulos.append("Retirada")
             self.lista.insert("end", f"{pedido['nome']}  ({' + '.join(rotulos)})")
         if self.pedidos:
             self.lista.selection_set(0)
@@ -786,10 +796,12 @@ class JanelaImprimirPedido(tk.Toplevel):
 
         self.var_os = tk.BooleanVar(value=True)
         self.var_checklist = tk.BooleanVar(value=True)
+        self.var_retirada = tk.BooleanVar(value=True)
         frame_opcoes = tk.Frame(self)
         frame_opcoes.pack(anchor="w", padx=16, pady=(10, 4))
         tk.Checkbutton(frame_opcoes, text="OS", variable=self.var_os).pack(side="left")
-        tk.Checkbutton(frame_opcoes, text="Checklist", variable=self.var_checklist).pack(side="left", padx=(10, 0))
+        tk.Checkbutton(frame_opcoes, text="Etiquetas", variable=self.var_checklist).pack(side="left", padx=(10, 0))
+        tk.Checkbutton(frame_opcoes, text="Retirada", variable=self.var_retirada).pack(side="left", padx=(10, 0))
 
         frame_impressora = tk.Frame(self)
         frame_impressora.pack(fill="x", padx=16, pady=(0, 6))
@@ -814,7 +826,7 @@ class JanelaImprimirPedido(tk.Toplevel):
         self.btn_imprimir.pack(side="right")
 
         if not self.pedidos:
-            tk.Label(self, text="Nenhum pedido com OS ou Checklist encontrado.", fg=cores.alerta).pack(padx=16)
+            tk.Label(self, text="Nenhum documento de pedido encontrado.", fg=cores.alerta).pack(padx=16)
             self.btn_imprimir.configure(state="disabled")
 
         self.grab_set()
@@ -826,12 +838,14 @@ class JanelaImprimirPedido(tk.Toplevel):
             return
         pedido = self.pedidos[selecao[0]]
         arquivos = []
-        if self.var_os.get():
-            arquivos += pedido["os"]
         if self.var_checklist.get():
             arquivos += pedido["checklist"]
+        if self.var_os.get():
+            arquivos += pedido["os"]
+        if self.var_retirada.get():
+            arquivos += pedido["retirada"]
         if not arquivos:
-            messagebox.showwarning("Nada selecionado", "Marque OS e/ou Checklist pra imprimir.")
+            messagebox.showwarning("Nada selecionado", "Marque etiquetas, OS ou retirada para imprimir.")
             return
 
         impressora = self.var_impressora.get()
@@ -2327,12 +2341,86 @@ class JanelaEnviarImpressao(tk.Toplevel):
         self.marcados = {}     # índice do item -> BooleanVar
         self.combos_maquina = {}   # índice do item -> StringVar da máquina escolhida
         self.envios_anteriores = []
+        self._trabalho_previas = ThreadPoolExecutor(max_workers=1, thread_name_prefix="previa_impressao")
+        self._fila_previas = queue.Queue()
+        self._cache_previas = OrderedDict()
+        self._previas_pendentes = set()
+        self._rotulos_previas = {}
+        self._fechando = False
+        self._agendamento_previas = None
+        self._foto_vazia = self._foto_previa(None)
+        self.protocol("WM_DELETE_WINDOW", self.destroy)
 
         self.columnconfigure(0, weight=1)
         self.rowconfigure(2, weight=1)
         self._montar_layout()
         self.grab_set()
+        self._agendamento_previas = self.after(100, self._consumir_previas)
         self.after(80, self._escolher_pasta)
+
+    def destroy(self):
+        self._fechando = True
+        if self._agendamento_previas is not None:
+            self.after_cancel(self._agendamento_previas)
+        self._trabalho_previas.shutdown(wait=False, cancel_futures=True)
+        super().destroy()
+
+    # ---------- prévias: leitura fora da interface, widgets só na thread principal ----------
+
+    def _foto_previa(self, dados):
+        try:
+            from PIL import Image, ImageTk
+            fundo = Image.new("RGB", (112, 80), cores.previa)
+            if dados:
+                with Image.open(io.BytesIO(dados)) as imagem:
+                    arte = imagem.convert("RGB")
+                arte.thumbnail(fundo.size)
+                fundo.paste(arte, ((112 - arte.width) // 2, (80 - arte.height) // 2))
+            return ImageTk.PhotoImage(fundo, master=self)
+        except Exception:
+            return None
+
+    def _solicitar_previa(self, item, rotulo):
+        caminho = item["caminho"]
+        chave = previas_impressao.chave_do_arquivo(caminho)
+        self._rotulos_previas.setdefault(chave, []).append((rotulo, caminho, item["arquivo"]))
+        if chave in self._cache_previas:
+            self._cache_previas.move_to_end(chave)
+            self._mostrar_previa(rotulo, item["arquivo"], *self._cache_previas[chave])
+        elif chave not in self._previas_pendentes:
+            self._previas_pendentes.add(chave)
+            self._trabalho_previas.submit(self._carregar_previa, caminho, chave)
+
+    def _carregar_previa(self, caminho, chave):
+        dados, mensagem = previas_impressao.carregar(caminho, chave)
+        self._fila_previas.put((chave, dados, mensagem))
+
+    def _mostrar_previa(self, rotulo, nome, dados, mensagem):
+        foto = self._foto_previa(dados) if dados else None
+        if dados and foto is None:
+            mensagem = "Prévia indisponível"
+        rotulo.configure(image=foto or self._foto_vazia or "", text=nome + (f"\n{mensagem}" if mensagem else ""))
+        rotulo._foto_previa = foto  # mantém a imagem viva enquanto a linha existir
+
+    def _consumir_previas(self):
+        self._agendamento_previas = None
+        if self._fechando:
+            return
+        for _ in range(12):
+            try:
+                chave, dados, mensagem = self._fila_previas.get_nowait()
+            except queue.Empty:
+                break
+            self._previas_pendentes.discard(chave)
+            self._cache_previas[chave] = dados, mensagem
+            while len(self._cache_previas) > 128:
+                self._cache_previas.popitem(last=False)
+            for rotulo, caminho, nome in self._rotulos_previas.get(chave, []):
+                if previas_impressao.chave_do_arquivo(caminho) != chave:
+                    self._mostrar_previa(rotulo, nome, None, "Arquivo alterado — atualize a lista")
+                else:
+                    self._mostrar_previa(rotulo, nome, dados, mensagem)
+        self._agendamento_previas = self.after(100, self._consumir_previas)
 
     # ---------- montagem ----------
 
@@ -2386,6 +2474,46 @@ class JanelaEnviarImpressao(tk.Toplevel):
             wraplength=1000,  # o texto explica o que o estado significa; sem isso ele alargaria a janela
         )
         self.rotulo_rip.grid(row=0, column=1, sticky="w", padx=(6, 0))
+
+        lote = tk.Frame(barra, bg=cores.fundo)
+        lote.grid(row=2, column=0, columnspan=4, sticky="w", pady=(8, 0))
+        self.btn_marcar_novos = tk.Button(
+            lote, text="Marcar nunca enviados", relief="flat", cursor="hand2",
+            command=self._marcar_nunca_enviados,
+        )
+        self.btn_marcar_novos.pack(side="left")
+        tk.Button(
+            lote, text="Limpar seleção", relief="flat", cursor="hand2",
+            command=self._limpar_selecao,
+        ).pack(side="left", padx=(6, 16))
+        tk.Label(lote, text="Máquina para os marcados:", bg=cores.fundo,
+                 fg=cores.texto2).pack(side="left")
+        self.var_maquina_lote = tk.StringVar(value="")
+        combo_lote = ttk.Combobox(
+            lote, textvariable=self.var_maquina_lote, state="readonly", width=18,
+            values=list(MAQUINAS_RIP),
+        )
+        combo_lote.pack(side="left", padx=6)
+        combo_lote.bind("<<ComboboxSelected>>", lambda e: self._atualizar_rodape())
+        self.btn_aplicar_maquina = tk.Button(
+            lote, text="Aplicar aos marcados", relief="flat", cursor="hand2",
+            command=self._aplicar_maquina_aos_marcados, state="disabled",
+        )
+        self.btn_aplicar_maquina.pack(side="left")
+
+        import tempo_impressao
+        planejamento = tk.Frame(barra, bg=cores.fundo)
+        planejamento.grid(row=3, column=0, columnspan=4, sticky="w", pady=(6, 0))
+        tk.Label(planejamento, text="Estimativa DOCAN — passadas:",
+                 bg=cores.fundo, fg=cores.texto2).pack(side="left")
+        self.var_passadas_docan = tk.StringVar(value=tempo_impressao.OPCOES_PASSADAS[0])
+        escolha = ttk.Combobox(planejamento, textvariable=self.var_passadas_docan,
+                              values=tempo_impressao.OPCOES_PASSADAS,
+                              state="readonly", width=16)
+        escolha.pack(side="left", padx=6)
+        escolha.bind("<<ComboboxSelected>>", lambda _e: self._atualizar_rodape())
+        tk.Label(planejamento, text="Planejamento; configure o modo no RIP.",
+                 bg=cores.fundo, fg=cores.texto2).pack(side="left")
 
         # Faixa de alerta da fila: some quando está tudo bem. Ver
         # envio_impressao.fila_parada — "enviado" aqui significa que o
@@ -2487,17 +2615,25 @@ class JanelaEnviarImpressao(tk.Toplevel):
         # (cor da bolinha, cor do texto). O cinza do "sem sinal" é
         # deliberado: branco sobre fundo branco não se vê, e "não sei"
         # não pode gritar mais alto que "está parado".
-        cores = {
+        cores_por_estado = {
             "ok": (cores.positivo, cores.texto2),
             "atencao": (cores.alerta, cores.texto),
             "parado": (cores.parado, cores.parado),
             "sem_sinal": (cores.texto2, cores.texto2),
         }
-        cor_ponto, cor_texto = cores.get(estado["nivel"], (cores.texto2, cores.texto2))
+        cor_ponto, cor_texto = cores_por_estado.get(estado["nivel"], (cores.texto2, cores.texto2))
         self.ponto_rip.configure(text="●", fg=cor_ponto)
         self.var_rip.set(estado["texto"])
         self.rotulo_rip.configure(fg=cor_texto)
         self._reagendar_estado_do_rip()
+
+        if estado["erros"]:
+            partes = [f"{maquina}: {motivo}" for maquina, motivo in sorted(estado["erros"].items())]
+            avisos.append(
+                "⚠  O vigia do RIP está reclamando de máquina:\n" + "\n".join(partes) + "\n"
+                "Os arquivos dessa máquina ficam esperando na fila até isso ser resolvido; "
+                "as outras seguem normalmente."
+            )
 
     def _reagendar_estado_do_rip(self):
         """
@@ -2521,15 +2657,7 @@ class JanelaEnviarImpressao(tk.Toplevel):
         self._agendamento_rip = None
         if not self.winfo_exists():
             return
-        self._mostrar_estado_do_rip([])  # avisos de máquina só na hora de recarregar
-
-        if estado["erros"]:
-            partes = [f"{maquina}: {motivo}" for maquina, motivo in sorted(estado["erros"].items())]
-            avisos.append(
-                "⚠  O vigia do RIP está reclamando de máquina:\n" + "\n".join(partes) + "\n"
-                "Os arquivos dessa máquina ficam esperando na fila até isso ser resolvido; "
-                "as outras seguem normalmente."
-            )
+        self._avisar_fila_parada()
 
     def _avisar_fila_parada(self):
         """
@@ -2574,6 +2702,7 @@ class JanelaEnviarImpressao(tk.Toplevel):
             widget.destroy()
         self.marcados = {}
         self.combos_maquina = {}
+        self._rotulos_previas = {}
 
         if not self.itens:
             tk.Label(
@@ -2619,13 +2748,15 @@ class JanelaEnviarImpressao(tk.Toplevel):
         var = tk.BooleanVar(value=False)
         var.trace_add("write", lambda *_: self._atualizar_rodape())
         self.marcados[indice] = var
-        tk.Checkbutton(self.frame_lista, variable=var, bg=cores.fundo).grid(
-            row=linha, column=0, sticky="w", padx=(2, 4))
-
-        tk.Label(
-            self.frame_lista, text=item["arquivo"], bg=cores.fundo, fg=cor_texto,
-            font=("Consolas", 8), anchor="w", justify="left", wraplength=400,
-        ).grid(row=linha, column=1, sticky="w", pady=1)
+        selecao = tk.Checkbutton(
+            self.frame_lista, variable=var, text=item["arquivo"] + "\nCarregando prévia…",
+            image=self._foto_vazia or "", compound="left", bg=cores.fundo, fg=cor_texto,
+            selectcolor=cores.fundo, activebackground=cores.fundo, activeforeground=cor_texto,
+            font=("Consolas", 9), anchor="w", justify="left", wraplength=280,
+            cursor="hand2", padx=6, pady=5,
+        )
+        selecao.grid(row=linha, column=0, columnspan=2, sticky="ew", pady=2)
+        self._solicitar_previa(item, selecao)
 
         if item["dimensao"]:
             medida = (
@@ -2673,25 +2804,68 @@ class JanelaEnviarImpressao(tk.Toplevel):
 
     def _trocar_maquina(self, indice):
         """A máquina mudou: o giro previsto depende da largura útil dela, então a linha é refeita."""
-        item = self.itens[indice]
-        item["maquina"] = self.combos_maquina[indice].get()
-        item["giro"] = prever_giro(item["dimensao"], item["maquina"])
-        item["cabe"] = cabe_na_maquina(item["dimensao"], item["maquina"])
+        self._aplicar_maquina([indice], self.combos_maquina[indice].get())
+
+    def _aplicar_maquina(self, indices, maquina):
+        """Troca o destino do lote escolhido e refaz a lista uma única vez."""
+        if not indices or maquina not in MAQUINAS_RIP:
+            return
         marcados_antes = {i for i, v in self.marcados.items() if v.get()}
-        self._preencher_lista()
-        for i in marcados_antes:
-            if i in self.marcados:
-                self.marcados[i].set(True)
+        for indice in indices:
+            item = self.itens[indice]
+            item["maquina"] = maquina
+            item["giro"] = prever_giro(item["dimensao"], maquina)
+            item["cabe"] = cabe_na_maquina(item["dimensao"], maquina)
+        self._alterando_selecao = True
+        try:
+            self._preencher_lista()
+            for i in marcados_antes:
+                if i in self.marcados:
+                    self.marcados[i].set(True)
+        finally:
+            self._alterando_selecao = False
+        self._atualizar_rodape()
+
+    def _aplicar_maquina_aos_marcados(self):
+        indices = [i for i, var in self.marcados.items() if var.get()]
+        self._aplicar_maquina(indices, self.var_maquina_lote.get())
+
+    def _marcar_nunca_enviados(self):
+        """Seleciona os inéditos por pedido explícito; reimpressões manuais continuam marcadas."""
+        if getattr(self, "historico_ilegivel", None):
+            messagebox.showwarning(
+                "Histórico indisponível",
+                "Não consigo identificar os arquivos nunca enviados enquanto o histórico "
+                "estiver ilegível. Confira os arquivos individualmente para evitar reimpressões.",
+                parent=self,
+            )
+            return
+        indices = [i for i in self.marcados if not self.itens[i]["envios_anteriores"]]
+        self._definir_selecao(indices, True)
+
+    def _limpar_selecao(self):
+        self._definir_selecao(self.marcados, False)
+
+    def _definir_selecao(self, indices, valor):
+        """Atualiza os totais uma vez por lote, mesmo com centenas de arquivos."""
+        self._alterando_selecao = True
+        try:
+            for indice in indices:
+                self.marcados[indice].set(valor)
+        finally:
+            self._alterando_selecao = False
+        self._atualizar_rodape()
 
     def _marcar_todos(self, indices):
         alvo = not all(self.marcados[i].get() for i in indices) if indices else False
-        for i in indices:
-            self.marcados[i].set(alvo)
+        self._definir_selecao(indices, alvo)
 
     def _itens_marcados(self):
         return [self.itens[i] for i, var in self.marcados.items() if var.get()]
 
     def _atualizar_rodape(self):
+        if getattr(self, "_alterando_selecao", False):
+            return
         marcados = self._itens_marcados()
         nunca_enviados = sum(1 for i in self.itens if not i["envios_anteriores"])
         ja_enviados = len(self.itens) - nunca_enviados
@@ -2701,13 +2875,33 @@ class JanelaEnviarImpressao(tk.Toplevel):
         )
 
         totais = subtotais_por_material(marcados)
+        import tempo_impressao
+        variavel_passadas = getattr(self, "var_passadas_docan", None)
+        passadas = tempo_impressao.passadas_da_escolha(variavel_passadas.get()) if variavel_passadas else None
+        linhas_totais = []
+        for cat, m2 in sorted(totais.items()):
+            linha = f"{cat} {m2:.2f} m²".replace(".", ",")
+            docan = [i for i in marcados if i["categoria"] == cat
+                     and i["maquina"] == tempo_impressao.MAQUINA_DOCAN
+                     and i.get("area_total_m2") is not None]
+            if docan:
+                area_docan = sum(i["area_total_m2"] for i in docan)
+                linha += " · " + tempo_impressao.texto(tempo_impressao.estimar(
+                    tempo_impressao.MAQUINA_DOCAN, area_docan, passadas))
+            linhas_totais.append(linha)
         self.var_subtotais.set(
-            "     ".join(f"{cat} {m2:.2f} m²".replace(".", ",") for cat, m2 in sorted(totais.items()))
+            "\n".join(linhas_totais)
             or "Nada marcado"
         )
         self.btn_enviar.config(
             text=f"Enviar {len(marcados)} arquivo(s)" if marcados else "Enviar",
             state="normal" if marcados else "disabled",
+        )
+        self.btn_marcar_novos.config(
+            state="normal" if nunca_enviados and not getattr(self, "historico_ilegivel", None) else "disabled",
+        )
+        self.btn_aplicar_maquina.config(
+            state="normal" if marcados and self.var_maquina_lote.get() in MAQUINAS_RIP else "disabled",
         )
 
     # ---------- conferência e envio ----------
@@ -2736,6 +2930,12 @@ class JanelaEnviarImpressao(tk.Toplevel):
         self.btn_enviar.config(state="disabled", text="Enviando...")
         self.update_idletasks()
         try:
+            import tempo_impressao
+            variavel_passadas = getattr(self, "var_passadas_docan", None)
+            if variavel_passadas is not None:
+                passadas = tempo_impressao.passadas_da_escolha(variavel_passadas.get())
+                itens = [dict(item, passadas_impressao=passadas)
+                         if item["maquina"] == tempo_impressao.MAQUINA_DOCAN else item for item in itens]
             resultado = enviar_para_maquinas(itens, self.pasta)
             raiz = raiz_do_cliente(self.pasta)
 

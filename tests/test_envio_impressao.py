@@ -69,6 +69,35 @@ def test_lona_vai_pra_swj_mesmo_sendo_pequena():
     assert sugerir_maquina("1UN LONA IMPRESSA_faixa_0,30x0,40M.pdf", CONFIG) == MAQUINA_LONA
 
 
+@pytest.mark.parametrize("nome", [
+    "1UN DECORFLEX IMPRESSO 1.00X2.00M_painel.pdf",
+    "2UN decorflex 4.00X2.00M_fundo.tif",
+    "1UN_LONA_DECORFLEX_0.50X1.00M_painel.pdf",
+    "1UN DECORFLEX320X200CM_painel.pdf",
+])
+def test_decorflex_sugere_docan_sem_depender_da_largura(nome):
+    assert sugerir_maquina(nome, CONFIG) == MAQUINA_DOCAN
+
+
+def test_sinonimo_de_decorflex_tambem_sugere_docan():
+    config = {**CONFIG, "materiais": {**CONFIG["materiais"], "DECORFLEX": {"tipo": "rolo"}},
+              "sinonimos_categoria": {"DECOR FLEX": "DECORFLEX"}}
+    assert sugerir_maquina("1UN DECOR FLEX 1X2M_painel.pdf", config) == MAQUINA_DOCAN
+
+
+def test_decorflex_nao_e_procurado_dentro_de_outra_palavra():
+    assert sugerir_maquina("1UN LONA 1X2M_DECORFLEXIBLE.pdf", CONFIG) == MAQUINA_LONA
+
+
+def test_listar_decorflex_ja_traz_a_maquina_sugerida(tmp_path):
+    config = {**CONFIG, "materiais": {**CONFIG["materiais"], "DECORFLEX": {"tipo": "rolo"}}}
+    pasta = _producao(tmp_path)
+    _arte(pasta, "1UN DECORFLEX IMPRESSO 1X2M_painel.pdf")
+    [item] = listar(pasta, config, maquinas=MAQUINAS_TESTE)
+    assert item["categoria"] == "DECORFLEX"
+    assert item["maquina"] == MAQUINA_DOCAN
+
+
 def test_adesivo_largo_continua_na_ujv_porque_na_swj_nao_entra_adesivo():
     nome = "1UN VINIL IMPRESSO_painel_2,50x3,00M.pdf"
     assert sugerir_maquina(nome, CONFIG) == MAQUINA_ADESIVO
@@ -380,6 +409,22 @@ def test_envio_registra_o_que_so_existe_no_momento_do_envio(tmp_path):
     assert registro["quantidade"] == 8
     assert registro["area_total_m2"] == pytest.approx(10.00)
     assert registro["girou_previsto"] is True
+
+
+def test_envio_docan_registra_tempo_copias_e_passadas_sem_mudar_arte(tmp_path):
+    pasta = _producao(tmp_path)
+    origem = _arte(pasta / "LONAS", "2UN LONA 5.00X10.00M.pdf", b"arte intacta")
+    itens = _itens_de(pasta)
+    itens[0]["maquina"] = MAQUINA_DOCAN
+    itens[0]["passadas_impressao"] = 4
+    registro = enviar(itens, pasta, pasta_fila=tmp_path / "fila", maquinas=MAQUINAS_TESTE)["enviados"][0]
+    estimativa = registro["estimativa_impressao"]
+    assert estimativa["area_m2"] == pytest.approx(100)
+    assert estimativa["passadas"] == 4
+    assert estimativa["segundos"] == pytest.approx(3556.10, abs=.02)
+    assert not estimativa["passadas_referencia"]
+    assert origem.read_bytes() == b"arte intacta"
+    assert (tmp_path / "fila" / MAQUINA_DOCAN / origem.name).read_bytes() == b"arte intacta"
 
 
 def test_copia_incompleta_e_desfeita_e_nao_vira_registro(tmp_path, monkeypatch):

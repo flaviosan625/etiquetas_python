@@ -39,6 +39,7 @@ import pathlib
 import pymupdf
 
 import miniaturas
+import tempo_impressao
 
 from branding import inserir_logo, CAMINHO_LOGO_GUI
 from envio_impressao import NOME_PASTA_ENVIADOS
@@ -379,6 +380,8 @@ def _desenhar_envio(pagina, y, envio, cor_fundo, cor_texto, cliente, ordinal):
     x_thumb = MARGEM
     x_texto = x_thumb + ALTURA_THUMB + 10
     largura_texto = LARGURA - MARGEM - x_texto
+    estimativa = tempo_impressao.do_registro(envio)
+    extra_tempo = 13 if estimativa else 0
 
     rect_thumb = pymupdf.Rect(
         x_thumb, y + (ALTURA_ITEM - ALTURA_THUMB) / 2,
@@ -416,6 +419,8 @@ def _desenhar_envio(pagina, y, envio, cor_fundo, cor_texto, cliente, ordinal):
     descricao = _descricao(envio["arquivo"], envio.get("categoria"), cliente)
     _escrever(pagina, x_texto, y + 20, _encurtar(descricao, 8.5, largura_texto), 8.5, _TINTA_SUAVE)
     _escrever(pagina, x_texto, y + 32, area, 9, _TINTA, negrito=True)
+    if estimativa:
+        _escrever(pagina, x_texto, y + 44, tempo_impressao.texto(estimativa), 7.5, _CINZA)
 
     # linha 4: a data/hora é o dado que prova o envio, então vem
     # carimbada num fundo cinza e em negrito, nunca como nota de rodapé
@@ -424,15 +429,15 @@ def _desenhar_envio(pagina, y, envio, cor_fundo, cor_texto, cliente, ordinal):
     quando = _data_curta(envio["quando"])
     largura_carimbo = pymupdf.get_text_length(quando, fontname=_FONTE_NEGRITO, fontsize=8) + 9
     pagina.draw_rect(
-        pymupdf.Rect(x_texto, y + 45, x_texto + largura_carimbo, y + 56),
+        pymupdf.Rect(x_texto, y + 45 + extra_tempo, x_texto + largura_carimbo, y + 56 + extra_tempo),
         color=None, fill=(0.94, 0.945, 0.953), width=0,
     )
-    _escrever(pagina, x_texto + 4.5, y + 47, quando, 8, _TINTA, negrito=True)
+    _escrever(pagina, x_texto + 4.5, y + 47 + extra_tempo, quando, 8, _TINTA, negrito=True)
 
     onde = f" · {envio['producao']}" if envio.get("producao") else ""
-    _escrever(pagina, x_texto + largura_carimbo + 7, y + 47, f"{envio['maquina']}{onde}", 8, _TINTA_SUAVE)
+    _escrever(pagina, x_texto + largura_carimbo + 7, y + 47 + extra_tempo, f"{envio['maquina']}{onde}", 8, _TINTA_SUAVE)
 
-    y += ALTURA_ITEM
+    y += ALTURA_ITEM + extra_tempo
     pagina.draw_line(pymupdf.Point(MARGEM, y), pymupdf.Point(LARGURA - MARGEM, y), color=(0.88, 0.89, 0.9), width=0.6)
     return y
 
@@ -519,14 +524,21 @@ def gerar_pdf(raiz_cliente, ordem_categorias=None, agora=None):
         y += ALTURA_GRUPO
 
         for envio in por_categoria[categoria]:
-            if y + ALTURA_ITEM > limite_y:
+            altura_item = ALTURA_ITEM + (13 if tempo_impressao.do_registro(envio) else 0)
+            if y + altura_item > limite_y:
                 pagina, y, xref_logo = _nova_pagina(pdf, cliente, cabecalho, caixas_pagina, xref_logo)
                 _escrever(pagina, MARGEM, y, f"{categoria} (continuação)", 10, _rgb(cor_texto), negrito=True)
                 y += ALTURA_GRUPO
             y = _desenhar_envio(pagina, y, envio, cor_fundo, cor_texto, cliente, envio["_ordinal"])
 
     resumo = _resumo_por_material(envios, categorias)
-    altura_resumo = 24 + len(resumo) * 22 + 34
+    tempos_categoria = {}
+    for envio in envios:
+        estimativa = tempo_impressao.do_registro(envio)
+        if estimativa:
+            categoria = envio.get("categoria") or _SEM_MATERIAL
+            tempos_categoria[categoria] = tempos_categoria.get(categoria, 0) + estimativa["segundos"]
+    altura_resumo = 24 + len(resumo) * 22 + len(tempos_categoria) * 14 + 46
     if y + altura_resumo > limite_y:
         pagina, y, xref_logo = _nova_pagina(pdf, cliente, cabecalho, caixas_pagina, xref_logo)
     else:
@@ -536,6 +548,8 @@ def gerar_pdf(raiz_cliente, ordem_categorias=None, agora=None):
     y += 20
 
     for categoria, info in resumo:
+        if y + 36 + 46 > limite_y:
+            pagina, y, xref_logo = _nova_pagina(pdf, cliente, cabecalho, caixas_pagina, xref_logo)
         _, cor_texto = _cores_do_selo(categoria, categorias)
         plural_envios = "envio" if info["envios"] == 1 else "envios"
         periodo = _data_curta(info["de"])
@@ -556,15 +570,23 @@ def gerar_pdf(raiz_cliente, ordem_categorias=None, agora=None):
         _escrever(pagina, x + 8, y + 0.7, detalhe, 8, _CINZA)
         _escrever(pagina, 0, y, valor, 9, cor_valor, negrito=True, direita_em=LARGURA - MARGEM)
         y += 16
+        if categoria in tempos_categoria:
+            _escrever(pagina, MARGEM + 10, y, "Est. DOCAN: " + tempo_impressao.duracao(
+                tempos_categoria[categoria]) + " (somente envios DOCAN com área; passadas por linha)",
+                      7, _CINZA)
+            y += 14
         pagina.draw_line(pymupdf.Point(MARGEM, y), pymupdf.Point(LARGURA - MARGEM, y), color=_LINHA_FINA, width=0.6)
         y += 6
 
     y += 6
+    observacao_tempo = (" Estimativas de impressão excluem RIP, preparação e pausas. "
+                        "Referência de 8 passadas quando o perfil não foi informado."
+                        if tempos_categoria else "")
     pagina.insert_textbox(
         pymupdf.Rect(MARGEM, y, LARGURA - MARGEM, y + 40),
         "Documento gerado automaticamente a cada envio. Cada linha é um envio para a máquina, não um "
         "item de pedido - reenvio do mesmo arquivo entra como linha nova e soma no subtotal, porque o "
-        "material foi consumido de novo. A hora é a do envio para a fila.",
+        "material foi consumido de novo. A hora é a do envio para a fila." + observacao_tempo,
         fontsize=7, fontname=_FONTE, color=_CINZA_CLARO,
     )
 

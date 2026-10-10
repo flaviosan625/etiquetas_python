@@ -12,11 +12,13 @@ mexer em código.
 import copy
 import json
 import pathlib
+from custos_tinta import configuracao_padrao as configuracao_tintas_padrao
 
 BASE_DIR = pathlib.Path(__file__).resolve().parent
 CONFIG_PATH = BASE_DIR / "config.json"
 
 CONFIG_PADRAO = {
+    "centro_custos_tintas": configuracao_tintas_padrao(),
     "materiais": {
         "LONA": {"tipo": "rolo", "largura_cm": 320, "comprimento_cm": 5000},
         "ADESIVO": {"tipo": "rolo", "largura_cm": 127, "comprimento_cm": 5000},
@@ -93,6 +95,9 @@ CONFIG_PADRAO = {
     "ultimo_gerente": "",
     "ultimo_produtor": "",
     "ultima_impressora": "",
+    # O vigia do checklist só monta automaticamente quando esta opção
+    # está ativa. A montagem manual pela tela permanece disponível.
+    "montagem_automatica": False,
     # "escuro" ou "claro" — o botãozinho do canto da tela principal
     # escreve aqui (ver tema.py). Padrão escuro, pedido de 22/09.
     "tema": "escuro",

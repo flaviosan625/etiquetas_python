@@ -40,6 +40,7 @@ from datetime import datetime
 
 import caminhos
 from aproveitamento import consumo_por_material
+import custos_tinta
 
 
 def _produto_rolo(descricao, categoria, comprimento_rolo_m, minimo=0, maximo=0, codigo_planilha=None, custo=None):
@@ -90,6 +91,8 @@ MAQUINA_POR_CATEGORIA = {
 TINTAS_POR_MAQUINA = {
     "UJV100-160": ["TINTA_UV_160_CIANO", "TINTA_UV_160_MAGENTA", "TINTA_UV_160_YELLOW", "TINTA_UV_160_BLACK"],
     "SWJ-320EA": ["TINTA_SWJ_320_CIANO", "TINTA_SWJ_320_MAGENTA", "TINTA_SWJ_320_YELLOW", "TINTA_SWJ_320_BLACK"],
+    custos_tinta.R5200: [custos_tinta.codigo_produto(custos_tinta.R5200, cor) for cor in custos_tinta.CORES],
+    custos_tinta.H2525: [custos_tinta.codigo_produto(custos_tinta.H2525, cor) for cor in custos_tinta.CORES],
 }
 
 
@@ -168,6 +171,7 @@ def _catalogo_padrao():
                 {"espessura": espessura, "cor": cor}, minimo=6, maximo=60, codigo_planilha=codigo_planilha,
             )
 
+    custos_tinta.sincronizar_catalogo({"produtos": catalogo}, custos_tinta.CONFIGURACAO_PADRAO)
     return catalogo
 
 

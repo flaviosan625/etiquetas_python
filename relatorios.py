@@ -12,7 +12,11 @@ from datetime import datetime
 import pymupdf
 
 from branding import inserir_logo, CAMINHO_LOGO_GUI
-from dimensoes import formatar_variante, nome_sem_prefixo_reconhecido, remover_palavra
+from dimensoes import formatar_variante, nome_sem_prefixo_reconhecido, remover_palavra, contem_palavra
+import tempo_impressao
+import custos_tinta
+from html import escape
+from retirada_material import caminho_pdf as caminho_retirada, montar_comprovante, salvar_par_documentos
 from utils import formatar_duracao_minutos
 
 # Subpasta onde o log de processamento fica guardado, dentro da pasta
@@ -253,9 +257,63 @@ def _rodape_de_custos(pdf_os, pagina, y, custos, limite_y, cabecalho, dados_pagi
     return y + 70
 
 
+def _rodape_tintas(pdf_os, pagina, y, conta, limite_y, dados_pagina):
+    """Custos de tinta só na OS; os dados da retirada não mudam."""
+    from custos import formatar_reais
+    css = """
+    body {font-family:sans-serif; font-size:8pt; margin:0; color:#333;}
+    h2 {font-size:10pt; color:#174d7a; margin:0 0 5pt;}
+    p {margin:4pt 0; line-height:1.3;}
+    table {border-collapse:collapse; width:100%; font-size:8pt;}
+    td,th {padding:4pt; text-align:left; border-bottom:0.5pt solid #ddd;}
+    th {background:#e6f1fb; color:#174d7a;}
+    .nota {font-size:7pt; color:#666;}
+    """
+    blocos = []
+    for maquina, dados in conta["por_maquina"].items():
+        linhas = "".join(
+            f'<tr><td>{cor["nome"]}</td><td>' + f'{cor["volume_ml"]:.2f}'.replace('.', ',') + ' mL</td>'
+            f'<td>{formatar_reais(cor["preco_ml"])}</td><td>{formatar_reais(cor["valor"])}</td></tr>'
+            for cor in dados["cores"].values())
+        origem = ("Referência provisória da R5200" if dados["referencia_provisoria"] else
+                  "Referência: simulação R5200 de 2,50 m²" if dados["referencia_consumo"] == custos_tinta.R5200 else
+                  "Referência de consumo cadastrada")
+        modo = " · Máquina prevista pelo material" if dados["maquina_prevista"] else ""
+        area_formatada = f'{dados["area_m2"]:.2f}'.replace('.', ',')
+        volume_formatado = f'{dados["volume_ml"]:.2f}'.replace('.', ',')
+        blocos.append(f'''<h2>Custo estimado de tinta · {maquina}</h2>
+        <p>Área de impressão: <b>{area_formatada} m²</b> (inclui as quantidades){modo}</p>
+        <table><tr><th>Tinta</th><th>Consumo estimado</th><th>Preço / mL</th><th>Custo estimado</th></tr>{linhas}</table>
+        <p><b>Total: {volume_formatado} mL · {formatar_reais(dados["valor"])}</b></p>
+        <p class="nota">{origem}. Consumo varia com a arte e o perfil; não inclui limpeza nem purga.</p>''')
+    parcial = " (parcial)" if not conta["completo"] else ""
+    resumo = f'<p><b>Total estimado de tinta{parcial}: {formatar_reais(conta["total"])}</b></p>'
+    resumo += '<p class="nota">Total calculado antes do arredondamento por cor. Sobra sem impressão não consome tinta.</p>'
+    if conta["faltantes"]:
+        resumo += '<p class="nota">Pendente: ' + escape("; ".join(conta["faltantes"])) + '</p>'
+    if blocos:
+        blocos[-1] += resumo
+    elif conta["faltantes"]:
+        blocos.append(resumo)
+    for html in blocos:
+        y += 14
+        if y >= limite_y - 10:
+            pagina, y = _nova_pagina_os(pdf_os, *dados_pagina)
+        caixa = pymupdf.Rect(MARGEM_OS, y, LARGURA_OS - MARGEM_OS, limite_y)
+        sobra, _ = pagina.insert_htmlbox(caixa, html, css=css, scale_low=1)
+        if sobra < 0:
+            pagina, y = _nova_pagina_os(pdf_os, *dados_pagina)
+            caixa = pymupdf.Rect(MARGEM_OS, y, LARGURA_OS - MARGEM_OS, limite_y)
+            sobra, _ = pagina.insert_htmlbox(caixa, html, css=css, scale_low=1)
+        if sobra < 0:
+            raise ValueError("Não foi possível acomodar os custos de tinta na OS.")
+        y = limite_y - sobra
+    return pagina, y
+
+
 def gerar_os(pasta_saida, nome_cliente, nome_gerente, nome_produtor,
              itens, dados_categorias, ordem_categorias, data_hora_atual, materiais_config=None,
-             custos=None, nome_arquivo=None):
+             custos=None, nome_arquivo=None, tintas_docan=None):
     """
     Gera a Ordem de Serviço (OS) paginada em folhas A4, pronta pra
     impressão: logo da empresa repetido em cada página, itens agrupados
@@ -278,9 +336,16 @@ def gerar_os(pasta_saida, nome_cliente, nome_gerente, nome_produtor,
     'custos' (opcional, de custos.calcular) faz desta a CÓPIA DA GERÊNCIA:
     cabeçalho marcado em toda folha, sobra estimada e valor em R$ em cada
     material, e o custo total no fim (reais somam entre materiais; m², não).
-    Quem não passa 'custos' recebe a OS de sempre, sem diferença nenhuma —
-    é ela que vai pra produção. 'nome_arquivo' troca o nome do PDF (a cópia
+    Quem não passa 'custos' recebe a OS da produção, com a estimativa de
+    tinta se configurada. 'nome_arquivo' troca o nome do PDF (a cópia
     NÃO pode se chamar "OS - ...", ver custos.py).
+
+    A OS da produção gera ao lado o PDF RETIRADA - CLIENTE, com miniaturas,
+    a mesma lista e as mesmas quantidades, atualizado no mesmo comando.
+    O total de unidades soma as quantidades das peças, sem duplicar material
+    composto. A cópia de custos da gerência não recebe o comprovante.
+    O pedido de 09/10/2026 acrescenta o custo estimado de tinta Docan só
+    na OS, quando 'tintas_docan' traz os preços e as taxas cadastradas.
     """
     cabecalho = ({"rotulo": "ORDEM DE SERVIÇO &mdash; CUSTOS &middot; SÓ GERÊNCIA, NÃO VAI PRA PRODUÇÃO",
                   "cor_rotulo": "#b32d24"} if custos else {})
@@ -293,6 +358,9 @@ def gerar_os(pasta_saida, nome_cliente, nome_gerente, nome_produtor,
     # e só serve pro resumo "Subtotal por material" no fim.
     categorias_com_item = [c for c in ordem_categorias if any(i["categoria"] == c for i in itens)]
     categorias_com_subtotal = [c for c in ordem_categorias if dados_categorias[c]["contem_arquivos"]]
+    # Uma única lista ordenada alimenta a OS e o comprovante de retirada.
+    itens_visiveis = [i for cat in categorias_com_item for i in itens if i["categoria"] == cat]
+    total_unidades = sum(i["quantidade"] for i in itens_visiveis)
 
     x_thumb = MARGEM_OS
     x_texto = x_thumb + ALTURA_THUMB_OS + 10
@@ -331,7 +399,10 @@ def gerar_os(pasta_saida, nome_cliente, nome_gerente, nome_produtor,
 
     # Resumo: subtotal de m² separado por material — nunca soma
     # materiais diferentes num único número
-    altura_resumo = 24 + len(categorias_com_subtotal) * 20 + 30 + (70 if custos else 0)
+    altura_tempos = sum(14 for cat in categorias_com_subtotal
+                       if contem_palavra(cat.upper(), "DECORFLEX")
+                       and not materiais_config.get(cat, {}).get("minutos_por_m2"))
+    altura_resumo = 24 + len(categorias_com_subtotal) * 20 + altura_tempos + 30 + (70 if custos else 0)
     if y + altura_resumo > limite_y:
         pagina, y = _nova_pagina_os(pdf_os, nome_cliente, nome_gerente, nome_produtor, data_hora_atual, caixas_pagina, **cabecalho)
     else:
@@ -355,7 +426,9 @@ def gerar_os(pasta_saida, nome_cliente, nome_gerente, nome_produtor,
         total_itens_visiveis += qtd_itens_categoria
         _, cor_texto = _cor_categoria(cat, ordem_categorias)
 
-        if y + 20 > limite_y:
+        altura_subtotal = (34 if contem_palavra(cat.upper(), "DECORFLEX")
+                          and not materiais_config.get(cat, {}).get("minutos_por_m2") else 20)
+        if y + altura_subtotal > limite_y:
             pagina, y = _nova_pagina_os(pdf_os, nome_cliente, nome_gerente, nome_produtor, data_hora_atual, caixas_pagina, **cabecalho)
 
         partes = [f"{cat_info['area_total_m2']:.2f} m²"]
@@ -364,9 +437,13 @@ def gerar_os(pasta_saida, nome_cliente, nome_gerente, nome_produtor,
             # a sobra é estimativa: sai escrita como tal (regra da casa)
             partes[0] += f" + {conta['area_sobra_m2']:.2f} m² sobra est."
         minutos_m2 = materiais_config.get(cat, {}).get("minutos_por_m2")
+        estimativa_docan = None
         if minutos_m2:
             tempo_estimado = formatar_duracao_minutos(cat_info["area_total_m2"] * minutos_m2)
             partes.append(f"≈ {tempo_estimado}")
+        elif contem_palavra(cat.upper(), "DECORFLEX"):
+            estimativa_docan = tempo_impressao.estimar(
+                tempo_impressao.MAQUINA_DOCAN, cat_info["area_total_m2"])
         if conta:
             from custos import formatar_reais
             if not conta["valor"]:
@@ -386,6 +463,12 @@ def gerar_os(pasta_saida, nome_cliente, nome_gerente, nome_produtor,
         pagina.insert_htmlbox(pymupdf.Rect(MARGEM_OS, y, LARGURA_OS - MARGEM_OS, y + 16), html_linha)
         y += 20
 
+        if estimativa_docan is not None:
+            pagina.insert_text(pymupdf.Point(MARGEM_OS + 10, y + 7),
+                               tempo_impressao.texto(estimativa_docan),
+                               fontsize=7, fontname="helv", color=(0.4, 0.4, 0.4))
+            y += 14
+
     if y + 26 > limite_y:
         pagina, y = _nova_pagina_os(pdf_os, nome_cliente, nome_gerente, nome_produtor, data_hora_atual, caixas_pagina, **cabecalho)
     else:
@@ -402,12 +485,18 @@ def gerar_os(pasta_saida, nome_cliente, nome_gerente, nome_produtor,
     pagina.insert_htmlbox(
         pymupdf.Rect(MARGEM_OS, y, LARGURA_OS - MARGEM_OS, y + 16),
         f'<p style="font-family: sans-serif; font-size: 8pt; color: #999999; margin: 0;">'
-        f'{total_itens_visiveis} {"item" if total_itens_visiveis == 1 else "itens"} no total</p>'
+        f'{total_itens_visiveis} {"item" if total_itens_visiveis == 1 else "itens"} no total'
+        f' &middot; {total_unidades} unidades</p>'
     )
 
     if custos:
         y = _rodape_de_custos(pdf_os, pagina, y, custos, limite_y, cabecalho,
                               (nome_cliente, nome_gerente, nome_produtor, data_hora_atual, caixas_pagina))
+
+    if not custos and tintas_docan:
+        conta_tinta = custos_tinta.calcular(itens_visiveis, tintas_docan)
+        pagina, y = _rodape_tintas(pdf_os, pagina, y + 16, conta_tinta, limite_y,
+                                  (nome_cliente, nome_gerente, nome_produtor, data_hora_atual, caixas_pagina))
 
     # numera as páginas só agora, que o total já é conhecido — busca a
     # página pelo índice de novo, em vez de reusar o objeto Page salvo
@@ -420,11 +509,17 @@ def gerar_os(pasta_saida, nome_cliente, nome_gerente, nome_produtor,
         )
 
     nome_os = os.path.join(pasta_saida, nome_arquivo or f"OS - {nome_cliente.upper()}.pdf")
-    # garbage=4 remove os objetos de fonte duplicados que o insert_htmlbox
-    # cria a cada chamada (sem isso o arquivo fica ordens de grandeza
-    # maior do que precisa)
-    pdf_os.save(nome_os, garbage=4, deflate=True)
-    pdf_os.close()
+    try:
+        if not custos:
+            with montar_comprovante(nome_cliente, nome_gerente, nome_produtor,
+                                     itens_visiveis, data_hora_atual, os.path.basename(nome_os),
+                                     _descricao_arquivo) as pdf_retirada:
+                salvar_par_documentos(pdf_os, pdf_retirada, nome_os,
+                                       caminho_retirada(pasta_saida, nome_cliente))
+        else:
+            pdf_os.save(nome_os, garbage=4, deflate=True)
+    finally:
+        pdf_os.close()
 
     return nome_os
 

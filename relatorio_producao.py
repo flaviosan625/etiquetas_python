@@ -498,6 +498,9 @@ def interpretar(registros, config=None, maquinas=None, pasta_fila=None, provas=N
             "mesa_util": mesa_util,
             "impressao": _prova_da_linha(provas, nome, registro["_quando"]),
         })
+        import tempo_impressao
+        por_maquina[registro["maquina"]][-1]["estimativa_impressao"] = tempo_impressao.estimar(
+            registro["maquina"], area_m2, registro.get("passadas_impressao"))
     return por_maquina
 
 
@@ -798,6 +801,9 @@ def gerar_pdf(data, pasta_relatorios=None, config=None, maquinas=None, caminho_s
 
         for linha in linhas:
             avisos = []
+            import tempo_impressao
+            if linha.get("estimativa_impressao"):
+                avisos.append((_COR_SUAVE, tempo_impressao.texto(linha["estimativa_impressao"])))
             # Primeiro de todos: é o único dado da linha que não passou
             # por interpretação nenhuma — quem está dizendo é a máquina.
             prova = _texto_da_prova(linha)
@@ -886,8 +892,18 @@ def gerar_pdf(data, pasta_relatorios=None, config=None, maquinas=None, caminho_s
             repetidos = sum(1 for l in linhas if l["repeticao"] > 1)
             obs = f' <span style="color:{_COR_ACENTO}">(inclui {repetidos} repetição)</span>' if repetidos else ""
             texto = " &nbsp;·&nbsp; ".join(f"{_escapar(mat)} <b>{_num(m2)} m²</b>" for mat, m2 in sorted(subtotais.items()))
+            tempos_material = {}
+            for linha in linhas:
+                estimativa = linha.get("estimativa_impressao")
+                if estimativa:
+                    material = linha["categoria"] or MATERIAL_SEM_NOME
+                    tempos_material[material] = tempos_material.get(material, 0) + estimativa["segundos"]
+            if tempos_material:
+                texto += "<br>Est. DOCAN por material: " + " &nbsp;·&nbsp; ".join(
+                    f"{_escapar(mat)} {tempo_impressao.duracao(segundos)}"
+                    for mat, segundos in sorted(tempos_material.items()))
             folha.bloco(
-                24,
+                38 if tempos_material else 24,
                 f'<div style="font-size:8.5pt;text-align:right;color:{_COR_TEXTO};padding:5px 3px 12px">'
                 f'Subtotal: {texto}{obs}</div>',
             )

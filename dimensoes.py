@@ -141,7 +141,10 @@ def _padrao_medida(typos_unidade):
         key=len, reverse=True,
     )
     grupo_unidades = "|".join(re.escape(t) for t in tokens_unidade)
-    return rf'(\d+(?:[.,]\d+)?){_SEPARADOR}X{_SEPARADOR}(\d+(?:[.,]\d+)?){_SEPARADOR}({grupo_unidades})?(?![A-Z])'
+    # Não deixe o regex recuar um dígito para escapar de uma unidade
+    # desconhecida: "600x400PIX" não é "600x40" em centímetros. A
+    # mesma proteção vale para o restante de uma casa decimal.
+    return rf'(\d+(?:[.,]\d+)?){_SEPARADOR}X{_SEPARADOR}(\d+(?:[.,]\d+)?)(?!\d|[.,]\d){_SEPARADOR}({grupo_unidades})?(?![A-Z])'
 
 
 def extrair_dimensoes(nome_arquivo, typos_unidade=None):
@@ -179,6 +182,14 @@ def extrair_dimensoes(nome_arquivo, typos_unidade=None):
         return None
 
     m = matches[0]  # primeira ocorrência no nome — é a medida real do cliente
+    primeira_medida = re.search(
+        rf'\d+(?:[.,]\d+)?{_SEPARADOR}X{_SEPARADOR}\d+(?:[.,]\d+)?',
+        nome_upper,
+    )
+    if primeira_medida is not None and primeira_medida.start() != m.start():
+        # Se a primeira medida tem unidade desconhecida, não troque por
+        # uma medida posterior: ela pode ser o acréscimo da produção.
+        return None
     valor1 = float(m.group(1).replace(',', '.'))
     valor2 = float(m.group(2).replace(',', '.'))
     unidade_bruta = m.group(3)
