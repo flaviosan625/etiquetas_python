@@ -121,7 +121,7 @@ def test_a_margem_e_por_maquina_e_ZERO_em_quem_monta():
     assert montagem.margem("DOCAN R5200") == 0.0
     assert montagem.margem("SWJ320A") == 0.0
     assert montagem.margem("DOCAN H2525") == 0.02
-    assert montagem.margem("UJV 100 UNY CV") == 0.03
+    assert montagem.margem("UJV 100 UNY CV") == 0.0
 
 
 def test_a_largura_do_FECHAMENTO_vem_do_cadastro_e_nao_e_a_da_maquina():

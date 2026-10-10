@@ -298,7 +298,7 @@ def _config(nome_maquina, maquinas=None):
 
 def largura_util(nome_maquina, maquinas=None, largura_m=None):
     """
-    A largura com que a folha MONTADA fecha, em metros.
+    O limite de largura para encaixar as artes, em metros.
 
     Não é a mesma coisa que a largura útil da máquina, e ele separou as
     duas em 05/10/2026: *"quando fechar a arte não vai poder passar de
@@ -310,7 +310,8 @@ def largura_util(nome_maquina, maquinas=None, largura_m=None):
     Então `largura_montagem_m` é o número REDONDO que ele quer fechar
     (5,00 e 3,20) e `largura_util_m` continua sendo o que a máquina
     consegue imprimir, que é quem responde "cabe?" lá no vigia. Sem o
-    campo, vale a largura da máquina.
+    campo, vale a largura da máquina. No fechamento, a sobra lateral é
+    removida: a largura do PDF é a ocupada pelas artes e identificações.
     """
     maquinas = MAQUINAS if maquinas is None else maquinas
     config = maquinas.get(nome_maquina)
@@ -323,7 +324,7 @@ def largura_util(nome_maquina, maquinas=None, largura_m=None):
         escolhida = float(largura_m)
     except (TypeError, ValueError) as erro:
         raise ValueError("Informe a largura de montagem em metros.") from erro
-    minima = ROTULO_LARGURA_M + 2 * config.get("margem_montagem_m", MARGEM_M)
+    minima = ROTULO_LARGURA_M + 2 * margem(nome_maquina, maquinas)
     if not math.isfinite(escolhida) or escolhida < minima:
         raise ValueError(f"A largura precisa ser de pelo menos {minima:.2f} m nesta máquina.")
     if escolhida > maxima + 1e-9:
@@ -339,14 +340,13 @@ def mesa(nome_maquina, maquinas=None):
 
 def margem(nome_maquina, maquinas=None):
     """
-    A borda de branco que esta máquina pede, em metros.
+    Montagens de rolo fecham sem borda lateral, em todas as máquinas.
 
-    Vem do cadastro porque ele deu uma por máquina. Nas duas que montam
-    ela é ZERO desde 05/10/2026: *"a folga de 2 cm de cada lado eu
-    coloco manualmente na máquina na hora da impressão... eu me preocupo
-    com a folga"*. A folha fecha redonda e quem dá a folga é ele, na
-    máquina — borda desenhada aqui viraria folga DUAS vezes.
+    A centralização e a folga da bobina são ajustadas na impressora.
+    A mesa conserva o afastamento físico das bordas da chapa.
     """
+    if mesa(nome_maquina, maquinas) is None:
+        return 0.0
     return _config(nome_maquina, maquinas).get("margem_montagem_m", MARGEM_M)
 
 
@@ -1430,6 +1430,7 @@ def planejar_pasta(pasta, nome_maquina=None, config=None, maquinas=None,
     (essa fica com as outras, e só vira aviso).
     """
     pasta = pathlib.Path(pasta)
+    config = config or carregar_config()
     nome_maquina = nome_maquina or maquina_da_pasta(pasta)
     largura = largura_util(nome_maquina, maquinas, largura_m)
     chapa = mesa(nome_maquina, maquinas)
@@ -1459,9 +1460,19 @@ def planejar_pasta(pasta, nome_maquina=None, config=None, maquinas=None,
         return plano
 
     plano["cliente"] = cliente_das_pecas(pecas, raiz_clientes)
+    # O material final pode ser PS, mas sua arte é impressa em adesivo
+    # para aplicação. A escolha explícita por máquina define a bobina;
+    # o material e o nome originais continuam nas peças e na ficha.
+    materiais_impressao = (config.get("montagem", {}).get(nome_maquina, {}).get(
+        "materiais_impressao", {}) if not chapa else {})
     por_material = {}
     for peca in pecas:
-        por_material.setdefault(peca["categoria"], []).append(peca)
+        material = materiais_impressao.get(peca["categoria"], peca["categoria"])
+        if material != peca["categoria"] and config.get("materiais", {}).get(
+                material, {}).get("tipo") != "rolo":
+            raise ValueError(f"Material de impressão inválido para {nome_maquina}: {material}")
+        peca["material_impressao"] = material
+        por_material.setdefault(material, []).append(peca)
 
     for categoria, do_material in sorted(por_material.items()):
         # Um arquivo é uma unidade: todas as páginas e cópias entram ou ele fica de fora.
@@ -1520,8 +1531,7 @@ def planejar_pasta(pasta, nome_maquina=None, config=None, maquinas=None,
         partes = [(postas, comprimento)]
         for numero, (da_parte, comprimento_parte) in enumerate(partes, start=1):
             # a folha FECHA na largura que usa, sem branco nas laterais
-            largura_parte = (largura if largura_m is not None else
-                             min(largura_usada(da_parte, margem_m), largura))
+            largura_parte = min(largura_usada(da_parte, margem_m), largura)
             folha_m = comprimento_da_folha(comprimento_parte, margem_m, folga_m)
             area_folha = largura_parte * folha_m
             indices = {p[0] for p in da_parte}
@@ -1688,6 +1698,8 @@ def montar_pasta(pasta, nome_maquina=None, config=None, maquinas=None, logger=No
                     "folga_m": folga_m, "margem_m": margem_m,
                     "pecas": [{
                         "numero": numero, "arquivo": do_material[i]["nome"],
+                        "material_no_nome": do_material[i]["categoria"],
+                        "material_impressao": do_material[i]["material_impressao"],
                         "pagina": do_material[i]["pagina"],
                         "copia": do_material[i]["copia"],
                         "quantidade": do_material[i]["quantidade"],
@@ -1812,6 +1824,9 @@ def prever_pasta(pasta, nome_maquina=None, config=None, maquinas=None,
             qualidade = ("nao_verificada" if peca.get("resolucao_estado") == "nao_verificada"
                          else qualidade_da_resolucao(dpi))
             avisos = []
+            if peca["material_impressao"] != peca["categoria"]:
+                avisos.append(f"Impressão em {peca['material_impressao']}; "
+                              f"material final no nome: {peca['categoria']}.")
             if abs(diferenca) >= 0.5:
                 avisos.append(f"O outro lado difere {diferenca:+.1f} mm do nome; a proporção foi preservada.")
             if qualidade in ("atencao", "aviso"):
@@ -1829,6 +1844,8 @@ def prever_pasta(pasta, nome_maquina=None, config=None, maquinas=None,
                     else min(previa["pior_resolucao"], dpi))
             itens.append({
                 "numero": numero, "arquivo": peca["nome"],
+                "material_no_nome": peca["categoria"],
+                "material_impressao": peca["material_impressao"],
                 "nome_completo": peca["nome"], "rotulo": _texto_do_rotulo(peca, numero),
                 "pagina": peca["pagina"], "copia": peca["copia"],
                 "quantidade": peca["quantidade"],

@@ -114,6 +114,20 @@ funcionando sem alteração nenhuma.
 rode lá o `maquina_rip/atualizar.bat`. Ele confere se o arquivo que chegou já é o novo **antes** de
 copiar, copia, e verifica que pegou. Não mexe na tarefa agendada — trocar o arquivo basta.
 
+## Fechamento das montagens
+
+Nas máquinas de rolo (UJV 100, SWJ320A e DOCAN R5200), a largura escolhida
+é o limite do encaixe. Prévia e PDF fecham na largura ocupada pelas artes
+e suas identificações, sem acrescentar bordas laterais. A centralização
+e a folga da bobina são ajustadas pelo operador na impressora.
+
+O material de impressão pode ser diferente do material final no nome:
+na configuração local da UJV, `montagem` → `UJV 100 UNY CV` →
+`materiais_impressao` associa PS a ADESIVO, conforme a aplicação combinada.
+Assim essas artes compartilham a montagem de adesivo; nomes, medidas e
+material final permanecem registrados. Materiais de impressão diferentes
+continuam separados.
+
 ## Cadastrando rolos, chapas e materiais
 
 Clique em "⚙ Configurar medidas de rolos e chapas..." na tela principal, ou edite o `config.json`.

@@ -97,24 +97,26 @@ class JanelaMontagem(tk.Toplevel):
         self.configure(bg=cores.fundo)
         self.config_montagem = carregar_config()
         montagem.garantir_pastas()
-        largura = max(640, min(1500, self.winfo_screenwidth() - 60))
-        altura = max(480, min(900, self.winfo_screenheight() - 100))
+        largura = max(640, min(1640, self.winfo_screenwidth() - 60))
+        altura = max(480, min(1000, self.winfo_screenheight() - 80))
         self.geometry(f"{largura}x{altura}")
         self.minsize(min(1120, largura), min(680, altura))
         self.columnconfigure(0, weight=1)
         self.rowconfigure(1, weight=1)
         topo = tk.Frame(self, bg=cores.fundo)
         topo.grid(row=0, column=0, sticky="ew", padx=20, pady=(16, 8))
+        titulo = tk.Frame(topo, bg=cores.fundo)
+        titulo.pack(fill="x")
         tk.Label(topo, text="Montar arte para impressão",
                  font=("Segoe UI", 15, "bold"), bg=cores.fundo,
-                 fg=cores.texto).pack(anchor="w")
+                 fg=cores.texto).pack(in_=titulo, side="left")
         tk.Label(topo, text="Confira imagem, nome e avisos. Marque as artes, escolha o "
                  "espaçamento e recalcule antes de montar.",
                  font=("Segoe UI", 9), bg=cores.fundo,
                  fg=cores.texto2).pack(anchor="w")
         self.btn_montagem_automatica = tk.Button(
             topo, relief="flat", cursor="hand2", command=self._alternar_montagem_automatica)
-        self.btn_montagem_automatica.pack(anchor="e")
+        self.btn_montagem_automatica.pack(in_=titulo, side="right")
         self._atualizar_estado_montagem_automatica()
         self._abas = {}
         caderno = ttk.Notebook(self)
@@ -246,7 +248,7 @@ class _AbaMaquina(tk.Frame):
         paineis.add(lista, minsize=min(600, int(largura_tela * 0.55)),
                     width=900, stretch="always")
         paineis.add(mapa, minsize=min(380, int(largura_tela * 0.38)),
-                    width=520, stretch="always")
+                    width=620, stretch="always")
         lista.columnconfigure(0, weight=1)
         lista.rowconfigure(0, weight=1)
         estilo = ttk.Style(self)
@@ -281,17 +283,28 @@ class _AbaMaquina(tk.Frame):
         self.tabela.bind("<space>", self._espaco_arquivo)
         self.tabela.bind("<<TreeviewSelect>>", self._detalhar_selecao)
         self.var_arquivo = tk.StringVar(value=str(self.pasta))
-        tk.Label(lista, textvariable=self.var_arquivo, bg=cores.fundo,
-                 fg=cores.texto2, font=("Segoe UI", 8), anchor="w",
-                 justify="left", wraplength=940).grid(row=2, column=0,
-                                                     sticky="ew", pady=(5, 0))
+        self._montar_detalhes(lista, self.var_arquivo, 3).grid(
+            row=2, column=0, sticky="ew", pady=(5, 0))
         mapa.columnconfigure(0, weight=1)
         mapa.rowconfigure(2, weight=1)
-        tk.Label(mapa, text="Prévia do encaixe", bg=cores.fundo, fg=cores.texto,
-                 font=("Segoe UI", 10, "bold")).grid(row=0, column=0, sticky="w")
-        self.escolha_folha = ttk.Combobox(mapa, state="readonly")
-        self.escolha_folha.grid(row=1, column=0, sticky="ew", pady=(5, 6))
-        self.escolha_folha.bind("<<ComboboxSelected>>", lambda _: self._desenhar_mapa())
+        self.var_folhas = tk.StringVar(value="Prévia do encaixe")
+        titulo_mapa = tk.Label(mapa, textvariable=self.var_folhas, bg=cores.fundo,
+                               fg=cores.texto, font=("Segoe UI", 10, "bold"),
+                               anchor="w", justify="left", wraplength=580)
+        titulo_mapa.grid(row=0, column=0, sticky="ew")
+        navegacao = tk.Frame(mapa, bg=cores.fundo)
+        navegacao.grid(row=1, column=0, sticky="ew", pady=(5, 6))
+        self.btn_folha_anterior = tk.Button(
+            navegacao, text="◀", command=lambda: self._navegar_folha(-1),
+            state="disabled", relief="flat", bg=cores.cartao, fg=cores.texto)
+        self.btn_folha_anterior.pack(side="left", padx=(0, 4))
+        self.btn_folha_proxima = tk.Button(
+            navegacao, text="▶", command=lambda: self._navegar_folha(1),
+            state="disabled", relief="flat", bg=cores.cartao, fg=cores.texto)
+        self.btn_folha_proxima.pack(side="right", padx=(4, 0))
+        self.escolha_folha = ttk.Combobox(navegacao, state="readonly")
+        self.escolha_folha.pack(side="left", fill="x", expand=True)
+        self.escolha_folha.bind("<<ComboboxSelected>>", self._selecionar_folha)
         area = tk.Frame(mapa, bg=cores.fundo)
         area.grid(row=2, column=0, sticky="nsew")
         area.columnconfigure(0, weight=1)
@@ -314,20 +327,44 @@ class _AbaMaquina(tk.Frame):
         tk.Button(zoom, text="Ajustar", command=self._ajustar_mapa, relief="flat",
                   bg=cores.cartao, fg=cores.texto).pack(side="left")
         self.var_mapa = tk.StringVar(value="O mapa usa o tamanho e as posições da montagem.")
-        tk.Label(mapa, textvariable=self.var_mapa, bg=cores.fundo, fg=cores.texto2,
-                 font=("Segoe UI", 8), anchor="w", justify="left",
-                 wraplength=380).grid(row=4, column=0, sticky="ew", pady=(5, 0))
-        tk.Label(mapa, text="Amarelo: atenção, confira antes de montar.\n"
-                 "Vermelho na lista: pendente, fica fora da montagem.\n"
-                 "Miniaturas são apenas para conferência na tela.",
-                 bg=cores.fundo, fg=cores.texto2, font=("Segoe UI", 8),
-                 justify="left", anchor="w", wraplength=380).grid(
-                     row=5, column=0, sticky="ew", pady=(5, 0))
+        self._montar_detalhes(mapa, self.var_mapa, 4).grid(
+            row=4, column=0, sticky="ew", pady=(5, 0))
+        legenda = tk.Label(mapa, text="Amarelo: confira. Vermelho: fora da montagem.\n"
+                          "Miniaturas servem apenas para conferência na tela.",
+                          bg=cores.fundo, fg=cores.texto2, font=("Segoe UI", 9),
+                          justify="left", anchor="w", wraplength=580)
+        legenda.grid(row=5, column=0, sticky="ew", pady=(5, 0))
+        def ajustar_textos(evento):
+            largura = max(100, evento.width - 8)
+            legenda.configure(wraplength=largura)
+            titulo_mapa.configure(wraplength=largura)
+
+        mapa.bind("<Configure>", ajustar_textos)
+
+    def _montar_detalhes(self, pai, variavel, linhas):
+        caixa = tk.Frame(pai, bg=cores.fundo)
+        texto = tk.Text(caixa, height=linhas, width=1, wrap="word",
+                        font=("Segoe UI", 9), bg=cores.fundo, fg=cores.texto2,
+                        relief="flat", highlightthickness=0, state="disabled")
+        texto.pack(side="left", fill="both", expand=True)
+        barra = ttk.Scrollbar(caixa, orient="vertical", command=texto.yview)
+        barra.pack(side="right", fill="y")
+        texto.configure(yscrollcommand=barra.set)
+
+        def atualizar(*_):
+            texto.configure(state="normal")
+            texto.delete("1.0", "end")
+            texto.insert("1.0", variavel.get())
+            texto.configure(state="disabled")
+
+        variavel.trace_add("write", atualizar)
+        atualizar()
+        return caixa
 
     def _montar_resumo(self):
         caixa = tk.Frame(self, bg=cores.cartao,
                          highlightbackground=cores.borda, highlightthickness=1)
-        caixa.grid(row=3, column=0, sticky="ew", padx=16, pady=(8, 0))
+        caixa.grid(row=3, column=0, sticky="ew", padx=16, pady=(6, 0))
         self.var_passadas_docan = tk.StringVar(value=tempo_impressao.OPCOES_PASSADAS[0])
         if self.nome_maquina == tempo_impressao.MAQUINA_DOCAN:
             linha_tempo = tk.Frame(caixa, bg=cores.cartao)
@@ -345,17 +382,37 @@ class _AbaMaquina(tk.Frame):
         self.var_resumo = tk.StringVar(value="Lendo a pasta...")
         self.var_margem = tk.StringVar(value="")
         self.var_recusadas = tk.StringVar(value="")
-        for variavel, cor, fonte in (
-                (self.var_resumo, cores.texto, ("Segoe UI", 10, "bold")),
-                (self.var_margem, cores.texto2, ("Segoe UI", 9)),
-                (self.var_recusadas, cores.alerta, ("Segoe UI", 9))):
-            tk.Label(caixa, textvariable=variavel, font=fonte, bg=cores.cartao, fg=cor,
-                     anchor="w", justify="left", wraplength=1380).pack(
-                         fill="x", padx=12, pady=4)
+        corpo = tk.Frame(caixa, bg=cores.cartao)
+        corpo.pack(fill="x", padx=12, pady=4)
+        self.texto_resultado = tk.Text(
+            corpo, height=3, width=1, wrap="word", font=("Segoe UI", 9),
+            bg=cores.cartao, fg=cores.texto2, relief="flat", highlightthickness=0,
+            state="disabled")
+        self.texto_resultado.pack(side="left", fill="both", expand=True)
+        barra = ttk.Scrollbar(corpo, orient="vertical", command=self.texto_resultado.yview)
+        barra.pack(side="right", fill="y")
+        self.texto_resultado.configure(yscrollcommand=barra.set)
+        self.texto_resultado.tag_configure("resumo", foreground=cores.texto,
+                                          font=("Segoe UI", 9, "bold"))
+        self.texto_resultado.tag_configure("avisos", foreground=cores.alerta)
+
+        def atualizar(*_):
+            self.texto_resultado.configure(state="normal")
+            self.texto_resultado.delete("1.0", "end")
+            for variavel, tag in ((self.var_resumo, "resumo"),
+                                  (self.var_margem, "margem"),
+                                  (self.var_recusadas, "avisos")):
+                if variavel.get():
+                    self.texto_resultado.insert("end", variavel.get() + "\n", tag)
+            self.texto_resultado.configure(state="disabled")
+
+        for variavel in (self.var_resumo, self.var_margem, self.var_recusadas):
+            variavel.trace_add("write", atualizar)
+        atualizar()
 
     def _montar_rodape(self):
         linha = tk.Frame(self, bg=cores.fundo)
-        linha.grid(row=4, column=0, sticky="ew", padx=16, pady=(10, 14))
+        linha.grid(row=4, column=0, sticky="ew", padx=16, pady=(6, 8))
         self.btn_atualizar = tk.Button(linha, text="↻ Recalcular seleção",
                                       relief="flat", cursor="hand2", bg=cores.cartao,
                                       fg=cores.texto, command=self.calcular)
@@ -552,6 +609,10 @@ class _AbaMaquina(tk.Frame):
         self.btn_converter.configure(state="normal")
         if erro is not None:
             self._previa = None
+            self.var_folhas.set("Prévia indisponível · recalcule a seleção")
+            self.escolha_folha.configure(values=())
+            self.escolha_folha.set("")
+            self._selecionar_folha()
             self.var_resumo.set("Não consegui calcular a seleção")
             self.var_margem.set(erro)
             self.var_recusadas.set("")
@@ -623,7 +684,9 @@ class _AbaMaquina(tk.Frame):
         self.var_margem.set(
             f"O maior lado segue o nome; diferença no outro lado até {pior:.0f} mm. "
             f"Espaçamento: {previa.get('folga_m', configuracao[1]) * 100:g} cm · "
-            f"largura máxima: {previa.get('largura_m', 0) * 100:g} cm."
+            f"largura máxima: {previa.get('largura_m', 0) * 100:g} cm. "
+            + ("PDF com fechamento lateral justo."
+               if not montagem.mesa(self.nome_maquina) else "")
             if folhas else "Nada pronto para montar na seleção. Confira os arquivos e avisos.")
         recados = []
         if recusadas:
@@ -637,15 +700,18 @@ class _AbaMaquina(tk.Frame):
                        for f in folhas if f.get("estimativa_impressao"))
         recados.extend(str(a) for a in avisos_gerais)
         self.var_recusadas.set("\n".join(recados))
-        opcoes = [f"{n} · {f['categoria']} · {f['tamanho']}"
+        arquivos_montados = {i["arquivo"] for f in folhas for i in f.get("itens", [])}
+        self.var_folhas.set(
+            f"Prévia do encaixe · {len(arquivos_montados)} arte(s) "
+            f"em {len(folhas)} montagem(ns)")
+        opcoes = [f"{n}/{len(folhas)} · {f['categoria']} · {f['pecas']} peça(s) · {f['tamanho']}"
                   for n, f in enumerate(folhas, 1)]
         self.escolha_folha.configure(values=opcoes)
         if opcoes:
             self.escolha_folha.current(0)
         else:
             self.escolha_folha.set("")
-        self._zoom = 1.0
-        self._desenhar_mapa()
+        self._selecionar_folha()
         self.btn_montar.configure(
             state="normal" if folhas and not self._suja and not pendentes_adobe else "disabled")
         if self._suja:
@@ -677,6 +743,30 @@ class _AbaMaquina(tk.Frame):
                 detalhe += "\n" + " · ".join(motivos)
         self.var_arquivo.set(detalhe)
 
+    def _navegar_folha(self, passo):
+        folhas = (self._previa or {}).get("folhas", [])
+        indice = self.escolha_folha.current() + passo
+        if 0 <= indice < len(folhas):
+            self.escolha_folha.current(indice)
+            self._selecionar_folha()
+
+    def _selecionar_folha(self, _evento=None):
+        folhas = (self._previa or {}).get("folhas", [])
+        indice = self.escolha_folha.current()
+        self.btn_folha_anterior.configure(
+            state="normal" if indice > 0 else "disabled")
+        self.btn_folha_proxima.configure(
+            state="normal" if 0 <= indice < len(folhas) - 1 else "disabled")
+        if 0 <= indice < len(folhas):
+            folha = folhas[indice]
+            nomes = list(dict.fromkeys(i["arquivo"] for i in folha.get("itens", [])))
+            self.var_mapa.set(
+                f"Montagem {indice + 1} de {len(folhas)} · {folha['categoria']} "
+                f"· {len(nomes)} arte(s) · {folha['pecas']} peça(s)\n" + "\n".join(nomes))
+        else:
+            self.var_mapa.set("Nenhuma montagem disponível. Confira a seleção e os avisos.")
+        self._ajustar_mapa()
+
     def _desenhar_mapa(self):
         if self._fechando:
             return
@@ -698,8 +788,8 @@ class _AbaMaquina(tk.Frame):
         altura = folha.get("folha_m", 0)
         if not largura or not altura:
             return
-        disponivel_l = max(220, self.canvas.winfo_width()) - 40
-        disponivel_a = max(250, self.canvas.winfo_height()) - 60
+        disponivel_l = max(1, self.canvas.winfo_width() - 40)
+        disponivel_a = max(1, self.canvas.winfo_height() - 60)
         escala = min(disponivel_l / largura, disponivel_a / altura) * self._zoom
         margem_x, margem_y = 20, 36
         self._escala_mapa = escala

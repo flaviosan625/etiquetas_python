@@ -192,6 +192,13 @@
   ],
   "ultimo_gerente": "Flavio Santos",
   "ultimo_produtor": "Elisa",
+  "montagem": {
+    "UJV 100 UNY CV": {
+      "materiais_impressao": {
+        "PS": "ADESIVO"
+      }
+    }
+  },
   "materiais_compostos": {
     "ADESIVADO": "ADESIVO"
   },

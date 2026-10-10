@@ -37,6 +37,81 @@ def _arte(pasta, nome, largura=1.0, altura=0.5):
     return arquivo
 
 
+def test_ujv_imprime_quatro_ps_e_um_vinil_no_mesmo_adesivo(entrada):
+    pasta = montagem.pasta_da_maquina("UJV 100 UNY CV")
+    pasta.mkdir()
+    medidas = [("1UN PS DUPLA FACE IMPRESSO 0.96X1,20M_placa1.pdf", 0.96, 1.20),
+               ("1UN PS DUPLA FACE IMPRESSO 60x75cm_placa2.pdf", 0.60, 0.75),
+               ("1UN PS DUPLA FACE IMPRESSO 64x80cm_placa3.pdf", 0.64, 0.80),
+               ("1UN PS DUPLA FACE IMPRESSO 80x100cm_placa4.pdf", 0.80, 1.00),
+               ("1UN VINIL IMPRESSO FOSCO 1.45X2.05M_FUNDO.pdf", 1.45, 2.05)]
+    for nome, largura, altura in medidas:
+        _arte(pasta, nome, largura, altura)
+    configuracao = config.carregar_config()
+    configuracao["montagem"] = {"UJV 100 UNY CV": {"materiais_impressao": {"PS": "ADESIVO"}}}
+    previa = montagem.prever_pasta(pasta, config=configuracao, largura_m=1.52)
+    assert not previa["recusadas"]
+    assert len(previa["folhas"]) == 1
+    folha = previa["folhas"][0]
+    assert folha["categoria"] == "ADESIVO"
+    assert folha["pecas"] == 5
+    assert {i["arquivo"] for i in folha["itens"]} == {m[0] for m in medidas}
+    assert sum(i["material_no_nome"] == "PS" for i in folha["itens"]) == 4
+    resultado = montagem.montar_pasta(pasta, config=configuracao, largura_m=1.52,
+                                    versoes_esperadas=previa["versoes"])
+    assert len(resultado["folhas"]) == 1
+    pdf = resultado["folhas"][0]["arquivo"]
+    ficha = json.loads(pdf.with_suffix(".json").read_text(encoding="utf-8"))
+    assert ficha["categoria"] == "ADESIVO"
+    assert len(ficha["pecas"]) == 5
+    assert all(i["material_impressao"] == "ADESIVO" for i in ficha["pecas"])
+    with pymupdf.open(pdf) as doc:
+        assert len(doc) == 1
+        texto = doc[0].get_text()
+        assert all(pathlib.Path(nome).stem in texto for nome, _, _ in medidas)
+
+
+def test_material_de_impressao_depende_da_escolha_e_da_maquina(entrada):
+    _arte(entrada, "1UN PS DUPLA FACE IMPRESSO 1.00X0.50M_PLACA.pdf")
+    _arte(entrada, "1UN VINIL IMPRESSO 1.00X0.50M_FUNDO.pdf")
+    configuracao = config.carregar_config()
+    configuracao["montagem"] = {"UJV 100 UNY CV": {"materiais_impressao": {"PS": "ADESIVO"}}}
+    previa = montagem.prever_pasta(entrada, config=configuracao)
+    assert {f["categoria"] for f in previa["folhas"]} == {"ADESIVO", "PS"}
+    configuracao["montagem"] = {}
+    previa = montagem.prever_pasta(entrada, "UJV 100 UNY CV", config=configuracao)
+    assert {f["categoria"] for f in previa["folhas"]} == {"ADESIVO", "PS"}
+
+
+@pytest.mark.parametrize("maquina,limite", [
+    ("UJV 100 UNY CV", 1.52), ("SWJ320A", 3.20), ("DOCAN R5200", 5.00)])
+@pytest.mark.parametrize("largura_explicita", [False, True])
+def test_previa_pdf_e_ficha_fecham_sem_sobra_lateral(entrada, maquina, limite, largura_explicita):
+    pasta = montagem.pasta_da_maquina(maquina)
+    pasta.mkdir(exist_ok=True)
+    nome = "1UN ADESIVO 1.00X1.00M_PAINEL.pdf"
+    _arte(pasta, nome, 1.00, 1.00)
+    argumentos = dict(nome_maquina=maquina)
+    if largura_explicita:
+        argumentos["largura_m"] = limite
+    previa = montagem.prever_pasta(pasta, **argumentos)
+    assert not previa["recusadas"]
+    folha = previa["folhas"][0]
+    assert folha["largura_m"] == pytest.approx(1.00)
+    assert previa["largura_m"] == pytest.approx(limite)
+    assert min(i["posicao_m"][0] for i in folha["itens"]) == pytest.approx(0)
+    assert max(i["posicao_m"][0] + i["posicao_m"][2]
+               for i in folha["itens"]) == pytest.approx(folha["largura_m"])
+    resultado = montagem.montar_pasta(pasta, versoes_esperadas=previa["versoes"], **argumentos)
+    arquivo = resultado["folhas"][0]["arquivo"]
+    ficha = json.loads(arquivo.with_suffix(".json").read_text(encoding="utf-8"))
+    assert ficha["margem_m"] == 0
+    assert ficha["folha_m"][0] == pytest.approx(folha["largura_m"])
+    with pymupdf.open(arquivo) as doc:
+        assert doc[0].rect.width / montagem.PT_M == pytest.approx(folha["largura_m"])
+        assert pathlib.Path(nome).stem in doc[0].get_text()
+
+
 def test_cabecalho_e_nome_completos_na_folha_estreita(entrada):
     nome = "1UN LONA 0.30X0.50M_LOGO_CLIENTE.pdf"
     _arte(entrada, nome, 0.30, 0.50)

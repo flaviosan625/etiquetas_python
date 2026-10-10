@@ -212,6 +212,47 @@ def test_mapa_destaca_o_arquivo_correto_sem_alterar_selecao(tela):
     assert item["arquivo"] in tela.var_mapa.get()
 
 
+def test_cinco_artes_em_duas_montagens_tem_contagem_e_navegacao(tela):
+    for numero in range(3):
+        (tela.pasta / f"1UN PS 1.00X0.50M_PLACA_{numero}.pdf").write_bytes(b"arte temporaria")
+    tela.calcular()
+    _consumir(tela)
+    previa = copy.deepcopy(tela._previa)
+    primeira = previa["folhas"][0]
+    segunda = copy.deepcopy(primeira)
+    segunda.update(categoria="PS", pecas=4, itens=segunda["itens"][1:])
+    primeira.update(categoria="ADESIVO", pecas=1, itens=primeira["itens"][:1])
+    previa["folhas"] = [primeira, segunda]
+    tela._mostrar(previa, None, tela._config_calculada)
+    assert "5 arte(s) em 2 montagem(ns)" in tela.var_folhas.get()
+    assert "1/2" in tela.escolha_folha.get()
+    assert "1 peça(s)" in tela.escolha_folha.get()
+    assert tela.btn_folha_anterior.cget("state") == "disabled"
+    assert tela.btn_folha_proxima.cget("state") == "normal"
+    tela._zoom = 4
+    tela._navegar_folha(1)
+    assert tela.escolha_folha.current() == 1
+    assert tela._zoom == 1
+    assert "2/2" in tela.escolha_folha.get()
+    assert "4 peça(s)" in tela.escolha_folha.get()
+    assert all(i["arquivo"] in tela.var_mapa.get() for i in segunda["itens"])
+    assert any(tela.canvas.type(i) == "rectangle"
+               for i in tela.canvas.find_withtag("peca_3"))
+    assert tela.btn_folha_proxima.cget("state") == "disabled"
+    tela._navegar_folha(-1)
+    assert tela.escolha_folha.current() == 0
+    assert set(tela._selecionados) == set(tela._arquivos)
+
+
+def test_falha_de_calculo_limpa_montagem_anterior(tela):
+    tela._mostrar(None, "Falha de leitura", tela._config_calculada)
+    assert not tela.canvas.find_withtag("peca_0")
+    assert tela.escolha_folha.get() == ""
+    assert tela.btn_folha_anterior.cget("state") == "disabled"
+    assert tela.btn_folha_proxima.cget("state") == "disabled"
+    assert "indisponível" in tela.var_folhas.get()
+
+
 def test_pdf_multipagina_avisa_que_miniatura_so_mostra_primeira(tela):
     nome = "2UN LONA 1.00X0.50M_CLIENTE_MULTI.pdf"
     (tela.pasta / nome).write_bytes(b"pdf temporario multipagina")

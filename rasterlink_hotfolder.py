@@ -146,7 +146,8 @@ MAQUINAS = {
         # sairia cortada na borda. Se o 1,27 for o rolo montado e não a
         # máquina, é aqui que se corrige.
         "largura_util_m": 1.27,
-        "margem_montagem_m": 0.03,
+        # O PDF fecha justo; centralização e folga ficam para a impressora.
+        "margem_montagem_m": 0.0,
         "largura_montagem_m": 1.52,
         "montagem": True,
         "posto": POSTO_RIP,
