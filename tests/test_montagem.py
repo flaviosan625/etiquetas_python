@@ -202,6 +202,28 @@ def test_quantidade_do_nome_vira_varias_pecas(pasta):
     assert len(pecas) == 3 and not recusadas
 
 
+def test_nome_que_diz_CM_mas_o_arquivo_prova_METROS_nao_encolhe_a_arte(pasta):
+    """
+    26/10/2026: `..._6.30X3.30CM_..._Painel_6x3m+sangria` com arte de 0,63 x
+    0,33 m (1:10). Lido como CM, a peca saia de 6,3 cm e a folha de 13 pecas
+    fechava em 3,90 x 0,21 m, com rotulos de 30 cm maiores que elas.
+    """
+    arte(pasta, "1UN LONA IMPRESSA_6.30X3.30CM_1.10_AF_Painel_6x3m+sangria_LONA.pdf", 0.63, 0.33)
+    pecas, recusadas = montagem.pecas_da_pasta(pasta)
+    assert not recusadas and len(pecas) == 1
+    assert pecas[0]["largura_m"] == pytest.approx(6.30, abs=0.01)
+    assert pecas[0]["altura_m"] == pytest.approx(3.30, abs=0.01)
+    assert pecas[0]["ajuste"]["fator"] == pytest.approx(10.0, abs=0.05)
+    assert "METROS" in pecas[0]["ajuste"]["motivo"]
+
+
+def test_CM_de_verdade_continua_sendo_CM(pasta):
+    """Sem prova do arquivo, o CM do nome vale: arte de 63 x 33 cm num nome de 63X33CM."""
+    arte(pasta, "1UN ADESIVO 63X33CM_PLACA.pdf", 0.63, 0.33)
+    pecas, _ = montagem.pecas_da_pasta(pasta)
+    assert pecas[0]["largura_m"] == pytest.approx(0.63, abs=0.01)
+
+
 def test_pdf_de_varias_paginas_vira_uma_peca_por_pagina(pasta):
     """A maquina imprime so a primeira pagina -- um quadrado escondido na 2 ja custou material."""
     arte(pasta, "1UN LONA IMPRESSA 1.00X1.00M_TOTEM.pdf", 1.00, 1.00, paginas=3)

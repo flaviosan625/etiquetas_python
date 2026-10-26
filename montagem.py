@@ -371,6 +371,47 @@ def medida_do_nome(nome, config=None):
     return dimensao["largura_m"], dimensao["altura_m"]
 
 
+def _unidade_escrita_no_nome(nome, config=None):
+    """A unidade que o nome ESCREVEU (CM, M, MM) ou None se não escreveu."""
+    config = config or carregar_config()
+    dimensao = extrair_dimensoes(nome, config.get("typos_unidade"))
+    if not dimensao or dimensao.get("unidade_bruta") is None:
+        return None
+    return dimensao.get("unidade_usada")
+
+
+def alvo_se_o_nome_escreveu_cm_por_engano(nome, alvo, medida, config=None):
+    """
+    O alvo em METROS quando o nome diz CM mas o arquivo prova que era M,
+    ou None se não há prova.
+
+    Aconteceu em 26/10/2026: oito artes de 'AF_Vila' chegaram como
+    `..._6.30X3.30CM_..._Painel_6x3m+sangria` — o próprio nome diz "6x3m"
+    e a arte mede 0,63 x 0,33 m (escala 1:10 de 6,30 x 3,30 m). Lido ao pé
+    da letra, o CM mandava ENCOLHER a arte a um décimo (6,3 cm) e a folha
+    saiu com 13 peças de poucos centímetros, rótulos de 30 cm maiores que
+    elas, em 3,90 x 0,21 m.
+
+    A prova é o ARQUIVO, nunca palpite: só vale quando o nome em CM mandaria
+    reduzir a arte pela metade ou mais E o mesmo número lido em metros
+    fecha com a arte sem recusa, no tamanho dela (1x) ou em escala 1:10
+    (10x), os dois casos que o resto do sistema já conhece.
+    """
+    if _unidade_escrita_no_nome(nome, config) != "CM":
+        return None
+    em_cm = ajuste_para(alvo, medida)
+    if em_cm["acao"] == "recusar" or em_cm["fator"] is None or em_cm["fator"] >= 0.5:
+        return None
+    em_metros = (alvo[0] * 100, alvo[1] * 100)
+    ajuste = ajuste_para(em_metros, medida)
+    if ajuste["acao"] == "recusar":
+        return None
+    fator = ajuste["fator"] or 1.0
+    if not (0.95 <= fator <= 1.05 or 9.5 <= fator <= 10.5):
+        return None
+    return em_metros
+
+
 # --- resolução: até que distância a peça fica limpa -------------------
 #
 # A conta NÃO é inventada, é a ACUIDADE VISUAL: o olho com visão 20/20
@@ -739,23 +780,30 @@ def pecas_da_pasta(pasta, config=None, maquinas=None, arquivos=None):
                                   "motivo": f"página {pagina + 1} sem conteúdo de arte ou ilegível; não consegui medir"})
                 do_arquivo = []
                 break
-            ajuste = ajuste_para(alvo, medida)
+            alvo_da_pagina = alvo
+            em_metros = alvo_se_o_nome_escreveu_cm_por_engano(arquivo.name, alvo, medida, config)
+            if em_metros is not None:
+                alvo_da_pagina = em_metros
+            ajuste = ajuste_para(alvo_da_pagina, medida)
             if ajuste["acao"] == "recusar":
                 recusadas.append({"arquivo": arquivo,
                                   "motivo": f"página {pagina + 1}: {ajuste['motivo']}"})
                 do_arquivo = []
                 break
-            largura_peca, altura_peca = alvo
+            if em_metros is not None:
+                ajuste = dict(ajuste, motivo=ajuste["motivo"] +
+                              "; o nome escreveu CM, mas o arquivo prova que o número é em METROS")
+            largura_peca, altura_peca = alvo_da_pagina
             w_arte, h_arte = medida[:2]
             if ajuste["girar"]:
                 w_arte, h_arte = h_arte, w_arte
             # O maior lado é a âncora, o outro preserva a proporção real.
-            if alvo[0] >= alvo[1]:
-                altura_peca = alvo[0] * h_arte / w_arte
-                fator_real = alvo[0] / w_arte
+            if alvo_da_pagina[0] >= alvo_da_pagina[1]:
+                altura_peca = alvo_da_pagina[0] * h_arte / w_arte
+                fator_real = alvo_da_pagina[0] / w_arte
             else:
-                largura_peca = alvo[1] * w_arte / h_arte
-                fator_real = alvo[1] / h_arte
+                largura_peca = alvo_da_pagina[1] * w_arte / h_arte
+                fator_real = alvo_da_pagina[1] / h_arte
             resolucao = _resolucao_detalhada(arquivo, pagina, fator_real)
             for copia in range(int(quantidade)):
                 do_arquivo.append({
@@ -764,7 +812,7 @@ def pecas_da_pasta(pasta, config=None, maquinas=None, arquivos=None):
                     # o que o NOME pede, pro documento poder dizer as duas
                     # coisas quando elas diferem — número deduzido nunca
                     # se passa por declarado
-                    "nome_m": (alvo[0], alvo[1]),
+                    "nome_m": (alvo_da_pagina[0], alvo_da_pagina[1]),
                     # o dpi que a arte TEM depois de posta no tamanho
                     # final; None quando é vetor e não há pixel que acabe
                     "dpi": resolucao["dpi"], "resolucao_estado": resolucao["estado"],
