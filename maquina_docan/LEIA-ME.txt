@@ -136,6 +136,12 @@ nao serve: troque pela pasta nova, com o Browse. Sem Hot Folder ligada e com
 o caminho certo, nao ha destino: nesse caso NAO crie o hot_folder_byhx.txt
 -- tudo continua como hoje (voce carrega o .prt pelo botao de adicionar).
 
+NOTA (27/10/2026): se a saida do SAi ja grava DIRETO em C:\BYHX_ENTRADA
+(Local padrao da porta apontado la) e o BYHX esta listando os .prt, esta
+parte e DESNECESSARIA: nao crie o hot_folder_byhx.txt. Cuidado: a porta e
+uma so para as duas DOCAN, entao um .prt da H2525 cairia na lista do BYHX
+do rolo.
+
 O .prt já nasce neste PC, do lado do BYHX Printer Manager. O vigia pode
 levá-lo até a Hot Folder do BYHX, e ele entra na lista de trabalhos sem
 passar por OneDrive. Só a DOCAN R5200 faz isso; a H2525 não.

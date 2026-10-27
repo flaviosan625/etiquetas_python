@@ -767,6 +767,16 @@ Hot Folder numa pasta nova e vazia (os dois campos de "Delete job/file after pri
 desmarcados: o BYHX não apaga nada sozinho, então a faxina segue sendo de quem limpa).
 `separar_ripados.entregar_ao_byhx`, chamada por `_entregar_ao_byhx` em `_cuidar_do_ripado` logo
 depois de separar, leva o `.prt` pra lá.
+**Estado real em 27/10/2026 (noite): ele apontou a saída do SAi direto pra `C:\BYHX_ENTRADA`**
+(*"joguei pra sair o rip nessa pasta"*) — o uso normal de uma Hot Folder — **e confirmou que funciona**: o
+mesmo arquivo apareceu sozinho na lista do BYHX (duplicado, porque ele já o tinha carregado na mão; o
+duplicado se retira da lista pra não imprimir duas vezes; não se sabe se a listagem sozinha veio antes
+ou depois de o SAi terminar de gravar). Com isso a entrega pelo vigia fica **desnecessária e DESLIGADA**
+(sem `hot_folder_byhx.txt`). Dois riscos ficaram abertos e foram ditos a ele: a porta do SAi é UMA pras
+duas DOCAN, então um `.prt` da H2525 cairia na lista do BYHX do rolo (chapa perdida) se ela for usada; e
+sem o `.txt` a faxina e o aviso de disco não olham `C:\BYHX_ENTRADA`, que acumula dezenas de GB. **Os
+relatórios não mudam:** a prova de impressão casa pelo NOME do `.prt` (`stem`), nunca pela pasta.
+
 **O clique em Enviar no SAi continua dele** (resposta dele: *"Eu clico em Enviar"*): o `.prt` só existe
 depois disso, e o ajuste de tamanho de "DOCAN só entrega" também acontece lá dentro. O sistema não
 automatiza esse clique — não se sabe se o Production Manager envia sozinho, e automatizar tela é frágil.
