@@ -142,6 +142,19 @@ O `config.json` guarda também:
 - `ordem_unificado` — em que ordem as categorias aparecem no PDF unificado. Categoria que exista em
   `materiais` mas não esteja nessa lista ainda aparece (no fim), para nunca sumir em silêncio.
 
+## Preços de acrílico
+
+A tabela informada em 10/10/2026 está em `documentos/PRECOS_ACRILICOS_2026-10-10.csv`:
+chapas de 2 × 1 m, cristal por espessura, branco/leitoso/translúcido com +8%,
+coloridos comuns com +15% e espelhados/fundo infinito com seus preços próprios.
+Branco e translúcido são nomes alternativos do cadastro Leitoso.
+O estoque guarda R$/chapa; o cálculo de custos usa R$/m² com a precisão necessária
+para reproduzir o valor da chapa inteira. Consumo inclui as peças e a sobra do
+aproveitamento. No acompanhamento da produção, só os arquivos em PRONTOS entram
+no custo produzido. A baixa de estoque continua pelo lançamento de saída/OS.
+Produtos novos começam com saldo zero; histórico e saldos anteriores são preservados.
+Espessuras sem cotação permanecem sem preço.
+
 ## Parâmetros de corte da fresa
 
 Ficam em `corte_parametros.py`, que é a **fonte única**: fresa, passada, profundidade e ordem de

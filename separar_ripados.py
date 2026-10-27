@@ -219,8 +219,15 @@ def _ja_esta_la(ripado, pasta_certa):
     return a.st_size == b.st_size and int(a.st_mtime) == int(b.st_mtime)
 
 
-def _levar_entre_discos(ripado, destino):
-    """C: -> D:. Devolve o motivo do erro, ou None quando o ripado saiu da origem e chegou inteiro."""
+def _levar_entre_discos(ripado, destino, pasta_montagem=None):
+    """
+    C: -> D:. Devolve o motivo do erro, ou None quando o ripado saiu da origem e chegou inteiro.
+
+    A cópia é montada ao lado do destino, a menos que `pasta_montagem` diga
+    outra (tem que ser do mesmo disco do destino, pro rename final ser local).
+    A entrega ao BYHX usa isso: lá o destino é uma pasta que um programa
+    VIGIA, e montagem dentro dela é arquivo pela metade à vista.
+    """
     try:
         st = ripado.stat()
         livre = shutil.disk_usage(destino.parent).free
@@ -229,7 +236,7 @@ def _levar_entre_discos(ripado, destino):
     if livre < st.st_size + MARGEM_LIVRE_BYTES:
         return (f"o D: tem {livre / 1024 ** 3:.1f} GB livres e o ripado tem "
                 f"{st.st_size / 1024 ** 3:.1f} GB — não copiei pra não encher o disco")
-    montagem = destino.with_name(f"~montando~{destino.name}.parcial")
+    montagem = pathlib.Path(pasta_montagem or destino.parent) / f"~montando~{destino.name}.parcial"
     try:
         shutil.copy2(ripado, montagem)
         depois = ripado.stat()
@@ -326,4 +333,150 @@ def separar(pastas=None, raiz=None, riplog=None, maquinas=None, logger=None, mov
             if logger:
                 logger("ok", f"Ripado '{ripado.name}' levado pra pasta da {maquina} ({destino.parent}).")
             resultado["movidos"].append((ripado, destino, maquina))
+    return resultado
+
+
+# --- a última perna: do ripado pra hot folder do BYHX -----------------------
+#
+# O SAi ripa, o .prt nasce neste PC e a máquina é comandada pelo BYHX Printer
+# Manager. Falta só levar o .prt até a lista de trabalhos dele — sem OneDrive
+# no meio — e isso SUPÕE a Hot Folder do BYHX (aba Preference): pasta que,
+# quando o .prt cai nela, entra na lista.
+#
+# A opção existe: está na aba Preference da janela Setting do BYHX (visto em
+# captura de 27/10/2026), com "Hot Folder", "Browse..." e "Print Immediately".
+# O diagnóstico de 03/10 não a achou porque só olhava arquivos de configuração,
+# não o Registro. Naquela captura a Hot Folder estava DESMARCADA (o caminho
+# mostrado é o valor de fábrica do programa) e a Print Immediately também:
+# só crie o arquivo abaixo depois de ligar a Hot Folder numa pasta nova e vazia.
+#
+# O endereço dessa pasta é DESTE PC e NÃO se escreve de cabeça: quem sabe é a
+# aba Preference do próprio BYHX, e endereço errado aqui erra calado (o ripado
+# de 14 GB entraria numa pasta que ninguém vigia). Por isso a entrega nasce
+# DESLIGADA: só existe depois que alguém grava esse arquivo, ao lado do módulo,
+# com UMA linha — o caminho. Apagar o arquivo desliga.
+CAMINHO_HOT_FOLDER_BYHX = pathlib.Path(__file__).resolve().parent / "hot_folder_byhx.txt"
+
+
+def hot_folder_do_byhx(caminho=None):
+    """
+    (pasta, desde) da entrega ao BYHX, ou (None, None) quando está desligada.
+
+    `desde` é a hora em que o arquivo de configuração foi gravado, e só vale
+    ripado gravado DEPOIS dela. Sem isso, ligar a entrega levaria de uma vez
+    pra lista da máquina tudo que já estava parado na pasta da DOCAN — em
+    04/10/2026 eram ~198 GB de ripados de 02/10 que nunca foram impressos.
+    """
+    caminho = pathlib.Path(caminho or CAMINHO_HOT_FOLDER_BYHX)
+    try:
+        cru = caminho.read_bytes()
+        desde = datetime.datetime.fromtimestamp(caminho.stat().st_mtime)
+    except OSError:
+        return None, None
+    try:
+        texto = cru.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        texto = cru.decode("cp1252", errors="replace")  # Bloco de Notas antigo, com acento no caminho
+    for linha in texto.splitlines():
+        linha = linha.strip().strip('"').strip()
+        if linha and not linha.startswith("#"):
+            return pathlib.Path(linha), desde
+    return None, None
+
+
+def _mover_ripado(ripado, destino, pasta_montagem=None):
+    """
+    Leva o arquivo sem nunca sobrescrever. Devolve ('ok', None), ('em_uso', None)
+    ou ('erro', motivo). Mesmo mecanismo do separar(): rename quando é o mesmo
+    disco, cópia por montagem quando não é.
+    """
+    try:
+        os.rename(ripado, destino)  # mesmo disco: instantâneo, atômico, não sobrescreve
+        return "ok", None
+    except OSError as e:
+        if getattr(e, "winerror", None) != _ERRO_OUTRO_DISCO and e.errno != errno.EXDEV:
+            return "em_uso", None  # aberto por alguém: espera
+    erro = _levar_entre_discos(ripado, destino, pasta_montagem)
+    return ("erro", erro) if erro else ("ok", None)
+
+
+def entregar_ao_byhx(maquinas=None, raiz=None, riplog=None, caminho=None, logger=None,
+                     mover=True, agora=None):
+    """
+    Uma passada. Leva cada ripado novo da DOCAN que usa o BYHX pra hot folder
+    dele. Devolve {'entregues': [(de, para, máquina)], 'em_uso': [caminho],
+    'erros': [(caminho, motivo)], 'sem_pasta': pasta ou None, 'conflito': pasta
+    ou None}. Com mover=False só diz o que faria.
+
+    Cinco travas, todas por perda de material:
+      - desligada sem o arquivo de configuração (ver CAMINHO_HOT_FOLDER_BYHX);
+      - a pasta do BYHX tem que EXISTIR, e nunca é criada — pasta criada por
+        mim é pasta que o programa não vigia;
+      - a pasta do BYHX NÃO pode ser uma das que o separar() varre (a raiz do
+        ripado, a pasta de cada máquina ou o Desktop/Ripados antigo). Ele
+        levaria o .prt de volta na passada seguinte, a cada minuto, e o
+        trabalho na lista do BYHX ficaria apontando pra arquivo que sumiu
+        (o BYHX referencia o .prt no lugar). Sai em 'conflito';
+      - só máquina com `entrega_byhx` no cadastro. A H2525 (plana) não tem: um
+        .prt de chapa na lista do BYHX do rolo é chapa perdida;
+      - só .prt com a prova do RIPLOG (o mesmo quem_gerou da separação, que
+        pede o arquivo parado há 30 s) e gravado depois de ligar. Estar na
+        pasta da máquina não basta: sem prova o arquivo também fica lá.
+    """
+    agora = agora or datetime.datetime.now()
+    resultado = {"entregues": [], "em_uso": [], "erros": [], "sem_pasta": None, "conflito": None}
+    pasta, desde = hot_folder_do_byhx(caminho)
+    if pasta is None:
+        return resultado
+    if not pasta.is_dir():
+        resultado["sem_pasta"] = pasta
+        return resultado
+    if maquinas is None:
+        from rasterlink_hotfolder import MAQUINAS as maquinas  # tardio: ver maquina_do_dispositivo
+    dispositivos = {nome: cfg["setup_sai"] for nome, cfg in maquinas.items()
+                    if isinstance(cfg, dict) and cfg.get("entrega_byhx") and cfg.get("setup_sai")}
+    if not dispositivos:
+        return resultado
+    raiz = pathlib.Path(raiz) if raiz else ripados_para_nuvem.raiz_dos_ripados()
+    varridas = [raiz, pathlib.Path(PASTA_RIPADOS_ANTIGA)] + [raiz / n for n in maquina_do_dispositivo(maquinas).values()]
+    if _chave(pasta) in {_chave(p) for p in varridas}:
+        resultado["conflito"] = pasta
+        return resultado
+    saidas = saidas_do_riplog(riplog)
+    if mover:
+        _faxina_montagens([pasta.parent], agora)
+
+    for nome, dispositivo in dispositivos.items():
+        origem = raiz / nome
+        if not origem.is_dir():
+            continue
+        for ripado in sorted(origem.iterdir()):
+            if not ripado.is_file() or ripado.suffix.lower() != ".prt":
+                continue
+            try:
+                gravado = datetime.datetime.fromtimestamp(ripado.stat().st_mtime)
+            except OSError:
+                continue
+            if gravado < desde:
+                continue  # já estava aqui antes de ligar: decisão dele, não minha
+            if quem_gerou(ripado, saidas, agora=agora) != dispositivo:
+                continue  # sem prova, ainda gravando ou de outra DOCAN: separar() é quem avisa
+            if _em_uso(ripado):
+                resultado["em_uso"].append(ripado)
+                continue
+            destino = _nome_livre(pasta / ripado.name)
+            if not mover:
+                resultado["entregues"].append((ripado, destino, nome))
+                continue
+            situacao, erro = _mover_ripado(ripado, destino, pasta_montagem=pasta.parent)
+            if situacao == "em_uso":
+                resultado["em_uso"].append(ripado)
+            elif situacao == "erro":
+                resultado["erros"].append((ripado, erro))
+                if logger:
+                    logger("warn", f"Não consegui entregar '{ripado.name}' ao BYHX: {erro}")
+            else:
+                resultado["entregues"].append((ripado, destino, nome))
+                if logger:
+                    logger("ok", f"Ripado '{destino.name}' entregue na hot folder do BYHX ({pasta}).")
     return resultado

@@ -38,10 +38,15 @@ def _nao_sujar_o_log_de_verdade():
     que ESTE teste criou e preserva qualquer coisa que a tarefa agendada
     tenha escrito no meio (ela roda de minuto em minuto). Reescrever o
     arquivo inteiro apagaria a linha dela.
-    """
-    import caminhos
 
-    log = caminhos.ETIQUETAS_GERADAS / "_vigia_checklist.log"
+    O caminho sai da RAIZ do projeto, nunca de `caminhos`: o subprocesso
+    resolve a pasta dele a partir do próprio `__file__` e escreve SEMPRE
+    no log real, não importa pra onde um fixture tenha apontado
+    `caminhos.ETIQUETAS_GERADAS`. Lendo pelo módulo, a limpeza vigiava um
+    arquivo temporário vazio enquanto o subprocesso carimbava o de
+    verdade — e as linhas voltavam a acumular, caladas.
+    """
+    log = RAIZ / "etiquetas_geradas" / "_vigia_checklist.log"
     antes = log.read_text(encoding="utf-8").split("\n") if log.is_file() else None
     yield
     if antes is None or not log.is_file():

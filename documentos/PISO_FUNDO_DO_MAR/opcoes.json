@@ -1,0 +1,72 @@
+[
+  {
+    "numero": 1,
+    "nome": "Tubarão, arraia e tartaruga",
+    "arquivo": "paraiso_previa.jpg",
+    "pixels": [
+      9500,
+      5501
+    ],
+    "tipo": "Montagem fotográfica · Depositphotos",
+    "resumo": "Muitos peixes, tartaruga, tubarão e arraia sobre corais. Minha primeira opção para variedade de animais.",
+    "ajuste": "Formato largo: ajustar o enquadramento para 4:3 preservando os animais principais.",
+    "url": "https://depositphotos.com/photo/underwater-paradise-background-coral-reef-wildlife-nature-collage-shark-manta-223657242.html",
+    "ppi_2000x1500_recorte": 93
+  },
+  {
+    "numero": 2,
+    "nome": "Recife com corais em primeiro plano",
+    "arquivo": "recife_16x9_previa.jpg",
+    "pixels": [
+      9000,
+      5063
+    ],
+    "tipo": "Montagem fotográfica · Depositphotos",
+    "resumo": "Corais coloridos nas laterais, peixes grandes, tartaruga, tubarão e arraia. Água azul e luz acima.",
+    "ajuste": "O recorte 4:3 reduz as laterais; revisar a posição da arraia.",
+    "url": "https://depositphotos.com/photo/underwater-coral-reef-landscape-16to9-background-deep-blue-ocean-colorful-172886072.html",
+    "ppi_2000x1500_recorte": 86
+  },
+  {
+    "numero": 3,
+    "nome": "Panorama de aquário tropical",
+    "arquivo": "panorama_deposit_previa.jpg",
+    "pixels": [
+      11001,
+      5500
+    ],
+    "tipo": "Montagem fotográfica · Depositphotos",
+    "resumo": "Grande cardume, tartaruga, tubarão e arraia, com peixes bem visíveis no primeiro plano.",
+    "ajuste": "Panorama 2:1: exige um recorte maior ou extensão da composição para caber no piso 4:3.",
+    "url": "https://depositphotos.com/photo/underwater-coral-reef-landscape-wide-2to1-panorama-background-i-300444480.html",
+    "ppi_2000x1500_recorte": 93
+  },
+  {
+    "numero": 4,
+    "nome": "Recife natural com tartaruga e peixes",
+    "arquivo": "recife_123rf_real_previa.jpg",
+    "pixels": [
+      8103,
+      6325
+    ],
+    "tipo": "Fotografia de recife · 123RF · XL anunciado",
+    "resumo": "Visual mais natural, com tartaruga e muitas espécies de peixes entre os corais. Fundo azul claro.",
+    "ajuste": "Próxima do formato 4:3. A página anuncia XL 8.103 × 6.325 e L 5.402 × 4.217 px; verificar o detalhe no original.",
+    "url": "https://www.123rf.com/photo_69385297_beautiful-coral-reef-with-colored-fish-around-underwater-life-copyspace-for-text.html",
+    "ppi_2000x1500_recorte": 103
+  },
+  {
+    "numero": 5,
+    "nome": "Golfinhos e tartarugas com raios de sol",
+    "arquivo": "golfinhos_previa.jpg",
+    "pixels": [
+      7066,
+      3994
+    ],
+    "tipo": "Arte gerada por IA · Vecteezy Pro",
+    "resumo": "Vários golfinhos, tartarugas, peixes e corais. É a composição mais lúdica da seleção, com aparência realista.",
+    "ajuste": "Formato largo e menor resolução da seleção: revisar a anatomia e o detalhe na ampliação.",
+    "url": "https://www.vecteezy.com/photo/68487442-a-vibrant-underwater-scene-showcasing-dolphins-swimming-alongside-sea-turtles-among-colorful-coral-reefs",
+    "ppi_2000x1500_recorte": 68
+  }
+]

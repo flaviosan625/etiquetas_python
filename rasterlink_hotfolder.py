@@ -225,6 +225,12 @@ MAQUINAS = {
         # escala 1:10 (página 0,70 x 0,32 de uma peça de 7 x 3,20) foi girada
         # pela medida da P�?GINA, que não quer dizer nada numa arte em escala.
         "girar": False,
+        # O ripado desta DOCAN pode ir pra hot folder do BYHX Printer Manager
+        # (separar_ripados.entregar_ao_byhx) — mas só depois de o endereço da
+        # pasta ser gravado em hot_folder_byhx.txt neste PC. A H2525 NÃO tem
+        # o campo de propósito: não se sabe se ela imprime por este mesmo
+        # BYHX, e .prt de chapa na lista do rolo é chapa perdida.
+        "entrega_byhx": True,
     },
     # A segunda DOCAN (2026-09-23): PLANA, imprime em chapa rígida de até
     # 100 mm de espessura. Setup 'Docan-Docan_H2525' no mesmo SAi, ao
@@ -2097,6 +2103,25 @@ def ripados_ja_impressos(pasta_byhx=None):
     return nomes
 
 
+def _pastas_do_ripado():
+    """
+    As pastas onde mora ripado neste PC: as locais mais, com a entrega ao
+    BYHX ligada, a hot folder dele. O ripado entregue passa a viver lá (o
+    programa pode referenciá-lo no lugar), então a faxina e o aviso de disco
+    têm que olhar também ali — senão 14 GB por trabalho se acumulam onde
+    ninguém limpa nem conta.
+    """
+    pastas = list(PASTAS_RIPADOS_LOCAIS)
+    try:
+        import separar_ripados
+    except ImportError:
+        return pastas
+    pasta, _ = separar_ripados.hot_folder_do_byhx()
+    if pasta is not None and pasta not in pastas:
+        pastas.append(pasta)
+    return pastas
+
+
 def faxina_dos_ripados(pastas=None, dias=None, logger=None, agora=None, impressos=None):
     """
     Apaga o .prt que J�? IMPRIMIU e passou do prazo, nas pastas locais de
@@ -2117,8 +2142,8 @@ def faxina_dos_ripados(pastas=None, dias=None, logger=None, agora=None, impresso
     if not impressos:
         return 0, 0
 
-    apagados, bytes_livres, parados = 0, 0, []
-    for pasta in (PASTAS_RIPADOS_LOCAIS if pastas is None else pastas):
+    apagados, bytes_livres, parados, travados = 0, 0, [], {}
+    for pasta in (_pastas_do_ripado() if pastas is None else pastas):
         pasta = pathlib.Path(pasta)
         if not pasta.is_dir():
             continue
@@ -2137,10 +2162,28 @@ def faxina_dos_ripados(pastas=None, dias=None, logger=None, agora=None, impresso
             try:
                 arquivo.unlink()
             except OSError as erro:
-                logger("warn", f"Não consegui apagar o ripado '{arquivo.name}': {erro}")
+                travados[arquivo] = erro
                 continue
             apagados += 1
             bytes_livres += estado.st_size
+
+    # Arquivo aberto em outro programa (o BYHX com o trabalho ainda na lista,
+    # por exemplo) segue travado por dias, e a faxina tenta a cada passada.
+    # Avisar a cada passada eram 1.440 linhas por dia POR arquivo — em
+    # 27/10/2026 quatro ripados enchiam o log com a mesma frase, e log
+    # assim é onde o aviso de verdade passa batido. Uma vez por arquivo,
+    # e de novo só se o problema sumir e voltar.
+    for arquivo, erro in travados.items():
+        if getattr(erro, "winerror", None) == 32:  # violação de compartilhamento
+            texto = (f"O ripado '{arquivo.name}' já imprimiu e passou do prazo, mas está aberto em outro "
+                     f"programa (provavelmente o BYHX, com o trabalho ainda na lista) — não consegui "
+                     f"apagar. Tento de novo a cada passada, sem repetir este aviso.")
+        else:
+            texto = f"Não consegui apagar o ripado '{arquivo.name}': {erro}"
+        _avisar_uma_vez(f"~ripado_travado~{arquivo}", texto, logger)
+    atuais = {f"~ripado_travado~{a}" for a in travados}
+    for chave in [k for k in _ultimo_erro_por_arquivo if k.startswith("~ripado_travado~") and k not in atuais]:
+        _ultimo_erro_por_arquivo.pop(chave, None)
 
     if apagados:
         logger("ok", f"{apagados} ripado(s) impresso(s) e com mais de {dias} dias apagado(s) — "
@@ -2165,7 +2208,7 @@ def avisar_disco_cheio(pastas=None, logger=None, minimo_gb=None):
     """
     logger = logger or logger_arquivo
     minimo_gb = ESPACO_MINIMO_RIPADOS_GB if minimo_gb is None else minimo_gb
-    for pasta in (PASTAS_RIPADOS_LOCAIS if pastas is None else pastas):
+    for pasta in (_pastas_do_ripado() if pastas is None else pastas):
         pasta = pathlib.Path(pasta)
         if not pasta.is_dir():
             continue
@@ -2357,6 +2400,37 @@ def _separar_ripados_da_docan(logger=None, agora=None):
         _ultimo_erro_por_arquivo.pop(chave, None)
 
 
+def _entregar_ao_byhx(logger=None):
+    """
+    Leva o ripado novo da DOCAN pra hot folder do BYHX (ver
+    separar_ripados.entregar_ao_byhx). Desligado até alguém gravar o endereço
+    da pasta em hot_folder_byhx.txt, ao lado deste módulo — e sem o
+    separar_ripados aqui também não faz nada, pelo mesmo motivo do resto:
+    este arquivo viaja sozinho.
+
+    A pasta configurada que NÃO existe vira aviso (uma vez): é o erro de
+    digitação, e o ripado fica onde está até alguém corrigir.
+    """
+    logger = logger or logger_arquivo
+    try:
+        import separar_ripados
+    except ImportError:
+        return
+    r = separar_ripados.entregar_ao_byhx(maquinas=MAQUINAS, logger=logger)
+    _avisar_uma_vez(
+        "~byhx_pasta~",
+        f"A hot folder do BYHX ('{r['sem_pasta']}') não existe — não entreguei nenhum ripado. "
+        f"Confira o caminho em hot_folder_byhx.txt." if r["sem_pasta"] else None,
+        logger)
+    _avisar_uma_vez(
+        "~byhx_conflito~",
+        f"A hot folder do BYHX ('{r['conflito']}') é uma pasta que o separador de ripados varre como "
+        f"saída do SAi: ele levaria o .prt de volta a cada minuto. Não entreguei nada. Use outra "
+        f"pasta (por exemplo C:\\BYHX_ENTRADA) em hot_folder_byhx.txt e na aba Preference do BYHX."
+        if r.get("conflito") else None,
+        logger)
+
+
 
 def preparar_pastas_do_ripado(posto=None, logger=None):
     """
@@ -2408,6 +2482,7 @@ def _cuidar_do_ripado(logger=None):
     logger = logger or logger_arquivo
     for nome, tarefa in (
         ("separar os ripados", _separar_ripados_da_docan),
+        ("entregar o ripado ao BYHX", _entregar_ao_byhx),
         ("anotar o que imprimiu", registrar_impressoes),
         ("levar o histórico da impressora", levar_historico_do_byhx),
         ("varrer o ripado vencido", faxina_dos_ripados),

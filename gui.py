@@ -16,6 +16,7 @@ periodicamente com root.after(...).
 """
 import io
 import json
+import math
 import pathlib
 import queue
 import subprocess
@@ -216,13 +217,20 @@ class JanelaPrincipal(tk.Tk):
 
     # ---------- montagem da tela: blocos ----------
 
-    def _cartao(self, titulo, expandir=False):
+    def _cartao(self, titulo, expandir=False, acao=None):
         """Um bloco escuro com o rótulo pequeno em cima."""
         caixa = tk.Frame(self, bg=cores.cartao, highlightbackground=cores.borda,
                          highlightthickness=1)
         caixa.pack(fill="both" if expandir else "x", expand=expandir, padx=22, pady=(0, 12))
-        tk.Label(caixa, text=titulo, font=("Segoe UI", 8, "bold"), bg=cores.cartao,
-                 fg=cores.texto2).pack(anchor="w", padx=16, pady=(10, 6))
+        topo = tk.Frame(caixa, bg=cores.cartao)
+        topo.pack(fill="x", padx=16, pady=(10, 6))
+        tk.Label(topo, text=titulo, font=("Segoe UI", 8, "bold"), bg=cores.cartao,
+                 fg=cores.texto2).pack(side="left")
+        if acao:
+            nome, comando = acao
+            tk.Button(topo, text=nome, command=comando, bg=cores.acento, fg=cores.sobre_acento,
+                      font=("Segoe UI", 10, "bold"), relief="flat", padx=12, pady=3,
+                      cursor="hand2").pack(side="right")
         return caixa
 
     def _campo(self, pai, rotulo, nome_var, largura=26, valor="", botao=None):
@@ -297,7 +305,7 @@ class JanelaPrincipal(tk.Tk):
             # ("🔀", "Cruzar pasta com lista do RIP", "", self._abrir_cruzamento_rip),
         ]
         colunas = 3
-        caixa = self._cartao("ATALHOS")
+        caixa = self._cartao("ATALHOS", acao=("✅ Material em produção", self._abrir_material_producao))
         grade = tk.Frame(caixa, bg=cores.cartao)
         grade.pack(fill="x", padx=12, pady=(0, 12))
         for i, (icone, nome, descricao, comando) in enumerate(atalhos):
@@ -467,6 +475,16 @@ class JanelaPrincipal(tk.Tk):
             janela.focus_force()
             return
         self._janela_montagem = JanelaMontagem(self)
+
+    def _abrir_material_producao(self):
+        from gui_material_producao import JanelaMaterialProducao
+
+        janela = getattr(self, "_janela_material_producao", None)
+        if janela is not None and janela.winfo_exists():
+            janela.lift()
+            janela.focus_force()
+            return
+        self._janela_material_producao = JanelaMaterialProducao(self)
 
     def _abrir_agentes(self):
         # import aqui dentro: gui_agentes importa as cores deste módulo, e
@@ -993,7 +1011,12 @@ def _preco_na_tela(valor):
         numero = float(valor)
     except (TypeError, ValueError):
         return ""
-    return ("%.2f" % numero).replace(".", ",") if numero > 0 else ""
+    if not math.isfinite(numero) or numero <= 0:
+        return ""
+    # Meia chapa pode custar meio centavo: 212,83 / 2 = 106,415 por m².
+    texto = f"{numero:.6f}".rstrip("0")
+    inteiro, decimal = texto.split(".")
+    return inteiro + "," + decimal.ljust(2, "0")
 
 
 def _preco_digitado(texto):
@@ -1212,7 +1235,7 @@ class JanelaVariantes(tk.Toplevel):
     def __init__(self, mestre, nome_categoria, variantes_atuais, ao_salvar):
         super().__init__(mestre)
         self.title(f"Variantes — {nome_categoria.strip() or '(novo material)'}")
-        self.geometry("600x560")
+        self.geometry("720x600")
         self.transient(mestre)
         self.ao_salvar = ao_salvar
         self.linhas_variantes = []
@@ -1235,7 +1258,7 @@ class JanelaVariantes(tk.Toplevel):
 
         cabecalho = tk.Frame(self)
         cabecalho.pack(fill="x", padx=16)
-        for texto, largura in [("Espessura", 12), ("Cor (opcional)", 12), ("Rótulo (opcional)", 14), ("R$/m²", 10)]:
+        for texto, largura in [("Espessura", 12), ("Cor (opcional)", 24), ("Rótulo (opcional)", 14), ("R$/m²", 10)]:
             tk.Label(cabecalho, text=texto, fg=cores.texto2, width=largura, anchor="w").pack(side="left")
 
         # A lista mora num quadro próprio. Empacotada direto na janela com
@@ -1257,7 +1280,7 @@ class JanelaVariantes(tk.Toplevel):
 
         for variante in variantes_atuais:
             self._adicionar_linha_variante(variante.get("espessura", ""), variante.get("cor", ""),
-                                           variante.get("rotulo", ""), variante.get("preco_m2", ""))
+                                           variante.get("rotulo", ""), variante.get("preco_m2", ""), dados=variante)
 
         tk.Button(
             self, text="➕ Adicionar variante", relief="flat", fg=cores.acento, cursor="hand2",
@@ -1269,7 +1292,7 @@ class JanelaVariantes(tk.Toplevel):
         tk.Button(frame_botoes, text="Cancelar", command=self.destroy).pack(side="right", padx=(6, 0))
         tk.Button(frame_botoes, text="Salvar", bg=cores.acento, fg=cores.sobre_acento, relief="flat", command=self._salvar).pack(side="right")
 
-    def _adicionar_linha_variante(self, espessura, cor, rotulo, preco_m2=""):
+    def _adicionar_linha_variante(self, espessura, cor, rotulo, preco_m2="", dados=None):
         linha = tk.Frame(self.frame_linhas)
         linha.pack(fill="x", pady=2)
 
@@ -1279,12 +1302,12 @@ class JanelaVariantes(tk.Toplevel):
         var_preco = tk.StringVar(value=_preco_na_tela(preco_m2))
 
         tk.Entry(linha, textvariable=var_espessura, width=12).pack(side="left")
-        tk.Entry(linha, textvariable=var_cor, width=12).pack(side="left", padx=4)
+        tk.Entry(linha, textvariable=var_cor, width=24).pack(side="left", padx=4)
         tk.Entry(linha, textvariable=var_rotulo, width=14).pack(side="left", padx=4)
         tk.Entry(linha, textvariable=var_preco, width=10).pack(side="left", padx=4)
 
         registro = {"frame": linha, "espessura": var_espessura, "cor": var_cor, "rotulo": var_rotulo,
-                    "preco_m2": var_preco}
+                    "preco_m2": var_preco, "dados": dict(dados or {})}
 
         def remover():
             linha.destroy()
@@ -1302,7 +1325,13 @@ class JanelaVariantes(tk.Toplevel):
             rotulo = registro["rotulo"].get().strip().upper()
             if not espessura:
                 continue
-            variante = {"espessura": espessura}
+            variante = dict(registro.get("dados", {}))
+            if cor != variante.get("cor", ""):
+                variante.pop("aliases_cor", None)
+                variante.pop("acabamento", None)
+            for chave in ("espessura", "cor", "rotulo", "preco_m2"):
+                variante.pop(chave, None)
+            variante["espessura"] = espessura
             if cor:
                 variante["cor"] = cor
             if rotulo:

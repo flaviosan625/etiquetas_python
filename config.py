@@ -13,6 +13,7 @@ import copy
 import json
 import pathlib
 from custos_tinta import configuracao_padrao as configuracao_tintas_padrao
+from catalogo_acrilicos import configuracao as configuracao_acrilicos
 
 BASE_DIR = pathlib.Path(__file__).resolve().parent
 CONFIG_PATH = BASE_DIR / "config.json"
@@ -30,14 +31,7 @@ CONFIG_PADRAO = {
                 {"espessura": "3MM", "cor": "BRANCO"}, {"espessura": "3MM", "cor": "PRETO"},
             ],
         },
-        "ACRILICO": {
-            "tipo": "chapa", "largura_cm": 300, "comprimento_cm": 200,
-            "variantes": [
-                {"espessura": e, "cor": c}
-                for e in ["2MM", "3MM", "4MM", "5MM", "6MM", "8MM", "10MM"]
-                for c in ["CRISTAL", "LEITOSO"]
-            ],
-        },
+        "ACRILICO": configuracao_acrilicos(),
         "PVC": {
             "tipo": "chapa", "largura_cm": 122, "comprimento_cm": 244,
             "variantes": [

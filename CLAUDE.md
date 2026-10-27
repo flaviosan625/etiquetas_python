@@ -723,6 +723,15 @@ ainda vai sair, e ripar de novo custa horas de máquina. Então: só `.prt`, só
 dele. O que está velho e não imprimiu vira aviso uma vez, e disco abaixo de
 `ESPACO_MINIMO_RIPADOS_GB` também — disco cheio trava a máquina com o RIP junto.
 
+**Ripado que a faxina não consegue apagar avisa UMA vez, não por passada.** Em 27/10/2026, logo
+depois do deploy da entrega ao BYHX, o log da DOCAN mostrava quatro ripados já impressos e vencidos
+com `[WinError 32] O arquivo já está sendo usado por outro processo`, a cada minuto — a mesma frase,
+por arquivo, 1.440 vezes por dia. Não era da atualização (as linhas começavam antes dela): a faxina
+tenta de novo a cada passada e o programa da impressora, provavelmente, segura o arquivo enquanto o
+trabalho está na lista. Hoje o aviso sai uma vez por arquivo (`~ripado_travado~`), some quando ele
+destrava e volta a sair se travar de novo. A causa exata de quem segura o arquivo **não foi
+verificada** — só a cópia velha do histórico do BYHX (10/10) mostra um dos quatro como `Printed`.
+
 **Arquivo do programa da impressora se PROCURA, não se supõe.** Em 04/10/2026 o registro de
 impressão passou a noite inteira na máquina da DOCAN sem anotar uma linha: o `PrintedArea.Log` não
 está na RAIZ de `C:\PrinterManager`, e eu tinha escrito o caminho de cabeça — o `coletar_historico_byhx.ps1`
@@ -736,6 +745,69 @@ mais**: o trabalho `Printed` da lista é prova independente, com o tamanho que a
 Tudo isso roda em `_cuidar_do_ripado`, no fim da passada do posto do SAi e **fora** de
 `vigiar_fila_uma_vez` (teste chama aquela com o posto do SAi e passaria a apagar arquivo de
 verdade). Cada tarefa no seu `try`: programa fechado ou log em outro formato não param as outras.
+
+**A última perna: o ripado entra na lista do BYHX (pedido dele, 27/10/2026, e nasce DESLIGADA).** Ele
+quer o processo todo chegando no BYHX Printer Manager, e o RIP já roda no PC da máquina — então o `.prt`
+nasce ao lado do programa que o imprime e **não atravessa OneDrive nem Tailscale**. O BYHX tem Hot
+Folder (aba Preference): o que cai nela entra na lista de trabalhos.
+
+**Como essa premissa foi e voltou a ser verdadeira (27/10/2026) — vale lembrar.** Ela veio de fotos de
+07/09; o `diagnostico_byhx.ps1` rodado na DOCAN em 03/10 respondeu *"nenhuma chave de hot folder
+encontrada nos arquivos de configuracao"*, que eu só li DEPOIS de construir. Aí concluí que ela era
+"provavelmente falsa" e, de quebra, que a foto era "de outra instalação" porque o caminho citado era de
+`Administrator` (o PC é `PC`) — **errei nas duas.** A captura dele da aba Preference (janela `Setting`,
+abas Printer/Move/Preference/WhiteInk Setting/Service/Job Mode) mostra a caixa **Hot Folder**, o
+**Browse...** e a **Print Immediately** como na foto, com o campo em `C:\Users\Administrator\Desktop\2024
+1213\` — é o **valor de fábrica do BYHX**, presente nesta própria máquina. A busca do diagnóstico só
+olhava arquivos de configuração, **não o Registro**. **Ausência de chave nos arquivos não prova ausência
+da opção na tela**, e caminho "de outro usuário" num campo de programa estrangeiro é valor padrão, não
+prova de outra máquina. Estado visto na captura de 27/10: **Hot Folder DESMARCADA** (campo e Browse
+esmaecidos) e **Print Immediately DESMARCADA** — a segurança que importava já está certa; falta ligar a
+Hot Folder numa pasta nova e vazia (os dois campos de "Delete job/file after print" também estão
+desmarcados: o BYHX não apaga nada sozinho, então a faxina segue sendo de quem limpa).
+`separar_ripados.entregar_ao_byhx`, chamada por `_entregar_ao_byhx` em `_cuidar_do_ripado` logo
+depois de separar, leva o `.prt` pra lá.
+**O clique em Enviar no SAi continua dele** (resposta dele: *"Eu clico em Enviar"*): o `.prt` só existe
+depois disso, e o ajuste de tamanho de "DOCAN só entrega" também acontece lá dentro. O sistema não
+automatiza esse clique — não se sabe se o Production Manager envia sozinho, e automatizar tela é frágil.
+
+Cinco travas, todas por perda de material, cada uma com teste. As de **data**, **prova**,
+**cadastro** e **conflito** foram conferidas por mutação (tirada a trava, o teste falha):
+
+- **Desligada por padrão e o endereço NÃO se escreve de cabeça.** A pasta é lida de
+  `hot_folder_byhx.txt` (uma linha), ao lado do módulo **naquele PC**; o `atualizar.bat` não mexe nele.
+  Apagar o arquivo desliga. A pasta tem que EXISTIR e nunca é criada — pasta criada por mim é pasta
+  que o BYHX não vigia, e o ripado de 14 GB entraria no vazio. Pasta que não existe vira aviso (uma vez).
+- **Só o que foi gravado DEPOIS de ligar** (a hora do próprio `hot_folder_byhx.txt` é a marca). Em
+  04/10/2026 a pasta da R5200 tinha ~198 GB de ripados de 02/10 que nunca foram impressos; ligar sem
+  isso os despejaria todos na lista da máquina.
+- **Só com a prova do RIPLOG** — o mesmo `quem_gerou` da separação, que também exige o arquivo parado
+  há 30 s. Estar na pasta da R5200 não basta: sem prova (ou com prova de `Docan_H2525`) o ripado
+  fica onde está, porque `.prt` de chapa na lista do rolo é chapa perdida.
+- **Só máquina com `entrega_byhx` no cadastro** — hoje só a **R5200**. A H2525 (plana) não tem o campo
+  de propósito: ninguém confirmou que ela imprime por este mesmo BYHX.
+- **A hot folder do BYHX não pode ser uma pasta que o `separar()` varre** — a raiz do ripado
+  (`C:\RIPADOS`), a pasta de cada máquina ou o `Desktop\Ripados` antigo. Ele levaria o `.prt` de volta
+  na passada seguinte, a cada minuto, e como o BYHX referencia o arquivo no lugar o trabalho da lista
+  ficaria apontando pro vazio. Foi ele mesmo quem sugeriu o `Desktop\RIPADOS` ("pode ser essa
+  vazia?", 27/10/2026), então a recusa é do código, não de lembrar: `entregar_ao_byhx` devolve
+  `conflito`, não entrega nada e o vigia avisa uma vez. A comparação é por `_chave` (caminho real, sem
+  depender de caixa nem de barra). Subpasta da raiz que o `separar()` não varre (ex.: `C:\RIPADOS\
+  BYHX_ENTRADA`) passa, mas o recomendado é `C:\BYHX_ENTRADA`, fora de tudo.
+
+Nunca sobrescreve (nome ocupado na hot folder ganha `_<epoch>`, como na separação), e entre discos a
+cópia é montada na **pasta-mãe** da hot folder, nunca dentro dela — o BYHX vigia aquela pasta, e é a
+mesma disciplina da hot folder do SAi. Como o ripado entregue passa a morar lá (o programa o
+referencia no lugar: visto em 27/10/2026, o painel do trabalho mostra `C:\Ripados\DOCAN R5200\...prt`,
+a pasta da máquina, e não uma cópia), `_pastas_do_ripado` põe a hot folder do BYHX também na **faxina** e no aviso de
+**disco cheio**; sem isso, 14 GB por trabalho se acumulariam onde ninguém limpa nem conta.
+
+**Antes de criar o arquivo, na tela do BYHX da máquina: ligar a Hot Folder e DESLIGAR "Print
+Immediately"** (ele disse em 27/10 que já desmarcou; falta conferir por captura). Nas fotos de 07/09/2026
+(de outra instalação) essa caixa estava marcada, e marcada ela imprime sozinha o que cai na
+pasta — sem ninguém conferir a mídia nem pôr a folga lateral. O código **não consegue verificar** isso
+(a configuração do BYHX não está em nenhum arquivo que o vigia lê), então é passo dele, e está no
+`maquina_docan/LEIA-ME.txt`. Como o vigia roda uma CÓPIA, nada disto chega lá sem o `atualizar.bat`.
 
 ### Entrega atômica na hot folder
 
@@ -1034,6 +1106,32 @@ Decisões do usuário de 2026-09-13, que valem pro sistema inteiro:
   sujo é exatamente como a falha de verdade passa batido. Quando o que escreve é um SUBPROCESSO
   (`--autoteste`), monkeypatch não alcança: aí o teste devolve o arquivo como encontrou, tirando só as
   linhas que ele mesmo criou — ver `tests/test_modulos_rodam_como_script.py`.
+
+  **Desde 10/10/2026 o padrão é pasta descartável, por `tests/conftest.py`**: uma fixture `autouse`
+  da suíte INTEIRA aponta `PASTA_PROGRAMA`, `ETIQUETAS_GERADAS` e `ESTOQUE` pra temporário, e quem
+  precisa de outro caminho continua podendo (o `monkeypatch` do teste roda depois e ganha). A trava
+  nasceu porque o mesmo defeito voltou numa carona nova: `test_o_checklist_leva_o_aviso_de_fila_de_carona`
+  chamava `_conferir_fila` com `aviso_fila.conferir` de mentira, e cada rodada carimbava no log real
+  `fila parada: UJV 100 UNY CV (1 arquivo(s) há 65 min)` — 11 linhas de uma fila que estava VAZIA
+  todas as vezes. Eram críveis de propósito: o "65 min" é o número do caso real citado no docstring
+  do teste. **O que denuncia linha de teste é o número que não ANDA** — aviso de verdade repete de
+  hora em hora com a idade crescendo (33, 66, 173… 678 min), o de mentira repete em minutos sempre
+  com o mesmo número.
+
+  Duas armadilhas da própria trava, as duas travadas em teste: ela cria a pasta pelo
+  `tmp_path_factory`, **ao lado do `tmp_path` e nunca dentro** — seis testes provam que uma falha
+  "não deixa lixo" conferindo que o `tmp_path` ficou vazio, e a trava contra sujeira não pode ser ela
+  mesma a sujeira. E a limpeza do que o SUBPROCESSO escreve passou a resolver o caminho pela **RAIZ
+  do projeto, nunca por `caminhos`**: o subprocesso resolve a pasta dele pelo próprio `__file__` e
+  escreve sempre no log real, então, com `caminhos` redirecionado, a limpeza vigiava um arquivo
+  temporário vazio enquanto o de verdade acumulava.
+- **Teste não parte do `config.json` vivo.** Preço mora lá, o arquivo é dele e muda sem commit — então
+  teste que usa `carregar_config()` como base prova uma coisa hoje e outra amanhã. Em 10/10/2026 a
+  tabela de acrílicos entrou no config e derrubou
+  `test_mudar_preco_atualiza_a_copia_de_custos_sem_mexer_na_pasta`, que tirava o preço só da LONA pra
+  provar "sem preço não sai cópia de CUSTOS": `custos.tem_algum_preco` olha o cadastro INTEIRO, e um
+  preço em qualquer material já faz a cópia sair. O teste passou a zerar todo preço, e o caso novo
+  (`tests/test_material_producao.py`) monta o config na mão.
 - **Teste que só IMPORTA o módulo não prova que ele RODA.** Em 05/10/2026 a tarefa "Checklist de
   Produção" falhava a cada passada, de minuto em minuto, com `NameError: name '_montar_artes' is not
   defined` — e **a montagem automática nunca tinha rodado uma vez sequer** desde que foi escrita. A

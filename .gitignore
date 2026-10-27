@@ -37,3 +37,14 @@ maquina_docan/_byhx/
 
 # Atalhos tirados da inicializacao, guardados pra devolver depois
 _congelado/
+
+
+# Pastas e arquivos temporarios de teste e ambiente local
+.tmp_*
+.codex_test_tmp_*
+.codex_previa_*.png
+_controle_producao/
+_aviso_fila.json
+_aviso_sinal.json
+.claude/
+.continue/

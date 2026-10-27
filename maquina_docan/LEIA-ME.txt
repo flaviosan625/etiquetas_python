@@ -124,3 +124,51 @@ trabalho no RIPLOG, o horário de término batendo com o do arquivo, e o
 arquivo parado há pelo menos 30 segundos. Faltando qualquer uma, ele FICA
 ONDE ESTÁ e aparece um aviso no log — ripado de plana indo pra máquina de
 rolo é chapa perdida, e palpite aqui não serve.
+
+
+ENTREGAR O RIPADO NA LISTA DO BYHX (OPCIONAL — VEM DESLIGADO)
+-------------------------------------------------------------
+Onde fica a opcao no BYHX: janela "Setting" (provavelmente por Main Menu,
+canto inferior esquerdo > Setting > Edit), aba Preference, na parte de
+baixo: caixa "Hot Folder", botao "Browse..." e caixa "Print Immediately".
+O caminho que aparece de fabrica (C:\Users\Administrator\Desktop\2024 1213)
+nao serve: troque pela pasta nova, com o Browse. Sem Hot Folder ligada e com
+o caminho certo, nao ha destino: nesse caso NAO crie o hot_folder_byhx.txt
+-- tudo continua como hoje (voce carrega o .prt pelo botao de adicionar).
+
+O .prt já nasce neste PC, do lado do BYHX Printer Manager. O vigia pode
+levá-lo até a Hot Folder do BYHX, e ele entra na lista de trabalhos sem
+passar por OneDrive. Só a DOCAN R5200 faz isso; a H2525 não.
+
+O clique em ENVIAR no SAi continua sendo seu: o .prt só existe depois
+dele, e é lá que você ajusta o tamanho.
+
+Pra ligar, NESTA ORDEM:
+
+1) Na tela do BYHX: aba Preference > Hot Folder.
+   - Aponte pra uma pasta NOVA e VAZIA (crie uma, por exemplo
+     C:\BYHX_ENTRADA). Não use uma pasta com coisa dentro.
+   - NAO use C:\RIPADOS, as pastas das maquinas dentro dela, nem a
+     RIPADOS da area de trabalho: o vigia varre essas pastas e levaria
+     o .prt de volta na passada seguinte. Se voce usar uma delas, ele
+     recusa a entrega e avisa no log.
+   - MARQUE a caixa "Hot Folder".
+   - DESMARQUE "Print Immediately". Isso é o mais importante: marcada, a
+     máquina imprime sozinha o que cair na pasta, sem ninguém conferir a
+     mídia nem pôr a folga lateral. (Nas fotos de 07/09 ela estava marcada.)
+
+2) Crie o arquivo   C:\VigiaDocan\hot_folder_byhx.txt   com UMA linha, o
+   caminho exato da pasta do passo 1:
+
+       C:\BYHX_ENTRADA
+
+   O vigia NÃO cria a pasta e não adivinha caminho: se a pasta não
+   existir, nada é entregue e aparece um aviso no log.
+
+3) Só entra o que for ripado DEPOIS de você criar o arquivo. O que já está
+   parado em C:\RIPADOS\DOCAN R5200 (ripados antigos) fica onde está.
+
+Pra desligar: apague o hot_folder_byhx.txt. O atualizar.bat não mexe nele.
+
+Esta parte só chega aqui depois de rodar o atualizar.bat, como qualquer
+mudança no vigia.

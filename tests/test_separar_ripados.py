@@ -20,7 +20,7 @@ import ripados_para_nuvem
 import separar_ripados as sr
 
 MAQUINAS = {
-    "DOCAN R5200": {"hot_folder": r"C:\x", "setup_sai": "Docan"},
+    "DOCAN R5200": {"hot_folder": r"C:\x", "setup_sai": "Docan", "entrega_byhx": True},
     "DOCAN H2525": {"hot_folder": r"C:\y", "setup_sai": "Docan_H2525"},
     "SWJ320A": {"hot_folder": r"C:\z"},  # Mimaki: nao ripa aqui
 }
@@ -429,3 +429,360 @@ def test_separa_na_raiz_descoberta(tmp_path, monkeypatch):
     assert not p.exists()
     assert (outra / "DOCAN R5200" / "PAREDE.prt").is_file()
     assert [m for _, _, m in r["movidos"]] == ["DOCAN R5200"]
+
+
+# ------------------------------------------------------- a entrega ao BYHX
+#
+# A ultima perna: do .prt da R5200 pra hot folder do BYHX Printer Manager.
+# Nasce DESLIGADA, e cada trava abaixo e uma forma de mandar chapa errada ou
+# um atraso inteiro de ripados pra lista da maquina.
+
+LIGADA_ANTES = QUANDO - datetime.timedelta(hours=1)  # a entrega foi ligada antes do ripado nascer
+
+
+def ligar_byhx(tmp_path, desde=LIGADA_ANTES, texto=None):
+    """Cria a pasta do BYHX e o arquivo de configuracao. Devolve (pasta, arquivo)."""
+    pasta = tmp_path / "BYHX_hot"
+    pasta.mkdir(exist_ok=True)
+    cfg = tmp_path / "hot_folder_byhx.txt"
+    cfg.write_text(f"{pasta}\n" if texto is None else texto, encoding="utf-8")
+    os.utime(cfg, (desde.timestamp(), desde.timestamp()))
+    return pasta, cfg
+
+
+def entregar(cfg, **k):
+    k.setdefault("maquinas", MAQUINAS)
+    k.setdefault("agora", DEPOIS)
+    return sr.entregar_ao_byhx(caminho=cfg, **k)
+
+
+def saida_da_r5200(tmp_path):
+    return tmp_path / "RIPADOS" / "DOCAN R5200"
+
+
+def test_entrega_o_ripado_novo_com_prova_e_sem_perder_um_byte(tmp_path):
+    pasta, cfg = ligar_byhx(tmp_path)
+    escrever_log(tmp_path, bloco_saida("Docan", "LONA.pdf", QUANDO))
+    p = ripado(saida_da_r5200(tmp_path), "LONA.prt", tamanho=4096)
+
+    r = entregar(cfg)
+
+    assert r["entregues"] == [(p, pasta / "LONA.prt", "DOCAN R5200")]
+    assert not p.exists()
+    chegou = pasta / "LONA.prt"
+    assert chegou.read_bytes() == b"\0" * 4096
+    assert int(chegou.stat().st_mtime) == int(QUANDO.timestamp()), "a hora do arquivo e a prova: nao pode mudar"
+
+
+def test_sem_o_arquivo_de_configuracao_nada_e_entregue(tmp_path):
+    """Nasce desligada: ninguem liga isso sem querer ao atualizar o vigia."""
+    escrever_log(tmp_path, bloco_saida("Docan", "LONA.pdf", QUANDO))
+    p = ripado(saida_da_r5200(tmp_path), "LONA.prt")
+
+    r = entregar(tmp_path / "nao_existe.txt")
+
+    assert r == {"entregues": [], "em_uso": [], "erros": [], "sem_pasta": None, "conflito": None}
+    assert p.exists()
+
+
+def test_o_atraso_de_antes_de_ligar_nao_vai_pra_lista_da_maquina(tmp_path):
+    """
+    Em 04/10/2026 havia ~198 GB de ripados de 02/10 parados na pasta da R5200,
+    nunca impressos. Ligar a entrega nao pode despejar isso de uma vez no BYHX.
+    """
+    pasta, cfg = ligar_byhx(tmp_path, desde=QUANDO + datetime.timedelta(minutes=1))
+    escrever_log(tmp_path, bloco_saida("Docan", "ANTIGO.pdf", QUANDO))
+    antigo = ripado(saida_da_r5200(tmp_path), "ANTIGO.prt")
+
+    r = entregar(cfg)
+
+    assert r["entregues"] == []
+    assert antigo.exists() and not list(pasta.iterdir())
+
+
+def test_so_entrega_o_que_foi_gravado_depois_de_ligar_no_mesmo_lote(tmp_path):
+    pasta, cfg = ligar_byhx(tmp_path, desde=QUANDO)
+    depois = QUANDO + datetime.timedelta(minutes=2)
+    escrever_log(tmp_path, bloco_saida("Docan", "ANTIGO.pdf", QUANDO - datetime.timedelta(minutes=5)),
+                 bloco_saida("Docan", "NOVO.pdf", depois))
+    antigo = ripado(saida_da_r5200(tmp_path), "ANTIGO.prt", hora=QUANDO - datetime.timedelta(minutes=5))
+    novo = ripado(saida_da_r5200(tmp_path), "NOVO.prt", hora=depois)
+
+    r = entregar(cfg, agora=depois + datetime.timedelta(minutes=5))
+
+    assert [d.name for _, d, _ in r["entregues"]] == ["NOVO.prt"]
+    assert antigo.exists() and not novo.exists()
+
+
+def test_estar_na_pasta_da_r5200_sem_prova_nao_basta(tmp_path):
+    pasta, cfg = ligar_byhx(tmp_path)
+    escrever_log(tmp_path)
+    p = ripado(saida_da_r5200(tmp_path), "SEM_LOG.prt")
+
+    assert entregar(cfg)["entregues"] == []
+    assert p.exists() and not list(pasta.iterdir())
+
+
+def test_ripado_que_o_log_atribui_a_h2525_nunca_vai_pro_byhx_do_rolo(tmp_path):
+    """Chapa perdida: o ripado da plana, mesmo na pasta da R5200, fica onde esta."""
+    pasta, cfg = ligar_byhx(tmp_path)
+    escrever_log(tmp_path, bloco_saida("Docan_H2525", "CHAPA.pdf", QUANDO))
+    p = ripado(saida_da_r5200(tmp_path), "CHAPA.prt")
+
+    assert entregar(cfg)["entregues"] == []
+    assert p.exists() and not list(pasta.iterdir())
+
+
+def test_a_h2525_nao_entrega_no_byhx_mesmo_com_prova(tmp_path):
+    """Nao se sabe se ela imprime por este BYHX: sem o campo no cadastro, nao entrega."""
+    pasta, cfg = ligar_byhx(tmp_path)
+    escrever_log(tmp_path, bloco_saida("Docan_H2525", "CHAPA.pdf", QUANDO))
+    p = ripado(saida_do_sai(tmp_path), "CHAPA.prt")
+
+    assert entregar(cfg)["entregues"] == []
+    assert p.exists()
+
+
+def test_arquivo_ainda_sendo_gravado_espera(tmp_path):
+    pasta, cfg = ligar_byhx(tmp_path)
+    escrever_log(tmp_path, bloco_saida("Docan", "LONA.pdf", QUANDO))
+    p = ripado(saida_da_r5200(tmp_path), "LONA.prt")
+
+    assert entregar(cfg, agora=QUANDO + datetime.timedelta(seconds=10))["entregues"] == []
+    assert p.exists()
+
+
+def test_pasta_do_byhx_que_nao_existe_nao_e_criada(tmp_path):
+    """Pasta criada por mim e pasta que o programa nao vigia: o ripado entraria no vazio."""
+    cfg = tmp_path / "hot_folder_byhx.txt"
+    cfg.write_text(str(tmp_path / "errei_o_nome") + "\n", encoding="utf-8")
+    os.utime(cfg, (LIGADA_ANTES.timestamp(), LIGADA_ANTES.timestamp()))
+    escrever_log(tmp_path, bloco_saida("Docan", "LONA.pdf", QUANDO))
+    p = ripado(saida_da_r5200(tmp_path), "LONA.prt")
+
+    r = entregar(cfg)
+
+    assert r["sem_pasta"] == tmp_path / "errei_o_nome" and r["entregues"] == []
+    assert not (tmp_path / "errei_o_nome").exists() and p.exists()
+
+
+@pytest.mark.parametrize("quem", ["desktop_antigo", "raiz", "pasta_da_r5200", "pasta_da_h2525"])
+def test_hot_folder_que_o_separador_varre_e_recusada(tmp_path, quem):
+    """
+    A pasta vazia que ele sugeriu em 27/10/2026 era o Desktop\\RIPADOS: o
+    separador a varre como saida antiga do SAi e levaria o .prt de volta
+    na passada seguinte, a cada minuto. O BYHX referencia o arquivo no
+    lugar, entao o trabalho da lista ficaria apontando pro vazio.
+    """
+    alvo = {"desktop_antigo": tmp_path / "Desktop_Ripados", "raiz": tmp_path / "RIPADOS",
+            "pasta_da_r5200": saida_da_r5200(tmp_path), "pasta_da_h2525": saida_do_sai(tmp_path)}[quem]
+    alvo.mkdir(parents=True, exist_ok=True)
+    cfg = tmp_path / "hot_folder_byhx.txt"
+    cfg.write_text(f"{alvo}\n", encoding="utf-8")
+    os.utime(cfg, (LIGADA_ANTES.timestamp(), LIGADA_ANTES.timestamp()))
+    escrever_log(tmp_path, bloco_saida("Docan", "LONA.pdf", QUANDO))
+    p = ripado(saida_da_r5200(tmp_path), "LONA.prt")
+
+    r = entregar(cfg)
+
+    assert r["conflito"] == alvo and r["entregues"] == []
+    assert p.exists(), "recusar e nao mexer em nada"
+
+
+def test_hot_folder_recusada_mesmo_escrita_com_outra_caixa_ou_barra(tmp_path):
+    """C:\\ripados\\... e C:\\RIPADOS\\... sao a mesma pasta no Windows: a recusa nao pode depender da grafia."""
+    (tmp_path / "RIPADOS").mkdir(exist_ok=True)
+    cfg = tmp_path / "hot_folder_byhx.txt"
+    cfg.write_text(str(tmp_path / "ripados").replace("\\", "/") + "/\n", encoding="utf-8")
+    os.utime(cfg, (LIGADA_ANTES.timestamp(), LIGADA_ANTES.timestamp()))
+
+    assert entregar(cfg)["conflito"] is not None
+
+
+def test_subpasta_da_raiz_nao_varrida_pode_ser_hot_folder(tmp_path):
+    """So as pastas que o separador varre sao recusadas; uma outra, mesmo sob a raiz, nao."""
+    pasta = tmp_path / "RIPADOS" / "BYHX_ENTRADA"
+    pasta.mkdir(parents=True)
+    cfg = tmp_path / "hot_folder_byhx.txt"
+    cfg.write_text(f"{pasta}\n", encoding="utf-8")
+    os.utime(cfg, (LIGADA_ANTES.timestamp(), LIGADA_ANTES.timestamp()))
+    escrever_log(tmp_path, bloco_saida("Docan", "LONA.pdf", QUANDO))
+    ripado(saida_da_r5200(tmp_path), "LONA.prt")
+
+    r = entregar(cfg)
+
+    assert r["conflito"] is None and [d for _, d, _ in r["entregues"]] == [pasta / "LONA.prt"]
+
+
+def test_o_vigia_avisa_uma_vez_do_conflito_de_hot_folder(tmp_path, monkeypatch):
+    import rasterlink_hotfolder as rl_hf
+
+    monkeypatch.setattr(rl_hf, "_ultimo_erro_por_arquivo", {})
+    desktop = tmp_path / "Desktop_Ripados"
+    desktop.mkdir()
+    cfg = tmp_path / "hot_folder_byhx.txt"
+    cfg.write_text(f"{desktop}\n", encoding="utf-8")
+    monkeypatch.setattr(sr, "CAMINHO_HOT_FOLDER_BYHX", cfg)
+    linhas = []
+
+    for _ in range(3):
+        rl_hf._entregar_ao_byhx(logger=lambda n, t: linhas.append(t))
+
+    avisos = [t for t in linhas if "varre" in t]
+    assert len(avisos) == 1 and "BYHX_ENTRADA" in avisos[0]
+
+
+def test_nunca_sobrescreve_ripado_de_mesmo_nome_na_hot_folder(tmp_path):
+    pasta, cfg = ligar_byhx(tmp_path)
+    ja_la = pasta / "LONA.prt"
+    ja_la.write_bytes(b"A" * 10)
+    escrever_log(tmp_path, bloco_saida("Docan", "LONA.pdf", QUANDO))
+    ripado(saida_da_r5200(tmp_path), "LONA.prt", tamanho=64)
+
+    (_, destino, _), = entregar(cfg)["entregues"]
+
+    assert ja_la.read_bytes() == b"A" * 10, "o que estava na lista da maquina nao pode ser substituido"
+    assert destino != ja_la and destino.read_bytes() == b"\0" * 64
+
+
+def test_ensaio_nao_mexe_em_nada(tmp_path):
+    pasta, cfg = ligar_byhx(tmp_path)
+    escrever_log(tmp_path, bloco_saida("Docan", "LONA.pdf", QUANDO))
+    p = ripado(saida_da_r5200(tmp_path), "LONA.prt")
+
+    r = entregar(cfg, mover=False)
+
+    assert [d for _, d, _ in r["entregues"]] == [pasta / "LONA.prt"]
+    assert p.exists() and not list(pasta.iterdir())
+
+
+def test_arquivo_aberto_por_alguem_fica_e_espera(tmp_path, monkeypatch):
+    pasta, cfg = ligar_byhx(tmp_path)
+    escrever_log(tmp_path, bloco_saida("Docan", "LONA.pdf", QUANDO))
+    p = ripado(saida_da_r5200(tmp_path), "LONA.prt")
+    monkeypatch.setattr(sr, "_em_uso", lambda caminho: True)
+
+    r = entregar(cfg)
+
+    assert r["em_uso"] == [p] and r["entregues"] == []
+    assert p.exists()
+
+
+def test_entre_discos_a_montagem_nunca_fica_dentro_da_hot_folder(tmp_path, monkeypatch):
+    """
+    O BYHX VIGIA aquela pasta: montagem dentro dela e arquivo pela metade a
+    vista. Fica na pasta-mae e entra por rename, como na hot folder do SAi.
+    """
+    pasta, cfg = ligar_byhx(tmp_path)
+    escrever_log(tmp_path, bloco_saida("Docan", "LONA.pdf", QUANDO))
+    p = ripado(saida_da_r5200(tmp_path), "LONA.prt", tamanho=2048)
+    _so_montagem_renomeia(monkeypatch)
+    onde_montou = []
+    copy_real = sr.shutil.copy2
+
+    def copy2(de, para, *a, **k):
+        onde_montou.append(pathlib.Path(para).parent)
+        return copy_real(de, para, *a, **k)
+
+    monkeypatch.setattr(sr.shutil, "copy2", copy2)
+
+    (_, destino, _), = entregar(cfg)["entregues"]
+
+    assert onde_montou == [pasta.parent]
+    assert destino.read_bytes() == b"\0" * 2048 and not p.exists()
+    assert not list(pasta.glob("~montando~*")) and not list(pasta.parent.glob("~montando~*"))
+
+
+def test_copiou_mas_a_origem_nao_saiu_desfaz_a_entrega(tmp_path, monkeypatch):
+    pasta, cfg = ligar_byhx(tmp_path)
+    escrever_log(tmp_path, bloco_saida("Docan", "LONA.pdf", QUANDO))
+    p = ripado(saida_da_r5200(tmp_path), "LONA.prt")
+    _so_montagem_renomeia(monkeypatch)
+    unlink_real = pathlib.Path.unlink
+
+    def unlink(self, *a, **k):
+        if self == p:
+            raise PermissionError(13, "presa")
+        return unlink_real(self, *a, **k)
+
+    monkeypatch.setattr(pathlib.Path, "unlink", unlink)
+    linhas = []
+
+    r = entregar(cfg, logger=lambda n, t: linhas.append(t))
+
+    assert r["entregues"] == [] and len(r["erros"]) == 1
+    assert p.exists() and not list(pasta.glob("*.prt")), "a copia tem que ser desfeita"
+    assert any("Não consegui entregar" in t for t in linhas)
+
+
+# ------------------------------------------------------- o arquivo de configuracao
+
+def test_configuracao_aceita_aspas_comentario_e_bom(tmp_path):
+    cfg = tmp_path / "c.txt"
+    cfg.write_bytes("\ufeff# pasta do BYHX\r\n\r\n\"C:\\BYHX\\Hot\"\r\n".encode("utf-8"))
+
+    pasta, desde = sr.hot_folder_do_byhx(cfg)
+
+    assert pasta == pathlib.Path("C:/BYHX/Hot") and isinstance(desde, datetime.datetime)
+
+
+def test_configuracao_vazia_ou_so_comentario_desliga(tmp_path):
+    cfg = tmp_path / "c.txt"
+    cfg.write_text("\n# nada ainda\n   \n", encoding="utf-8")
+
+    assert sr.hot_folder_do_byhx(cfg) == (None, None)
+    assert sr.hot_folder_do_byhx(tmp_path / "nao_existe.txt") == (None, None)
+
+
+def test_configuracao_salva_pelo_bloco_de_notas_antigo_com_acento(tmp_path):
+    cfg = tmp_path / "c.txt"
+    cfg.write_bytes("C:\\Usuários\\Hot".encode("cp1252"))
+
+    pasta, _ = sr.hot_folder_do_byhx(cfg)
+
+    assert pasta == pathlib.Path("C:/Usuários/Hot")
+
+
+def test_o_cadastro_de_verdade_entrega_so_a_r5200_no_byhx():
+    from rasterlink_hotfolder import MAQUINAS as cadastro
+
+    assert cadastro["DOCAN R5200"].get("entrega_byhx") is True
+    assert not cadastro["DOCAN H2525"].get("entrega_byhx"), "plana: .prt de chapa na lista do rolo e chapa perdida"
+    assert not any(c.get("entrega_byhx") for n, c in cadastro.items() if n.startswith(("UJV", "SWJ")))
+
+
+# ------------------------------------------------------- o gancho no vigia
+
+def test_o_vigia_avisa_uma_vez_quando_a_pasta_do_byhx_nao_existe(tmp_path, monkeypatch):
+    import rasterlink_hotfolder as rl_hf
+
+    monkeypatch.setattr(rl_hf, "_ultimo_erro_por_arquivo", {})
+    cfg = tmp_path / "hot_folder_byhx.txt"
+    cfg.write_text(str(tmp_path / "errei") + "\n", encoding="utf-8")
+    monkeypatch.setattr(sr, "CAMINHO_HOT_FOLDER_BYHX", cfg)
+    linhas = []
+
+    for _ in range(3):
+        rl_hf._entregar_ao_byhx(logger=lambda n, t: linhas.append(t))
+
+    avisos = [t for t in linhas if "hot folder do BYHX" in t and "não existe" in t]
+    assert len(avisos) == 1 and "hot_folder_byhx.txt" in avisos[0]
+
+
+def test_o_vigia_entrega_pela_configuracao_gravada(tmp_path, monkeypatch):
+    """Ponta a ponta pelo gancho do vigia: configuracao -> prova no RIPLOG -> arquivo na hot folder."""
+    import rasterlink_hotfolder as rl_hf
+
+    monkeypatch.setattr(rl_hf, "_ultimo_erro_por_arquivo", {})
+    pasta, cfg = ligar_byhx(tmp_path)
+    monkeypatch.setattr(sr, "CAMINHO_HOT_FOLDER_BYHX", cfg)
+    escrever_log(tmp_path, bloco_saida("Docan", "LONA.pdf", QUANDO))
+    ripado(saida_da_r5200(tmp_path), "LONA.prt")
+    linhas = []
+    real = sr.entregar_ao_byhx
+    monkeypatch.setattr(sr, "entregar_ao_byhx", lambda **k: real(agora=DEPOIS, **k))
+
+    rl_hf._entregar_ao_byhx(logger=lambda n, t: linhas.append(t))
+
+    assert (pasta / "LONA.prt").is_file()
+    assert any("entregue na hot folder do BYHX" in t for t in linhas)

@@ -1,0 +1,83 @@
+[
+  {
+    "nome": "paraiso",
+    "url": "https://depositphotos.com/photo/underwater-paradise-background-coral-reef-wildlife-nature-collage-shark-manta-223657242.html",
+    "preview": "https://st4.depositphotos.com/1875851/22365/i/1600/depositphotos_223657242-stock-photo-underwater-paradise-background-coral-reef.jpg?forcejpeg=true",
+    "title": "Underwater Paradise Background Coral Reef Wildlife Nature Collage Shark Manta",
+    "status": 200,
+    "tamanho_previa": [
+      1600,
+      1026
+    ]
+  },
+  {
+    "nome": "panorama",
+    "url": "https://www.shutterstock.com/image-photo/underwater-coral-reef-landscape-wide-2to1-1480960238",
+    "erro": "403 Client Error: Forbidden for url: https://www.shutterstock.com/image-photo/underwater-coral-reef-landscape-wide-2to1-1480960238"
+  },
+  {
+    "nome": "recife_16x9",
+    "url": "https://depositphotos.com/photo/underwater-coral-reef-landscape-16to9-background-deep-blue-ocean-colorful-172886072.html",
+    "preview": "https://st3.depositphotos.com/1875851/17288/i/1600/depositphotos_172886072-stock-photo-underwater-coral-reef-landscape-16to9.jpg?forcejpeg=true",
+    "title": "Underwater Coral Reef Landscape 16To9 Background Deep Blue Ocean Colorful",
+    "status": 200,
+    "tamanho_previa": [
+      1600,
+      1000
+    ]
+  },
+  {
+    "nome": "recife",
+    "url": "https://depositphotos.com/photo/underwater-coral-reef-landscape-deep-blue-ocean-colorful-fish-marine-172897998.html",
+    "preview": "https://st3.depositphotos.com/1875851/17289/i/1600/depositphotos_172897998-stock-photo-underwater-coral-reef-landscape-deep.jpg?forcejpeg=true",
+    "title": "Underwater Coral Reef Landscape Deep Blue Ocean Colorful Fish Marine",
+    "status": 200,
+    "tamanho_previa": [
+      1067,
+      1700
+    ]
+  },
+  {
+    "nome": "peixes",
+    "url": "https://depositphotos.com/photo/colorful-coral-reef-with-many-fishes-81261998.html",
+    "preview": "https://st2.depositphotos.com/1875851/8126/i/950/depositphotos_81261998-stock-photo-colorful-coral-reef-with-many.jpg?forcejpeg=true",
+    "title": "Colorful coral reef with many fishes",
+    "status": 200,
+    "tamanho_previa": [
+      1023,
+      682
+    ]
+  },
+  {
+    "nome": "recife_123rf",
+    "url": "https://www.123rf.com/photo_69385297_beautiful-coral-reef-with-colored-fish-around-underwater-life-copyspace-for-text.html",
+    "preview": "https://assets-cdn.123rf.com/ui-components/assets/images/123rf-logo-og-image.jpg",
+    "title": "",
+    "status": 200,
+    "tamanho_previa": [
+      1200,
+      630
+    ]
+  },
+  {
+    "nome": "golfinhos",
+    "url": "https://www.vecteezy.com/photo/68487442-a-vibrant-underwater-scene-showcasing-dolphins-swimming-alongside-sea-turtles-among-colorful-coral-reefs",
+    "preview": "https://static.vecteezy.com/system/resources/previews/068/487/442/large_2x/a-vibrant-underwater-scene-showcasing-dolphins-swimming-alongside-sea-turtles-among-colorful-coral-reefs-photo.jpg",
+    "title": "A vibrant underwater scene showcasing dolphins swimming alongside sea turtles among colorful coral reefs",
+    "status": 200,
+    "tamanho_previa": [
+      3468,
+      1960
+    ]
+  },
+  {
+    "nome": "vista_superior",
+    "url": "https://www.shutterstock.com/image-photo/underwater-world-view-above-corals-fish-2161091175",
+    "erro": "403 Client Error: Forbidden for url: https://www.shutterstock.com/image-photo/underwater-world-view-above-corals-fish-2161091175"
+  },
+  {
+    "nome": "pixabay",
+    "url": "https://pixabay.com/photos/turtle-tortoise-reptile-sea-turtle-5625216/",
+    "erro": "403 Client Error: Forbidden for url: https://pixabay.com/photos/turtle-tortoise-reptile-sea-turtle-5625216/"
+  }
+]

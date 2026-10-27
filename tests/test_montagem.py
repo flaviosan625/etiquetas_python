@@ -188,9 +188,14 @@ def test_proporcao_que_nao_bate_e_RECUSADA_nunca_distorcida():
     assert "+800 mm fora" in ajuste["motivo"], "o motivo tem que dizer QUANTO sai fora"
 
 
-def test_meio_centimetro_de_diferenca_e_a_mesma_medida():
-    """Abaixo de 5 mm e arredondamento de quem exportou, nao erro."""
+def test_tolerancia_de_ate_um_centimetro_e_a_mesma_medida():
+    """Ate 1 cm (10 mm) e arredondamento ou variacao de exportacao/gerador, nao erro."""
     assert montagem.ajuste_para((3.15, 3.77), (3.153, 3.772, 1))["acao"] == "igual"
+    # Diferença de exatamente 1 cm (10 mm) pra mais ou pra menos é aceita como a mesma medida
+    assert montagem.ajuste_para((3.15, 3.77), (3.160, 3.760, 1))["acao"] == "igual"
+    assert montagem.ajuste_para((3.15, 3.77), (3.140, 3.780, 1))["acao"] == "igual"
+    # Acima de 1 cm (ex: 15 mm) já entra na rotina de escala/aviso
+    assert montagem.ajuste_para((3.15, 3.77), (3.165, 3.77, 1))["acao"] == "escalar"
 
 
 # ---------- ler a pasta ----------

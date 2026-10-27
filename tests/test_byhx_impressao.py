@@ -340,6 +340,84 @@ def test_so_toca_em_prt(tmp_path):
     assert outro.exists(), "o .prn da Epson (setup XLF) não é nosso e não se toca"
 
 
+def _travar(monkeypatch, nomes):
+    """O unlink falha com 'arquivo em uso' (WinError 32) pros nomes dentro de `nomes`."""
+    unlink_real = pathlib.Path.unlink
+
+    def unlink(self, *a, **k):
+        if self.name in nomes:
+            raise PermissionError(13, "O arquivo já está sendo usado por outro processo", None, 32)
+        return unlink_real(self, *a, **k)
+
+    monkeypatch.setattr(pathlib.Path, "unlink", unlink)
+
+
+def test_ripado_travado_avisa_uma_vez_e_nao_a_cada_passada(tmp_path, monkeypatch):
+    """
+    Em 27/10/2026 quatro ripados já impressos estavam abertos no programa da
+    impressora e o log repetia a mesma frase a cada minuto, por arquivo. Log
+    assim é onde o aviso de verdade passa batido.
+    """
+    travado = _ripado(tmp_path / "rip", "travado.prt", dias_atras=9)
+    _travar(monkeypatch, {"travado.prt"})
+    avisos = []
+
+    for _ in range(5):
+        quantos, _ = rl_hf.faxina_dos_ripados(
+            pastas=[tmp_path / "rip"], logger=lambda n, m: avisos.append(m), impressos={"travado.prt"})
+        assert quantos == 0
+
+    assert travado.exists()
+    assert len(avisos) == 1 and "travado.prt" in avisos[0] and "BYHX" in avisos[0]
+
+
+def test_travado_que_destrava_e_apagado_e_se_travar_de_novo_avisa_de_novo(tmp_path, monkeypatch):
+    avisos = []
+    log = lambda n, m: avisos.append((n, m))
+    travados = {"a.prt"}
+    unlink_real = pathlib.Path.unlink
+
+    def unlink(self, *a, **k):
+        if self.name in travados:
+            raise PermissionError(13, "em uso", None, 32)
+        return unlink_real(self, *a, **k)
+
+    monkeypatch.setattr(pathlib.Path, "unlink", unlink)
+    _ripado(tmp_path / "rip", "a.prt", dias_atras=9)
+    faxina = lambda: rl_hf.faxina_dos_ripados(pastas=[tmp_path / "rip"], logger=log, impressos={"a.prt"})
+
+    assert faxina()[0] == 0 and len(avisos) == 1
+    travados.clear()  # o programa soltou o arquivo
+    assert faxina()[0] == 1, "destravou: tem que ser apagado na passada seguinte"
+    assert not (tmp_path / "rip" / "a.prt").exists()
+
+    _ripado(tmp_path / "rip", "a.prt", dias_atras=9)  # mesmo nome, outro trabalho
+    travados.add("a.prt")
+    faxina()
+
+    assert [n for n, _ in avisos].count("warn") == 2, "voltou a travar: é um problema novo e merece aviso"
+
+
+def test_erro_de_apagar_que_nao_e_arquivo_em_uso_mantem_o_texto_com_o_motivo(tmp_path, monkeypatch):
+    _ripado(tmp_path / "rip", "negado.prt", dias_atras=9)
+    unlink_real = pathlib.Path.unlink
+
+    def unlink(self, *a, **k):
+        if self.name == "negado.prt":
+            raise OSError(5, "disco protegido contra gravação")
+        return unlink_real(self, *a, **k)
+
+    monkeypatch.setattr(pathlib.Path, "unlink", unlink)
+    avisos = []
+
+    for _ in range(3):
+        rl_hf.faxina_dos_ripados(pastas=[tmp_path / "rip"], logger=lambda n, m: avisos.append(m),
+                                 impressos={"negado.prt"})
+
+    assert len(avisos) == 1
+    assert "Não consegui apagar o ripado 'negado.prt'" in avisos[0] and "protegido" in avisos[0]
+
+
 def test_a_faxina_usa_o_que_o_programa_diz(byhx, tmp_path, monkeypatch):
     """Ponta a ponta: a prova de impressão vem do log/lista, não de palpite."""
     monkeypatch.setattr(rl_hf, "PASTA_BYHX", byhx)
@@ -535,3 +613,67 @@ def test_uma_tarefa_quebrada_nao_para_as_outras(monkeypatch):
     rl_hf._cuidar_do_ripado(logger=lambda n, m: avisos.append(m))
     assert chamadas == ["faxina", "disco"]
     assert any("programa fechado" in a for a in avisos)
+
+
+def test_a_entrega_ao_byhx_quebrada_nao_para_as_outras(monkeypatch):
+    """Entregar na lista da máquina é conforto: se quebrar, imprimir-prova e faxina seguem."""
+    chamadas = []
+
+    def explode(**kwargs):
+        raise RuntimeError("pasta do BYHX em rede caiu")
+
+    monkeypatch.setattr(rl_hf, "_entregar_ao_byhx", explode)
+    monkeypatch.setattr(rl_hf, "registrar_impressoes", lambda **k: chamadas.append("impressoes"))
+    monkeypatch.setattr(rl_hf, "faxina_dos_ripados", lambda **k: chamadas.append("faxina"))
+    monkeypatch.setattr(rl_hf, "avisar_disco_cheio", lambda **k: chamadas.append("disco"))
+    avisos = []
+    rl_hf._cuidar_do_ripado(logger=lambda n, m: avisos.append(m))
+    assert chamadas == ["impressoes", "faxina", "disco"]
+    assert any("entregar o ripado ao BYHX" in a and "caiu" in a for a in avisos)
+
+
+# --- o ripado entregue passa a morar na hot folder do BYHX -----------
+
+
+def _ligar_byhx(tmp_path, monkeypatch):
+    import separar_ripados
+
+    hot = tmp_path / "BYHX_hot"
+    hot.mkdir()
+    cfg = tmp_path / "hot_folder_byhx.txt"
+    cfg.write_text(f"{hot}\n", encoding="utf-8")
+    monkeypatch.setattr(separar_ripados, "CAMINHO_HOT_FOLDER_BYHX", cfg)
+    return hot
+
+
+def test_sem_a_entrega_ligada_as_pastas_do_ripado_sao_so_as_locais(tmp_path):
+    assert rl_hf._pastas_do_ripado() == [tmp_path / "_ripados"]
+
+
+def test_a_faxina_tambem_limpa_a_hot_folder_do_byhx(tmp_path, monkeypatch):
+    """
+    O ripado entregue vive lá (14 GB por trabalho). Sem olhar ali, a
+    faxina de 3 dias nunca o apagaria e o disco encheria sem ninguém ver.
+    """
+    hot = _ligar_byhx(tmp_path, monkeypatch)
+    impresso = _ripado(hot, "impresso.prt", dias_atras=5)
+    esperando = _ripado(hot, "na_fila.prt", dias_atras=5)
+
+    quantos, _ = rl_hf.faxina_dos_ripados(logger=_calado, impressos={"impresso.prt"})
+
+    assert quantos == 1
+    assert not impresso.exists()
+    assert esperando.exists(), "o que ainda não imprimiu nunca se apaga, esteja onde estiver"
+
+
+def test_o_aviso_de_disco_olha_tambem_a_hot_folder_do_byhx(tmp_path, monkeypatch):
+    import shutil
+
+    hot = _ligar_byhx(tmp_path, monkeypatch)
+    vistos = []
+    monkeypatch.setattr(shutil, "disk_usage",
+                        lambda p: vistos.append(pathlib.Path(p)) or type("U", (), {"free": 10 * 1024 ** 3})())
+
+    rl_hf.avisar_disco_cheio(logger=_calado)
+
+    assert hot in vistos

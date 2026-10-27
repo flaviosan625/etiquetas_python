@@ -39,6 +39,7 @@ da peça. No primeiro desenho (04/10) o rótulo foi escrito num vão de
 1 cm e invadiu a peça de baixo.
 """
 import datetime
+from collections import OrderedDict
 import contextlib
 import json
 import math
@@ -106,8 +107,10 @@ MARCA_CORTE_M = 0.02      # o braço da cruz de corte
 RECUO_CORTE_M = FOLGA_M / 2
 
 # Quanto a medida do arquivo pode diferir da do nome e ainda ser "a
-# mesma": 5 mm. Abaixo disso é arredondamento de quem exportou.
-TOLERANCIA_MEDIDA_M = 0.005
+# mesma": 1 cm (10 mm). Até 1 cm pra mais ou pra menos é variação normal
+# de arredondamento ao gerar pela tela inicial ou exportar arte, evitando
+# bloqueios indevidos na montagem.
+TOLERANCIA_MEDIDA_M = 0.01
 # QUANDO A PROPORÇÃO DO ARQUIVO DIFERE DA DO NOME, quem decide é quanto
 # de arte seria APARADO — em milímetros, não em porcentagem.
 #
@@ -450,6 +453,26 @@ def distancia_limpa_m(dpi):
     return ACUIDADE_POLEGADAS / dpi * METROS_POR_POLEGADA
 
 
+_CACHE_MEDIDAS = OrderedDict()
+_CACHE_RESOLUCAO = OrderedDict()
+_LIMITE_CACHE_ARQUIVOS = 1000
+
+
+def _chave_cache_arquivo(caminho, numero_pagina=0):
+    try:
+        p = pathlib.Path(caminho)
+        st = p.stat()
+        return (str(p.resolve()), st.st_mtime_ns, st.st_size, numero_pagina)
+    except OSError:
+        return None
+
+
+def limpar_caches_medidas():
+    """Limpa os caches de medidas e resolução (usado em testes ou reprocessamento forçado)."""
+    _CACHE_MEDIDAS.clear()
+    _CACHE_RESOLUCAO.clear()
+
+
 def _resolucao_detalhada(arquivo, numero_pagina, fator, pymupdf=None):
     """
     O MENOR dpi efetivo da arte no tamanho final, acompanhado do estado
@@ -459,9 +482,16 @@ def _resolucao_detalhada(arquivo, numero_pagina, fator, pymupdf=None):
     Mede a MENOR das imagens colocadas, nos dois eixos: uma foto de
     fundo em 300 dpi não salva o logo de 40 dpi em cima dela.
     """
+    fator = fator or 1.0
+    chave = _chave_cache_arquivo(arquivo, numero_pagina)
+    if chave and chave in _CACHE_RESOLUCAO:
+        pior_base, estado, motivo = _CACHE_RESOLUCAO[chave]
+        _CACHE_RESOLUCAO.move_to_end(chave)
+        dpi = (pior_base / fator) if (pior_base is not None and fator > 0) else pior_base
+        return {"dpi": dpi, "estado": estado, "motivo": motivo}
+
     pymupdf = pymupdf or _pymupdf()
     arquivo = pathlib.Path(arquivo)
-    fator = fator or 1.0
     try:
         if arquivo.suffix.lower() in IMAGENS:
             with pymupdf.open(str(arquivo)) as imagem:
@@ -472,24 +502,33 @@ def _resolucao_detalhada(arquivo, numero_pagina, fator, pymupdf=None):
             doc = pymupdf.open(str(arquivo))
         try:
             pagina = doc.load_page(numero_pagina)
-            pior = None
+            pior_base = None
             for info in pagina.get_image_info():
                 caixa = pymupdf.Rect(info["bbox"])
-                largura_m = caixa.width / PT_M * fator
-                altura_m = caixa.height / PT_M * fator
+                largura_m = caixa.width / PT_M
+                altura_m = caixa.height / PT_M
                 for pixels, medida in ((info["width"], largura_m),
                                        (info["height"], altura_m)):
                     if medida <= 0 or not pixels:
                         continue
                     dpi = pixels / (medida / METROS_POR_POLEGADA)
-                    pior = dpi if pior is None else min(pior, dpi)
-            return {"dpi": pior, "estado": "sem_raster" if pior is None else "medida",
-                    "motivo": ""}
+                    pior_base = dpi if pior_base is None else min(pior_base, dpi)
+            estado = "sem_raster" if pior_base is None else "medida"
+            motivo = ""
+            if chave:
+                _CACHE_RESOLUCAO[chave] = (pior_base, estado, motivo)
+                while len(_CACHE_RESOLUCAO) > _LIMITE_CACHE_ARQUIVOS:
+                    _CACHE_RESOLUCAO.popitem(last=False)
+            dpi_final = (pior_base / fator) if (pior_base is not None and fator > 0) else pior_base
+            return {"dpi": dpi_final, "estado": estado, "motivo": motivo}
         finally:
             doc.close()
     except Exception as erro:       # noqa: BLE001 - aviso, sem inventar qualidade
-        return {"dpi": None, "estado": "nao_verificada",
-                "motivo": f"Não consegui verificar a resolução: {type(erro).__name__}."}
+        res = {"dpi": None, "estado": "nao_verificada",
+               "motivo": f"Não consegui verificar a resolução: {type(erro).__name__}."}
+        if chave:
+            _CACHE_RESOLUCAO[chave] = (None, "nao_verificada", res["motivo"])
+        return res
 
 
 def resolucao_da_arte(arquivo, numero_pagina, fator, pymupdf=None):
@@ -600,27 +639,38 @@ def medida_do_arquivo(caminho, numero_pagina=0):
     declarado; sem DPI, o padrão de 96 é chute — por isso imagem sem DPI
     nunca manda na medida, só o nome.
     """
+    chave = _chave_cache_arquivo(caminho, numero_pagina)
+    if chave and chave in _CACHE_MEDIDAS:
+        _CACHE_MEDIDAS.move_to_end(chave)
+        return _CACHE_MEDIDAS[chave]
+
     caminho = pathlib.Path(caminho)
     pymupdf = _pymupdf()
+    resultado = None
     try:
         if caminho.suffix.lower() in IMAGENS:
             with pymupdf.open(str(caminho)) as doc:
                 pagina = doc.load_page(0)
-                return (pagina.rect.width / PT_M, pagina.rect.height / PT_M, 1)
-        with pymupdf.open(str(caminho)) as doc:
-            if not doc.page_count:
-                return None
-            pagina = doc.load_page(numero_pagina)
-            if not pagina.get_bboxlog():
-                return None
-            arte = caixa_da_arte(pagina, pymupdf)
-            return (arte.width / PT_M, arte.height / PT_M, doc.page_count)
+                resultado = (pagina.rect.width / PT_M, pagina.rect.height / PT_M, 1)
+        else:
+            with pymupdf.open(str(caminho)) as doc:
+                if doc.page_count:
+                    pagina = doc.load_page(numero_pagina)
+                    if pagina.get_bboxlog():
+                        arte = caixa_da_arte(pagina, pymupdf)
+                        resultado = (arte.width / PT_M, arte.height / PT_M, doc.page_count)
     except Exception:
-        return None
+        resultado = None
+
+    if chave:
+        _CACHE_MEDIDAS[chave] = resultado
+        while len(_CACHE_MEDIDAS) > _LIMITE_CACHE_ARQUIVOS:
+            _CACHE_MEDIDAS.popitem(last=False)
+    return resultado
 
 
 def _perto(a, b, tolerancia):
-    return abs(a - b) <= tolerancia
+    return abs(a - b) <= (tolerancia + 1e-6)
 
 
 def ajuste_para(alvo, atual):
@@ -628,7 +678,7 @@ def ajuste_para(alvo, atual):
     O que fazer com a arte pra ela virar a medida do nome:
     {'acao', 'girar', 'fator', 'motivo'}.
 
-      igual     já está na medida (dentro de 5 mm)
+      igual     já está na medida (dentro de 1 cm)
       girar     está certa, só deitada
       escalar   a proporção bate: multiplica (é a arte em escala, ou
                 exportada fora de medida)
@@ -679,7 +729,7 @@ def ajuste_para(alvo, atual):
             melhor = (diferenca, relativa, girar, fator)
 
     diferenca, relativa, girar, fator = melhor
-    if abs(diferenca) <= DIFERENCA_MAXIMA_M and relativa <= TOLERANCIA_PROPORCAO:
+    if abs(diferenca) <= DIFERENCA_MAXIMA_M and (relativa <= TOLERANCIA_PROPORCAO or abs(diferenca) <= TOLERANCIA_MEDIDA_M):
         # arredondado: 9,999999805 é 10x, e número feio num documento de
         # produção faz quem lê duvidar do resto
         maior = max(largura_alvo, altura_alvo)

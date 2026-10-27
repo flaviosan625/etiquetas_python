@@ -22,7 +22,8 @@ from tema import cores
 
 _MOSTRA_RESULTADO_MS = 20000
 _CONSUMIR_MS = 80
-_LIMITE_CACHE = 120
+_LIMITE_CACHE = 250
+_CACHE_GLOBAL_PREVIAS = OrderedDict()
 
 
 def _folga_m_do_texto(texto):
@@ -120,15 +121,31 @@ class JanelaMontagem(tk.Toplevel):
         self._atualizar_estado_montagem_automatica()
         self._abas = {}
         caderno = ttk.Notebook(self)
+        self.caderno = caderno
         caderno.grid(row=1, column=0, sticky="nsew", padx=20, pady=(0, 16))
-        for nome_maquina in montagem.maquinas_que_montam():
-            aba = _AbaMaquina(caderno, nome_maquina)
+        maquinas = montagem.maquinas_que_montam()
+        for idx, nome_maquina in enumerate(maquinas):
+            aba = _AbaMaquina(caderno, nome_maquina, calcular_inicial=(idx == 0))
             caderno.add(aba, text=f"  {montagem.nome_pasta_maquina(nome_maquina)}  ")
             self._abas[nome_maquina] = aba
+        caderno.bind("<<NotebookTabChanged>>", self._ao_mudar_aba)
         if not self._abas:
             tk.Label(self, text="Nenhuma máquina está cadastrada para montar.",
                      bg=cores.fundo, fg=cores.alerta,
                      font=("Segoe UI", 10)).grid(row=1, column=0, padx=20, pady=20)
+
+    def _ao_mudar_aba(self, _evento=None):
+        if not hasattr(self, "caderno"):
+            return
+        aba_id = self.caderno.select()
+        if not aba_id:
+            return
+        widget = self.nametowidget(aba_id)
+        if isinstance(widget, _AbaMaquina):
+            if not getattr(widget, "_calculada_uma_vez", False):
+                widget.calcular()
+            else:
+                widget._solicitar_previas_visiveis()
 
     def destroy(self):
         for aba in getattr(self, "_abas", {}).values():
@@ -151,7 +168,7 @@ class JanelaMontagem(tk.Toplevel):
 
 
 class _AbaMaquina(tk.Frame):
-    def __init__(self, master, nome_maquina):
+    def __init__(self, master, nome_maquina, calcular_inicial=True):
         super().__init__(master, bg=cores.fundo)
         self.nome_maquina = nome_maquina
         self.pasta = montagem.pasta_da_maquina(nome_maquina)
@@ -159,6 +176,7 @@ class _AbaMaquina(tk.Frame):
         self._ocupada = False
         self._fechando = False
         self._suja = True
+        self._calculada_uma_vez = False
         self._geracao = 0
         self._job_resultado = None
         self._job_fila = None
@@ -173,7 +191,7 @@ class _AbaMaquina(tk.Frame):
         self._trabalho = ThreadPoolExecutor(max_workers=1, thread_name_prefix="montagem")
         self._trabalho_previas = ThreadPoolExecutor(max_workers=2,
                                                    thread_name_prefix="previa_montagem")
-        self._cache_previas = OrderedDict()
+        self._cache_previas = _CACHE_GLOBAL_PREVIAS
         self._previas_pendentes = set()
         self._fotos = {}
         self._zoom = 1.0
@@ -187,7 +205,8 @@ class _AbaMaquina(tk.Frame):
         self.var_largura.trace_add("write", lambda *_: self._configuracao_mudou())
         self.bind("<Destroy>", self._destruida, add="+")
         self._job_fila = self.after(_CONSUMIR_MS, self._consumir)
-        self.calcular()
+        if calcular_inicial:
+            self.calcular()
 
     def _montar_topo(self):
         topo = tk.Frame(self, bg=cores.fundo)
@@ -534,7 +553,14 @@ class _AbaMaquina(tk.Frame):
             self._alternar_arquivo(self._nomes_por_linha.get(linhas[0]))
         return "break"
 
+    def _aba_ativa(self):
+        try:
+            return self.master.select() == str(self)
+        except Exception:
+            return True
+
     def calcular(self):
+        self._calculada_uma_vez = True
         if self._ocupada or self._fechando:
             return
         try:
@@ -586,9 +612,11 @@ class _AbaMaquina(tk.Frame):
     def _consumir(self):
         if self._fechando:
             return
+        dados_processados = False
         try:
             for _ in range(40):
                 dados = self._fila.get_nowait()
+                dados_processados = True
                 if dados[0] == "miniatura":
                     self._receber_miniatura(*dados[1:])
                 elif dados[1] == self._geracao:
@@ -600,8 +628,10 @@ class _AbaMaquina(tk.Frame):
                         self._converteu(dados[2], dados[3], dados[4])
         except queue.Empty:
             pass
-        self._solicitar_previas_visiveis()
-        self._job_fila = self.after(_CONSUMIR_MS, self._consumir)
+        if self._aba_ativa():
+            self._solicitar_previas_visiveis()
+        intervalo = _CONSUMIR_MS if (dados_processados or self._ocupada or self._previas_pendentes) else 250
+        self._job_fila = self.after(intervalo, self._consumir)
 
     def _mostrar(self, previa, erro, configuracao):
         self._ocupada = False

@@ -1,8 +1,8 @@
 CORTE AUTOMATICO
 
 === parametros ===
-  PVC 10: Topo Raso (4 mm) dia 4 passada 11 profundidade 11 (1 passe(s))
-  ferramenta: Tool:End Mill - Not From Tool DB | -(Not Created) dia 4 passada 11 InMM true
+  MDF 9: Topo Raso (6 mm) dia 6 passada 6 profundidade 10 (2 passe(s))
+  ferramenta: Tool:End Mill - Not From Tool DB | -(Not Created) dia 6 passada 6 InMM true
 
 === o percurso tem campo de ordem? ===
   nenhum — a ordem so da pra garantir com percursos separados
@@ -14,9 +14,11 @@ CORTE AUTOMATICO
 === percursos ===
   4 objeto(s) selecionado(s) — so eles viram percurso
   chapa cadastrada: 1220 x 2440 mm
-  o corte ocupa:    X de 45.5 a 845.5   Y de 38.0 a 1662.2
-  cabe na chapa: ok
-  por dentro: 2   por fora: 2
-  'CORTE INTERNO' lado=1 -> criado luaUUID:
+  o corte ocupa:    X de 502.6 a 1785.4   Y de 23.3 a 2723.1
+  ATENCAO: pela chapa cadastrada, o corte passaria dela —
+    - passa 565.4 mm da largura da chapa
+    - passa 283.1 mm da altura da chapa
+  por dentro: 0   por fora: 4
+  (nada por dentro — nenhuma peca com furo)
   'CORTE EXTERNO' lado=0 -> criado luaUUID:
-  total de percursos no trabalho: 6
+  total de percursos no trabalho: 3

@@ -45,64 +45,736 @@
     },
     "ACRILICO": {
       "tipo": "chapa",
-      "largura_cm": 300.0,
-      "comprimento_cm": 200.0,
+      "largura_cm": 200,
+      "comprimento_cm": 100,
       "variantes": [
         {
           "espessura": "2MM",
-          "cor": "CRISTAL"
+          "cor": "CRISTAL",
+          "preco_m2": 106.415
         },
         {
           "espessura": "2MM",
-          "cor": "LEITOSO"
+          "cor": "LEITOSO",
+          "preco_m2": 114.93,
+          "aliases_cor": [
+            "BRANCO",
+            "TRANSLUCIDO"
+          ]
         },
         {
           "espessura": "3MM",
-          "cor": "CRISTAL"
+          "cor": "CRISTAL",
+          "preco_m2": 145.15
         },
         {
           "espessura": "3MM",
-          "cor": "LEITOSO"
+          "cor": "LEITOSO",
+          "preco_m2": 156.76,
+          "aliases_cor": [
+            "BRANCO",
+            "TRANSLUCIDO"
+          ]
         },
         {
           "espessura": "4MM",
-          "cor": "CRISTAL"
+          "cor": "CRISTAL",
+          "preco_m2": 193.525
         },
         {
           "espessura": "4MM",
-          "cor": "LEITOSO"
+          "cor": "LEITOSO",
+          "preco_m2": 209.005,
+          "aliases_cor": [
+            "BRANCO",
+            "TRANSLUCIDO"
+          ]
         },
         {
           "espessura": "5MM",
-          "cor": "CRISTAL"
+          "cor": "CRISTAL",
+          "preco_m2": 241.9
         },
         {
           "espessura": "5MM",
-          "cor": "LEITOSO"
+          "cor": "LEITOSO",
+          "preco_m2": 261.25,
+          "aliases_cor": [
+            "BRANCO",
+            "TRANSLUCIDO"
+          ]
         },
         {
           "espessura": "6MM",
-          "cor": "CRISTAL"
+          "cor": "CRISTAL",
+          "preco_m2": 290.28
         },
         {
           "espessura": "6MM",
-          "cor": "LEITOSO"
+          "cor": "LEITOSO",
+          "preco_m2": 313.5,
+          "aliases_cor": [
+            "BRANCO",
+            "TRANSLUCIDO"
+          ]
         },
         {
           "espessura": "8MM",
-          "cor": "CRISTAL"
+          "cor": "CRISTAL",
+          "preco_m2": 387.04
         },
         {
           "espessura": "8MM",
-          "cor": "LEITOSO"
+          "cor": "LEITOSO",
+          "preco_m2": 418.005,
+          "aliases_cor": [
+            "BRANCO",
+            "TRANSLUCIDO"
+          ]
         },
         {
           "espessura": "10MM",
-          "cor": "CRISTAL"
+          "cor": "CRISTAL",
+          "preco_m2": 460.765
         },
         {
           "espessura": "10MM",
-          "cor": "LEITOSO"
+          "cor": "LEITOSO",
+          "preco_m2": 497.625,
+          "aliases_cor": [
+            "BRANCO",
+            "TRANSLUCIDO"
+          ]
+        },
+        {
+          "espessura": "2MM",
+          "cor": "PRETO",
+          "preco_m2": 122.375
+        },
+        {
+          "espessura": "2MM",
+          "cor": "AZUL",
+          "preco_m2": 122.375
+        },
+        {
+          "espessura": "2MM",
+          "cor": "BRONZE",
+          "preco_m2": 122.375
+        },
+        {
+          "espessura": "2MM",
+          "cor": "ROSE",
+          "preco_m2": 122.375
+        },
+        {
+          "espessura": "2MM",
+          "cor": "CINZA",
+          "preco_m2": 122.375
+        },
+        {
+          "espessura": "2MM",
+          "cor": "LILAS",
+          "preco_m2": 122.375
+        },
+        {
+          "espessura": "2MM",
+          "cor": "LARANJA",
+          "preco_m2": 122.375
+        },
+        {
+          "espessura": "2MM",
+          "cor": "AMARELO",
+          "preco_m2": 122.375
+        },
+        {
+          "espessura": "2MM",
+          "cor": "ALUMINIZADO",
+          "preco_m2": 122.375
+        },
+        {
+          "espessura": "2MM",
+          "cor": "VERDE",
+          "preco_m2": 122.375
+        },
+        {
+          "espessura": "2MM",
+          "cor": "PINK",
+          "preco_m2": 122.375
+        },
+        {
+          "espessura": "2MM",
+          "cor": "VERMELHO",
+          "preco_m2": 122.375
+        },
+        {
+          "espessura": "3MM",
+          "cor": "PRETO",
+          "preco_m2": 166.925
+        },
+        {
+          "espessura": "3MM",
+          "cor": "AZUL",
+          "preco_m2": 166.925
+        },
+        {
+          "espessura": "3MM",
+          "cor": "BRONZE",
+          "preco_m2": 166.925
+        },
+        {
+          "espessura": "3MM",
+          "cor": "ROSE",
+          "preco_m2": 166.925
+        },
+        {
+          "espessura": "3MM",
+          "cor": "CINZA",
+          "preco_m2": 166.925
+        },
+        {
+          "espessura": "3MM",
+          "cor": "LILAS",
+          "preco_m2": 166.925
+        },
+        {
+          "espessura": "3MM",
+          "cor": "LARANJA",
+          "preco_m2": 166.925
+        },
+        {
+          "espessura": "3MM",
+          "cor": "AMARELO",
+          "preco_m2": 166.925
+        },
+        {
+          "espessura": "3MM",
+          "cor": "ALUMINIZADO",
+          "preco_m2": 166.925
+        },
+        {
+          "espessura": "3MM",
+          "cor": "VERDE",
+          "preco_m2": 166.925
+        },
+        {
+          "espessura": "3MM",
+          "cor": "PINK",
+          "preco_m2": 166.925
+        },
+        {
+          "espessura": "3MM",
+          "cor": "VERMELHO",
+          "preco_m2": 166.925
+        },
+        {
+          "espessura": "4MM",
+          "cor": "PRETO",
+          "preco_m2": 222.555
+        },
+        {
+          "espessura": "4MM",
+          "cor": "AZUL",
+          "preco_m2": 222.555
+        },
+        {
+          "espessura": "4MM",
+          "cor": "BRONZE",
+          "preco_m2": 222.555
+        },
+        {
+          "espessura": "4MM",
+          "cor": "ROSE",
+          "preco_m2": 222.555
+        },
+        {
+          "espessura": "4MM",
+          "cor": "CINZA",
+          "preco_m2": 222.555
+        },
+        {
+          "espessura": "4MM",
+          "cor": "LILAS",
+          "preco_m2": 222.555
+        },
+        {
+          "espessura": "4MM",
+          "cor": "LARANJA",
+          "preco_m2": 222.555
+        },
+        {
+          "espessura": "4MM",
+          "cor": "AMARELO",
+          "preco_m2": 222.555
+        },
+        {
+          "espessura": "4MM",
+          "cor": "ALUMINIZADO",
+          "preco_m2": 222.555
+        },
+        {
+          "espessura": "4MM",
+          "cor": "VERDE",
+          "preco_m2": 222.555
+        },
+        {
+          "espessura": "4MM",
+          "cor": "PINK",
+          "preco_m2": 222.555
+        },
+        {
+          "espessura": "4MM",
+          "cor": "VERMELHO",
+          "preco_m2": 222.555
+        },
+        {
+          "espessura": "5MM",
+          "cor": "PRETO",
+          "preco_m2": 278.185
+        },
+        {
+          "espessura": "5MM",
+          "cor": "AZUL",
+          "preco_m2": 278.185
+        },
+        {
+          "espessura": "5MM",
+          "cor": "BRONZE",
+          "preco_m2": 278.185
+        },
+        {
+          "espessura": "5MM",
+          "cor": "ROSE",
+          "preco_m2": 278.185
+        },
+        {
+          "espessura": "5MM",
+          "cor": "CINZA",
+          "preco_m2": 278.185
+        },
+        {
+          "espessura": "5MM",
+          "cor": "LILAS",
+          "preco_m2": 278.185
+        },
+        {
+          "espessura": "5MM",
+          "cor": "LARANJA",
+          "preco_m2": 278.185
+        },
+        {
+          "espessura": "5MM",
+          "cor": "AMARELO",
+          "preco_m2": 278.185
+        },
+        {
+          "espessura": "5MM",
+          "cor": "ALUMINIZADO",
+          "preco_m2": 278.185
+        },
+        {
+          "espessura": "5MM",
+          "cor": "VERDE",
+          "preco_m2": 278.185
+        },
+        {
+          "espessura": "5MM",
+          "cor": "PINK",
+          "preco_m2": 278.185
+        },
+        {
+          "espessura": "5MM",
+          "cor": "VERMELHO",
+          "preco_m2": 278.185
+        },
+        {
+          "espessura": "6MM",
+          "cor": "PRETO",
+          "preco_m2": 333.82
+        },
+        {
+          "espessura": "6MM",
+          "cor": "AZUL",
+          "preco_m2": 333.82
+        },
+        {
+          "espessura": "6MM",
+          "cor": "BRONZE",
+          "preco_m2": 333.82
+        },
+        {
+          "espessura": "6MM",
+          "cor": "ROSE",
+          "preco_m2": 333.82
+        },
+        {
+          "espessura": "6MM",
+          "cor": "CINZA",
+          "preco_m2": 333.82
+        },
+        {
+          "espessura": "6MM",
+          "cor": "LILAS",
+          "preco_m2": 333.82
+        },
+        {
+          "espessura": "6MM",
+          "cor": "LARANJA",
+          "preco_m2": 333.82
+        },
+        {
+          "espessura": "6MM",
+          "cor": "AMARELO",
+          "preco_m2": 333.82
+        },
+        {
+          "espessura": "6MM",
+          "cor": "ALUMINIZADO",
+          "preco_m2": 333.82
+        },
+        {
+          "espessura": "6MM",
+          "cor": "VERDE",
+          "preco_m2": 333.82
+        },
+        {
+          "espessura": "6MM",
+          "cor": "PINK",
+          "preco_m2": 333.82
+        },
+        {
+          "espessura": "6MM",
+          "cor": "VERMELHO",
+          "preco_m2": 333.82
+        },
+        {
+          "espessura": "8MM",
+          "cor": "PRETO",
+          "preco_m2": 445.095
+        },
+        {
+          "espessura": "8MM",
+          "cor": "AZUL",
+          "preco_m2": 445.095
+        },
+        {
+          "espessura": "8MM",
+          "cor": "BRONZE",
+          "preco_m2": 445.095
+        },
+        {
+          "espessura": "8MM",
+          "cor": "ROSE",
+          "preco_m2": 445.095
+        },
+        {
+          "espessura": "8MM",
+          "cor": "CINZA",
+          "preco_m2": 445.095
+        },
+        {
+          "espessura": "8MM",
+          "cor": "LILAS",
+          "preco_m2": 445.095
+        },
+        {
+          "espessura": "8MM",
+          "cor": "LARANJA",
+          "preco_m2": 445.095
+        },
+        {
+          "espessura": "8MM",
+          "cor": "AMARELO",
+          "preco_m2": 445.095
+        },
+        {
+          "espessura": "8MM",
+          "cor": "ALUMINIZADO",
+          "preco_m2": 445.095
+        },
+        {
+          "espessura": "8MM",
+          "cor": "VERDE",
+          "preco_m2": 445.095
+        },
+        {
+          "espessura": "8MM",
+          "cor": "PINK",
+          "preco_m2": 445.095
+        },
+        {
+          "espessura": "8MM",
+          "cor": "VERMELHO",
+          "preco_m2": 445.095
+        },
+        {
+          "espessura": "10MM",
+          "cor": "PRETO",
+          "preco_m2": 529.88
+        },
+        {
+          "espessura": "10MM",
+          "cor": "AZUL",
+          "preco_m2": 529.88
+        },
+        {
+          "espessura": "10MM",
+          "cor": "BRONZE",
+          "preco_m2": 529.88
+        },
+        {
+          "espessura": "10MM",
+          "cor": "ROSE",
+          "preco_m2": 529.88
+        },
+        {
+          "espessura": "10MM",
+          "cor": "CINZA",
+          "preco_m2": 529.88
+        },
+        {
+          "espessura": "10MM",
+          "cor": "LILAS",
+          "preco_m2": 529.88
+        },
+        {
+          "espessura": "10MM",
+          "cor": "LARANJA",
+          "preco_m2": 529.88
+        },
+        {
+          "espessura": "10MM",
+          "cor": "AMARELO",
+          "preco_m2": 529.88
+        },
+        {
+          "espessura": "10MM",
+          "cor": "ALUMINIZADO",
+          "preco_m2": 529.88
+        },
+        {
+          "espessura": "10MM",
+          "cor": "VERDE",
+          "preco_m2": 529.88
+        },
+        {
+          "espessura": "10MM",
+          "cor": "PINK",
+          "preco_m2": 529.88
+        },
+        {
+          "espessura": "10MM",
+          "cor": "VERMELHO",
+          "preco_m2": 529.88
+        },
+        {
+          "espessura": "1.5MM",
+          "cor": "ESPELHADO PRATA",
+          "preco_m2": 96.315,
+          "acabamento": "ESPELHADO",
+          "aliases_cor": [
+            "PRATA",
+            "PRATA ESPELHADO",
+            "ESPELHO PRATA"
+          ]
+        },
+        {
+          "espessura": "1.8MM",
+          "cor": "ESPELHADO PRATA",
+          "preco_m2": 112.895,
+          "acabamento": "ESPELHADO",
+          "aliases_cor": [
+            "PRATA",
+            "PRATA ESPELHADO",
+            "ESPELHO PRATA"
+          ]
+        },
+        {
+          "espessura": "2MM",
+          "cor": "ESPELHADO PRATA",
+          "preco_m2": 124.885,
+          "acabamento": "ESPELHADO",
+          "aliases_cor": [
+            "PRATA",
+            "PRATA ESPELHADO",
+            "ESPELHO PRATA"
+          ]
+        },
+        {
+          "espessura": "3MM",
+          "cor": "ESPELHADO PRATA",
+          "preco_m2": 163.995,
+          "acabamento": "ESPELHADO",
+          "aliases_cor": [
+            "PRATA",
+            "PRATA ESPELHADO",
+            "ESPELHO PRATA"
+          ]
+        },
+        {
+          "espessura": "1.5MM",
+          "cor": "ESPELHADO DOURADO",
+          "preco_m2": 110.765,
+          "acabamento": "ESPELHADO",
+          "aliases_cor": [
+            "DOURADO",
+            "DOURADO ESPELHADO",
+            "ESPELHO DOURADO"
+          ]
+        },
+        {
+          "espessura": "2MM",
+          "cor": "ESPELHADO DOURADO",
+          "preco_m2": 136.09,
+          "acabamento": "ESPELHADO",
+          "aliases_cor": [
+            "DOURADO",
+            "DOURADO ESPELHADO",
+            "ESPELHO DOURADO"
+          ]
+        },
+        {
+          "espessura": "3MM",
+          "cor": "ESPELHADO DOURADO",
+          "preco_m2": 178.09,
+          "acabamento": "ESPELHADO",
+          "aliases_cor": [
+            "DOURADO",
+            "DOURADO ESPELHADO",
+            "ESPELHO DOURADO"
+          ]
+        },
+        {
+          "espessura": "2MM",
+          "cor": "FUNDO INFINITO",
+          "preco_m2": 157.5,
+          "acabamento": "FUNDO INFINITO"
+        },
+        {
+          "espessura": "2.5MM",
+          "cor": "FUNDO INFINITO",
+          "preco_m2": 171.0,
+          "acabamento": "FUNDO INFINITO"
+        },
+        {
+          "espessura": "2MM",
+          "cor": "ESPELHADO AZUL",
+          "preco_m2": 146.975,
+          "acabamento": "ESPELHADO",
+          "aliases_cor": [
+            "AZUL",
+            "AZUL ESPELHADO",
+            "ESPELHO AZUL"
+          ]
+        },
+        {
+          "espessura": "2MM",
+          "cor": "ESPELHADO BRONZE",
+          "preco_m2": 146.975,
+          "acabamento": "ESPELHADO",
+          "aliases_cor": [
+            "BRONZE",
+            "BRONZE ESPELHADO",
+            "ESPELHO BRONZE"
+          ]
+        },
+        {
+          "espessura": "2MM",
+          "cor": "ESPELHADO ROSE",
+          "preco_m2": 146.975,
+          "acabamento": "ESPELHADO",
+          "aliases_cor": [
+            "ROSE",
+            "ROSE ESPELHADO",
+            "ESPELHO ROSE"
+          ]
+        },
+        {
+          "espessura": "2MM",
+          "cor": "ESPELHADO CINZA",
+          "preco_m2": 146.975,
+          "acabamento": "ESPELHADO",
+          "aliases_cor": [
+            "CINZA",
+            "CINZA ESPELHADO",
+            "ESPELHO CINZA"
+          ]
+        },
+        {
+          "espessura": "2MM",
+          "cor": "ESPELHADO LILAS",
+          "preco_m2": 146.975,
+          "acabamento": "ESPELHADO",
+          "aliases_cor": [
+            "LILAS",
+            "LILAS ESPELHADO",
+            "ESPELHO LILAS"
+          ]
+        },
+        {
+          "espessura": "2MM",
+          "cor": "ESPELHADO LARANJA",
+          "preco_m2": 146.975,
+          "acabamento": "ESPELHADO",
+          "aliases_cor": [
+            "LARANJA",
+            "LARANJA ESPELHADO",
+            "ESPELHO LARANJA"
+          ]
+        },
+        {
+          "espessura": "2MM",
+          "cor": "ESPELHADO AMARELO",
+          "preco_m2": 146.975,
+          "acabamento": "ESPELHADO",
+          "aliases_cor": [
+            "AMARELO",
+            "AMARELO ESPELHADO",
+            "ESPELHO AMARELO"
+          ]
+        },
+        {
+          "espessura": "2MM",
+          "cor": "ESPELHADO ALUMINIZADO",
+          "preco_m2": 146.975,
+          "acabamento": "ESPELHADO",
+          "aliases_cor": [
+            "ALUMINIZADO",
+            "ALUMINIZADO ESPELHADO",
+            "ESPELHO ALUMINIZADO"
+          ]
+        },
+        {
+          "espessura": "2MM",
+          "cor": "ESPELHADO VERDE",
+          "preco_m2": 146.975,
+          "acabamento": "ESPELHADO",
+          "aliases_cor": [
+            "VERDE",
+            "VERDE ESPELHADO",
+            "ESPELHO VERDE"
+          ]
+        },
+        {
+          "espessura": "2MM",
+          "cor": "ESPELHADO PINK",
+          "preco_m2": 146.975,
+          "acabamento": "ESPELHADO",
+          "aliases_cor": [
+            "PINK",
+            "PINK ESPELHADO",
+            "ESPELHO PINK"
+          ]
+        },
+        {
+          "espessura": "2MM",
+          "cor": "ESPELHADO VERMELHO",
+          "preco_m2": 146.975,
+          "acabamento": "ESPELHADO",
+          "aliases_cor": [
+            "VERMELHO",
+            "VERMELHO ESPELHADO",
+            "ESPELHO VERMELHO"
+          ]
         }
       ]
     },
@@ -128,6 +800,12 @@
           "cor": "PRETO"
         }
       ]
+    },
+    "DECORFLEX": {
+      "tipo": "rolo",
+      "largura_cm": 320.0,
+      "comprimento_cm": 4200.0,
+      "minutos_por_m2": 5.0
     },
     "MDF": {
       "tipo": "chapa",
@@ -184,6 +862,7 @@
   },
   "ordem_unificado": [
     "LONA",
+    "DECORFLEX",
     "ADESIVO",
     "PVC",
     "PS",
@@ -191,7 +870,14 @@
     "ACRILICO"
   ],
   "ultimo_gerente": "Flavio Santos",
-  "ultimo_produtor": "Elisa",
+  "ultimo_produtor": "ANDRÉ",
+  "materiais_compostos": {
+    "ADESIVADO": "ADESIVO"
+  },
+  "ultima_impressora": "HP Color LaserJet Pro 4203",
+  "ultima_pasta_envio": "C:\\Users\\flavi\\OneDrive\\UNYCOMUNICACAO\\EVENTOS\\ESTANDE CLARO\\PRODUCAO",
+  "tema": "escuro",
+  "montagem_automatica": false,
   "montagem": {
     "UJV 100 UNY CV": {
       "materiais_impressao": {
@@ -199,9 +885,81 @@
       }
     }
   },
-  "materiais_compostos": {
-    "ADESIVADO": "ADESIVO"
-  },
-  "ultima_impressora": "HP Color LaserJet Pro 4203",
-  "ultima_pasta_envio": "C:\\Users\\flavi\\OneDrive\\UNYCOMUNICACAO\\EVENTOS\\AZION FEBRABAN\\PRODUCAO"
+  "centro_custos_tintas": {
+    "referencia": {
+      "maquina": "DOCAN R5200",
+      "largura_m": 5.0,
+      "altura_m": 0.5,
+      "area_m2": 2.5,
+      "resolucao": "726x1080",
+      "icc": "Eterna_R5200_6Pass.icc",
+      "passos": 1,
+      "volumes_ml": {
+        "CIANO": 2.46,
+        "MAGENTA": 1.38,
+        "YELLOW": 3.28,
+        "BLACK": 5.43
+      }
+    },
+    "maquinas_por_material": {
+      "DECORFLEX": "DOCAN R5200",
+      "PS": "DOCAN H2525",
+      "PVC": "DOCAN H2525",
+      "ACRILICO": "DOCAN H2525"
+    },
+    "maquinas": {
+      "DOCAN R5200": {
+        "referencia_consumo": "DOCAN R5200",
+        "referencia_provisoria": false,
+        "cores": {
+          "CIANO": {
+            "capacidade_ml": 1000.0,
+            "preco_frasco": 980.0,
+            "consumo_ml_m2": 0.984
+          },
+          "MAGENTA": {
+            "capacidade_ml": 1000.0,
+            "preco_frasco": 980.0,
+            "consumo_ml_m2": 0.552
+          },
+          "YELLOW": {
+            "capacidade_ml": 1000.0,
+            "preco_frasco": 980.0,
+            "consumo_ml_m2": 1.312
+          },
+          "BLACK": {
+            "capacidade_ml": 1000.0,
+            "preco_frasco": 980.0,
+            "consumo_ml_m2": 2.172
+          }
+        }
+      },
+      "DOCAN H2525": {
+        "referencia_consumo": "DOCAN R5200",
+        "referencia_provisoria": true,
+        "cores": {
+          "CIANO": {
+            "capacidade_ml": 1000.0,
+            "preco_frasco": 980.0,
+            "consumo_ml_m2": 0.984
+          },
+          "MAGENTA": {
+            "capacidade_ml": 1000.0,
+            "preco_frasco": 980.0,
+            "consumo_ml_m2": 0.552
+          },
+          "YELLOW": {
+            "capacidade_ml": 1000.0,
+            "preco_frasco": 980.0,
+            "consumo_ml_m2": 1.312
+          },
+          "BLACK": {
+            "capacidade_ml": 1000.0,
+            "preco_frasco": 980.0,
+            "consumo_ml_m2": 2.172
+          }
+        }
+      }
+    }
+  }
 }

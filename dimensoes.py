@@ -6,6 +6,7 @@ isoladamente — veja tests/test_dimensoes.py.
 """
 import math
 import re
+import unicodedata
 
 import pymupdf
 
@@ -380,15 +381,42 @@ def identificar_variante(nome_arquivo, variantes):
     if not variantes:
         return None
 
-    nome_upper = nome_arquivo.upper()
+    def normalizar(texto):
+        return ''.join(c for c in unicodedata.normalize('NFD', texto.upper())
+                       if not unicodedata.combining(c))
 
+    nome_upper = normalizar(nome_arquivo)
+    nome_cores = re.sub(r'[._\-\s]+', ' ', nome_upper)
+    acabamento = ('ESPELHADO' if any(contem_palavra(nome_cores, t) for t in ('ESPELHADO', 'ESPELHO'))
+                  else 'FUNDO INFINITO' if contem_palavra(nome_cores, 'FUNDO INFINITO') else None)
+    if not any(v.get('acabamento') for v in variantes):
+        acabamento = None
+    candidatos = []
     for variante in variantes:
-        if variante.get("cor") and contem_palavra(nome_upper, variante["espessura"]) and contem_palavra(nome_upper, variante["cor"]):
-            return variante
-    for variante in variantes:
-        if not variante.get("cor") and contem_palavra(nome_upper, variante["espessura"]):
-            return variante
-    return None
+        espessura = normalizar(variante.get('espessura', ''))
+        numero = re.fullmatch(r'(\d+)(?:[.,](\d+))?\s*MM', espessura)
+        if numero:
+            inteiro, fracao = numero.groups()
+            decimal = (r'[.,]' + re.escape(fracao.rstrip('0')) + r'0*'
+                       if fracao and fracao.rstrip('0') else r'(?:[.,]0+)?')
+            padrao = r'(?<![A-Z0-9])(?<!\d[.,])' + inteiro + decimal + r'\s*MM(?![A-Z0-9])'
+            espessura_ok = re.search(padrao, nome_upper) is not None
+        else:
+            espessura_ok = bool(espessura and contem_palavra(nome_upper, espessura))
+        if not espessura_ok:
+            continue
+        cor = variante.get('cor', '')
+        acabamento_variante = variante.get('acabamento')
+        if acabamento and acabamento_variante != acabamento:
+            continue
+        if (acabamento_variante == 'ESPELHADO' and not acabamento
+                and cor not in ('ESPELHADO PRATA', 'ESPELHADO DOURADO')):
+            continue
+        termos = [cor] + variante.get('aliases_cor', [])
+        encontrados = [t for t in termos if t and contem_palavra(nome_cores, normalizar(t))]
+        if encontrados or not cor:
+            candidatos.append((max((len(t) for t in encontrados), default=0), variante))
+    return max(candidatos, key=lambda c: c[0])[1] if candidatos else None
 
 
 def formatar_variante(variante):

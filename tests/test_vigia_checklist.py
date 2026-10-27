@@ -223,8 +223,21 @@ def test_mudar_preco_atualiza_a_copia_de_custos_sem_mexer_na_pasta(repsol, monke
     import custos
 
     base = modulo_config.carregar_config()
-    materiais = {k: dict(v) for k, v in base["materiais"].items()}
-    materiais["LONA"].pop("preco_m2", None)
+    # Sem preço NENHUM, não só sem o da LONA: `custos.tem_algum_preco` olha
+    # o cadastro inteiro, então um preço em QUALQUER material já faz a cópia
+    # sair. Tirando só o da LONA, este teste provava o contrário do que diz
+    # a partir do dia em que ele cadastrasse qualquer valor — e foi o que
+    # aconteceu em 10/10/2026, quando a tabela de acrílicos entrou no
+    # `config.json`. O `config.json` é dele e muda sem commit (preço mora
+    # lá); teste que parte do arquivo VIVO quebra sozinho.
+    materiais = {}
+    for nome, info in base["materiais"].items():
+        copia = dict(info)
+        copia.pop("preco_m2", None)
+        if info.get("variantes"):
+            copia["variantes"] = [{k: v for k, v in variante.items() if k != "preco_m2"}
+                                  for variante in info["variantes"]]
+        materiais[nome] = copia
     cfg = dict(base, materiais=materiais)
     monkeypatch.setattr(modulo_config, "carregar_config", lambda: cfg)
     monkeypatch.setattr(checklist_producao, "carregar_config", lambda: cfg)

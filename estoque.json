@@ -10,7 +10,6 @@
       "minimo": 6,
       "maximo": 60,
       "codigo_planilha": null,
-      "acumulado_m": 0.0,
       "custo": 1250.0
     },
     "ADESIVO_BRANCO_FOSCO_127": {
@@ -23,7 +22,6 @@
       "minimo": 3,
       "maximo": 60,
       "codigo_planilha": null,
-      "acumulado_m": 0.0,
       "custo": 450.0
     },
     "ADESIVO_PRETO_FOSCO_127": {
@@ -36,7 +34,6 @@
       "minimo": 3,
       "maximo": 60,
       "codigo_planilha": "5C_025",
-      "acumulado_m": 0.0,
       "custo": 450.0
     },
     "ADESIVO_CRISTAL_127": {
@@ -49,7 +46,6 @@
       "minimo": 3,
       "maximo": 60,
       "codigo_planilha": null,
-      "acumulado_m": 0.0,
       "custo": 450.0
     },
     "VINIL_JATEADO_127": {
@@ -62,7 +58,6 @@
       "minimo": 6,
       "maximo": 60,
       "codigo_planilha": "5C_040",
-      "acumulado_m": 0.0,
       "custo": 450.0
     },
     "MDF_6MM": {
@@ -452,7 +447,7 @@
       "custo": null
     },
     "ACRILICO_2MM_CRISTAL": {
-      "descricao": "Acrílico 2mm Cristal",
+      "descricao": "Acrílico 2mm Cristal 2x1m",
       "tipo": "chapa",
       "unidade": "chapa",
       "categoria_vinculada": "ACRILICO",
@@ -463,10 +458,12 @@
       "minimo": 6,
       "maximo": 60,
       "codigo_planilha": null,
-      "custo": null
+      "custo": 212.83,
+      "largura_cm": 200,
+      "comprimento_cm": 100
     },
     "ACRILICO_2MM_LEITOSO": {
-      "descricao": "Acrílico 2mm Leitoso",
+      "descricao": "Acrílico 2mm Leitoso 2x1m",
       "tipo": "chapa",
       "unidade": "chapa",
       "categoria_vinculada": "ACRILICO",
@@ -477,10 +474,12 @@
       "minimo": 6,
       "maximo": 60,
       "codigo_planilha": null,
-      "custo": null
+      "custo": 229.86,
+      "largura_cm": 200,
+      "comprimento_cm": 100
     },
     "ACRILICO_3MM_CRISTAL": {
-      "descricao": "Acrílico 3mm Cristal",
+      "descricao": "Acrílico 3mm Cristal 2x1m",
       "tipo": "chapa",
       "unidade": "chapa",
       "categoria_vinculada": "ACRILICO",
@@ -491,10 +490,12 @@
       "minimo": 6,
       "maximo": 60,
       "codigo_planilha": "5C_010",
-      "custo": null
+      "custo": 290.3,
+      "largura_cm": 200,
+      "comprimento_cm": 100
     },
     "ACRILICO_3MM_LEITOSO": {
-      "descricao": "Acrílico 3mm Leitoso",
+      "descricao": "Acrílico 3mm Leitoso 2x1m",
       "tipo": "chapa",
       "unidade": "chapa",
       "categoria_vinculada": "ACRILICO",
@@ -505,10 +506,12 @@
       "minimo": 6,
       "maximo": 60,
       "codigo_planilha": null,
-      "custo": null
+      "custo": 313.52,
+      "largura_cm": 200,
+      "comprimento_cm": 100
     },
     "ACRILICO_4MM_CRISTAL": {
-      "descricao": "Acrílico 4mm Cristal",
+      "descricao": "Acrílico 4mm Cristal 2x1m",
       "tipo": "chapa",
       "unidade": "chapa",
       "categoria_vinculada": "ACRILICO",
@@ -519,10 +522,12 @@
       "minimo": 6,
       "maximo": 60,
       "codigo_planilha": "5C_011",
-      "custo": null
+      "custo": 387.05,
+      "largura_cm": 200,
+      "comprimento_cm": 100
     },
     "ACRILICO_4MM_LEITOSO": {
-      "descricao": "Acrílico 4mm Leitoso",
+      "descricao": "Acrílico 4mm Leitoso 2x1m",
       "tipo": "chapa",
       "unidade": "chapa",
       "categoria_vinculada": "ACRILICO",
@@ -533,10 +538,12 @@
       "minimo": 6,
       "maximo": 60,
       "codigo_planilha": null,
-      "custo": null
+      "custo": 418.01,
+      "largura_cm": 200,
+      "comprimento_cm": 100
     },
     "ACRILICO_5MM_CRISTAL": {
-      "descricao": "Acrílico 5mm Cristal",
+      "descricao": "Acrílico 5mm Cristal 2x1m",
       "tipo": "chapa",
       "unidade": "chapa",
       "categoria_vinculada": "ACRILICO",
@@ -547,10 +554,12 @@
       "minimo": 6,
       "maximo": 60,
       "codigo_planilha": "5C_012",
-      "custo": null
+      "custo": 483.8,
+      "largura_cm": 200,
+      "comprimento_cm": 100
     },
     "ACRILICO_5MM_LEITOSO": {
-      "descricao": "Acrílico 5mm Leitoso",
+      "descricao": "Acrílico 5mm Leitoso 2x1m",
       "tipo": "chapa",
       "unidade": "chapa",
       "categoria_vinculada": "ACRILICO",
@@ -561,10 +570,12 @@
       "minimo": 6,
       "maximo": 60,
       "codigo_planilha": null,
-      "custo": null
+      "custo": 522.5,
+      "largura_cm": 200,
+      "comprimento_cm": 100
     },
     "ACRILICO_6MM_CRISTAL": {
-      "descricao": "Acrílico 6mm Cristal",
+      "descricao": "Acrílico 6mm Cristal 2x1m",
       "tipo": "chapa",
       "unidade": "chapa",
       "categoria_vinculada": "ACRILICO",
@@ -575,10 +586,12 @@
       "minimo": 6,
       "maximo": 60,
       "codigo_planilha": "5C_013",
-      "custo": null
+      "custo": 580.56,
+      "largura_cm": 200,
+      "comprimento_cm": 100
     },
     "ACRILICO_6MM_LEITOSO": {
-      "descricao": "Acrílico 6mm Leitoso",
+      "descricao": "Acrílico 6mm Leitoso 2x1m",
       "tipo": "chapa",
       "unidade": "chapa",
       "categoria_vinculada": "ACRILICO",
@@ -589,7 +602,9 @@
       "minimo": 6,
       "maximo": 60,
       "codigo_planilha": null,
-      "custo": null
+      "custo": 627.0,
+      "largura_cm": 200,
+      "comprimento_cm": 100
     },
     "ACRILICO_7MM_CRISTAL": {
       "descricao": "Acrílico 7mm Cristal",
@@ -620,7 +635,7 @@
       "custo": null
     },
     "ACRILICO_8MM_CRISTAL": {
-      "descricao": "Acrílico 8mm Cristal",
+      "descricao": "Acrílico 8mm Cristal 2x1m",
       "tipo": "chapa",
       "unidade": "chapa",
       "categoria_vinculada": "ACRILICO",
@@ -631,10 +646,12 @@
       "minimo": 6,
       "maximo": 60,
       "codigo_planilha": "5C_015",
-      "custo": null
+      "custo": 774.08,
+      "largura_cm": 200,
+      "comprimento_cm": 100
     },
     "ACRILICO_8MM_LEITOSO": {
-      "descricao": "Acrílico 8mm Leitoso",
+      "descricao": "Acrílico 8mm Leitoso 2x1m",
       "tipo": "chapa",
       "unidade": "chapa",
       "categoria_vinculada": "ACRILICO",
@@ -645,10 +662,12 @@
       "minimo": 6,
       "maximo": 60,
       "codigo_planilha": null,
-      "custo": null
+      "custo": 836.01,
+      "largura_cm": 200,
+      "comprimento_cm": 100
     },
     "ACRILICO_10MM_CRISTAL": {
-      "descricao": "Acrílico 10mm Cristal",
+      "descricao": "Acrílico 10mm Cristal 2x1m",
       "tipo": "chapa",
       "unidade": "chapa",
       "categoria_vinculada": "ACRILICO",
@@ -659,10 +678,12 @@
       "minimo": 6,
       "maximo": 60,
       "codigo_planilha": "5C_016",
-      "custo": null
+      "custo": 921.53,
+      "largura_cm": 200,
+      "comprimento_cm": 100
     },
     "ACRILICO_10MM_LEITOSO": {
-      "descricao": "Acrílico 10mm Leitoso",
+      "descricao": "Acrílico 10mm Leitoso 2x1m",
       "tipo": "chapa",
       "unidade": "chapa",
       "categoria_vinculada": "ACRILICO",
@@ -673,7 +694,1769 @@
       "minimo": 6,
       "maximo": 60,
       "codigo_planilha": null,
-      "custo": null
+      "custo": 995.25,
+      "largura_cm": 200,
+      "comprimento_cm": 100
+    },
+    "TINTA_DOCAN_R5200_CIANO": {
+      "descricao": "Tinta DOCAN R5200 Ciano 1000 mL",
+      "tipo": "insumo",
+      "unidade": "frasco",
+      "categoria_vinculada": null,
+      "variante_vinculada": null,
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "capacidade_ml": 1000.0,
+      "custo": 980.0
+    },
+    "TINTA_DOCAN_R5200_MAGENTA": {
+      "descricao": "Tinta DOCAN R5200 Magenta 1000 mL",
+      "tipo": "insumo",
+      "unidade": "frasco",
+      "categoria_vinculada": null,
+      "variante_vinculada": null,
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "capacidade_ml": 1000.0,
+      "custo": 980.0
+    },
+    "TINTA_DOCAN_R5200_YELLOW": {
+      "descricao": "Tinta DOCAN R5200 Amarelo 1000 mL",
+      "tipo": "insumo",
+      "unidade": "frasco",
+      "categoria_vinculada": null,
+      "variante_vinculada": null,
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "capacidade_ml": 1000.0,
+      "custo": 980.0
+    },
+    "TINTA_DOCAN_R5200_BLACK": {
+      "descricao": "Tinta DOCAN R5200 Preto 1000 mL",
+      "tipo": "insumo",
+      "unidade": "frasco",
+      "categoria_vinculada": null,
+      "variante_vinculada": null,
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "capacidade_ml": 1000.0,
+      "custo": 980.0
+    },
+    "TINTA_DOCAN_H2525_CIANO": {
+      "descricao": "Tinta DOCAN H2525 Ciano 1000 mL",
+      "tipo": "insumo",
+      "unidade": "frasco",
+      "categoria_vinculada": null,
+      "variante_vinculada": null,
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "capacidade_ml": 1000.0,
+      "custo": 980.0
+    },
+    "TINTA_DOCAN_H2525_MAGENTA": {
+      "descricao": "Tinta DOCAN H2525 Magenta 1000 mL",
+      "tipo": "insumo",
+      "unidade": "frasco",
+      "categoria_vinculada": null,
+      "variante_vinculada": null,
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "capacidade_ml": 1000.0,
+      "custo": 980.0
+    },
+    "TINTA_DOCAN_H2525_YELLOW": {
+      "descricao": "Tinta DOCAN H2525 Amarelo 1000 mL",
+      "tipo": "insumo",
+      "unidade": "frasco",
+      "categoria_vinculada": null,
+      "variante_vinculada": null,
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "capacidade_ml": 1000.0,
+      "custo": 980.0
+    },
+    "TINTA_DOCAN_H2525_BLACK": {
+      "descricao": "Tinta DOCAN H2525 Preto 1000 mL",
+      "tipo": "insumo",
+      "unidade": "frasco",
+      "categoria_vinculada": null,
+      "variante_vinculada": null,
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "capacidade_ml": 1000.0,
+      "custo": 980.0
+    },
+    "ACRILICO_2MM_PRETO": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 2mm Preto 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "2MM",
+        "cor": "PRETO"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 244.75
+    },
+    "ACRILICO_2MM_AZUL": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 2mm Azul 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "2MM",
+        "cor": "AZUL"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 244.75
+    },
+    "ACRILICO_2MM_BRONZE": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 2mm Bronze 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "2MM",
+        "cor": "BRONZE"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 244.75
+    },
+    "ACRILICO_2MM_ROSE": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 2mm Rose 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "2MM",
+        "cor": "ROSE"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 244.75
+    },
+    "ACRILICO_2MM_CINZA": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 2mm Cinza 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "2MM",
+        "cor": "CINZA"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 244.75
+    },
+    "ACRILICO_2MM_LILAS": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 2mm Lilas 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "2MM",
+        "cor": "LILAS"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 244.75
+    },
+    "ACRILICO_2MM_LARANJA": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 2mm Laranja 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "2MM",
+        "cor": "LARANJA"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 244.75
+    },
+    "ACRILICO_2MM_AMARELO": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 2mm Amarelo 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "2MM",
+        "cor": "AMARELO"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 244.75
+    },
+    "ACRILICO_2MM_ALUMINIZADO": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 2mm Aluminizado 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "2MM",
+        "cor": "ALUMINIZADO"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 244.75
+    },
+    "ACRILICO_2MM_VERDE": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 2mm Verde 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "2MM",
+        "cor": "VERDE"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 244.75
+    },
+    "ACRILICO_2MM_PINK": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 2mm Pink 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "2MM",
+        "cor": "PINK"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 244.75
+    },
+    "ACRILICO_2MM_VERMELHO": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 2mm Vermelho 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "2MM",
+        "cor": "VERMELHO"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 244.75
+    },
+    "ACRILICO_3MM_PRETO": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 3mm Preto 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "3MM",
+        "cor": "PRETO"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 333.85
+    },
+    "ACRILICO_3MM_AZUL": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 3mm Azul 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "3MM",
+        "cor": "AZUL"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 333.85
+    },
+    "ACRILICO_3MM_BRONZE": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 3mm Bronze 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "3MM",
+        "cor": "BRONZE"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 333.85
+    },
+    "ACRILICO_3MM_ROSE": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 3mm Rose 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "3MM",
+        "cor": "ROSE"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 333.85
+    },
+    "ACRILICO_3MM_CINZA": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 3mm Cinza 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "3MM",
+        "cor": "CINZA"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 333.85
+    },
+    "ACRILICO_3MM_LILAS": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 3mm Lilas 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "3MM",
+        "cor": "LILAS"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 333.85
+    },
+    "ACRILICO_3MM_LARANJA": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 3mm Laranja 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "3MM",
+        "cor": "LARANJA"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 333.85
+    },
+    "ACRILICO_3MM_AMARELO": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 3mm Amarelo 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "3MM",
+        "cor": "AMARELO"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 333.85
+    },
+    "ACRILICO_3MM_ALUMINIZADO": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 3mm Aluminizado 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "3MM",
+        "cor": "ALUMINIZADO"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 333.85
+    },
+    "ACRILICO_3MM_VERDE": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 3mm Verde 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "3MM",
+        "cor": "VERDE"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 333.85
+    },
+    "ACRILICO_3MM_PINK": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 3mm Pink 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "3MM",
+        "cor": "PINK"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 333.85
+    },
+    "ACRILICO_3MM_VERMELHO": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 3mm Vermelho 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "3MM",
+        "cor": "VERMELHO"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 333.85
+    },
+    "ACRILICO_4MM_PRETO": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 4mm Preto 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "4MM",
+        "cor": "PRETO"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 445.11
+    },
+    "ACRILICO_4MM_AZUL": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 4mm Azul 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "4MM",
+        "cor": "AZUL"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 445.11
+    },
+    "ACRILICO_4MM_BRONZE": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 4mm Bronze 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "4MM",
+        "cor": "BRONZE"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 445.11
+    },
+    "ACRILICO_4MM_ROSE": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 4mm Rose 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "4MM",
+        "cor": "ROSE"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 445.11
+    },
+    "ACRILICO_4MM_CINZA": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 4mm Cinza 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "4MM",
+        "cor": "CINZA"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 445.11
+    },
+    "ACRILICO_4MM_LILAS": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 4mm Lilas 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "4MM",
+        "cor": "LILAS"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 445.11
+    },
+    "ACRILICO_4MM_LARANJA": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 4mm Laranja 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "4MM",
+        "cor": "LARANJA"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 445.11
+    },
+    "ACRILICO_4MM_AMARELO": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 4mm Amarelo 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "4MM",
+        "cor": "AMARELO"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 445.11
+    },
+    "ACRILICO_4MM_ALUMINIZADO": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 4mm Aluminizado 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "4MM",
+        "cor": "ALUMINIZADO"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 445.11
+    },
+    "ACRILICO_4MM_VERDE": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 4mm Verde 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "4MM",
+        "cor": "VERDE"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 445.11
+    },
+    "ACRILICO_4MM_PINK": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 4mm Pink 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "4MM",
+        "cor": "PINK"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 445.11
+    },
+    "ACRILICO_4MM_VERMELHO": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 4mm Vermelho 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "4MM",
+        "cor": "VERMELHO"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 445.11
+    },
+    "ACRILICO_5MM_PRETO": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 5mm Preto 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "5MM",
+        "cor": "PRETO"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 556.37
+    },
+    "ACRILICO_5MM_AZUL": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 5mm Azul 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "5MM",
+        "cor": "AZUL"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 556.37
+    },
+    "ACRILICO_5MM_BRONZE": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 5mm Bronze 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "5MM",
+        "cor": "BRONZE"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 556.37
+    },
+    "ACRILICO_5MM_ROSE": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 5mm Rose 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "5MM",
+        "cor": "ROSE"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 556.37
+    },
+    "ACRILICO_5MM_CINZA": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 5mm Cinza 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "5MM",
+        "cor": "CINZA"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 556.37
+    },
+    "ACRILICO_5MM_LILAS": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 5mm Lilas 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "5MM",
+        "cor": "LILAS"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 556.37
+    },
+    "ACRILICO_5MM_LARANJA": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 5mm Laranja 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "5MM",
+        "cor": "LARANJA"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 556.37
+    },
+    "ACRILICO_5MM_AMARELO": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 5mm Amarelo 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "5MM",
+        "cor": "AMARELO"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 556.37
+    },
+    "ACRILICO_5MM_ALUMINIZADO": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 5mm Aluminizado 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "5MM",
+        "cor": "ALUMINIZADO"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 556.37
+    },
+    "ACRILICO_5MM_VERDE": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 5mm Verde 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "5MM",
+        "cor": "VERDE"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 556.37
+    },
+    "ACRILICO_5MM_PINK": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 5mm Pink 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "5MM",
+        "cor": "PINK"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 556.37
+    },
+    "ACRILICO_5MM_VERMELHO": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 5mm Vermelho 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "5MM",
+        "cor": "VERMELHO"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 556.37
+    },
+    "ACRILICO_6MM_PRETO": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 6mm Preto 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "6MM",
+        "cor": "PRETO"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 667.64
+    },
+    "ACRILICO_6MM_AZUL": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 6mm Azul 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "6MM",
+        "cor": "AZUL"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 667.64
+    },
+    "ACRILICO_6MM_BRONZE": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 6mm Bronze 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "6MM",
+        "cor": "BRONZE"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 667.64
+    },
+    "ACRILICO_6MM_ROSE": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 6mm Rose 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "6MM",
+        "cor": "ROSE"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 667.64
+    },
+    "ACRILICO_6MM_CINZA": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 6mm Cinza 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "6MM",
+        "cor": "CINZA"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 667.64
+    },
+    "ACRILICO_6MM_LILAS": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 6mm Lilas 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "6MM",
+        "cor": "LILAS"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 667.64
+    },
+    "ACRILICO_6MM_LARANJA": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 6mm Laranja 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "6MM",
+        "cor": "LARANJA"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 667.64
+    },
+    "ACRILICO_6MM_AMARELO": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 6mm Amarelo 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "6MM",
+        "cor": "AMARELO"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 667.64
+    },
+    "ACRILICO_6MM_ALUMINIZADO": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 6mm Aluminizado 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "6MM",
+        "cor": "ALUMINIZADO"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 667.64
+    },
+    "ACRILICO_6MM_VERDE": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 6mm Verde 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "6MM",
+        "cor": "VERDE"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 667.64
+    },
+    "ACRILICO_6MM_PINK": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 6mm Pink 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "6MM",
+        "cor": "PINK"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 667.64
+    },
+    "ACRILICO_6MM_VERMELHO": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 6mm Vermelho 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "6MM",
+        "cor": "VERMELHO"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 667.64
+    },
+    "ACRILICO_8MM_PRETO": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 8mm Preto 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "8MM",
+        "cor": "PRETO"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 890.19
+    },
+    "ACRILICO_8MM_AZUL": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 8mm Azul 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "8MM",
+        "cor": "AZUL"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 890.19
+    },
+    "ACRILICO_8MM_BRONZE": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 8mm Bronze 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "8MM",
+        "cor": "BRONZE"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 890.19
+    },
+    "ACRILICO_8MM_ROSE": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 8mm Rose 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "8MM",
+        "cor": "ROSE"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 890.19
+    },
+    "ACRILICO_8MM_CINZA": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 8mm Cinza 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "8MM",
+        "cor": "CINZA"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 890.19
+    },
+    "ACRILICO_8MM_LILAS": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 8mm Lilas 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "8MM",
+        "cor": "LILAS"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 890.19
+    },
+    "ACRILICO_8MM_LARANJA": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 8mm Laranja 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "8MM",
+        "cor": "LARANJA"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 890.19
+    },
+    "ACRILICO_8MM_AMARELO": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 8mm Amarelo 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "8MM",
+        "cor": "AMARELO"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 890.19
+    },
+    "ACRILICO_8MM_ALUMINIZADO": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 8mm Aluminizado 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "8MM",
+        "cor": "ALUMINIZADO"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 890.19
+    },
+    "ACRILICO_8MM_VERDE": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 8mm Verde 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "8MM",
+        "cor": "VERDE"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 890.19
+    },
+    "ACRILICO_8MM_PINK": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 8mm Pink 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "8MM",
+        "cor": "PINK"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 890.19
+    },
+    "ACRILICO_8MM_VERMELHO": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 8mm Vermelho 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "8MM",
+        "cor": "VERMELHO"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 890.19
+    },
+    "ACRILICO_10MM_PRETO": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 10mm Preto 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "10MM",
+        "cor": "PRETO"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 1059.76
+    },
+    "ACRILICO_10MM_AZUL": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 10mm Azul 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "10MM",
+        "cor": "AZUL"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 1059.76
+    },
+    "ACRILICO_10MM_BRONZE": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 10mm Bronze 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "10MM",
+        "cor": "BRONZE"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 1059.76
+    },
+    "ACRILICO_10MM_ROSE": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 10mm Rose 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "10MM",
+        "cor": "ROSE"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 1059.76
+    },
+    "ACRILICO_10MM_CINZA": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 10mm Cinza 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "10MM",
+        "cor": "CINZA"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 1059.76
+    },
+    "ACRILICO_10MM_LILAS": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 10mm Lilas 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "10MM",
+        "cor": "LILAS"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 1059.76
+    },
+    "ACRILICO_10MM_LARANJA": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 10mm Laranja 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "10MM",
+        "cor": "LARANJA"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 1059.76
+    },
+    "ACRILICO_10MM_AMARELO": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 10mm Amarelo 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "10MM",
+        "cor": "AMARELO"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 1059.76
+    },
+    "ACRILICO_10MM_ALUMINIZADO": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 10mm Aluminizado 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "10MM",
+        "cor": "ALUMINIZADO"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 1059.76
+    },
+    "ACRILICO_10MM_VERDE": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 10mm Verde 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "10MM",
+        "cor": "VERDE"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 1059.76
+    },
+    "ACRILICO_10MM_PINK": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 10mm Pink 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "10MM",
+        "cor": "PINK"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 1059.76
+    },
+    "ACRILICO_10MM_VERMELHO": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 10mm Vermelho 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "10MM",
+        "cor": "VERMELHO"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 1059.76
+    },
+    "ACRILICO_1_5MM_ESPELHADO_PRATA": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 1.5mm Espelhado Prata 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "1.5MM",
+        "cor": "ESPELHADO PRATA"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 192.63
+    },
+    "ACRILICO_1_8MM_ESPELHADO_PRATA": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 1.8mm Espelhado Prata 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "1.8MM",
+        "cor": "ESPELHADO PRATA"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 225.79
+    },
+    "ACRILICO_2MM_ESPELHADO_PRATA": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 2mm Espelhado Prata 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "2MM",
+        "cor": "ESPELHADO PRATA"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 249.77
+    },
+    "ACRILICO_3MM_ESPELHADO_PRATA": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 3mm Espelhado Prata 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "3MM",
+        "cor": "ESPELHADO PRATA"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 327.99
+    },
+    "ACRILICO_1_5MM_ESPELHADO_DOURADO": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 1.5mm Espelhado Dourado 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "1.5MM",
+        "cor": "ESPELHADO DOURADO"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 221.53
+    },
+    "ACRILICO_2MM_ESPELHADO_DOURADO": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 2mm Espelhado Dourado 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "2MM",
+        "cor": "ESPELHADO DOURADO"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 272.18
+    },
+    "ACRILICO_3MM_ESPELHADO_DOURADO": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 3mm Espelhado Dourado 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "3MM",
+        "cor": "ESPELHADO DOURADO"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 356.18
+    },
+    "ACRILICO_2MM_FUNDO_INFINITO": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 2mm Fundo Infinito 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "2MM",
+        "cor": "FUNDO INFINITO"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 315.0
+    },
+    "ACRILICO_2_5MM_FUNDO_INFINITO": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 2.5mm Fundo Infinito 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "2.5MM",
+        "cor": "FUNDO INFINITO"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 342.0
+    },
+    "ACRILICO_2MM_ESPELHADO_AZUL": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 2mm Espelhado Azul 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "2MM",
+        "cor": "ESPELHADO AZUL"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 293.95
+    },
+    "ACRILICO_2MM_ESPELHADO_BRONZE": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 2mm Espelhado Bronze 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "2MM",
+        "cor": "ESPELHADO BRONZE"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 293.95
+    },
+    "ACRILICO_2MM_ESPELHADO_ROSE": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 2mm Espelhado Rose 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "2MM",
+        "cor": "ESPELHADO ROSE"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 293.95
+    },
+    "ACRILICO_2MM_ESPELHADO_CINZA": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 2mm Espelhado Cinza 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "2MM",
+        "cor": "ESPELHADO CINZA"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 293.95
+    },
+    "ACRILICO_2MM_ESPELHADO_LILAS": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 2mm Espelhado Lilas 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "2MM",
+        "cor": "ESPELHADO LILAS"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 293.95
+    },
+    "ACRILICO_2MM_ESPELHADO_LARANJA": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 2mm Espelhado Laranja 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "2MM",
+        "cor": "ESPELHADO LARANJA"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 293.95
+    },
+    "ACRILICO_2MM_ESPELHADO_AMARELO": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 2mm Espelhado Amarelo 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "2MM",
+        "cor": "ESPELHADO AMARELO"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 293.95
+    },
+    "ACRILICO_2MM_ESPELHADO_ALUMINIZADO": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 2mm Espelhado Aluminizado 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "2MM",
+        "cor": "ESPELHADO ALUMINIZADO"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 293.95
+    },
+    "ACRILICO_2MM_ESPELHADO_VERDE": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 2mm Espelhado Verde 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "2MM",
+        "cor": "ESPELHADO VERDE"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 293.95
+    },
+    "ACRILICO_2MM_ESPELHADO_PINK": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 2mm Espelhado Pink 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "2MM",
+        "cor": "ESPELHADO PINK"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 293.95
+    },
+    "ACRILICO_2MM_ESPELHADO_VERMELHO": {
+      "minimo": 0,
+      "maximo": 0,
+      "codigo_planilha": null,
+      "descricao": "Acrílico 2mm Espelhado Vermelho 2x1m",
+      "tipo": "chapa",
+      "unidade": "chapa",
+      "categoria_vinculada": "ACRILICO",
+      "variante_vinculada": {
+        "espessura": "2MM",
+        "cor": "ESPELHADO VERMELHO"
+      },
+      "largura_cm": 200,
+      "comprimento_cm": 100,
+      "custo": 293.95
     }
   },
   "movimentos": [
@@ -1216,8 +2999,45 @@
       "observacao": "Contagem fisica inicial de teste - saldo alvo 20 un (05/09/2026)",
       "origem_pedido": null,
       "estorno_de": null
+    },
+    {
+      "id": 55,
+      "data": "28/09/2026 12:01:46",
+      "produto": "MDF_9MM",
+      "tipo": "saida",
+      "quantidade": -4,
+      "observacao": "Saída pela OS",
+      "origem_pedido": "EUTELSAT (28/09/2026 11:05:57)",
+      "estorno_de": null
+    },
+    {
+      "id": 56,
+      "data": "28/09/2026 12:11:28",
+      "produto": "LONA_FOSCA_440_320",
+      "tipo": "saida",
+      "quantidade": -0.112,
+      "observacao": "Saída pela OS: 5.60 m de rolo (95% aproveitado, lote encaixado — estimativa). Apontamento de 28/09: a baixa das 12:01 guardou 6,10 m no contador antigo do rolo aberto e não lançou movimento",
+      "origem_pedido": "EUTELSAT (28/09/2026 11:05:57)",
+      "estorno_de": null
+    },
+    {
+      "id": 57,
+      "data": "28/09/2026 12:11:28",
+      "produto": "PVC_10MM_BRANCO",
+      "tipo": "saida",
+      "quantidade": -1,
+      "observacao": "Saída pela OS: 1 chapa(s) (34% aproveitado, lote encaixado — estimativa). Apontamento de 28/09: nome diz 10MM sem a cor; Branco confirmado pelo Flávio",
+      "origem_pedido": "EUTELSAT (28/09/2026 11:05:57)",
+      "estorno_de": null
     }
   ],
-  "proximo_id": 55,
-  "producao_mensal": []
+  "proximo_id": 58,
+  "producao_mensal": [
+    {
+      "data": "28/09/2026 12:01:46",
+      "categoria": "LONA",
+      "area_m2": 17.0,
+      "origem_pedido": "EUTELSAT (28/09/2026 11:05:57)"
+    }
+  ]
 }
