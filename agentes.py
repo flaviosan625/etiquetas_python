@@ -199,10 +199,11 @@ def traduzir_resultado(codigo):
     }.get(codigo, "código 0x%08X" % codigo)
 
 
-def _servico_agendador():
+def _servico_agendador(inicializar_com=True):
     import pythoncom
     import win32com.client
-    pythoncom.CoInitialize()
+    if inicializar_com:
+        pythoncom.CoInitialize()
     servico = win32com.client.Dispatch("Schedule.Service")
     servico.Connect()
     return servico
@@ -538,6 +539,8 @@ def rodar_aqui(ag, timeout_s=600, servico=None, executar=subprocess.run):
         return {"recusado": "Este agente não roda daqui."}
     if ag.tarefa:
         tarefa = ler_tarefa_do_agente(ag, servico)
+        if tarefa.get("existe") is None:
+            return {"recusado": "Não consegui confirmar se a tarefa está rodando no Agendador; não iniciei outra passada."}
         if tarefa.get("existe") and tarefa.get("estado") == _TAREFA_RODANDO:
             return {"recusado": "Ela está rodando agora pelo Agendador — espere terminar."}
 

@@ -22,6 +22,7 @@ de propósito.
 """
 import datetime
 import os
+import queue
 import threading
 import tkinter as tk
 from tkinter import messagebox, ttk
@@ -53,6 +54,84 @@ _POR_QUE_SEM_BOTAO = {
 }
 
 
+def _ler_estado_google():
+    import drive_artes
+
+    try:
+        return drive_artes.estado_do_token()
+    except Exception as e:                           # noqa: BLE001
+        return {"situacao": "vencido", "texto": "Não consegui ler: %s" % e}
+
+
+def _capturar_snapshot(agentes_lista, agora, ler_acao, disparos):
+    """Lê Agendador, processos e arquivos fora do thread da interface."""
+    pythoncom = None
+    com_inicializado = False
+    servico = object()  # falha fechada: as leituras devolverão "sem sinal"
+    try:
+        import pythoncom as modulo_pythoncom
+        pythoncom = modulo_pythoncom
+        pythoncom.CoInitialize()
+        com_inicializado = True
+        servico = agentes._servico_agendador(inicializar_com=False)
+    except Exception:
+        pass
+
+    estados = {}
+    tarefas = {}
+    acoes = {}
+    try:
+        for ag in agentes_lista:
+            try:
+                estados[ag.chave] = agentes.estado(ag, agora=agora, servico=servico)
+            except Exception as e:                       # noqa: BLE001
+                estados[ag.chave] = {
+                    "nivel": "sem_sinal",
+                    "texto": "Não consegui ler agora: %s" % e,
+                }
+            if ag.chave in disparos:
+                try:
+                    tarefas[ag.chave] = agentes.ler_tarefa_do_agente(ag, servico)
+                except Exception as e:                   # noqa: BLE001
+                    tarefas[ag.chave] = {"existe": None, "erro": str(e)}
+            if ler_acao:
+                try:
+                    acoes[ag.chave] = agentes.ultima_acao(ag, agora)
+                except Exception as e:                   # noqa: BLE001
+                    acoes[ag.chave] = "não consegui ler: %s" % e
+        google = _ler_estado_google() if ler_acao else None
+        return {
+            "agora": agora,
+            "ler_acao": ler_acao,
+            "estados": estados,
+            "tarefas": tarefas,
+            "acoes": acoes,
+            "google": google,
+        }
+    finally:
+        if com_inicializado:
+            try:
+                pythoncom.CoUninitialize()
+            except Exception:
+                pass
+
+
+def _publicar_snapshot(resultados, agentes_lista, agora, ler_acao, disparos):
+    try:
+        resultado = _capturar_snapshot(agentes_lista, agora, ler_acao, disparos)
+    except Exception as e:                               # noqa: BLE001
+        resultado = {
+            "agora": agora,
+            "ler_acao": ler_acao,
+            "estados": {a.chave: {"nivel": "sem_sinal", "texto": "Não consegui ler agora: %s" % e}
+                        for a in agentes_lista},
+            "tarefas": {},
+            "acoes": {},
+            "google": None,
+        }
+    resultados.put(resultado)
+
+
 class JanelaAgentes(tk.Toplevel):
     def __init__(self, master):
         super().__init__(master)
@@ -67,10 +146,12 @@ class JanelaAgentes(tk.Toplevel):
         self._rodando_aqui = set()
         self._ultima_leitura_acao = None
         self._job = None
-        try:
-            self._servico = agentes._servico_agendador()
-        except Exception:
-            self._servico = None   # ler_tarefa cai pra "não sei", não quebra
+        self._fechando = False
+        self._leitura_em_andamento = False
+        self._resultados_leitura = queue.Queue()
+        self._resultados_rodar_aqui = queue.Queue()
+        self._resultados_disparar = queue.Queue()
+        self._resultados_google = queue.Queue()
 
         self.columnconfigure(0, weight=1)
         self.rowconfigure(1, weight=1)
@@ -234,67 +315,106 @@ class JanelaAgentes(tk.Toplevel):
 
     def _reconectar_google(self):
         """Abre o navegador pra autorizar de novo. Trava o botão enquanto isso."""
-        import drive_artes
-
         self.btn_google.configure(state="disabled", text="abrindo o navegador...")
         self.var_google.set("Confirme a conta no navegador. Se aparecer “o Google não verificou "
                             "este app”, clique em Avançado e siga — o app é nosso.")
-        self.update_idletasks()
-        try:
-            drive_artes.reautorizar()
-        except Exception as e:                           # noqa: BLE001
-            messagebox.showerror("Reconectar", "Não consegui autorizar:\n\n%s" % e, parent=self)
-        finally:
-            self.btn_google.configure(state="normal", text="🔑  Reconectar")
-        self._atualizar_google()
+
+        def trabalho():
+            try:
+                import drive_artes
+                drive_artes.reautorizar()
+                resultado = (None, _ler_estado_google())
+            except Exception as e:                       # noqa: BLE001
+                resultado = (str(e), _ler_estado_google())
+            self._resultados_google.put(resultado)
+
+        threading.Thread(target=trabalho, daemon=True).start()
 
     def _atualizar_google(self):
-        import drive_artes
+        self._aplicar_estado_google(_ler_estado_google())
 
-        try:
-            estado = drive_artes.estado_do_token()
-        except Exception as e:                           # noqa: BLE001
-            estado = {"situacao": "vencido", "texto": "Não consegui ler: %s" % e}
+    def _aplicar_estado_google(self, estado):
         cor = {"ok": cores.ok, "vence_logo": cores.aviso}.get(estado["situacao"], cores.erro)
         self._simbolo_google.configure(fg=cor)
         self.lbl_google.configure(fg=cores.texto if estado["situacao"] == "ok" else cor)
         self.var_google.set(estado["texto"])
 
     def _atualizar(self):
+        if self._fechando:
+            return
+
+        try:
+            snapshot = self._resultados_leitura.get_nowait()
+        except queue.Empty:
+            snapshot = None
+        if snapshot is not None:
+            self._leitura_em_andamento = False
+            self._aplicar_snapshot(snapshot)
+
+        while True:
+            try:
+                ag, inicio, resultado = self._resultados_rodar_aqui.get_nowait()
+            except queue.Empty:
+                break
+            self._mostrar_saida(ag, inicio, resultado)
+
+        while True:
+            try:
+                ag, ok, msg = self._resultados_disparar.get_nowait()
+            except queue.Empty:
+                break
+            self._aplicar_resultado_disparo(ag, ok, msg)
+
+        while True:
+            try:
+                erro, estado = self._resultados_google.get_nowait()
+            except queue.Empty:
+                break
+            self.btn_google.configure(state="normal", text="🔑  Reconectar")
+            if erro:
+                messagebox.showerror("Reconectar", "Não consegui autorizar:\n\n%s" % erro, parent=self)
+            self._aplicar_estado_google(estado)
+
         agora = datetime.datetime.now()
         ler_acao = (self._ultima_leitura_acao is None
                     or (agora - self._ultima_leitura_acao).total_seconds() >= _INTERVALO_ACAO_S)
+        if not self._leitura_em_andamento:
+            self._leitura_em_andamento = True
+            args = (self._resultados_leitura, [c["agente"] for c in self._cartoes.values()],
+                    agora, ler_acao, dict(self._disparos))
+            threading.Thread(target=_publicar_snapshot, args=args, daemon=True).start()
+        self.var_rodape.set("Atualiza sozinho a cada 3 s  ·  última leitura %s" % agora.strftime("%H:%M:%S"))
+        self._job = self.after(_INTERVALO_ESTADO_MS, self._atualizar)
 
+    def _aplicar_snapshot(self, snapshot):
+        agora = snapshot["agora"]
         for chave, c in self._cartoes.items():
             ag = c["agente"]
-            try:
-                est = agentes.estado(ag, agora=agora, servico=self._servico)
-            except Exception as e:
-                est = {"nivel": "sem_sinal", "texto": "Não consegui ler agora: %s" % e}
+            est = snapshot["estados"].get(chave, {
+                "nivel": "sem_sinal", "texto": "Ainda não consegui ler o estado."})
             nivel, texto = est["nivel"], est["texto"]
-            nivel, texto = self._acompanhar_disparo(ag, nivel, texto, agora)
-
+            nivel, texto = self._acompanhar_disparo(
+                ag, nivel, texto, agora, snapshot["tarefas"].get(chave))
             cor = _COR_NIVEL.get(nivel, cores.texto2)
             c["simbolo"].configure(text=_SIMBOLO_NIVEL.get(nivel, "●"), fg=cor)
             c["lbl_estado"].configure(fg=cor if nivel != "ok" else cores.texto)
             c["var_estado"].set(texto)
-            if ler_acao:
-                c["var_acao"].set("Última ação: %s" % agentes.ultima_acao(ag, agora))
+            if snapshot["ler_acao"]:
+                c["var_acao"].set("Última ação: %s" % snapshot["acoes"].get(chave, "sem leitura"))
 
-        if ler_acao:
+        if snapshot["ler_acao"]:
             self._ultima_leitura_acao = agora
-            self._atualizar_google()
-        self.var_rodape.set("Atualiza sozinho a cada 3 s  ·  última leitura %s" % agora.strftime("%H:%M:%S"))
-        self._job = self.after(_INTERVALO_ESTADO_MS, self._atualizar)
+            if snapshot["google"] is not None:
+                self._aplicar_estado_google(snapshot["google"])
 
-    def _acompanhar_disparo(self, ag, nivel, texto, agora):
+    def _acompanhar_disparo(self, ag, nivel, texto, agora, tarefa=None):
         """
         Enquanto um disparo forçado não aparece como terminado no Agendador,
         o cartão fala dele — e não do estado de antes do disparo.
         """
         pedido = self._disparos.get(ag.chave)
         if pedido:
-            tarefa = agentes.ler_tarefa_do_agente(ag, self._servico)
+            tarefa = tarefa or {}
             ultima = tarefa.get("ultima")
             rodando = tarefa.get("estado") == 4
             if rodando:
@@ -337,7 +457,31 @@ class JanelaAgentes(tk.Toplevel):
                 c[chave_botao].configure(state="normal" if ligado else "disabled")
 
     def _disparar(self, ag):
-        ok, msg = agentes.disparar(ag, servico=self._servico)
+        self._habilitar(ag, False)
+
+        def trabalho():
+            pythoncom = None
+            inicializado = False
+            try:
+                import pythoncom as modulo_pythoncom
+                pythoncom = modulo_pythoncom
+                pythoncom.CoInitialize()
+                inicializado = True
+                servico = agentes._servico_agendador(inicializar_com=False)
+                resultado = agentes.disparar(ag, servico=servico)
+            except Exception as e:                      # noqa: BLE001
+                resultado = (False, "Não consegui falar com o Agendador: %s" % e)
+            finally:
+                if inicializado:
+                    try:
+                        pythoncom.CoUninitialize()
+                    except Exception:
+                        pass
+            self._resultados_disparar.put((ag, resultado[0], resultado[1]))
+
+        threading.Thread(target=trabalho, daemon=True).start()
+
+    def _aplicar_resultado_disparo(self, ag, ok, msg):
         c = self._cartoes[ag.chave]
         if ok:
             self._disparos[ag.chave] = datetime.datetime.now()
@@ -346,6 +490,7 @@ class JanelaAgentes(tk.Toplevel):
             c["simbolo"].configure(fg=cores.acento)
             c["var_estado"].set(msg)
         else:
+            self._habilitar(ag, True)
             self._concluidos[ag.chave] = {"quando": datetime.datetime.now(), "substituir": True,
                                           "nivel": "atencao", "texto": msg}
             c["lbl_estado"].configure(fg=cores.alerta)
@@ -363,8 +508,24 @@ class JanelaAgentes(tk.Toplevel):
         self._escrever_saida(ag, "")
 
         def trabalho():
-            resultado = agentes.rodar_aqui(ag)
-            self.after(0, lambda: self._mostrar_saida(ag, inicio, resultado))
+            pythoncom = None
+            inicializado = False
+            try:
+                import pythoncom as modulo_pythoncom
+                pythoncom = modulo_pythoncom
+                pythoncom.CoInitialize()
+                inicializado = True
+                servico = agentes._servico_agendador(inicializar_com=False)
+                resultado = agentes.rodar_aqui(ag, servico=servico)
+            except Exception as e:                      # noqa: BLE001
+                resultado = {"recusado": "Não consegui confirmar o estado ou iniciar a passada: %s" % e}
+            finally:
+                if inicializado:
+                    try:
+                        pythoncom.CoUninitialize()
+                    except Exception:
+                        pass
+            self._resultados_rodar_aqui.put((ag, inicio, resultado))
 
         threading.Thread(target=trabalho, daemon=True).start()
 
@@ -410,6 +571,8 @@ class JanelaAgentes(tk.Toplevel):
             self._cartoes[ag.chave]["var_estado"].set("Não consegui abrir %s: %s" % (pasta, e))
 
     def _ao_fechar(self, evento):
+        if evento.widget is self:
+            self._fechando = True
         if evento.widget is self and self._job is not None:
             try:
                 self.after_cancel(self._job)

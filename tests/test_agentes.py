@@ -262,6 +262,19 @@ def test_rodar_aqui_recusa_se_a_tarefa_esta_rodando(monkeypatch):
     assert "recusado" in r
 
 
+def test_rodar_aqui_recusa_se_nao_consegue_confirmar_estado_da_tarefa(monkeypatch):
+    chamadas = []
+    monkeypatch.setattr(ag, "ler_tarefa", lambda nome, servico=None: {
+        "existe": None, "erro": "Agendador indisponível",
+    })
+
+    r = ag.rodar_aqui(MINUTO, executar=lambda *a, **k: chamadas.append((a, k)))
+
+    assert "recusado" in r
+    assert "não iniciei outra passada" in r["recusado"]
+    assert chamadas == []
+
+
 def test_rodar_aqui_que_trava_nao_prende_a_tela(monkeypatch):
     def executar(comando, **kwargs):
         raise subprocess.TimeoutExpired(comando, kwargs["timeout"])
