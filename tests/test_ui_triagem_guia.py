@@ -59,14 +59,14 @@ def test_dialogo_triagem_lote(qapp, tmp_path):
     assert dialogo.tabela.rowCount() == 2
 
     # Verificar seleção e aprovação
-    dialogo._marcar_todos()
+    dialogo.aprovar_todas()
     assert dialogo.tabela.item(0, 0).checkState() == Qt.Checked
     assert dialogo.tabela.item(1, 0).checkState() == Qt.Checked
 
     # Despachar
     aprovados = []
     dialogo.artes_aprovadas.connect(lambda l: aprovados.extend(l))
-    dialogo._despachar_para_montagem()
+    dialogo.avancar_para_montagem()
 
     assert len(aprovados) == 2
     assert aprovados[0]["nome"] == "1UN_VINIL_BRILHO_1000x500MM_PROMO.png"
