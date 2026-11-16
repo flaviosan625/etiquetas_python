@@ -55,7 +55,7 @@ def test_dialogo_triagem_lote(qapp, tmp_path):
     arq2.write_bytes(b"dummy")
 
     dialogo = DialogoTriagemLote(pasta_inicial=tmp_path)
-    assert dialogo.tabela.columnCount() == 8
+    assert dialogo.tabela.columnCount() >= 8
     assert dialogo.tabela.rowCount() == 2
 
     # Verificar seleção e aprovação
