@@ -507,3 +507,15 @@ def calcular_desperdicio_chapa_grande(dimensao, largura_chapa_m, comprimento_cha
         "girada": girada,
         "desperdicio_m2": area_chapas_m2 - area_peca_m2,
     }
+
+
+def parsear_nome_arquivo(nome, config=None):
+    """
+    Analisa o nome de arquivo utilizando o motor de perfis declarativos e regex
+    (ParserRegrasNomes), retornando um ResultadoParse com os metadados extraídos
+    (quantidade, dimensões em metros, material, categoria, cliente, OS, etc.)
+    e o status da operação ('PRONTO' ou 'PENDENTE_TRIAGEM').
+    """
+    from parser_regras import ParserRegrasNomes
+    return ParserRegrasNomes.obter_instancia(config).parsear(nome, config)
+

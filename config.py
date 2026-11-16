@@ -14,6 +14,8 @@ import json
 import pathlib
 from custos_tinta import configuracao_padrao as configuracao_tintas_padrao
 from catalogo_acrilicos import configuracao as configuracao_acrilicos
+from rasterlink_hotfolder import MAQUINAS_PADRAO, atualizar_maquinas_em_memoria, salvar_maquinas_config
+from parser_regras import PERFIS_PADRAO_NOMENCLATURA
 
 BASE_DIR = pathlib.Path(__file__).resolve().parent
 CONFIG_PATH = BASE_DIR / "config.json"
@@ -22,6 +24,7 @@ CONFIG_PADRAO = {
     "centro_custos_tintas": configuracao_tintas_padrao(),
     "materiais": {
         "LONA": {"tipo": "rolo", "largura_cm": 320, "comprimento_cm": 5000},
+        "TECIDO": {"tipo": "rolo", "largura_cm": 150, "comprimento_cm": 5000},
         "ADESIVO": {"tipo": "rolo", "largura_cm": 127, "comprimento_cm": 5000},
         "PS": {
             "tipo": "chapa", "largura_cm": 200, "comprimento_cm": 100,
@@ -39,6 +42,13 @@ CONFIG_PADRAO = {
                 {"espessura": "20MM", "cor": "BRANCO"}, {"espessura": "20MM", "cor": "PRETO"},
             ],
         },
+        "XPS": {
+            "tipo": "chapa", "largura_cm": 120, "comprimento_cm": 240,
+            "variantes": [
+                {"espessura": "20MM"}, {"espessura": "25MM"},
+                {"espessura": "30MM"}, {"espessura": "50MM"},
+            ],
+        },
         "MDF": {
             "tipo": "chapa", "largura_cm": 185, "comprimento_cm": 270,
             "variantes": [
@@ -54,7 +64,6 @@ CONFIG_PADRAO = {
     # categoria do valor (que precisa existir em "materiais").
     "sinonimos_categoria": {
         "VINIL": "ADESIVO",
-        "XPS": "PVC",
         "ACRÍLICO": "ACRILICO",
     },
     # Erros de digitação e abreviações usadas no lugar da unidade de
@@ -85,7 +94,7 @@ CONFIG_PADRAO = {
     # lista ainda aparecem no unificado (no final, automaticamente) —
     # isso evita que uma seção "suma" silenciosamente por ter sido
     # esquecida aqui.
-    "ordem_unificado": ["LONA", "ADESIVO", "PVC", "PS", "MDF", "ACRILICO"],
+    "ordem_unificado": ["LONA", "TECIDO", "ADESIVO", "PVC", "XPS", "PS", "MDF", "ACRILICO"],
     "ultimo_gerente": "",
     "ultimo_produtor": "",
     "ultima_impressora": "",
@@ -95,6 +104,19 @@ CONFIG_PADRAO = {
     # "escuro" ou "claro" — o botãozinho do canto da tela principal
     # escreve aqui (ver tema.py). Padrão escuro, pedido de 22/09.
     "tema": "escuro",
+    # Identidade visual e dados da empresa (desacoplamento de marca)
+    "empresa": {
+        "nome": "Comunicação Visual",
+        "slogan": "Automação e Pré-Impressão",
+        "logo": "",
+        "logo_gui": "",
+        "icone": "",
+        "rodape_retirada": "Conferir os materiais e preencher na retirada",
+    },
+    # Cadastro de impressoras, larguras úteis, RIPs e hot folders
+    "maquinas": copy.deepcopy(MAQUINAS_PADRAO),
+    # Perfis de nomenclatura para análise sintática e extração de regras (ISSUE-08)
+    "perfis_nomenclatura": copy.deepcopy(PERFIS_PADRAO_NOMENCLATURA),
 }
 
 
@@ -153,4 +175,37 @@ def atualizar_ultima_impressora(config, nome_impressora):
     """Atualiza e já salva a última impressora escolhida na tela principal."""
     config["ultima_impressora"] = nome_impressora
     salvar_config(config)
+    return config
+
+
+def atualizar_empresa(config, nome=None, slogan=None, logo=None, logo_gui=None, icone=None, rodape_retirada=None):
+    """
+    Atualiza e salva os dados de identidade visual da empresa (branding desacoplado).
+    Campos None mantêm o valor anterior.
+    """
+    empresa = config.setdefault("empresa", copy.deepcopy(CONFIG_PADRAO["empresa"]))
+    if nome is not None:
+        empresa["nome"] = str(nome).strip()
+    if slogan is not None:
+        empresa["slogan"] = str(slogan).strip()
+    if logo is not None:
+        empresa["logo"] = str(logo).strip()
+    if logo_gui is not None:
+        empresa["logo_gui"] = str(logo_gui).strip()
+    if icone is not None:
+        empresa["icone"] = str(icone).strip()
+    if rodape_retirada is not None:
+        empresa["rodape_retirada"] = str(rodape_retirada).strip()
+    salvar_config(config)
+    return config
+
+
+def atualizar_maquinas(config, novas_maquinas):
+    """
+    Atualiza o cadastro de máquinas no config, salva em disco e propaga
+    em memória para rasterlink_hotfolder.MAQUINAS.
+    """
+    config["maquinas"] = novas_maquinas
+    salvar_config(config)
+    salvar_maquinas_config(novas_maquinas, caminho=CONFIG_PATH)
     return config
