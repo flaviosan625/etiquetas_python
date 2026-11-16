@@ -1,0 +1,18 @@
+TERMOS DE USO E LICENÇA DE SOFTWARE
+AutoPrint Automation - Comunicação Visual
+Versão 2.0.0
+
+1. CONCESSÃO DE LICENÇA
+O software AutoPrint Automation ("Software") é licenciado para uso exclusivo em estações de trabalho autorizadas da empresa e parceiros autorizados para finalidades de automação gráfica, controle de pré-impressão, montagem e corte CNC.
+
+2. PROPRIEDADE INTELECTUAL
+Todos os direitos autorais, marcas registradas e propriedade intelectual relativos ao Software pertencem aos seus respectivos desenvolvedores e à organização detentora dos direitos de distribuição.
+
+3. RESTRIÇÕES
+É proibido realizar engenharia reversa desautorizada para fins de quebra de licenciamento, distribuir cópias piratas ou adulterar módulos de segurança e integridade criptográfica.
+
+4. LIMITAÇÃO DE RESPONSABILIDADE
+O software é fornecido "no estado em que se encontra" (as-is), buscando máxima estabilidade operacional nas linhas de produção e comunicação com máquinas industriais.
+
+5. PRIVACIDADE E SEGURANÇA
+Os dados operacionais, estatísticas de produção e configurações permanecem armazenados localmente no banco de dados da estação, respeitando a confidencialidade do cliente.
