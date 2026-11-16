@@ -5,6 +5,8 @@ Projetado para automação gráfica industrial e comunicação visual.
 100% autônomo, sem dependências de PyMuPDF, Poppler ou qualquer biblioteca AGPL/GPL.
 """
 
+from .geometria import BoundingBox, Matriz2D
+from .interpretador_stream import calcular_caixa_da_arte, interpretar_stream
 from .leitor import Caixa, ImagemInfo, Pagina, PdfReader
 from .sintaxe import PdfArray, PdfDict, PdfName, PdfRef, PdfStream, PdfString
 
@@ -20,6 +22,10 @@ __all__ = [
     "Pagina",
     "Caixa",
     "ImagemInfo",
+    "Matriz2D",
+    "BoundingBox",
+    "calcular_caixa_da_arte",
+    "interpretar_stream",
     "PdfName",
     "PdfRef",
     "PdfString",

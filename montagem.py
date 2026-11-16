@@ -72,7 +72,7 @@ PT_M = 72 / 0.0254   # pontos por metro: a unidade do PDF é o ponto
 # pasta com medida dentro vira mentira no dia em que a medida muda — e
 # mudou duas vezes só nesta semana (a DOCAN de 5,00 pra 5,20 e a UJV de
 # 1,48 pra 1,27).
-PASTA_RAIZ = caminhos.ONEDRIVE_UNY / "MONTAGEM ARTES MAQUINAS"
+PASTA_RAIZ = getattr(caminhos, "MONTAGEM_ARTES", caminhos.PASTA_BASE / "MONTAGEM ARTES MAQUINAS")
 NOME_SUBPASTA_ORIGINAIS = "_originais"
 NOME_SUBPASTA_PROBLEMAS = "_conferir"
 
@@ -271,21 +271,25 @@ def maquinas_que_montam(maquinas=None):
 
 def pasta_de_saida(nome_maquina, raiz=None):
     """
-    Onde a folha PRONTA vai parar: `<raiz>/SAIDA <nome da máquina>`.
-
-    Pedido dele de 05/10/2026: *"precisamos de uma pasta de saída depois
-    de montado — saída DOCAN, saída SWJ"*. Separar entrada de saída
-    resolve de vez o que já mordeu em 05/10 às 01:45: a folha pronta
-    ficava na pasta de entrada e a passada seguinte a lia como peça, e
-    montava a folha dentro de outra folha. `e_folha_montada` continua
-    valendo como cinto de segurança, pra quem arrastar a folha de volta.
+    Onde a folha PRONTA vai parar.
+    No fluxo unificado do sistema, a saída centralizada é 'ARTES MONTADAS'.
+    Quando 'raiz' é informada (ex: suíte de testes com pastas temporárias),
+    mantém '<raiz>/SAIDA <nome da máquina>' para isolamento e compatibilidade.
     """
-    return pathlib.Path(raiz or PASTA_RAIZ) / f"SAIDA {nome_pasta_maquina(nome_maquina)}"
+    if raiz is not None:
+        return pathlib.Path(raiz) / f"SAIDA {nome_pasta_maquina(nome_maquina)}"
+    return getattr(caminhos, "ARTES_MONTADAS", caminhos.PASTA_BASE / "ARTES MONTADAS")
 
 
 def garantir_pastas(raiz=None, maquinas=None):
-    """Cria a pasta de entrada e a de saída de cada máquina; devolve {máquina: pasta}."""
+    """Cria as pastas do fluxo unificado (ARTES PARA MONTAR / ARTES MONTADAS) e por máquina."""
     criadas = {}
+    if raiz is None:
+        try:
+            getattr(caminhos, "ARTES_PARA_MONTAR", caminhos.PASTA_BASE / "ARTES PARA MONTAR").mkdir(parents=True, exist_ok=True)
+            getattr(caminhos, "ARTES_MONTADAS", caminhos.PASTA_BASE / "ARTES MONTADAS").mkdir(parents=True, exist_ok=True)
+        except Exception:
+            pass
     for nome_maquina in maquinas_que_montam(maquinas):
         pasta = pasta_da_maquina(nome_maquina, raiz)
         pasta.mkdir(parents=True, exist_ok=True)
@@ -556,7 +560,7 @@ def _itens_desenhados(pagina):
         return []
 
 
-def caixa_da_arte(pagina, pymupdf):
+def caixa_da_arte(pagina, pymupdf=None):
     """
     O retângulo que a ARTE ocupa dentro da página — não a página.
 
@@ -582,6 +586,9 @@ def caixa_da_arte(pagina, pymupdf):
     pelo menos `(1 - FRANJA_MAXIMA_FRACAO)` de cada lado; acima disso,
     manda a página, como antes.
     """
+    if hasattr(pagina, "obter_caixa_da_arte"):
+        return pagina.obter_caixa_da_arte()
+
     uniao = None
 
     # TRAÇADO RECORTADO, não traçado: nestes arquivos o Illustrator deixa
@@ -645,20 +652,32 @@ def medida_do_arquivo(caminho, numero_pagina=0):
         return _CACHE_MEDIDAS[chave]
 
     caminho = pathlib.Path(caminho)
-    pymupdf = _pymupdf()
     resultado = None
     try:
-        if caminho.suffix.lower() in IMAGENS:
-            with pymupdf.open(str(caminho)) as doc:
-                pagina = doc.load_page(0)
-                resultado = (pagina.rect.width / PT_M, pagina.rect.height / PT_M, 1)
-        else:
-            with pymupdf.open(str(caminho)) as doc:
-                if doc.page_count:
-                    pagina = doc.load_page(numero_pagina)
-                    if pagina.get_bboxlog():
-                        arte = caixa_da_arte(pagina, pymupdf)
-                        resultado = (arte.width / PT_M, arte.height / PT_M, doc.page_count)
+        if caminho.suffix.lower() == ".pdf":
+            try:
+                from motor_pdf import abrir_pdf
+                with abrir_pdf(caminho) as doc_proprio:
+                    if doc_proprio.paginas and numero_pagina < len(doc_proprio.paginas):
+                        p = doc_proprio.paginas[numero_pagina]
+                        caixa = p.obter_caixa_da_arte()
+                        resultado = (caixa.width / PT_M, caixa.height / PT_M, len(doc_proprio.paginas))
+            except Exception:
+                resultado = None
+
+        if resultado is None:
+            pymupdf = _pymupdf()
+            if caminho.suffix.lower() in IMAGENS:
+                with pymupdf.open(str(caminho)) as doc:
+                    pagina = doc.load_page(0)
+                    resultado = (pagina.rect.width / PT_M, pagina.rect.height / PT_M, 1)
+            else:
+                with pymupdf.open(str(caminho)) as doc:
+                    if doc.page_count:
+                        pagina = doc.load_page(numero_pagina)
+                        if pagina.get_bboxlog():
+                            arte = caixa_da_arte(pagina, pymupdf)
+                            resultado = (arte.width / PT_M, arte.height / PT_M, doc.page_count)
     except Exception:
         resultado = None
 
@@ -694,10 +713,13 @@ def ajuste_para(alvo, atual):
         return {"acao": "recusar", "girar": False, "fator": None,
                 "motivo": "não consegui medir o arquivo"}
 
+    # 1:1 (tamanho real) dentro de 1 cm (TOLERANCIA_MEDIDA_M = 0.01 m)
     for girar, (w, h) in ((False, (largura, altura)), (True, (altura, largura))):
         if _perto(w, largura_alvo, TOLERANCIA_MEDIDA_M) and _perto(h, altura_alvo, TOLERANCIA_MEDIDA_M):
             return {"acao": "girar" if girar else "igual", "girar": girar,
-                    "fator": 1.0, "motivo": ""}
+                    "fator": 1.0, "motivo": "", "escala_1_10": False,
+                    "fora_tolerancia_1cm": False,
+                    "diferenca_m": max(abs(w - largura_alvo), abs(h - altura_alvo))}
 
     # A ÂNCORA É O MAIOR LADO DA PEÇA. Regra dele de 05/10/2026: *"quando
     # me refiro ajustar pela largura, pode criar a regra que é sempre
@@ -729,23 +751,34 @@ def ajuste_para(alvo, atual):
             melhor = (diferenca, relativa, girar, fator)
 
     diferenca, relativa, girar, fator = melhor
+    fora_tolerancia = abs(diferenca) > TOLERANCIA_MEDIDA_M
+    escala_10 = 9.5 <= fator <= 10.5
     if abs(diferenca) <= DIFERENCA_MAXIMA_M and (relativa <= TOLERANCIA_PROPORCAO or abs(diferenca) <= TOLERANCIA_MEDIDA_M):
-        # arredondado: 9,999999805 é 10x, e número feio num documento de
-        # produção faz quem lê duvidar do resto
         maior = max(largura_alvo, altura_alvo)
-        motivo = (f"arquivo {largura:.3f} x {altura:.3f} m ajustado {fator:.2f}x pelo "
-                  f"MAIOR LADO do nome ({maior:.2f} m)")
-        if abs(diferenca) >= 0.001:
-            motivo += f"; o outro lado saiu {diferenca * 1000:+.0f} mm do que o nome diz"
-        return {"acao": "escalar", "girar": girar, "fator": round(fator, 3),
-                "motivo": motivo}
+        fator_final = 10.0 if (abs(fator - 10.0) < 0.001 and abs(diferenca) < 0.001) else fator
+        if escala_10 and abs(diferenca) < 0.001:
+            motivo = (f"arte em escala 1:10 detectada ({largura:.3f} x {altura:.3f} m); "
+                      f"redimensionada 10x para o tamanho real do nome ({largura_alvo:.2f} x {altura_alvo:.2f} m)")
+        else:
+            prefixo = "arte em escala 1:10: " if escala_10 else ""
+            motivo = (f"{prefixo}arquivo {largura:.3f} x {altura:.3f} m ajustado {fator:.2f}x pelo "
+                      f"MAIOR LADO do nome ({maior:.2f} m)")
+            if abs(diferenca) >= 0.001:
+                motivo += f"; o outro lado saiu {diferenca * 1000:+.0f} mm do que o nome diz"
+            if fora_tolerancia:
+                motivo += f" [AVISO: difere {abs(diferenca) * 1000:.0f} mm do nome, acima da tolerância de 1 cm]"
+        return {"acao": "escalar", "girar": girar, "fator": round(fator_final, 3),
+                "motivo": motivo, "escala_1_10": escala_10,
+                "fora_tolerancia_1cm": fora_tolerancia, "diferenca_m": round(abs(diferenca), 4)}
 
+    motivo_recusa = (f"o arquivo tem {largura:.2f} x {altura:.2f} m e o nome pede "
+                     f"{largura_alvo:.2f} x {altura_alvo:.2f} m — pondo no MAIOR LADO do nome "
+                     f"sem deformar, o outro sai {diferenca * 1000:+.0f} mm fora (o limite é "
+                     f"{DIFERENCA_MAXIMA_M * 1000:.0f} mm, ou {TOLERANCIA_PROPORCAO:.0%}). "
+                     f"Tolerância de 1 cm excedida. Confira a arte ou o nome")
     return {"acao": "recusar", "girar": False, "fator": None,
-            "motivo": f"o arquivo tem {largura:.2f} x {altura:.2f} m e o nome pede "
-                      f"{largura_alvo:.2f} x {altura_alvo:.2f} m — pondo no MAIOR LADO do nome "
-                      f"sem deformar, o outro sai {diferenca * 1000:+.0f} mm fora (o limite é "
-                      f"{DIFERENCA_MAXIMA_M * 1000:.0f} mm, ou {TOLERANCIA_PROPORCAO:.0%}). "
-                      f"Confira a arte ou o nome"}
+            "motivo": motivo_recusa, "escala_1_10": escala_10,
+            "fora_tolerancia_1cm": True, "diferenca_m": round(abs(diferenca), 4)}
 
 
 # --- juntar tudo o que a pasta tem ---------------------------------
@@ -802,8 +835,8 @@ def pecas_da_pasta(pasta, config=None, maquinas=None, arquivos=None):
             continue
         alvo = medida_do_nome(arquivo.name, config)
         if alvo is None:
-            recusadas.append({"arquivo": arquivo,
-                              "motivo": "o nome não traz medida, e aqui é o nome que manda"})
+            recusadas.append({"arquivo": arquivo, "origem": "leitura",
+                              "motivo": "Tamanho no nome do arquivo é obrigatório para validação e redimensionamento 1:10 (ex: 3,00x1,00m ou 300x100cm); o nome não traz medida"})
             continue
         atual = medida_do_arquivo(arquivo)
         if atual is None:
@@ -910,24 +943,21 @@ def cliente_das_pecas(pecas, raiz=None):
 
 
 def nome_da_folha(cliente, categoria, largura_m, comprimento_m, quantas,
-                  quando=None, chapas=None, parte=None):
+                  quando=None, chapas=None, parte=None, maquina=None):
     """
     O nome do arquivo de saída, no MESMO padrão que o resto do sistema lê.
 
-    Começa com a especificação (1UN + material + medida) porque é dali
-    que a etiqueta, a OS, o relatório e a escolha de máquina leem — uma
-    folha montada é UMA peça de material, de 5,00 x 9,86 m. O cliente
-    entra em seguida, como ele pediu, e a descrição diz que é montagem e
-    de quantas peças.
-
-    'parte' é (qual, de quantas) se uma divisão for solicitada explicitamente.
-    A MEDIDA do nome é a DESTA parte, não a do conjunto: cada
-    arquivo é uma peça de material por si, e é assim que o m² e o estoque
-    o leem. O carimbo de hora é o mesmo nas partes do mesmo lote, então
-    elas ficam juntas na listagem.
+    Quando 'maquina' é informada, prefixa '[NOME_DA_MAQUINA]' para facilitar
+    a identificação visual na pasta e permitir que o vigia do RIP despache
+    automaticamente para a impressora correta.
     """
     quando = quando or datetime.datetime.now()
-    partes = [f"1UN {categoria} {largura_m:.2f}X{comprimento_m:.2f}M"]
+    partes = []
+    if maquina:
+        nome_maq_limpo = re.sub(r"[^\w .-]", "", str(maquina)).strip()
+        if nome_maq_limpo:
+            partes.append(f"[{nome_maq_limpo}]")
+    partes.append(f"1UN {categoria} {largura_m:.2f}X{comprimento_m:.2f}M")
     if cliente:
         partes.append(re.sub(r"[^\w .-]", "", cliente).strip().replace(" ", "_"))
     miolo = f"MONTAGEM_{quantas}pecas"
@@ -1293,6 +1323,24 @@ def _desenhar_peca(pagina, pecas, posta, numero, margem_m, largura_pagina_m,
         # proporção dela (largura do nome, comprimento pela proporção da
         # arte), então não há o que recortar nem o que esticar.
         colocar_arte(pagina, caixa, arquivo, peca["pagina"], girar, pymupdf)
+
+        # Marcas de acabamento do chão de fábrica (Ilhós e CutContour se ativados)
+        if peca.get("aplicar_ilhos"):
+            try:
+                import acabamento
+                acabamento.desenhar_ilhos_na_caixa(
+                    pagina, caixa,
+                    espacamento_m=peca.get("espacamento_ilhos_m", 0.40),
+                    recuo_borda_m=peca.get("recuo_ilhos_m", 0.025),
+                )
+            except Exception:
+                pass
+        if peca.get("aplicar_cutcontour"):
+            try:
+                import acabamento
+                acabamento.adicionar_linha_cutcontour(pagina)
+            except Exception:
+                pass
 
         # SEM MARCA DE CORTE: ele tirou em 04/10/2026, olhando a primeira
         # folha com elas. A folga de 5 cm entre as peças já diz onde a
@@ -1670,7 +1718,8 @@ def _guardar_recusadas(recusadas, pasta, logger=None):
 def montar_pasta(pasta, nome_maquina=None, config=None, maquinas=None, logger=None,
                  guardar_originais=True, quando=None, raiz_clientes=None,
                  arquivos=None, folga_m=None, versoes_esperadas=None, passadas_docan=None,
-                 largura_m=None):
+                 largura_m=None, aplicar_ilhos=False, aplicar_cutcontour=False,
+                 espacamento_ilhos_m=0.40, **kwargs):
     """
     Monta tudo o que está na pasta e devolve
     {'folhas': [...], 'recusadas': [...], 'maquina', 'largura_util_m'}.
@@ -1734,9 +1783,20 @@ def montar_pasta(pasta, nome_maquina=None, config=None, maquinas=None, logger=No
                 resultado["avisos"].extend(_guardar_recusadas(plano["recusadas"], pasta, logger))
             return resultado
 
+        if aplicar_ilhos:
+            for folha in plano["folhas"]:
+                for p in folha["pecas"]:
+                    p["aplicar_ilhos"] = True
+                    p["espacamento_ilhos_m"] = espacamento_ilhos_m
+        if aplicar_cutcontour:
+            for folha in plano["folhas"]:
+                for p in folha["pecas"]:
+                    p["aplicar_cutcontour"] = True
+
         pecas = [folha["pecas"][posta[0]] for folha in plano["folhas"]
                  for posta in folha["postas"]]
-        saida = pasta_de_saida(nome_maquina, pasta.parent)
+        saida_cfg = kwargs.get("pasta_saida")
+        saida = pathlib.Path(saida_cfg) if saida_cfg else pasta_de_saida(nome_maquina, pasta.parent)
         lote_id = f"{quando:%Y-%m-%d_%H-%M-%S}_{uuid.uuid4().hex[:8]}"
         avisos_concluidos = []
         with PublicacaoMontagem(saida) as publicacao:
@@ -1762,7 +1822,7 @@ def montar_pasta(pasta, nome_maquina=None, config=None, maquinas=None, logger=No
                 # dentro de folha.
                 if chapa:
                     destino = saida / nome_da_folha(cliente, categoria, chapa[0], chapa[1],
-                                                    len(postas), quando, len(paginas))
+                                                    len(postas), quando, len(paginas), maquina=nome_maquina)
                 else:
                     # O comprimento do NOME é o da folha que vai ser IMPRESSA, o
                     # mesmo que a página tem — e a largura também, que agora é a
@@ -1770,7 +1830,7 @@ def montar_pasta(pasta, nome_maquina=None, config=None, maquinas=None, logger=No
                     # de estoque contam.
                     destino = saida / nome_da_folha(
                         cliente, categoria, largura_folha, folha_m, len(postas), quando,
-                        parte=(folha["parte"], folha["partes"]))
+                        parte=(folha["parte"], folha["partes"]), maquina=nome_maquina)
                 # deflate_images=False EXPL�?CITO, e não por padrão da biblioteca:
                 # a arte sai da montagem com os mesmos bytes que entrou (regra dele,
                 # 05/10/2026: *"a qualidade precisa ser 100% igual o cliente
@@ -1925,7 +1985,11 @@ def prever_pasta(pasta, nome_maquina=None, config=None, maquinas=None,
             if peca["material_impressao"] != peca["categoria"]:
                 avisos.append(f"Impressão em {peca['material_impressao']}; "
                               f"material final no nome: {peca['categoria']}.")
-            if abs(diferenca) >= 0.5:
+            if peca.get("ajuste", {}).get("escala_1_10") or (9.5 <= peca.get("ajuste", {}).get("fator", 1.0) <= 10.5):
+                avisos.append(f"Arte em escala 1:10 detectada e redimensionada 10x para tamanho real ({sai_l:.2f} × {sai_a:.2f} m).")
+            if abs(diferenca) > (TOLERANCIA_MEDIDA_M * 1000):
+                avisos.append(f"Atenção: Medida física difere do nome em {abs(diferenca):.1f} mm (tolerância de 1 cm excedida). Verifique a arte ou o nome antes de imprimir.")
+            elif abs(diferenca) >= 0.5:
                 avisos.append(f"O outro lado difere {diferenca:+.1f} mm do nome; a proporção foi preservada.")
             if qualidade in ("atencao", "aviso"):
                 avisos.append(f"Resolução efetiva {dpi:.0f} dpi: confira a distância de visualização.")
@@ -1995,6 +2059,10 @@ def prever_pasta(pasta, nome_maquina=None, config=None, maquinas=None,
     previa["aproveitamento_rolo"] = area_pecas / area_rolo if area_rolo else 0.0
     previa["sobra_rolo_m2"] = max(0.0, area_rolo - area_pecas)
     previa["consumo_rolo_estimado"] = True
+    if previa["pior_diferenca_mm"] > (TOLERANCIA_MEDIDA_M * 1000):
+        previa["avisos"].append(
+            f"Atenção: Há peças com medida física diferindo do nome em mais de 1 cm (pior diferença: {previa['pior_diferenca_mm']:.1f} mm). Conferir artes."
+        )
     return previa
 
 
@@ -2016,9 +2084,12 @@ def resumo_da_previa(previa):
             linhas.append(tempo_impressao.texto(folha["estimativa_impressao"]))
     if previa["folhas"]:
         pior = previa["pior_diferenca_mm"]
-        linhas.append("maior lado bate o nome; diferença no outro lado até "
-                      f"{pior:.0f} mm fora do nome" if pior >= 0.5
-                      else "os dois lados batem o nome")
+        if pior > (TOLERANCIA_MEDIDA_M * 1000):
+            linhas.append(f"ATENÇÃO: diferença de {pior:.0f} mm fora do nome (tolerância de 1 cm excedida)!")
+        elif pior >= 0.5:
+            linhas.append(f"maior lado bate o nome; diferença no outro lado até {pior:.0f} mm fora do nome")
+        else:
+            linhas.append("os dois lados batem o nome")
     if previa["pior_resolucao"] is not None:
         # a resolução vem ANTES das recusadas: recusada ele vê na pasta
         # _conferir, mas arte de pouco pixel entra calada e só aparece

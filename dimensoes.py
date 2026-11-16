@@ -8,8 +8,6 @@ import math
 import re
 import unicodedata
 
-import pymupdf
-
 # Unidades reconhecidas no nome do arquivo, e seu fator de conversão pra metros.
 # Isso é físico (mm/cm/m), não precisa ser configurável pelo usuário.
 FATORES_UNIDADE = {"MM": 0.001, "CM": 0.01, "M": 1.0}
@@ -121,7 +119,7 @@ def identificar_categoria_extra(nome_arquivo_upper, materiais, materiais_compost
     return None
 
 
-_PADRAO_QUANTIDADE = rf'{_SEPARADOR}(\d+){_SEPARADOR}UN(?![A-Z])'
+_PADRAO_QUANTIDADE = rf'^(?:{_SEPARADOR}\[[^\]]+\])?{_SEPARADOR}(\d+){_SEPARADOR}UN(?![A-Z])'
 
 # "N Unidades"/"N Unidade" por extenso — aparece no FIM do nome (não no
 # início, como o padrão acima), em arte vinda de fora (agência/cliente)
@@ -240,11 +238,15 @@ def medir_conteudo_pagina(page):
     conteúdo pode ser MENOR que a página, nunca deve ser considerado
     maior).
 
-    Retorna um pymupdf.Rect — pode vir vazio se a página não tiver
+    Retorna uma Caixa (ou pymupdf.Rect) — pode vir vazio se a página não tiver
     nenhum conteúdo detectável (arquivo provavelmente vazio/corrompido).
     Não abre nem fecha arquivo — recebe a página já aberta por quem
     chama, mesmo espírito "função pura" do resto deste módulo.
     """
+    if hasattr(page, "obter_caixa_da_arte"):
+        return page.obter_caixa_da_arte()
+
+    import pymupdf
     caixa = pymupdf.Rect()
     for img in page.get_image_info():
         caixa |= img["bbox"]

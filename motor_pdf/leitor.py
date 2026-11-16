@@ -50,11 +50,65 @@ class Caixa:
 
     @property
     def width(self) -> float:
-        return self.x1 - self.x0
+        return max(0.0, self.x1 - self.x0)
 
     @property
     def height(self) -> float:
-        return self.y1 - self.y0
+        return max(0.0, self.y1 - self.y0)
+
+    @property
+    def largura(self) -> float:
+        return self.width
+
+    @property
+    def altura(self) -> float:
+        return self.height
+
+    @property
+    def is_empty(self) -> bool:
+        return (self.x1 <= self.x0) or (self.y1 <= self.y0)
+
+    @property
+    def vazio(self) -> bool:
+        return self.is_empty
+
+    def __iter__(self):
+        yield self.x0
+        yield self.y0
+        yield self.x1
+        yield self.y1
+
+    def __getitem__(self, idx: int) -> float:
+        return (self.x0, self.y0, self.x1, self.y1)[idx]
+
+    def __and__(self, outro: Any) -> "Caixa":
+        return self.intersecao(outro)
+
+    def __or__(self, outro: Any) -> "Caixa":
+        return self.uniao(outro)
+
+    def intersecao(self, outro: Any) -> "Caixa":
+        if outro is None:
+            return Caixa(0, 0, 0, 0)
+        nx0 = max(self.x0, getattr(outro, "x0", self.x0))
+        ny0 = max(self.y0, getattr(outro, "y0", self.y0))
+        nx1 = min(self.x1, getattr(outro, "x1", self.x1))
+        ny1 = min(self.y1, getattr(outro, "y1", self.y1))
+        if nx0 < nx1 and ny0 < ny1:
+            return Caixa(nx0, ny0, nx1, ny1)
+        return Caixa(0, 0, 0, 0)
+
+    def uniao(self, outro: Any) -> "Caixa":
+        if outro is None or getattr(outro, "is_empty", False):
+            return self
+        if self.is_empty:
+            return Caixa(outro.x0, outro.y0, outro.x1, outro.y1)
+        return Caixa(
+            min(self.x0, getattr(outro, "x0", self.x0)),
+            min(self.y0, getattr(outro, "y0", self.y0)),
+            max(self.x1, getattr(outro, "x1", self.x1)),
+            max(self.y1, getattr(outro, "y1", self.y1)),
+        )
 
     @property
     def largura_m(self) -> float:
@@ -135,6 +189,14 @@ class Pagina:
 
         self.largura_m = self.largura_pt / PT_POR_M
         self.altura_m = self.altura_pt / PT_POR_M
+
+    def obter_caixa_da_arte(self, margem_tolerancia_franja: float = 0.10) -> Caixa:
+        """
+        Calcula a área real de tinta vetorial e imagens da página,
+        descontando franjas brancas de exportação (ex: 1pt do Illustrator).
+        """
+        from .interpretador_stream import calcular_caixa_da_arte
+        return calcular_caixa_da_arte(self, margem_tolerancia_franja=margem_tolerancia_franja)
 
     def obter_conteudo_bruto(self) -> bytes:
         """Obtém o stream de conteúdo descompactado da página."""
@@ -484,3 +546,15 @@ class PdfReader:
             pagina_dict = dict(ctx)
             pagina_dict.update(no)
             self.paginas.append(Pagina(self, len(self.paginas), pagina_dict))
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
+    def close(self):
+        self.cache_objetos.clear()
+
+    def __len__(self):
+        return len(self.paginas)
