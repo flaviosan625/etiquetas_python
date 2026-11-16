@@ -50,6 +50,7 @@ na hot folder é chegar na impressora. Na DOCAN, chegar na hot folder é
 só começar — o SAi ripa e cospe um .prt (1,5 GB é o tamanho normal), que
 ainda precisa ir pra máquina. Essa segunda perna é outro caminho.
 """
+import copy
 import datetime
 import json
 import os
@@ -75,8 +76,9 @@ import xml.etree.ElementTree as ElementTree
 #
 # Trocar este nome muda as DUAS máquinas: o PC do RIP só passa a olhar
 # a pasta nova depois do maquina_rip/atualizar.bat rodar lá.
-PASTA_FILA_ONEDRIVE = (pathlib.Path.home() / "OneDrive" / "UNYCOMUNICACAO"
-                       / "FILA PARA IMPRESSÃO MAQUINAS")
+PASTA_FILA_PADRAO = (pathlib.Path.home() / "AutomacaoGrafica"
+                     / "FILA PARA IMPRESSAO MAQUINAS")
+PASTA_FILA_ONEDRIVE = PASTA_FILA_PADRAO
 NOME_SUBPASTA_ENVIADOS = "Enviados"
 
 # Posto = o PC onde mora a hot folder de uma máquina, ou seja, quem
@@ -136,7 +138,9 @@ POSTO_PADRAO = POSTO_RIP
 # preocupo com a folga"* (05/10/2026). É número REDONDO de propósito: é
 # ele que vai no nome do arquivo, e é por ele que o m², a escolha de
 # máquina e a baixa de estoque contam.
-MAQUINAS = {
+# Configuração padrão de fábrica (Uny CV) mantida como fallback seguro
+# e referência caso config.json não defina máquinas.
+MAQUINAS_PADRAO = {
     "UJV 100 UNY CV": {
         "hot_folder": r"C:\MijCtrl\Hot\UJV 100 UNY CV",
         # 1,27 m, dito por ele em 04/10/2026 junto com as outras. Estava
@@ -267,6 +271,130 @@ MAQUINAS = {
 }
 
 
+def _caminho_config():
+    """Retorna o caminho do config.json se existir ao lado do módulo."""
+    caminho = pathlib.Path(__file__).resolve().parent / "config.json"
+    return caminho if caminho.exists() else None
+
+
+def _normalizar_dicionario_maquinas(dicionario):
+    """Garante tipos consistentes (ex: mesa_util_m como tupla de floats)."""
+    if not isinstance(dicionario, dict):
+        return {}
+    resultado = {}
+    for nome, cfg in dicionario.items():
+        if isinstance(cfg, dict):
+            item = dict(cfg)
+            if "mesa_util_m" in item and item["mesa_util_m"]:
+                try:
+                    item["mesa_util_m"] = tuple(float(x) for x in item["mesa_util_m"][:2])
+                except (ValueError, TypeError):
+                    pass
+            if "largura_util_m" in item and item["largura_util_m"] is not None:
+                try:
+                    item["largura_util_m"] = float(item["largura_util_m"])
+                except (ValueError, TypeError):
+                    pass
+            if "largura_montagem_m" in item and item["largura_montagem_m"] is not None:
+                try:
+                    item["largura_montagem_m"] = float(item["largura_montagem_m"])
+                except (ValueError, TypeError):
+                    pass
+            if "margem_montagem_m" in item and item["margem_montagem_m"] is not None:
+                try:
+                    item["margem_montagem_m"] = float(item["margem_montagem_m"])
+                except (ValueError, TypeError):
+                    pass
+            if "pasta_entrada" in item and item["pasta_entrada"]:
+                item["pasta_entrada"] = str(item["pasta_entrada"]).strip().strip('"')
+            resultado[nome] = item
+        else:
+            resultado[nome] = cfg
+    return resultado
+
+
+def carregar_maquinas_config(config_dict=None):
+    """
+    Carrega o cadastro de máquinas a partir de config_dict ou de config.json.
+    Se não houver máquinas configuradas, retorna cópia de MAQUINAS_PADRAO.
+    Usa estritamente a biblioteca padrão.
+    """
+    if config_dict is not None and isinstance(config_dict, dict) and "maquinas" in config_dict:
+        maqs = config_dict["maquinas"]
+        if isinstance(maqs, dict) and maqs:
+            return _normalizar_dicionario_maquinas(maqs)
+
+    caminho = _caminho_config()
+    if caminho:
+        try:
+            with open(caminho, "r", encoding="utf-8") as f:
+                dados = json.load(f)
+            if isinstance(dados, dict) and "maquinas" in dados and dados["maquinas"]:
+                return _normalizar_dicionario_maquinas(dados["maquinas"])
+        except Exception:
+            pass
+
+    return _normalizar_dicionario_maquinas(copy.deepcopy(MAQUINAS_PADRAO))
+
+
+def salvar_maquinas_config(novas_maquinas, caminho=None):
+    """
+    Salva o cadastro de máquinas em config.json e atualiza MAQUINAS em memória.
+    """
+    if caminho is None:
+        caminho = _caminho_config() or (pathlib.Path(__file__).resolve().parent / "config.json")
+    else:
+        caminho = pathlib.Path(caminho)
+    dados = {}
+    if caminho.exists():
+        try:
+            with open(caminho, "r", encoding="utf-8") as f:
+                dados = json.load(f)
+        except Exception:
+            dados = {}
+
+    serializavel = {}
+    for nome, cfg in novas_maquinas.items():
+        if isinstance(cfg, dict):
+            item = dict(cfg)
+            if "mesa_util_m" in item and item["mesa_util_m"]:
+                item["mesa_util_m"] = list(item["mesa_util_m"])
+            serializavel[nome] = item
+        else:
+            serializavel[nome] = cfg
+
+    dados["maquinas"] = serializavel
+
+    caminho_tmp = caminho.with_suffix(".tmp")
+    try:
+        with open(caminho_tmp, "w", encoding="utf-8") as f:
+            json.dump(dados, f, ensure_ascii=False, indent=2)
+        caminho_tmp.replace(caminho)
+    except Exception:
+        with open(caminho, "w", encoding="utf-8") as f:
+            json.dump(dados, f, ensure_ascii=False, indent=2)
+
+    atualizar_maquinas_em_memoria(novas_maquinas)
+    return novas_maquinas
+
+
+def atualizar_maquinas_em_memoria(novas_maquinas=None):
+    """
+    Atualiza in-place o dicionário global MAQUINAS para refletir alterações
+    em todos os módulos que importaram `from rasterlink_hotfolder import MAQUINAS`.
+    """
+    if novas_maquinas is None:
+        novas_maquinas = carregar_maquinas_config()
+    normalizadas = _normalizar_dicionario_maquinas(novas_maquinas)
+    MAQUINAS.clear()
+    MAQUINAS.update(normalizadas)
+    return MAQUINAS
+
+
+# Instância global em memória lida do arquivo ou padrões de fábrica
+MAQUINAS = carregar_maquinas_config()
+
+
 def maquinas_do_posto(posto, maquinas=None):
     """
     Só as máquinas que ESTE posto consegue atender. Máquina sem 'posto'
@@ -280,6 +408,24 @@ def maquinas_do_posto(posto, maquinas=None):
         nome: config for nome, config in maquinas.items()
         if _posto_da_maquina(config) == posto
     }
+
+
+def obter_driver_da_maquina(nome_maquina, maquinas=None):
+    """
+    Retorna uma instância de DriverRip correspondente à máquina especificada.
+    Integração com o subsistema hardware/ e sua fábrica de drivers.
+    """
+    from hardware import obter_gerenciador_hardware, MaquinaInfo
+    gerenciador = obter_gerenciador_hardware()
+    info = gerenciador.obter_maquina(nome_maquina)
+    if info is not None:
+        return gerenciador.obter_driver(info)
+
+    # Se a máquina veio de um dicionário customizado (ex: testes isolados)
+    todas = MAQUINAS if maquinas is None else maquinas
+    cfg = todas.get(nome_maquina, {})
+    m_info = MaquinaInfo.from_dict(nome_maquina, cfg)
+    return gerenciador.obter_driver(m_info)
 
 
 def _posto_da_maquina(valor):
@@ -898,7 +1044,14 @@ def enviar_para_fila(caminho_arquivo, nome_maquina, pasta_fila=None, maquinas=No
             f"{', '.join(maquinas) if maquinas else '(nenhuma)'}"
         )
 
-    pasta = pathlib.Path(pasta_fila or PASTA_FILA_ONEDRIVE) / nome_maquina
+    cfg_maquina = maquinas.get(nome_maquina)
+    pasta_cfg = cfg_maquina.get("pasta_entrada") if isinstance(cfg_maquina, dict) else None
+    if pasta_fila is not None:
+        pasta = pathlib.Path(pasta_fila) / nome_maquina
+    elif pasta_cfg:
+        pasta = pathlib.Path(pasta_cfg)
+    else:
+        pasta = pathlib.Path(PASTA_FILA_ONEDRIVE) / nome_maquina
     pasta.mkdir(parents=True, exist_ok=True)
 
     origem = pathlib.Path(caminho_arquivo)
@@ -1687,6 +1840,139 @@ def vigiar_fila(pasta_fila=None, maquinas=None, intervalo_segundos=15, logger=pr
             vigiar_fila_uma_vez(pasta_fila, maquinas, logger, pasta_relatorios, dias_retencao, posto)
         except Exception as e:
             logger("err", f"Erro inesperado no ciclo da fila: {e}")
+        time.sleep(intervalo_segundos)
+
+
+def identificar_maquina_pelo_nome(nome_arquivo, maquinas=None):
+    """
+    Descobre para qual máquina o arquivo montado deve ser enviado pelo nome.
+    Suporta:
+    1. Prefixo ou tag com colchetes: '[DOCAN R5200]', '[SWJ320A]', '[UJV 100]', etc.
+    2. Correspondência exata ou por substring do nome da máquina cadastrada.
+    """
+    todas = MAQUINAS if maquinas is None else maquinas
+    if not todas:
+        return None
+
+    nome_str = str(nome_arquivo)
+    nome_upper = nome_str.upper()
+
+    # 1. Busca por tag [NOME_MAQUINA]
+    m_tag = re.search(r"\[(.*?)\]", nome_str)
+    if m_tag:
+        conteudo_tag = m_tag.group(1).strip().upper()
+        # Correspondência direta
+        for m in todas:
+            if m.upper() == conteudo_tag or m.upper() in conteudo_tag or conteudo_tag in m.upper():
+                return m
+        # Por normalização sem espaços ou pontuação
+        norm_tag = re.sub(r"[^\w]", "", conteudo_tag)
+        if norm_tag:
+            for m in todas:
+                norm_m = re.sub(r"[^\w]", "", m.upper())
+                if norm_tag == norm_m or norm_tag in norm_m or norm_m in norm_tag:
+                    return m
+
+    # 2. Busca pelo nome cadastrado no nome do arquivo (prioriza nomes mais longos)
+    for m in sorted(todas.keys(), key=len, reverse=True):
+        m_upper = m.upper()
+        # Match direto de palavra inteira
+        if re.search(rf"\b{re.escape(m_upper)}\b", nome_upper):
+            return m
+        # Match dos termos principais (ex: DOCAN R5200, SWJ320A)
+        termos = [t for t in re.split(r"[\s._\-]", m_upper) if len(t) >= 3 and t not in ("UNY", "CV")]
+        if termos and all(t in nome_upper for t in termos):
+            return m
+
+    return None
+
+
+def processar_artes_montadas_uma_vez(pasta_montadas=None, maquinas=None, logger=print,
+                                     pasta_relatorios=None, dias_retencao=7):
+    """
+    Vigia a pasta 'ARTES MONTADAS'. Ao encontrar folha montada:
+    1. Identifica a máquina pelo nome do arquivo.
+    2. Envia atomicamente para a Hot Folder configurada daquela máquina no RIP.
+    3. Move o arquivo montado para a subpasta 'Enviados'.
+    4. Registra no relatório e no log.
+    """
+    if pasta_montadas is None:
+        try:
+            import caminhos
+            pasta_montadas = getattr(caminhos, "ARTES_MONTADAS", pathlib.Path.home() / "AutomacaoGrafica" / "ARTES MONTADAS")
+        except Exception:
+            pasta_montadas = pathlib.Path.home() / "AutomacaoGrafica" / "ARTES MONTADAS"
+
+    pasta_montadas = pathlib.Path(pasta_montadas)
+    if not pasta_montadas.is_dir():
+        return {"enviados": [], "ignorados": [], "falharam": []}
+
+    maquinas = MAQUINAS if maquinas is None else maquinas
+    pasta_enviados = pasta_montadas / NOME_SUBPASTA_ENVIADOS
+    pasta_enviados.mkdir(parents=True, exist_ok=True)
+
+    resultado = {"enviados": [], "ignorados": [], "falharam": []}
+
+    for arquivo in [f for f in pasta_montadas.iterdir() if f.is_file()]:
+        if arquivo.suffix.lower() not in _EXTENSOES_ACEITAS:
+            resultado["ignorados"].append(arquivo.name)
+            continue
+        if not _arquivo_estavel(arquivo):
+            logger("info", f"'{arquivo.name}' ainda estabilizando — aguardando próximo ciclo.")
+            continue
+
+        nome_maquina = identificar_maquina_pelo_nome(arquivo.name, maquinas)
+        if not nome_maquina:
+            continue
+
+        config_maq = maquinas.get(nome_maquina)
+        hot_folder_str, _ = _config_maquina(config_maq)
+        if not hot_folder_str:
+            logger("warn", f"'{arquivo.name}' é para '{nome_maquina}', mas a máquina não tem Hot Folder configurada.")
+            resultado["falharam"].append(arquivo.name)
+            continue
+
+        hot_folder = pathlib.Path(hot_folder_str)
+        if not hot_folder.is_dir():
+            logger("warn", f"Hot folder da '{nome_maquina}' não encontrada: '{hot_folder}'.")
+            resultado["falharam"].append(arquivo.name)
+            continue
+
+        limite = limite_da_maquina(config_maq)
+        try:
+            _processar_arquivo_da_fila(
+                arquivo, hot_folder, pasta_enviados, nome_maquina,
+                limite, logger, pasta_relatorios
+            )
+            resultado["enviados"].append(arquivo.name)
+            logger("ok", f"🚀 [Vigia Automático] '{arquivo.name}' identificado para '{nome_maquina}' e enviado ao RIP!")
+        except Exception as e:
+            resultado["falharam"].append(arquivo.name)
+            _avisar_erro_de_arquivo(arquivo.name, str(e), logger)
+
+    limpar_enviados_antigos(pasta_enviados, dias=dias_retencao, logger=logger)
+    return resultado
+
+
+def vigiar_artes_montadas(pasta_montadas=None, maquinas=None, intervalo_segundos=10,
+                          logger=print, callback_parar=None, pasta_relatorios=None):
+    """Loop contínuo de vigia da pasta ARTES MONTADAS."""
+    if pasta_montadas is None:
+        try:
+            import caminhos
+            pasta_montadas = getattr(caminhos, "ARTES_MONTADAS", pathlib.Path.home() / "AutomacaoGrafica" / "ARTES MONTADAS")
+        except Exception:
+            pasta_montadas = pathlib.Path.home() / "AutomacaoGrafica" / "ARTES MONTADAS"
+
+    logger("info", f"Vigia de ARTES MONTADAS ativo. Monitorando '{pasta_montadas}' a cada {intervalo_segundos}s...")
+    while True:
+        if callback_parar and callback_parar():
+            break
+        try:
+            processar_artes_montadas_uma_vez(pasta_montadas, maquinas, logger=logger,
+                                            pasta_relatorios=pasta_relatorios)
+        except Exception as e:
+            logger("err", f"Erro no ciclo do vigia de artes montadas: {e}")
         time.sleep(intervalo_segundos)
 
 
