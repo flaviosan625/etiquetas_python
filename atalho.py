@@ -28,11 +28,11 @@ import sys
 import branding
 import caminhos
 
-NOME_ATALHO = "Uny CV.lnk"
+NOME_ATALHO = "Automacao Grafica.lnk"
 # ASCII PURO aqui: o campo de descrição do .lnk (a dica que aparece com o
 # mouse parado em cima) é gravado em ANSI pelo WScript.Shell — um
 # travessão vira "?" calado. Mesma história do .bat.
-DESCRICAO = "Uny CV - etiquetas, OS, checklist, estoque e recebimento de artes"
+DESCRICAO = "Automacao Grafica - etiquetas, OS, montagem e recebimento de artes"
 
 # Os tamanhos que o Windows pede: 16 na barra de tarefas, 48 na área de
 # trabalho, 256 no modo "ícones extra grandes".
@@ -99,30 +99,26 @@ def gerar_icone(destino=None, forcar=False):
     return destino
 
 
-def alvo_do_atalho():
+def alvo_do_atalho(modulo="main"):
     """
     (programa, argumentos) que o atalho dispara.
 
-    Rodando do código, é o pythonw.exe da venv com o main.py. Virando
-    executável, é o próprio .exe sem argumento nenhum — e é só isto aqui
-    que muda, como em `caminhos.comando_python`.
+    Rodando do código, é o pythonw.exe da venv com o main.py ou ui.app.
     """
     if getattr(sys, "frozen", False):
         return sys.executable, ""
     programa, *_ = caminhos.comando_python(com_console=False)
+    if modulo == "ui":
+        return programa, "-m ui.app"
     return programa, '"%s"' % (caminhos.PASTA_PROGRAMA / "main.py")
 
 
-def criar(pasta=None, nome=NOME_ATALHO, shell=None, icone=None):
+def criar(pasta=None, nome=NOME_ATALHO, shell=None, icone=None, modulo="main"):
     """
     Escreve o atalho e devolve o caminho dele.
-
-    Sem `pasta`, vai na área de trabalho que o PRÓPRIO Windows informa —
-    não em `~/Desktop` cravado, que erra quando a área de trabalho está
-    redirecionada pro OneDrive (é o caso de várias máquinas da empresa).
     """
     icone = icone or gerar_icone()
-    programa, argumentos = alvo_do_atalho()
+    programa, argumentos = alvo_do_atalho(modulo=modulo)
     if shell is None:
         from win32com.client import Dispatch
 
@@ -140,5 +136,13 @@ def criar(pasta=None, nome=NOME_ATALHO, shell=None, icone=None):
     return caminho
 
 
+def criar_todos(pasta=None):
+    """Cria os dois atalhos na Área de Trabalho: o clássico e o Pro 2.0 (PySide6)."""
+    p1 = criar(pasta=pasta, nome="Automacao Grafica.lnk", modulo="main")
+    p2 = criar(pasta=pasta, nome="Automacao Grafica - Pro 2.0.lnk", modulo="ui")
+    return [p1, p2]
+
+
 if __name__ == "__main__":
-    print(criar())
+    for c in criar_todos():
+        print(c)
