@@ -50,6 +50,7 @@ def pasta_do_programa_isolada(tmp_path_factory, monkeypatch):
     monkeypatch.setattr(caminhos, "PASTA_PROGRAMA", programa)
     monkeypatch.setattr(caminhos, "ETIQUETAS_GERADAS", programa / "etiquetas_geradas")
     monkeypatch.setattr(caminhos, "ESTOQUE", programa / "estoque.json")
+    monkeypatch.setattr(caminhos, "BANCO_DADOS", programa / "dados.db")
     # O endereço da hot folder do BYHX mora ao lado do módulo. Se alguém
     # criar o arquivo no repositório, a entrega ao BYHX ligaria em todo teste
     # que passa por _cuidar_do_ripado — e moveria ripado de verdade.

@@ -48,3 +48,7 @@ _aviso_fila.json
 _aviso_sinal.json
 .claude/
 .continue/
+*.db
+*.db-wal
+*.db-shm
+
