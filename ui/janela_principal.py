@@ -39,6 +39,8 @@ from PySide6.QtGui import QAction, QIcon, QFont, QColor, QPixmap
 
 from ui.tema import CoresTema, aplicar_tema
 from ui.canvas_montagem import CanvasMontagem, PecaGraficaItem
+from ui.guia_passo_a_passo import GuiaPassoAPasso
+from ui.dialogo_triagem import DialogoTriagemLote
 
 
 MAQUINAS_DISPONIVEIS = [
@@ -261,12 +263,17 @@ class JanelaPrincipal(QMainWindow):
         add_act("🚀 Enviar ao RIP", "enviar_rip", self.on_enviar_rip)
 
     def _construir_interface(self) -> None:
-        """Estrutura os painéis central e lateral divididos por splitter moderno."""
+        """Estrutura os painéis central e lateral divididos por splitter moderno com guia de fluxo."""
         widget_central = QWidget(self)
         self.setCentralWidget(widget_central)
-        layout_central = QHBoxLayout(widget_central)
-        layout_central.setContentsMargins(6, 6, 6, 6)
-        layout_central.setSpacing(0)
+        layout_central = QVBoxLayout(widget_central)
+        layout_central.setContentsMargins(8, 8, 8, 8)
+        layout_central.setSpacing(8)
+
+        # Barra Superior: Guia Passo a Passo de Fluxo de Produção
+        self.guia_passo = GuiaPassoAPasso(widget_central)
+        self.guia_passo.etapa_alterada.connect(self._ao_mudar_etapa_guia)
+        layout_central.addWidget(self.guia_passo)
 
         splitter = QSplitter(Qt.Horizontal, widget_central)
         splitter.setHandleWidth(5)
@@ -459,6 +466,21 @@ class JanelaPrincipal(QMainWindow):
             )
             status.addPermanentWidget(w)
 
+    def _ao_mudar_etapa_guia(self, etapa: int) -> None:
+        """Orienta o operador ao clicar em qualquer uma das 5 etapas do guia."""
+        if etapa == 1:
+            self.statusBar().showMessage("Passo 1: Carregue uma pasta de artes ou abra a Triagem em Lote para conferir medidas.", 4000)
+        elif etapa == 2:
+            self.combo_filtro_material.setFocus()
+            self.statusBar().showMessage("Passo 2: Selecione o material no filtro (ex: VINIL / ADESIVO) para isolar o rolo.", 4000)
+        elif etapa == 3:
+            self.statusBar().showMessage("Passo 3: Clique na máquina de destino (ex: DOCAN 5200 de 5m ou Mimaki SWJ/UJV).", 4000)
+        elif etapa == 4:
+            self.spin_espacamento.setFocus()
+            self.statusBar().showMessage("Passo 4: Defina o espaçamento entre as artes (mm) e clique em '⚡ Auto Nesting'.", 4000)
+        elif etapa == 5:
+            self.statusBar().showMessage("Passo 5: Tudo pronto! Clique em '▶ Montar p/ RIP' ou '✂️ Gerar Corte CNC'.", 4000)
+
     def selecionar_maquina(self, dados_maquina: Dict[str, Any]) -> None:
         """Altera a máquina ativa e reconfigura as dimensões da bobina no canvas."""
         self.maquina_atual = dados_maquina
@@ -475,6 +497,8 @@ class JanelaPrincipal(QMainWindow):
             margem_lateral_mm=dados_maquina.get("margem_lateral_mm", 15.0),
         )
         self.canvas.fit_in_view()
+        if hasattr(self, "guia_passo") and self.guia_passo.etapa_atual == 3:
+            self.guia_passo.ir_para_etapa(4)
 
     def _ao_alterar_espacamento(self, valor: int) -> None:
         """Atualiza a folga configurada no canvas."""
@@ -491,6 +515,8 @@ class JanelaPrincipal(QMainWindow):
                 texto_linha = item_mat.text().strip().upper()
                 esconder = (mat_norm not in texto_linha and texto_linha not in mat_norm)
                 self.tabela_pecas.setRowHidden(row, esconder)
+        if hasattr(self, "guia_passo") and self.guia_passo.etapa_atual == 2:
+            self.guia_passo.ir_para_etapa(3)
 
     def _marcar_todos(self) -> None:
         """Marca todas as linhas visíveis da tabela."""
@@ -637,6 +663,8 @@ class JanelaPrincipal(QMainWindow):
         self.canvas._atualizar_geometria_bobina()
         self.canvas.emitir_estatisticas()
         self.canvas.fit_in_view()
+        if hasattr(self, "guia_passo"):
+            self.guia_passo.ir_para_etapa(5)
 
     def _atualizar_status_bar(self, stats: Dict[str, Any]) -> None:
         """Atualiza os indicadores industriais na barra de status."""
@@ -721,6 +749,8 @@ class JanelaPrincipal(QMainWindow):
             f"{len(arquivos)} arquivos carregados! Escolha o material e clique em Auto Nesting.",
             5000,
         )
+        if hasattr(self, "guia_passo"):
+            self.guia_passo.ir_para_etapa(2)
 
     def on_abrir_pasta_entrada(self) -> None:
         """Abre a pasta de entrada atual no Windows Explorer."""
@@ -756,7 +786,46 @@ class JanelaPrincipal(QMainWindow):
             self.statusBar().showMessage(f"Planilha carregada: {os.path.basename(caminho)}", 4000)
 
     def on_triagem_lote(self) -> None:
-        self.statusBar().showMessage("Executando triagem e conferência em lote...", 3000)
+        """Abre o diálogo de conferência e auditoria técnica de artes em lote."""
+        dialogo = DialogoTriagemLote(self.pasta_entrada_atual, parent=self)
+        dialogo.artes_aprovadas.connect(self._ao_receber_artes_triadas)
+        dialogo.exec()
+
+    def _ao_receber_artes_triadas(self, lista_aprovados: list) -> None:
+        """Recebe as artes aprovadas na triagem e alimenta a fila de montagem."""
+        if not lista_aprovados:
+            return
+
+        self.tabela_pecas.setRowCount(0)
+        self.canvas.limpar_pecas()
+
+        materiais_encontrados = set()
+        for art in lista_aprovados:
+            mat = art.get("material", "VINIL / ADESIVO")
+            materiais_encontrados.add(mat)
+            self.adicionar_peca_fila(
+                nome=art["nome"],
+                largura_mm=art["largura_mm"],
+                altura_mm=art["altura_mm"],
+                miniatura=art.get("miniatura"),
+                caminho_arquivo=art.get("caminho"),
+                material=mat,
+                quantidade=art.get("quantidade", 1),
+            )
+
+        if len(materiais_encontrados) == 1:
+            mat_unico = list(materiais_encontrados)[0]
+            idx = self.combo_filtro_material.findText(mat_unico)
+            if idx >= 0:
+                self.combo_filtro_material.setCurrentIndex(idx)
+
+        if hasattr(self, "guia_passo"):
+            self.guia_passo.ir_para_etapa(2)
+
+        self.statusBar().showMessage(
+            f"Triagem concluída: {len(lista_aprovados)} artes aprovadas! Próximo passo: selecione a máquina e clique em Auto Nesting.",
+            6000,
+        )
 
     def on_configurar_maquinas(self) -> None:
         self.statusBar().showMessage("Painel de configuração de máquinas ativo.", 3000)
