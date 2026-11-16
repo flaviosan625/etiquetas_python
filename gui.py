@@ -30,6 +30,7 @@ from tkinter import filedialog, messagebox, ttk
 # arquivamento.py não é mais importado aqui: o checkbox que enviava a
 # OS pro OneDrive foi removido (2026-09-05). O módulo continua no
 # projeto, testado, caso o envio volte em outro formato.
+import branding
 from config import atualizar_ultimo_uso, atualizar_ultima_impressora, carregar_config, salvar_config
 from dimensoes import formatar_variante
 from documento_enviados import (
@@ -158,13 +159,12 @@ def _pedidos_para_impressao(pasta_base="etiquetas_geradas"):
 class JanelaPrincipal(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("Gerador de Etiquetas — UNY CV")
+        self.config_dados = carregar_config()
+        self.title(branding.titulo_janela("Gerador de Etiquetas", self.config_dados))
         # cabe inteira na tela: antes o botão de processar ficava ABAIXO
         # da dobra, e a ação principal do programa era a que não aparecia
         self.geometry("980x%d" % min(780, self.winfo_screenheight() - 90))
         self.minsize(820, 600)
-
-        self.config_dados = carregar_config()
         # A cor vem ANTES de qualquer widget: aplicar_padroes só alcança o
         # que for criado depois dela (é assim que as outras janelas, que
         # não pedem cor nenhuma, nascem escuras sem serem reescritas).
@@ -281,6 +281,11 @@ class JanelaPrincipal(tk.Tk):
         tk.Label(acao, text="gera etiquetas, OS e retirada de material",
                  font=("Segoe UI", 8), bg=cores.cartao,
                  fg=cores.texto2).pack(side="left", padx=12)
+        self.btn_triagem = tk.Button(
+            acao, text="📋   Triagem Visual em Lote", bg=cores.cartao, fg=cores.texto,
+            font=("Segoe UI", 10, "bold"), relief="solid", bd=1, padx=14, pady=8, cursor="hand2",
+            activebackground=cores.borda, command=self._abrir_triagem)
+        self.btn_triagem.pack(side="right")
 
     def _montar_atalhos(self):
         """
@@ -293,12 +298,15 @@ class JanelaPrincipal(tk.Tk):
         """
         atalhos = [
             ("📥", "Receber artes", "Drive, WeTransfer, pasta ou ZIP", self._abrir_receber),
+            ("📋", "Triagem Visual em Lote", "validação de escalas e cruzamento de planilhas",
+             self._abrir_triagem),
             ("🧩", "Montar arte para impressão", "encaixa as artes na bobina da máquina",
              self._abrir_montagem),
             ("👥", "Clientes", "recebimento de artes por cliente", self._abrir_clientes),
             ("📦", "Controle de estoque", "material, entradas e saídas", self._abrir_estoque),
             ("🤖", "Agentes", "o que roda sozinho", self._abrir_agentes),
             ("⚙", "Medidas de rolos e chapas", "configuração", self._abrir_configuracoes),
+            ("🖨", "Configurar Máquinas / RIP", "impressoras, larguras úteis e hot folders", self._abrir_configurar_maquinas),
             ("📤", "Enviar para impressão", "seleciona e envia arquivos em lote", self._abrir_envio_impressao),
             ("🖨", "Imprimir documentos", "etiquetas, OS e retirada do pedido", self._abrir_impressao_manual),
             ("💰", "Centro de custos de tinta", "preços e estimativas das Docan", self._abrir_custos_tinta),
@@ -430,6 +438,10 @@ class JanelaPrincipal(tk.Tk):
     def _abrir_configuracoes(self):
         JanelaConfiguracoes(self, self.config_dados, self._config_atualizada)
 
+    def _abrir_configurar_maquinas(self):
+        from gui_maquinas import JanelaConfigurarMaquinas
+        JanelaConfigurarMaquinas(self, self.config_dados, self._config_atualizada)
+
     def _abrir_estoque(self):
         JanelaEstoque(self, self.config_dados)
 
@@ -497,6 +509,20 @@ class JanelaPrincipal(tk.Tk):
             janela.focus_force()
             return
         self._janela_agentes = JanelaAgentes(self)
+
+    def _abrir_triagem(self):
+        from gui_triagem import JanelaTriagem
+
+        janela = getattr(self, "_janela_triagem", None)
+        if janela is not None and janela.winfo_exists():
+            janela.lift()
+            janela.focus_force()
+            return
+        pasta_inicial = self.var_pasta.get().strip() if hasattr(self, "var_pasta") else None
+        arquivos = None
+        if pasta_inicial and pathlib.Path(pasta_inicial).is_dir():
+            arquivos = pasta_inicial
+        self._janela_triagem = JanelaTriagem(self, config=self.config_dados, arquivos=arquivos)
 
     def _abrir_cruzamento_rip(self):
         # sem botão que chame isso hoje — ver comentário do botão
@@ -1106,6 +1132,7 @@ class JanelaConfiguracoes(tk.Toplevel):
 
         frame_botoes = tk.Frame(self)
         frame_botoes.pack(fill="x", padx=16, pady=14)
+        tk.Button(frame_botoes, text="🖨 Configurar Máquinas e RIPs", relief="flat", fg=cores.acento, cursor="hand2", command=self._abrir_maquinas).pack(side="left")
         tk.Button(frame_botoes, text="Cancelar", command=self.destroy).pack(side="right", padx=(6, 0))
         tk.Button(frame_botoes, text="Salvar", bg=cores.acento, fg=cores.sobre_acento, relief="flat", command=self._salvar).pack(side="right")
 
@@ -1221,6 +1248,10 @@ class JanelaConfiguracoes(tk.Toplevel):
         self.ao_salvar(self.config_dados)
         messagebox.showinfo("Salvo", "Configurações de materiais salvas com sucesso.")
         self.destroy()
+
+    def _abrir_maquinas(self):
+        from gui_maquinas import JanelaConfigurarMaquinas
+        JanelaConfigurarMaquinas(self, self.config_dados, self.ao_salvar)
 
 
 class JanelaVariantes(tk.Toplevel):
@@ -1371,12 +1402,12 @@ class JanelaEstoque(tk.Toplevel):
 
     def __init__(self, mestre, config_dados):
         super().__init__(mestre)
-        self.title("Controle de Estoque — UNY CV")
+        self.config_dados = config_dados
+        self.title(branding.titulo_janela("Controle de Estoque", config_dados))
         self.geometry("860x660")
         self.minsize(740, 520)
         self.configure(bg=cores.fundo)
         self.transient(mestre)
-        self.config_dados = config_dados
         self.estoque = carregar_estoque()
 
         self.columnconfigure(0, weight=1)
@@ -2133,7 +2164,7 @@ class JanelaDashboard(tk.Toplevel):
 
     def __init__(self, mestre, estoque):
         super().__init__(mestre)
-        self.title("Dashboard de Estoque — UNY CV")
+        self.title(branding.titulo_janela("Dashboard de Estoque"))
         self.geometry("880x680")
         self.minsize(720, 520)
         self.configure(bg=cores.fundo)
@@ -2358,13 +2389,12 @@ class JanelaEnviarImpressao(tk.Toplevel):
 
     def __init__(self, mestre, config_dados):
         super().__init__(mestre)
-        self.title("Enviar para impressão — UNY CV")
+        self.config_dados = config_dados
+        self.title(branding.titulo_janela("Enviar para impressão", config_dados))
         self.geometry("1120x680")
         self.minsize(900, 520)
         self.configure(bg=cores.fundo)
         self.transient(mestre)
-
-        self.config_dados = config_dados
         self.pasta = None
         self.itens = []
         self.marcados = {}     # índice do item -> BooleanVar
@@ -2470,12 +2500,14 @@ class JanelaEnviarImpressao(tk.Toplevel):
         ).grid(row=0, column=0, sticky="ew")
         tk.Button(barra, text="📁 Trocar pasta...", relief="flat", cursor="hand2",
                   command=self._escolher_pasta).grid(row=0, column=1, padx=(6, 0))
+        tk.Button(barra, text="📂 Abrir pasta", relief="flat", cursor="hand2",
+                  command=self._abrir_pasta_no_explorer).grid(row=0, column=2, padx=(4, 0))
         tk.Button(barra, text="↻", width=3, relief="flat", cursor="hand2",
-                  command=self._recarregar).grid(row=0, column=2, padx=(4, 0))
+                  command=self._recarregar).grid(row=0, column=3, padx=(4, 0))
 
         self.var_contagem = tk.StringVar(value="")
         tk.Label(barra, textvariable=self.var_contagem, bg=cores.fundo, fg=cores.texto2).grid(
-            row=0, column=3, padx=(10, 0))
+            row=0, column=4, padx=(10, 0))
 
         # Estado do RIP, SEMPRE visível — inclusive quando está tudo
         # bem. É de propósito que não seja só mais um alerta: a pergunta
@@ -2518,17 +2550,21 @@ class JanelaEnviarImpressao(tk.Toplevel):
         tk.Label(lote, text="Máquina para os marcados:", bg=cores.fundo,
                  fg=cores.texto2).pack(side="left")
         self.var_maquina_lote = tk.StringVar(value="")
-        combo_lote = ttk.Combobox(
+        self.combo_lote = ttk.Combobox(
             lote, textvariable=self.var_maquina_lote, state="readonly", width=18,
             values=list(MAQUINAS_RIP),
         )
-        combo_lote.pack(side="left", padx=6)
-        combo_lote.bind("<<ComboboxSelected>>", lambda e: self._atualizar_rodape())
+        self.combo_lote.pack(side="left", padx=6)
+        self.combo_lote.bind("<<ComboboxSelected>>", lambda e: self._atualizar_rodape())
         self.btn_aplicar_maquina = tk.Button(
             lote, text="Aplicar aos marcados", relief="flat", cursor="hand2",
             command=self._aplicar_maquina_aos_marcados, state="disabled",
         )
         self.btn_aplicar_maquina.pack(side="left")
+        tk.Button(
+            lote, text="⚙ Configurar Máquinas", relief="flat", cursor="hand2",
+            command=self._abrir_configurar_maquinas,
+        ).pack(side="left", padx=(10, 0))
 
         import tempo_impressao
         planejamento = tk.Frame(barra, bg=cores.fundo)
@@ -2607,6 +2643,13 @@ class JanelaEnviarImpressao(tk.Toplevel):
         self.config_dados["ultima_pasta_envio"] = str(self.pasta)
         salvar_config(self.config_dados)
         self._recarregar()
+
+    def _abrir_pasta_no_explorer(self):
+        if self.pasta and self.pasta.is_dir():
+            import subprocess
+            subprocess.Popen(["explorer", str(self.pasta)])
+        else:
+            messagebox.showinfo("Pasta Vazia", "Nenhuma pasta válida foi selecionada.", parent=self)
 
     def _recarregar(self):
         if self.pasta is None:
@@ -2830,6 +2873,25 @@ class JanelaEnviarImpressao(tk.Toplevel):
         elif not item["dimensao"]:
             partes.append("sem medida — sem previsão de giro")
         return "\n".join(partes) or "—"
+
+
+    def _abrir_configurar_maquinas(self):
+        from gui_maquinas import JanelaConfigurarMaquinas
+        from rasterlink_hotfolder import MAQUINAS as MAQUINAS_RIP
+        def ao_salvar():
+            valores = list(MAQUINAS_RIP)
+            if hasattr(self, "combo_lote"):
+                self.combo_lote.configure(values=valores)
+            if self.itens:
+                for item in self.itens:
+                    item["cabe"] = cabe_na_maquina(item["dimensao"], item["maquina"])
+                    item["giro"] = prever_giro(item["dimensao"], item["maquina"])
+                self._alterando_selecao = True
+                try:
+                    self._preencher_lista()
+                finally:
+                    self._alterando_selecao = False
+        JanelaConfigurarMaquinas(self, self.config_dados, ao_salvar=ao_salvar)
 
     def _trocar_maquina(self, indice):
         """A máquina mudou: o giro previsto depende da largura útil dela, então a linha é refeita."""
