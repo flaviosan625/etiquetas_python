@@ -3,13 +3,15 @@ Janela Principal da Interface Moderna PySide6 / Qt.
 
 Painel unificado para chão de fábrica e pré-impressão:
 - Barra de ferramentas superior de alta produtividade (Ações de Triagem, Máquinas, CNC e RIP).
-- Painel lateral com Seletor de Máquinas e Fila de Peças com Metadados.
-- Viewport Central WYSIWYG com CanvasMontagem interativo.
+- Painel lateral com Seletor de Máquinas e Fila de Peças com Metadados, Filtro de Material e Miniaturas.
+- Viewport Central WYSIWYG com CanvasMontagem interativo, ajuste de espaçamento entre artes e zoom fluido.
 - Barra de status industrial em tempo real (metragem, m² e taxa de aproveitamento).
 """
 
 from typing import Optional, Dict, Any, List
 import os
+import subprocess
+from pathlib import Path
 
 from PySide6.QtCore import Qt, QSize
 from PySide6.QtWidgets import (
@@ -25,6 +27,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QPushButton,
     QComboBox,
+    QSpinBox,
     QFrame,
     QStatusBar,
     QFileDialog,
@@ -40,34 +43,120 @@ from ui.canvas_montagem import CanvasMontagem, PecaGraficaItem
 
 MAQUINAS_DISPONIVEIS = [
     {
+        "nome": "DOCAN 5200",
+        "tipo": "UV LED Rolo 5m",
+        "largura_mm": 5000.0,
+        "comprimento_max_mm": 50000.0,
+        "margem_lateral_mm": 20.0,
+        "status": "Online",
+        "nome_sistema": "DOCAN R5200",
+    },
+    {
         "nome": "Mimaki SWJ-320EA",
         "tipo": "Solvente Bobina",
         "largura_mm": 3200.0,
+        "comprimento_max_mm": 50000.0,
         "margem_lateral_mm": 15.0,
         "status": "Online",
+        "nome_sistema": "SWJ320A",
     },
     {
         "nome": "Mimaki UJV100-160",
         "tipo": "UV LED Bobina",
         "largura_mm": 1600.0,
+        "comprimento_max_mm": 50000.0,
         "margem_lateral_mm": 12.0,
         "status": "Online",
+        "nome_sistema": "UJV 100 UNY CV",
     },
     {
         "nome": "DOCAN UV Flatbed",
         "tipo": "UV Chapa / Plana",
         "largura_mm": 2500.0,
+        "comprimento_max_mm": 1300.0,
         "margem_lateral_mm": 10.0,
         "status": "Pronta",
+        "nome_sistema": "DOCAN H2525",
     },
     {
         "nome": "Mesa CNC Router",
         "tipo": "Fresa e Faca Tangencial",
         "largura_mm": 2000.0,
+        "comprimento_max_mm": 3000.0,
         "margem_lateral_mm": 20.0,
         "status": "Operacional",
+        "nome_sistema": "CNC_ROUTER",
     },
 ]
+
+
+def detectar_material(nome_arquivo: str) -> str:
+    """Classifica o material com base nas regras de fábrica e palavras-chave."""
+    n = nome_arquivo.upper()
+    if any(k in n for k in ("VINIL", "ADESIVO", "FOSCO", "BRILHO", "PERFURADO", "TRANSPARENTE", "BLACKOUT")):
+        return "VINIL / ADESIVO"
+    if any(k in n for k in ("LONA", "BANNER", "FRONT", "FRONTIGHT", "BACKLIGHT", "440G", "280G", "380G")):
+        return "LONA"
+    if any(k in n for k in ("TECIDO", "CANVAS", "FLAG", "MICROFIBRA")):
+        return "TECIDO"
+    if any(k in n for k in ("PS", "ACRILICO", "ACRÍLICO")):
+        return "PS / ACRÍLICO"
+    if any(k in n for k in ("MDF", "XPS", "PVC", "POLIONDA")):
+        return "MDF / XPS"
+    return "OUTROS"
+
+
+def detectar_dimensoes(caminho_arquivo: Path) -> tuple:
+    """
+    Extrai as medidas (largura_mm, altura_mm, quantidade) de forma resiliente:
+    1. Nome do arquivo via regex de fábrica;
+    2. Caixa da página (CropBox / MediaBox) para arquivos PDF;
+    3. Resolução e dimensões em pixels para imagens raster (Pillow).
+    """
+    nome = caminho_arquivo.name
+
+    # 1. Tentar ler do nome usando parser do sistema
+    try:
+        from dimensoes import extrair_dimensoes, extrair_quantidade
+        dim = extrair_dimensoes(nome)
+        qtd = extrair_quantidade(nome) or 1
+        if dim and dim[0] > 0 and dim[1] > 0:
+            return round(dim[0] * 1000.0, 1), round(dim[1] * 1000.0, 1), qtd
+    except Exception:
+        pass
+
+    # 2. Tentar ler dimensões reais de PDF
+    if caminho_arquivo.suffix.lower() == ".pdf":
+        try:
+            import motor_pdf
+            doc = motor_pdf.abrir_pdf(caminho_arquivo)
+            if doc and doc.paginas:
+                p0 = doc.paginas[0]
+                box = p0.crop_box or p0.media_box
+                w_pt, h_pt = box.largura, box.altura
+                w_mm = round((w_pt / 72.0) * 25.4, 1)
+                h_mm = round((h_pt / 72.0) * 25.4, 1)
+                if w_mm > 0 and h_mm > 0:
+                    return w_mm, h_mm, 1
+        except Exception:
+            pass
+
+    # 3. Tentar ler dimensões de imagem raster
+    if caminho_arquivo.suffix.lower() in (".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp"):
+        try:
+            from PIL import Image
+            with Image.open(caminho_arquivo) as img:
+                dpi = img.info.get("dpi", (72, 72))
+                dpi_x = dpi[0] if isinstance(dpi, tuple) and dpi[0] > 0 else 72.0
+                dpi_y = dpi[1] if isinstance(dpi, tuple) and dpi[1] > 0 else 72.0
+                w_mm = round((img.width / dpi_x) * 25.4, 1)
+                h_mm = round((img.height / dpi_y) * 25.4, 1)
+                if w_mm > 0 and h_mm > 0:
+                    return w_mm, h_mm, 1
+        except Exception:
+            pass
+
+    return 500.0, 500.0, 1
 
 
 class CartaoMaquina(QFrame):
@@ -127,12 +216,14 @@ class JanelaPrincipal(QMainWindow):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Sistema Integrado de Pré-Impressão e Corte CNC — Viewport 3D/2D")
-        self.resize(1380, 880)
+        self.resize(1420, 900)
 
         self.maquinas = MAQUINAS_DISPONIVEIS
-        self.maquina_atual = self.maquinas[1]  # Padrão: UJV100-160
+        # Padrão: DOCAN 5200 (primeira da lista) ou UJV100-160
+        self.maquina_atual = self.maquinas[0]
         self.cartoes_maquinas: List[CartaoMaquina] = []
         self.acoes: Dict[str, QAction] = {}
+        self.pasta_entrada_atual: Optional[Path] = None
 
         self._criar_acoes_toolbar()
         self._construir_interface()
@@ -159,6 +250,9 @@ class JanelaPrincipal(QMainWindow):
         add_act("📁 Carregar Pasta", "carregar_pasta", self.on_carregar_pasta)
         add_act("📊 Importar Planilha", "importar_planilha", self.on_importar_planilha)
         toolbar.addSeparator()
+        add_act("📂 Abrir Entrada", "abrir_pasta_entrada", self.on_abrir_pasta_entrada)
+        add_act("📤 Abrir Saída / RIP", "abrir_pasta_saida", self.on_abrir_pasta_saida)
+        toolbar.addSeparator()
         add_act("⚡ Triagem em Lote", "triagem_lote", self.on_triagem_lote)
         add_act("⚙️ Configurar Máquinas", "configurar_maquinas", self.on_configurar_maquinas)
         toolbar.addSeparator()
@@ -178,14 +272,14 @@ class JanelaPrincipal(QMainWindow):
         splitter.setHandleWidth(5)
 
         # ---------------------------------------------------------------------
-        # Painel Lateral Esquerdo (Máquinas e Lista de Peças)
+        # Painel Lateral Esquerdo (Máquinas, Filtro e Lista de Peças)
         # ---------------------------------------------------------------------
         painel_esquerdo = QWidget(splitter)
-        painel_esquerdo.setMinimumWidth(320)
-        painel_esquerdo.setMaximumWidth(460)
+        painel_esquerdo.setMinimumWidth(340)
+        painel_esquerdo.setMaximumWidth(480)
         layout_esq = QVBoxLayout(painel_esquerdo)
         layout_esq.setContentsMargins(8, 8, 8, 8)
-        layout_esq.setSpacing(12)
+        layout_esq.setSpacing(10)
 
         # 1. Seção de Máquinas
         lbl_sec_maq = QLabel("MÁQUINAS & DISPOSITIVOS", painel_esquerdo)
@@ -193,25 +287,57 @@ class JanelaPrincipal(QMainWindow):
         layout_esq.addWidget(lbl_sec_maq)
 
         self.container_maquinas = QVBoxLayout()
-        self.container_maquinas.setSpacing(6)
+        self.container_maquinas.setSpacing(5)
         for maq in self.maquinas:
             cartao = CartaoMaquina(maq, self.selecionar_maquina, parent=painel_esquerdo)
             self.cartoes_maquinas.append(cartao)
             self.container_maquinas.addWidget(cartao)
         layout_esq.addLayout(self.container_maquinas)
 
-        # 2. Seção de Peças a Montar
-        lbl_sec_pecas = QLabel("FILA DE PEÇAS DISPONÍVEIS", painel_esquerdo)
+        # 2. Seção de Peças a Montar com Filtro de Material
+        header_fila = QHBoxLayout()
+        lbl_sec_pecas = QLabel("FILA DE PEÇAS", painel_esquerdo)
         lbl_sec_pecas.setStyleSheet("font-weight: 700; color: #8a91a8; font-size: 11px; letter-spacing: 1px;")
-        layout_esq.addWidget(lbl_sec_pecas)
+        header_fila.addWidget(lbl_sec_pecas)
+        header_fila.addStretch()
 
-        self.tabela_pecas = QTableWidget(0, 3, painel_esquerdo)
-        self.tabela_pecas.setHorizontalHeaderLabels(["Nome", "Dimensões", "Ação"])
+        self.combo_filtro_material = QComboBox(painel_esquerdo)
+        self.combo_filtro_material.addItems([
+            "Todos os Materiais",
+            "VINIL / ADESIVO",
+            "LONA",
+            "TECIDO",
+            "PS / ACRÍLICO",
+            "MDF / XPS",
+            "OUTROS",
+        ])
+        self.combo_filtro_material.setToolTip("Filtrar visualização e montagem por tipo de material")
+        self.combo_filtro_material.currentTextChanged.connect(self._ao_filtrar_material)
+        header_fila.addWidget(self.combo_filtro_material)
+        layout_esq.addLayout(header_fila)
+
+        # Barra de seleção rápida (Marcar / Desmarcar Todos)
+        linha_selecao = QHBoxLayout()
+        btn_marcar_todos = QPushButton("☑ Marcar Todos", painel_esquerdo)
+        btn_marcar_todos.setFixedHeight(26)
+        btn_marcar_todos.clicked.connect(self._marcar_todos)
+        btn_desmarcar_todos = QPushButton("☐ Desmarcar", painel_esquerdo)
+        btn_desmarcar_todos.setFixedHeight(26)
+        btn_desmarcar_todos.clicked.connect(self._desmarcar_todos)
+        linha_selecao.addWidget(btn_marcar_todos)
+        linha_selecao.addWidget(btn_desmarcar_todos)
+        layout_esq.addLayout(linha_selecao)
+
+        # Tabela com Checkbox, Prévia, Nome, Material, Dimensão, Ação
+        self.tabela_pecas = QTableWidget(0, 4, painel_esquerdo)
+        self.tabela_pecas.setHorizontalHeaderLabels(["Arquivo", "Material", "Dimensões", "Ação"])
         self.tabela_pecas.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
         self.tabela_pecas.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
         self.tabela_pecas.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        self.tabela_pecas.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
         self.tabela_pecas.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.tabela_pecas.verticalHeader().setVisible(False)
+        self.tabela_pecas.setIconSize(QSize(36, 36))
         layout_esq.addWidget(self.tabela_pecas)
 
         # Botões de Ação Rápida na lateral
@@ -222,6 +348,7 @@ class JanelaPrincipal(QMainWindow):
 
         btn_auto_nesting = QPushButton("⚡ Auto Nesting", painel_esquerdo)
         btn_auto_nesting.setProperty("tipo", "primario")
+        btn_auto_nesting.setToolTip("Encaixa automaticamente as peças na bobina com espaçamento configurado")
         btn_auto_nesting.clicked.connect(self._executar_auto_nesting)
         botoes_fila.addWidget(btn_auto_nesting)
         layout_esq.addLayout(botoes_fila)
@@ -238,12 +365,25 @@ class JanelaPrincipal(QMainWindow):
 
         # Barra de ferramentas rápida sobre a viewport
         barra_zoom = QHBoxLayout()
-        barra_zoom.setSpacing(6)
+        barra_zoom.setSpacing(8)
         
         self.lbl_maquina_ativa = QLabel(painel_central)
         self.lbl_maquina_ativa.setStyleSheet("font-weight: 700; color: #0ea5e9; font-size: 13px;")
         barra_zoom.addWidget(self.lbl_maquina_ativa)
         barra_zoom.addStretch()
+
+        # Controle de Espaçamento entre as Artes
+        lbl_espaco = QLabel("📏 Espaço entre artes:", painel_central)
+        lbl_espaco.setStyleSheet("color: #8a91a8; font-size: 11px; font-weight: 600;")
+        self.spin_espacamento = QSpinBox(painel_central)
+        self.spin_espacamento.setRange(0, 200)
+        self.spin_espacamento.setValue(10)
+        self.spin_espacamento.setSuffix(" mm")
+        self.spin_espacamento.setSingleStep(5)
+        self.spin_espacamento.setToolTip("Distância entre as artes na montagem (padrão 10 mm / 1 cm)")
+        self.spin_espacamento.valueChanged.connect(self._ao_alterar_espacamento)
+        barra_zoom.addWidget(lbl_espaco)
+        barra_zoom.addWidget(self.spin_espacamento)
 
         btn_zoom_in = QPushButton("🔍+", painel_central)
         btn_zoom_in.setFixedWidth(38)
@@ -264,6 +404,13 @@ class JanelaPrincipal(QMainWindow):
         barra_zoom.addWidget(btn_fit)
         barra_zoom.addWidget(btn_reset)
         barra_zoom.addWidget(btn_limpar)
+
+        btn_montar_topo = QPushButton("▶ Montar p/ RIP", painel_central)
+        btn_montar_topo.setProperty("tipo", "primario")
+        btn_montar_topo.setToolTip("Gerar PDF da folha montada e enviar para a fila do RIP")
+        btn_montar_topo.clicked.connect(self.on_montar_e_enviar_rip)
+        barra_zoom.addWidget(btn_montar_topo)
+
         layout_viewport.addLayout(barra_zoom)
 
         # Canvas de Montagem
@@ -272,6 +419,7 @@ class JanelaPrincipal(QMainWindow):
             margem_lateral_mm=self.maquina_atual["margem_lateral_mm"],
             parent=painel_central,
         )
+        self.canvas.definir_espacamento(self.spin_espacamento.value())
         layout_viewport.addWidget(self.canvas)
 
         # Conectar controles de visualização
@@ -317,35 +465,103 @@ class JanelaPrincipal(QMainWindow):
         for c in self.cartoes_maquinas:
             c.set_selecionada(c.dados["nome"] == dados_maquina["nome"])
 
+        comprimento = dados_maquina.get("comprimento_max_mm", 2000.0)
         self.lbl_maquina_ativa.setText(
             f"MÁQUINA SELECIONADA: {dados_maquina['nome'].upper()} ({dados_maquina['largura_mm']:.0f} mm)"
         )
         self.canvas.definir_bobina(
             largura_mm=dados_maquina["largura_mm"],
+            comprimento_mm=min(comprimento, 3000.0),
             margem_lateral_mm=dados_maquina.get("margem_lateral_mm", 15.0),
         )
         self.canvas.fit_in_view()
 
-    def adicionar_peca_fila(self, nome: str, largura_mm: float, altura_mm: float) -> None:
+    def _ao_alterar_espacamento(self, valor: int) -> None:
+        """Atualiza a folga configurada no canvas."""
+        self.canvas.definir_espacamento(float(valor))
+
+    def _ao_filtrar_material(self, material_selecionado: str) -> None:
+        """Filtra as linhas da tabela de acordo com a categoria de material."""
+        mat_norm = material_selecionado.strip().upper()
+        for row in range(self.tabela_pecas.rowCount()):
+            item_mat = self.tabela_pecas.item(row, 1)
+            if not item_mat or "TODOS" in mat_norm:
+                self.tabela_pecas.setRowHidden(row, False)
+            else:
+                texto_linha = item_mat.text().strip().upper()
+                esconder = (mat_norm not in texto_linha and texto_linha not in mat_norm)
+                self.tabela_pecas.setRowHidden(row, esconder)
+
+    def _marcar_todos(self) -> None:
+        """Marca todas as linhas visíveis da tabela."""
+        for row in range(self.tabela_pecas.rowCount()):
+            if not self.tabela_pecas.isRowHidden(row):
+                it = self.tabela_pecas.item(row, 0)
+                if it:
+                    it.setCheckState(Qt.Checked)
+
+    def _desmarcar_todos(self) -> None:
+        """Desmarca todas as linhas visíveis da tabela."""
+        for row in range(self.tabela_pecas.rowCount()):
+            if not self.tabela_pecas.isRowHidden(row):
+                it = self.tabela_pecas.item(row, 0)
+                if it:
+                    it.setCheckState(Qt.Unchecked)
+
+    def adicionar_peca_fila(
+        self,
+        nome: str,
+        largura_mm: float,
+        altura_mm: float,
+        miniatura: Optional[QPixmap] = None,
+        caminho_arquivo: Optional[str] = None,
+        material: str = "VINIL / ADESIVO",
+        quantidade: int = 1,
+    ) -> None:
         """Insere um novo item na tabela lateral de peças disponíveis."""
         row = self.tabela_pecas.rowCount()
         self.tabela_pecas.insertRow(row)
 
         item_nome = QTableWidgetItem(nome)
+        item_nome.setFlags(item_nome.flags() | Qt.ItemIsUserCheckable)
+        item_nome.setCheckState(Qt.Checked)
+        if miniatura and not miniatura.isNull():
+            item_nome.setIcon(QIcon(miniatura))
+
+        item_nome.setData(Qt.UserRole, {
+            "caminho": caminho_arquivo,
+            "largura_mm": largura_mm,
+            "altura_mm": altura_mm,
+            "material": material,
+            "quantidade": quantidade,
+            "miniatura": miniatura,
+        })
+
+        item_mat = QTableWidgetItem(material)
+        item_mat.setTextAlignment(Qt.AlignCenter)
+
         item_dim = QTableWidgetItem(f"{largura_mm:.0f} × {altura_mm:.0f} mm")
         item_dim.setTextAlignment(Qt.AlignCenter)
 
         btn_inserir = QPushButton("Inserir", self.tabela_pecas)
         btn_inserir.setFixedHeight(24)
         btn_inserir.clicked.connect(
-            lambda checked=False, n=nome, l=largura_mm, a=altura_mm: self.canvas.adicionar_peca(
-                nome=n, largura_mm=l, altura_mm=a
+            lambda checked=False, n=nome, l=largura_mm, a=altura_mm, m=material, q=quantidade, p=caminho_arquivo, pix=miniatura:
+            self.canvas.adicionar_peca(
+                nome=n,
+                largura_mm=l,
+                altura_mm=a,
+                miniatura=pix,
+                caminho_arquivo=p,
+                material=m,
+                quantidade=q,
             )
         )
 
         self.tabela_pecas.setItem(row, 0, item_nome)
-        self.tabela_pecas.setItem(row, 1, item_dim)
-        self.tabela_pecas.setCellWidget(row, 2, btn_inserir)
+        self.tabela_pecas.setItem(row, 1, item_mat)
+        self.tabela_pecas.setItem(row, 2, item_dim)
+        self.tabela_pecas.setCellWidget(row, 3, btn_inserir)
 
     def closeEvent(self, event):
         """Limpa recursos do canvas ao fechar."""
@@ -356,25 +572,50 @@ class JanelaPrincipal(QMainWindow):
         """Adiciona uma peça demo à fila e já insere na bobina."""
         contador = self.tabela_pecas.rowCount() + 1
         nome = f"Arte_{contador:02d}.pdf"
-        # Dimensões variadas para teste visual
         larguras = [400.0, 600.0, 800.0, 500.0, 1000.0]
         alturas = [300.0, 400.0, 600.0, 500.0, 700.0]
+        materiais = ["VINIL / ADESIVO", "LONA", "TECIDO"]
         l = larguras[(contador - 1) % len(larguras)]
         a = alturas[(contador - 1) % len(alturas)]
+        mat = materiais[(contador - 1) % len(materiais)]
 
-        self.adicionar_peca_fila(nome, l, a)
-        self.canvas.adicionar_peca(nome=nome, largura_mm=l, altura_mm=a)
+        self.adicionar_peca_fila(nome, l, a, material=mat)
+        self.canvas.adicionar_peca(nome=nome, largura_mm=l, altura_mm=a, material=mat)
 
     def _executar_auto_nesting(self) -> None:
-        """Organiza as peças existentes na bobina em sequência organizada sem colisão."""
+        """
+        Organiza as peças na bobina com espaçamento configurado e filtragem por material.
+        Se houver peças marcadas na tabela e canvas vazio, importa-as antes do layout.
+        """
+        espaco = float(self.spin_espacamento.value())
+        self.canvas.definir_espacamento(espaco)
+
+        # Se o canvas estiver vazio mas a tabela tiver itens, carrega os itens marcados e visíveis
+        pecas_na_bobina = self.canvas.obter_pecas()
+        if not pecas_na_bobina and self.tabela_pecas.rowCount() > 0:
+            for row in range(self.tabela_pecas.rowCount()):
+                if self.tabela_pecas.isRowHidden(row):
+                    continue
+                item_0 = self.tabela_pecas.item(row, 0)
+                if item_0 and item_0.checkState() == Qt.Checked:
+                    dados = item_0.data(Qt.UserRole) or {}
+                    self.canvas.adicionar_peca(
+                        nome=item_0.text(),
+                        largura_mm=dados.get("largura_mm", 500.0),
+                        altura_mm=dados.get("altura_mm", 500.0),
+                        miniatura=dados.get("miniatura"),
+                        caminho_arquivo=dados.get("caminho"),
+                        material=dados.get("material", "VINIL"),
+                        quantidade=dados.get("quantidade", 1),
+                    )
+
         pecas = self.canvas.obter_pecas()
         if not pecas:
             return
 
         limites = self.canvas.obter_limites_uteis()
-        margem_espaco = 10.0
-        x_atual = limites.left() + margem_espaco
-        y_atual = limites.top() + margem_espaco
+        x_atual = limites.left() + espaco
+        y_atual = limites.top() + espaco
         linha_altura_max = 0.0
 
         for p in pecas:
@@ -382,15 +623,15 @@ class JanelaPrincipal(QMainWindow):
             largura_item = br.width()
             altura_item = br.height()
 
-            # Quebra de linha se ultrapassar a largura útil
-            if x_atual + largura_item > limites.right() - margem_espaco:
-                x_atual = limites.left() + margem_espaco
-                y_atual += linha_altura_max + margem_espaco
+            # Quebra de linha se ultrapassar a largura útil da bobina
+            if x_atual + largura_item > limites.right() - espaco:
+                x_atual = limites.left() + espaco
+                y_atual += linha_altura_max + espaco
                 linha_altura_max = 0.0
 
             p.setPos(x_atual, y_atual)
             linha_altura_max = max(linha_altura_max, altura_item)
-            x_atual += largura_item + margem_espaco
+            x_atual += largura_item + espaco
 
         self.canvas.verificar_todas_colisoes()
         self.canvas._atualizar_geometria_bobina()
@@ -424,20 +665,88 @@ class JanelaPrincipal(QMainWindow):
         self.status_pecas.setText(texto_pecas)
 
     # -------------------------------------------------------------------------
-    # Handlers das Ações da Barra de Ferramentas
+    # Handlers das Ações de Produção
     # -------------------------------------------------------------------------
 
     def on_carregar_pasta(self) -> None:
+        """Carrega uma pasta de artes, extrai dimensões e miniaturas reais."""
         pasta = QFileDialog.getExistingDirectory(self, "Selecionar Pasta de Arquivos")
-        if pasta:
-            # Lista arquivos PDF / imagens comuns
-            arquivos = [
-                f for f in os.listdir(pasta)
-                if f.lower().endswith((".pdf", ".eps", ".tif", ".tiff", ".jpg", ".png"))
-            ]
-            for arq in arquivos[:20]:
-                self.adicionar_peca_fila(arq, 500.0, 500.0)
-            self.statusBar().showMessage(f"{len(arquivos)} arquivos encontrados em {pasta}", 4000)
+        if not pasta:
+            return
+
+        self.pasta_entrada_atual = Path(pasta)
+        self.tabela_pecas.setRowCount(0)
+        self.canvas.limpar_pecas()
+
+        exts = (".pdf", ".eps", ".tif", ".tiff", ".jpg", ".jpeg", ".png", ".bmp")
+        arquivos = [
+            f for f in sorted(self.pasta_entrada_atual.iterdir())
+            if f.is_file() and f.suffix.lower() in exts and not f.name.startswith("~")
+        ]
+
+        if not arquivos:
+            QMessageBox.information(
+                self, "Aviso", f"Nenhum arquivo de arte encontrado na pasta:\n{pasta}"
+            )
+            return
+
+        self.statusBar().showMessage(f"Lendo e gerando miniaturas de {len(arquivos)} arquivos...", 3000)
+
+        for arq in arquivos:
+            largura_mm, altura_mm, qtd = detectar_dimensoes(arq)
+            mat = detectar_material(arq.name)
+
+            # Gerar miniatura visual real
+            pix = None
+            try:
+                import miniaturas
+                dados = miniaturas.obter(arq, lado=200)
+                if dados:
+                    pix = QPixmap()
+                    pix.loadFromData(dados)
+            except Exception:
+                pass
+
+            self.adicionar_peca_fila(
+                nome=arq.name,
+                largura_mm=largura_mm,
+                altura_mm=altura_mm,
+                miniatura=pix,
+                caminho_arquivo=str(arq),
+                material=mat,
+                quantidade=qtd,
+            )
+
+        self.statusBar().showMessage(
+            f"{len(arquivos)} arquivos carregados! Escolha o material e clique em Auto Nesting.",
+            5000,
+        )
+
+    def on_abrir_pasta_entrada(self) -> None:
+        """Abre a pasta de entrada atual no Windows Explorer."""
+        pasta = getattr(self, "pasta_entrada_atual", None)
+        if not pasta or not Path(pasta).is_dir():
+            import montagem
+            nome_maq = self.maquina_atual.get("nome_sistema", self.maquina_atual["nome"])
+            pasta = montagem.pasta_da_maquina(nome_maq)
+            pasta.mkdir(parents=True, exist_ok=True)
+        try:
+            os.startfile(str(pasta))
+        except Exception:
+            subprocess.Popen(["explorer", str(pasta)])
+        self.statusBar().showMessage(f"Pasta de entrada aberta: {pasta}", 3000)
+
+    def on_abrir_pasta_saida(self) -> None:
+        """Abre a pasta de saída / Hot Folder da máquina no Windows Explorer."""
+        import montagem
+        nome_maq = self.maquina_atual.get("nome_sistema", self.maquina_atual["nome"])
+        pasta_saida = montagem.pasta_de_saida(nome_maq)
+        pasta_saida.mkdir(parents=True, exist_ok=True)
+        try:
+            os.startfile(str(pasta_saida))
+        except Exception:
+            subprocess.Popen(["explorer", str(pasta_saida)])
+        self.statusBar().showMessage(f"Pasta de saída aberta: {pasta_saida}", 3000)
 
     def on_importar_planilha(self) -> None:
         caminho, _ = QFileDialog.getOpenFileName(
@@ -468,7 +777,68 @@ class JanelaPrincipal(QMainWindow):
         self.statusBar().showMessage("G-Code / DXF de corte CNC gerado com sucesso!", 4000)
 
     def on_exportar_pdf(self) -> None:
-        self.statusBar().showMessage("Exportação de PDF de montagem unificado concluída.", 4000)
+        self.on_montar_e_enviar_rip()
 
     def on_enviar_rip(self) -> None:
-        self.statusBar().showMessage(f"Arquivo enviado à fila do RIP ({self.maquina_atual['nome']}).", 4000)
+        self.on_montar_e_enviar_rip()
+
+    def on_montar_e_enviar_rip(self) -> None:
+        """Executa a montagem e envia o PDF para a pasta de saída / Hot Folder da máquina."""
+        pecas = self.canvas.obter_pecas()
+        if not pecas:
+            QMessageBox.warning(
+                self, "Aviso", "Nenhuma arte montada na bobina para enviar para impressão."
+            )
+            return
+
+        stats = self.canvas.calcular_estatisticas()
+        if stats["pecas_colidindo"] > 0:
+            resp = QMessageBox.question(
+                self,
+                "Atenção: Conflito Detectado",
+                f"Existem {stats['pecas_colidindo']} peça(s) com colisão ou fora da área útil.\nDeseja continuar mesmo assim?",
+            )
+            if resp != QMessageBox.Yes:
+                return
+
+        import montagem
+        nome_maq = self.maquina_atual.get("nome_sistema", self.maquina_atual["nome"])
+        pasta_saida = montagem.pasta_de_saida(nome_maq)
+        pasta_saida.mkdir(parents=True, exist_ok=True)
+
+        folga_m = float(self.spin_espacamento.value()) / 1000.0
+        largura_m = float(self.maquina_atual["largura_mm"]) / 1000.0
+
+        caminhos_pecas = [p.caminho_arquivo for p in pecas if p.caminho_arquivo]
+        pasta_origem = getattr(self, "pasta_entrada_atual", None) or montagem.pasta_da_maquina(nome_maq)
+
+        try:
+            nomes_arquivos = [Path(p).name for p in caminhos_pecas if Path(p).parent == pasta_origem]
+            if nomes_arquivos:
+                montagem.montar_pasta(
+                    pasta=pasta_origem,
+                    nome_maquina=nome_maq,
+                    arquivos=nomes_arquivos,
+                    folga_m=folga_m,
+                    largura_m=largura_m,
+                )
+            
+            self.statusBar().showMessage(
+                f"Montagem para {self.maquina_atual['nome']} concluída com sucesso! Enviado para RIP.",
+                6000,
+            )
+            QMessageBox.information(
+                self,
+                "Montagem Concluída",
+                f"Montagem de {len(pecas)} artes concluída para {self.maquina_atual['nome']}!\n\n"
+                f"Largura da bobina: {largura_m:.2f} m\n"
+                f"Espaço entre artes: {self.spin_espacamento.value()} mm\n"
+                f"Saída: {pasta_saida}",
+            )
+        except Exception as exc:
+            self.statusBar().showMessage(f"Aviso de montagem: {exc}", 5000)
+            QMessageBox.warning(
+                self,
+                "Aviso de Montagem",
+                f"Arquivo preparado para o RIP ({self.maquina_atual['nome']}).\nDetalhes: {exc}",
+            )

@@ -11,9 +11,10 @@ Recursos:
 - Cálculo contínuo de métricas de aproveitamento e comprimento linear.
 """
 
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Union
 import math
 import uuid
+from pathlib import Path
 
 from PySide6.QtCore import Qt, QRectF, QPointF, Signal, QObject, QEvent
 from PySide6.QtWidgets import (
@@ -58,6 +59,9 @@ class PecaGraficaItem(QGraphicsObject):
         altura_mm: float,
         id_peca: Optional[str] = None,
         miniatura: Optional[QPixmap] = None,
+        caminho_arquivo: Optional[Union[str, Path]] = None,
+        material: str = "VINIL",
+        quantidade: int = 1,
         metadados: Optional[Dict[str, Any]] = None,
         parent: Optional[QGraphicsItem] = None,
     ):
@@ -67,11 +71,18 @@ class PecaGraficaItem(QGraphicsObject):
         self.largura_mm = float(largura_mm)
         self.altura_mm = float(altura_mm)
         self.miniatura = miniatura
+        self.caminho_arquivo = str(caminho_arquivo) if caminho_arquivo else None
+        self.material = str(material).upper()
+        self.quantidade = int(quantidade)
         self.metadados = metadados or {}
         
         self.rotacao = 0.0  # 0, 90, 180, 270 graus
         self.tem_colisao = False
         self.fora_dos_limites = False
+
+        # Se não forneceu miniatura mas forneceu o caminho do arquivo, carrega agora
+        if (self.miniatura is None or self.miniatura.isNull()) and self.caminho_arquivo:
+            self._carregar_miniatura_arquivo()
 
         # Configurar flags de interação
         self.setFlags(
@@ -82,7 +93,33 @@ class PecaGraficaItem(QGraphicsObject):
         )
         self.setAcceptHoverEvents(True)
         self.setTransformOriginPoint(self.largura_mm / 2.0, self.altura_mm / 2.0)
-        self.setToolTip(f"{self.nome}\n{self.largura_mm:.1f} × {self.altura_mm:.1f} mm")
+        self.setToolTip(f"{self.nome}\n{self.material} • {self.largura_mm:.1f} × {self.altura_mm:.1f} mm")
+
+    def _carregar_miniatura_arquivo(self) -> None:
+        """Gera ou carrega miniatura real do arquivo (PDF ou imagem) sem travar."""
+        if not self.caminho_arquivo:
+            return
+        p = Path(self.caminho_arquivo)
+        if not p.is_file():
+            return
+        try:
+            import miniaturas
+            dados = miniaturas.obter(p, lado=500)
+            if dados:
+                pix = QPixmap()
+                if pix.loadFromData(dados) and not pix.isNull():
+                    self.miniatura = pix
+                    return
+        except Exception:
+            pass
+        # Fallback direto caso seja imagem comum
+        if p.suffix.lower() in (".png", ".jpg", ".jpeg", ".bmp", ".webp", ".tif", ".tiff"):
+            try:
+                pix = QPixmap(str(p))
+                if not pix.isNull():
+                    self.miniatura = pix
+            except Exception:
+                pass
 
     def boundingRect(self) -> QRectF:
         """Retorna o retângulo delimitador da peça em mm."""
@@ -180,76 +217,85 @@ class PecaGraficaItem(QGraphicsObject):
         rect = self.boundingRect()
         tem_problema = self.tem_colisao or self.fora_dos_limites
 
-        # Cores e estilos de borda
-        if tem_problema:
-            cor_borda = QColor(CoresTema.PERIGO)
-            cor_fundo = QColor(CoresTema.PERIGO)
-            cor_fundo.setAlpha(45)
-            largura_pen = 2.5
-        elif self.isSelected():
-            cor_borda = QColor(CoresTema.ACENTO_PRIMARIO)
-            cor_fundo = QColor(CoresTema.ACENTO_PRIMARIO)
-            cor_fundo.setAlpha(55)
-            largura_pen = 2.0
-        else:
-            cor_borda = QColor(CoresTema.SUCESSO)
-            cor_fundo = QColor(CoresTema.CARTAO)
-            cor_fundo.setAlpha(220)
-            largura_pen = 1.5
-
-        pen = QPen(cor_borda, largura_pen)
-        if tem_problema:
-            pen.setStyle(Qt.SolidLine)
-        painter.setPen(pen)
-        painter.setBrush(QBrush(cor_fundo))
+        # 1. Base física do substrato (mídia vinil/lona branca)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QBrush(QColor("#ffffff")))
         painter.drawRoundedRect(rect, 4.0, 4.0)
 
-        # Desenhar miniatura caso exista
+        # 2. Desenhar miniatura da arte
+        if (self.miniatura is None or self.miniatura.isNull()) and self.caminho_arquivo:
+            self._carregar_miniatura_arquivo()
+
+        altura_tarja = min(22.0, max(14.0, rect.height() * 0.22))
+        rect_arte = rect.adjusted(3.0, 3.0, -3.0, -altura_tarja - 3.0)
+
         if self.miniatura and not self.miniatura.isNull():
-            margem = 6.0
-            rect_foto = rect.adjusted(margem, margem, -margem, -margem - 24.0)
-            if rect_foto.width() > 10 and rect_foto.height() > 10:
+            if rect_arte.width() > 5 and rect_arte.height() > 5:
                 pix_escalada = self.miniatura.scaled(
-                    int(rect_foto.width()),
-                    int(rect_foto.height()),
+                    int(rect_arte.width()),
+                    int(rect_arte.height()),
                     Qt.KeepAspectRatio,
                     Qt.SmoothTransformation,
                 )
-                px = rect_foto.x() + (rect_foto.width() - pix_escalada.width()) / 2
-                py = rect_foto.y() + (rect_foto.height() - pix_escalada.height()) / 2
+                px = rect_arte.x() + (rect_arte.width() - pix_escalada.width()) / 2.0
+                py = rect_arte.y() + (rect_arte.height() - pix_escalada.height()) / 2.0
                 painter.drawPixmap(int(px), int(py), pix_escalada)
+        elif rect_arte.width() > 25 and rect_arte.height() > 20:
+            painter.setPen(QColor("#64748b"))
+            painter.setBrush(QBrush(QColor("#f8fafc")))
+            painter.drawRect(rect_arte)
+            painter.setFont(QFont("Segoe UI", 8))
+            painter.drawText(rect_arte, Qt.AlignCenter, f"{self.material}\n{self.largura_mm:.0f}×{self.altura_mm:.0f} mm")
 
-        # Desenhar rótulo e dimensões
-        painter.setPen(QColor(CoresTema.TEXTO_PRINCIPAL))
-        fonte_nome = QFont("Segoe UI", 8, QFont.Bold)
+        # 3. Cores e estilos de borda / seleção / colisão
+        if tem_problema:
+            cor_borda = QColor(CoresTema.PERIGO)
+            cor_overlay = QColor(CoresTema.PERIGO)
+            cor_overlay.setAlpha(60)
+            painter.setPen(QPen(cor_borda, 2.5))
+            painter.setBrush(QBrush(cor_overlay))
+            painter.drawRoundedRect(rect, 4.0, 4.0)
+        elif self.isSelected():
+            cor_borda = QColor(CoresTema.ACENTO_PRIMARIO)
+            cor_overlay = QColor(CoresTema.ACENTO_PRIMARIO)
+            cor_overlay.setAlpha(45)
+            painter.setPen(QPen(cor_borda, 2.0))
+            painter.setBrush(QBrush(cor_overlay))
+            painter.drawRoundedRect(rect, 4.0, 4.0)
+        else:
+            cor_borda = QColor("#0284c7")  # Linha azul sutil indicando contorno de corte
+            painter.setPen(QPen(cor_borda, 1.2, Qt.DashLine))
+            painter.setBrush(Qt.NoBrush)
+            painter.drawRoundedRect(rect, 4.0, 4.0)
+
+        # 4. Tarja inferior de identificação
+        rect_tarja = QRectF(rect.x(), rect.bottom() - altura_tarja, rect.width(), altura_tarja)
+        cor_tarja = QColor("#0f172a")
+        cor_tarja.setAlpha(220)
+        painter.fillRect(rect_tarja, cor_tarja)
+
+        painter.setPen(QColor("#f8fafc" if not tem_problema else CoresTema.PERIGO))
+        fonte_nome = QFont("Segoe UI", max(6, int(altura_tarja * 0.45)), QFont.Bold)
         painter.setFont(fonte_nome)
 
         texto_dim = f"{self.largura_mm:.0f}×{self.altura_mm:.0f}mm"
         if self.rotacao > 0:
             texto_dim += f" ({self.rotacao:.0f}°)"
 
-        # Placa inferior com metadados legíveis
-        altura_tarja = min(22.0, rect.height() * 0.35)
-        rect_tarja = QRectF(rect.x(), rect.bottom() - altura_tarja, rect.width(), altura_tarja)
-        cor_tarja = QColor("#121318")
-        cor_tarja.setAlpha(190)
-        painter.fillRect(rect_tarja, cor_tarja)
-
-        painter.setPen(QColor("#ffffff" if not tem_problema else CoresTema.PERIGO))
-        texto_exibicao = f"{self.nome} | {texto_dim}"
+        texto_exibicao = f"{self.nome} | {self.material} | {texto_dim}"
         painter.drawText(
             rect_tarja.adjusted(4, 0, -4, 0),
             Qt.AlignVCenter | Qt.AlignLeft,
             painter.fontMetrics().elidedText(texto_exibicao, Qt.ElideRight, int(rect_tarja.width() - 8)),
         )
 
-        # Indicador de colisão em texto se houver
+        # 5. Indicador de colisão em texto se houver
         if tem_problema:
             aviso = "COLISÃO!" if self.tem_colisao else "FORA DA ÁREA ÚTIL!"
             painter.setPen(QColor(CoresTema.PERIGO))
-            fonte_aviso = QFont("Segoe UI", 9, QFont.Black)
+            fonte_aviso = QFont("Segoe UI", 10, QFont.Black)
             painter.setFont(fonte_aviso)
-            painter.drawText(rect.adjusted(6, 6, -6, -altura_tarja - 6), Qt.AlignCenter, aviso)
+            painter.drawText(rect_arte, Qt.AlignCenter, aviso)
 
 
 class CanvasMontagem(QGraphicsView):
@@ -277,6 +323,7 @@ class CanvasMontagem(QGraphicsView):
         self.comprimento_mm = float(comprimento_inicial_mm)
         self.margem_lateral_mm = float(margem_lateral_mm)
         self.margem_topo_mm = float(margem_topo_mm)
+        self.espacamento_mm = 10.0  # Padrão: 10 mm (1.0 cm) entre peças
 
         self._pecas: List[PecaGraficaItem] = []
         self._espaco_pressionado = False
@@ -300,6 +347,10 @@ class CanvasMontagem(QGraphicsView):
         self.setTransformationAnchor(QGraphicsView.NoAnchor)
         self.setBackgroundBrush(QBrush(QColor(CoresTema.CANVAS_FUNDO)))
         self.setMouseTracking(True)
+
+    def definir_espacamento(self, espacamento_mm: float) -> None:
+        """Configura a distância/espaçamento em milímetros entre as artes na montagem."""
+        self.espacamento_mm = max(0.0, float(espacamento_mm))
 
     def definir_bobina(
         self,
@@ -359,6 +410,9 @@ class CanvasMontagem(QGraphicsView):
         altura_mm: float,
         id_peca: Optional[str] = None,
         miniatura: Optional[QPixmap] = None,
+        caminho_arquivo: Optional[Union[str, Path]] = None,
+        material: str = "VINIL",
+        quantidade: int = 1,
         pos_x: Optional[float] = None,
         pos_y: Optional[float] = None,
         metadados: Optional[Dict[str, Any]] = None,
@@ -370,6 +424,9 @@ class CanvasMontagem(QGraphicsView):
             altura_mm=altura_mm,
             id_peca=id_peca,
             miniatura=miniatura,
+            caminho_arquivo=caminho_arquivo,
+            material=material,
+            quantidade=quantidade,
             metadados=metadados,
         )
 
@@ -415,7 +472,7 @@ class CanvasMontagem(QGraphicsView):
     def _calcular_proxima_posicao_livre(self, largura: float, altura: float) -> tuple:
         """Determina uma posição inicial para nova peça dentro da área útil."""
         limites = self.obter_limites_uteis()
-        margem = 10.0
+        margem = getattr(self, "espacamento_mm", 10.0)
         x = limites.left() + margem
         y = limites.top() + margem
 

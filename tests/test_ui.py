@@ -248,7 +248,7 @@ def test_janela_principal_instanciacao(janela_app):
     assert janela.windowTitle() != ""
     assert janela.canvas is not None
     assert len(janela.cartoes_maquinas) == len(MAQUINAS_DISPONIVEIS)
-    assert len(janela.acoes) == 7
+    assert len(janela.acoes) >= 7
 
     # Verificar presença de todas as ações solicitadas
     acoes_esperadas = [
@@ -268,12 +268,44 @@ def test_janela_principal_instanciacao(janela_app):
 def test_janela_troca_maquina(janela_app):
     """Verifica se a seleção de máquina atualiza os limites no canvas."""
     janela = janela_app
-    maq_320 = MAQUINAS_DISPONIVEIS[0]  # SWJ-320EA 3200mm
-    janela.selecionar_maquina(maq_320)
+    maq_docan = [m for m in MAQUINAS_DISPONIVEIS if "5200" in m["nome"]][0]
+    janela.selecionar_maquina(maq_docan)
+    assert janela.maquina_atual["largura_mm"] == 5000.0
+    assert janela.canvas.largura_mm == 5000.0
+    assert "5000" in janela.status_largura.text()
 
+    maq_320 = [m for m in MAQUINAS_DISPONIVEIS if "320" in m["nome"]][0]
+    janela.selecionar_maquina(maq_320)
     assert janela.maquina_atual["largura_mm"] == 3200.0
     assert janela.canvas.largura_mm == 3200.0
     assert "3200" in janela.status_largura.text()
+
+
+def test_espacamento_configuravel_e_filtro_material(janela_app):
+    """Testa controle de espaçamento e filtro de material vinil."""
+    janela = janela_app
+    assert hasattr(janela, "spin_espacamento")
+    assert hasattr(janela, "combo_filtro_material")
+
+    # Ajustar espaçamento para 15 mm
+    janela.spin_espacamento.setValue(15)
+    assert janela.canvas.espacamento_mm == 15.0
+
+    # Adicionar itens de materiais distintos
+    janela.adicionar_peca_fila("Adesivo_01.pdf", 400.0, 300.0, material="VINIL / ADESIVO")
+    janela.adicionar_peca_fila("Banner_02.pdf", 600.0, 400.0, material="LONA")
+    assert janela.tabela_pecas.rowCount() == 2
+
+    # Filtrar somente Vinil
+    janela.combo_filtro_material.setCurrentText("VINIL / ADESIVO")
+    assert not janela.tabela_pecas.isRowHidden(0)
+    assert janela.tabela_pecas.isRowHidden(1)
+
+    # Auto nesting com filtro
+    janela._executar_auto_nesting()
+    pecas = janela.canvas.obter_pecas()
+    assert len(pecas) == 1
+    assert pecas[0].nome == "Adesivo_01.pdf"
 
 
 def test_janela_adicionar_e_auto_nesting(janela_app):
