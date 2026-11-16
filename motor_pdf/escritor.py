@@ -35,6 +35,10 @@ class PdfWriter:
         self.catalogo_id = self.alocar_id()
         self.paginas_id = self.alocar_id()
         self.lista_paginas: List[PdfRef] = []
+        self.objetos[self.catalogo_id] = {
+            PdfName("/Type"): PdfName("/Catalog"),
+            PdfName("/Pages"): PdfRef(self.paginas_id, 0),
+        }
 
         self.info: Dict[str, Any] = {
             "/Producer": PdfString(b"Antigravity Native Industrial PDF Engine (ISO 32000-1)"),
@@ -195,10 +199,10 @@ class PdfWriter:
         }
 
         # 2. Configura o catálogo raiz /Catalog
-        self.objetos[self.catalogo_id] = {
-            PdfName("/Type"): PdfName("/Catalog"),
-            PdfName("/Pages"): PdfRef(self.paginas_id, 0),
-        }
+        cat_dict = self.objetos.setdefault(self.catalogo_id, {})
+        cat_dict[PdfName("/Type")] = PdfName("/Catalog")
+        cat_dict[PdfName("/Pages")] = PdfRef(self.paginas_id, 0)
+        self.objetos[self.catalogo_id] = cat_dict
 
         # 3. Informações do documento /Info
         info_id = self.alocar_id()
