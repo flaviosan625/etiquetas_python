@@ -138,6 +138,53 @@ class PdfWriter:
         self.lista_paginas.append(ref_pag)
         return ref_pag
 
+    def adicionar_imagem(self, dados_ou_img: Union[bytes, Any]) -> Tuple[PdfRef, int, int]:
+        """
+        Adiciona uma imagem ao documento como /XObject /Image e retorna (PdfRef, largura_px, altura_px).
+        Preserva bytes JPEG nativos com /DCTDecode ou comprime RGB com /FlateDecode.
+        """
+        from PIL import Image
+
+        if isinstance(dados_ou_img, bytes):
+            if dados_ou_img.startswith(b"\xff\xd8"):
+                # JPEG direto: não precisa re-comprimir
+                with Image.open(io.BytesIO(dados_ou_img)) as im:
+                    w, h = im.size
+                img_id = self.alocar_id()
+                hdr = {
+                    PdfName("/Type"): PdfName("/XObject"),
+                    PdfName("/Subtype"): PdfName("/Image"),
+                    PdfName("/Width"): w,
+                    PdfName("/Height"): h,
+                    PdfName("/ColorSpace"): PdfName("/DeviceRGB"),
+                    PdfName("/BitsPerComponent"): 8,
+                    PdfName("/Filter"): PdfName("/DCTDecode"),
+                    PdfName("/Length"): len(dados_ou_img),
+                }
+                self.objetos[img_id] = PdfStream(hdr, dados_ou_img)
+                return PdfRef(img_id, 0), w, h
+            im = Image.open(io.BytesIO(dados_ou_img))
+        else:
+            im = dados_ou_img
+
+        im_rgb = im.convert("RGB")
+        w, h = im_rgb.size
+        raw_rgb = im_rgb.tobytes()
+        comp = zlib.compress(raw_rgb, level=6)
+        img_id = self.alocar_id()
+        hdr = {
+            PdfName("/Type"): PdfName("/XObject"),
+            PdfName("/Subtype"): PdfName("/Image"),
+            PdfName("/Width"): w,
+            PdfName("/Height"): h,
+            PdfName("/ColorSpace"): PdfName("/DeviceRGB"),
+            PdfName("/BitsPerComponent"): 8,
+            PdfName("/Filter"): PdfName("/FlateDecode"),
+            PdfName("/Length"): len(comp),
+        }
+        self.objetos[img_id] = PdfStream(hdr, comp)
+        return PdfRef(img_id, 0), w, h
+
     def salvar(self, destino: Union[str, os.PathLike, BinaryIO]) -> bytes:
         """Serializa o documento PDF final e grava em arquivo ou fluxo binário."""
         # 1. Configura a árvore /Pages

@@ -24,21 +24,25 @@ registro a qualquer momento, e o arquivo da arte só fica 15 dias em
 "Enviados". Sem guardar, refazer o relatório de um dia velho devolveria
 um documento sem arte nenhuma — justamente a comprovação do cliente.
 Guardada, a arte daquele dia fica pra sempre, em alguns KB.
+
+Atualização ISSUE-05: Utiliza o gerador autônomo motor_pdf.miniaturas
+como motor primário livre de licenças restritivas (Pillow + motor_pdf nativo),
+mantendo PyMuPDF apenas como fallback secundário opcional e transparente.
 """
-import hashlib
 import pathlib
+from typing import Any, Optional, Tuple
 
-import pymupdf
+import motor_pdf.miniaturas as _motor_miniaturas
 
-LADO_PADRAO = 300          # px no maior lado — o mesmo que a OS usa
-QUALIDADE_PADRAO = 70
+try:
+    import pymupdf
+except ImportError:
+    pymupdf = None
 
-# Acima disto nem tenta: um TIF de 1,8 GB (já apareceu no registro) é
-# decodificado inteiro pela MuPDF antes de virar quadradinho, e a
-# máquina que gera o relatório é a mesma que o usuário está usando.
-LIMITE_BYTES = 300 * 1024 * 1024
-
-NOME_PASTA_CACHE = "_miniaturas"
+LADO_PADRAO = _motor_miniaturas.LADO_PADRAO          # px no maior lado — o mesmo que a OS usa
+QUALIDADE_PADRAO = _motor_miniaturas.QUALIDADE_PADRAO
+LIMITE_BYTES = _motor_miniaturas.LIMITE_BYTES
+NOME_PASTA_CACHE = _motor_miniaturas.NOME_PASTA_CACHE
 
 
 def de_arquivo(caminho, lado=LADO_PADRAO, qualidade=QUALIDADE_PADRAO, limite_bytes=LIMITE_BYTES):
@@ -47,28 +51,44 @@ def de_arquivo(caminho, lado=LADO_PADRAO, qualidade=QUALIDADE_PADRAO, limite_byt
     try:
         if not caminho.is_file() or (limite_bytes and caminho.stat().st_size > limite_bytes):
             return None
-        doc = pymupdf.open(str(caminho))
-    except Exception:
+    except OSError:
         return None
-    try:
-        pagina = doc.load_page(0)
-        maior = max(pagina.rect.width, pagina.rect.height) or 1
-        escala = min(lado / maior, 1.0)
-        pix = pagina.get_pixmap(matrix=pymupdf.Matrix(escala, escala))
-        return pix.tobytes("jpg", jpg_quality=qualidade)
-    except Exception:
-        return None
-    finally:
-        doc.close()
+
+    # Motor primário: motor_pdf.miniaturas (independente e livre de licenças restritivas)
+    dados = _motor_miniaturas.de_arquivo(caminho, lado=lado, qualidade=qualidade, limite_bytes=limite_bytes)
+    if dados:
+        return dados
+
+    # Fallback transparente para pymupdf se instalado e se motor_pdf não conseguiu decodificar
+    if pymupdf is not None:
+        try:
+            doc = pymupdf.open(str(caminho))
+            try:
+                pagina = doc.load_page(0)
+                maior = max(pagina.rect.width, pagina.rect.height) or 1
+                escala = min(lado / maior, 1.0)
+                pix = pagina.get_pixmap(matrix=pymupdf.Matrix(escala, escala))
+                return pix.tobytes("jpg", jpg_quality=qualidade)
+            finally:
+                doc.close()
+        except Exception:
+            return None
+
+    return None
 
 
 def proporcao(dados):
     """(largura, altura) em px da miniatura, ou None — pra não distorcer."""
-    try:
-        pix = pymupdf.Pixmap(dados)
-        return pix.width, pix.height
-    except Exception:
-        return None
+    tam = _motor_miniaturas.proporcao(dados)
+    if tam:
+        return tam
+    if pymupdf is not None:
+        try:
+            pix = pymupdf.Pixmap(dados)
+            return pix.width, pix.height
+        except Exception:
+            return None
+    return None
 
 
 def encaixar(dados, largura_max, altura_max):
@@ -76,45 +96,21 @@ def encaixar(dados, largura_max, altura_max):
     (largura, altura) pra desenhar dentro da caixa MANTENDO a proporção.
     Arte esticada num documento de gráfica é defeito, não detalhe.
     """
-    tamanho = proporcao(dados)
-    if not tamanho:
-        return largura_max, altura_max
-    largura, altura = tamanho
-    escala = min(largura_max / largura, altura_max / altura)
-    return max(1, round(largura * escala)), max(1, round(altura * escala))
-
-
-def _nome_guardado(chave):
-    """Nome curto e sem surpresa: nome de arte tem acento, barra e 200 letras."""
-    return hashlib.sha1("|".join(str(p) for p in chave).encode("utf-8")).hexdigest()[:16] + ".jpg"
+    return _motor_miniaturas.encaixar(dados, largura_max, altura_max)
 
 
 def caminho_guardada(pasta_cache, mes, chave):
-    return pathlib.Path(pasta_cache) / NOME_PASTA_CACHE / str(mes) / _nome_guardado(chave)
+    return _motor_miniaturas.caminho_guardada(pasta_cache, mes, chave)
 
 
 def guardada(pasta_cache, mes, chave):
     """A miniatura que já foi guardada, ou None."""
-    caminho = caminho_guardada(pasta_cache, mes, chave)
-    try:
-        return caminho.read_bytes() if caminho.is_file() else None
-    except OSError:
-        return None
+    return _motor_miniaturas.guardada(pasta_cache, mes, chave)
 
 
 def guardar(pasta_cache, mes, chave, dados):
     """Guarda pra quando o arquivo da arte já não existir mais."""
-    if not dados:
-        return None
-    caminho = caminho_guardada(pasta_cache, mes, chave)
-    try:
-        caminho.parent.mkdir(parents=True, exist_ok=True)
-        temporario = caminho.with_suffix(".tmp")
-        temporario.write_bytes(dados)
-        temporario.replace(caminho)
-    except OSError:
-        return None
-    return caminho
+    return _motor_miniaturas.guardar(pasta_cache, mes, chave, dados)
 
 
 def obter(caminho_arte, pasta_cache=None, mes=None, chave=None, lado=LADO_PADRAO,
@@ -123,11 +119,11 @@ def obter(caminho_arte, pasta_cache=None, mes=None, chave=None, lado=LADO_PADRAO
     A miniatura, do cache ou do arquivo — e guardando quando faz do
     arquivo. Sem `pasta_cache` é só a miniatura, sem guardar nada.
     """
-    if pasta_cache and chave:
-        ja = guardada(pasta_cache, mes, chave)
-        if ja:
-            return ja
-    dados = de_arquivo(caminho_arte, lado=lado, qualidade=qualidade)
-    if dados and pasta_cache and chave:
-        guardar(pasta_cache, mes, chave, dados)
-    return dados
+    return _motor_miniaturas.obter(
+        caminho_arte,
+        pasta_cache=pasta_cache,
+        mes=mes,
+        chave=chave,
+        lado=lado,
+        qualidade=qualidade,
+    )

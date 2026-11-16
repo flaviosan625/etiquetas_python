@@ -170,7 +170,9 @@ def montar_comprovante(nome_cliente, nome_gerente, nome_produtor,
     for numero, indice in enumerate(indices, 1):
         pagina = pdf_retirada[indice]
         pagina.draw_line((36,798),(559,798), color=(0.8,0.82,0.84), width=0.5)
-        pagina.insert_text((36,814), "UNY CV · Conferir os materiais e preencher na retirada", fontsize=7,
+        import branding
+        texto_rodape = branding.obter_texto_rodape()
+        pagina.insert_text((36,814), texto_rodape, fontsize=7,
                             color=(0.4,0.4,0.4))
         pagina.insert_textbox(pymupdf.Rect(420,805,559,824), f"Retirada · Página {numero} de {len(indices)}",
                                fontsize=7, align=2, color=(0.4,0.4,0.4))
