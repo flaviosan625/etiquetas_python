@@ -119,6 +119,29 @@ CREATE TABLE IF NOT EXISTS movimentacoes_estoque (
     custo_momento REAL
 );
 
+-- 8. Cadastro de Máquinas e Equipamentos Gráficos (RIPs, Spoolers e Mesas)
+CREATE TABLE IF NOT EXISTS maquinas (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    nome TEXT UNIQUE NOT NULL,
+    tipo TEXT NOT NULL DEFAULT 'rolo',
+    largura_util_m REAL,
+    mesa_largura_m REAL,
+    mesa_altura_m REAL,
+    hot_folder TEXT,
+    pasta_entrada TEXT,
+    rip_tipo TEXT NOT NULL DEFAULT 'generico',
+    posto TEXT NOT NULL DEFAULT 'local',
+    setup_sai TEXT,
+    montagem INTEGER NOT NULL DEFAULT 1,
+    largura_montagem_m REAL,
+    margem_montagem_m REAL DEFAULT 0.0,
+    girar INTEGER NOT NULL DEFAULT 1,
+    entrega_byhx INTEGER NOT NULL DEFAULT 0,
+    ativo INTEGER NOT NULL DEFAULT 1,
+    metadados TEXT,
+    data_atualizacao TEXT
+);
+
 -- ============================================================================
 -- ÍNDICES DE PERFORMANCE (Busca por Cliente, Status, Data e Material)
 -- ============================================================================
@@ -161,3 +184,8 @@ CREATE INDEX IF NOT EXISTS idx_estoque_categoria ON estoque (categoria_vinculada
 CREATE INDEX IF NOT EXISTS idx_mov_produto ON movimentacoes_estoque (produto_codigo);
 CREATE INDEX IF NOT EXISTS idx_mov_data ON movimentacoes_estoque (data_hora);
 CREATE INDEX IF NOT EXISTS idx_mov_tipo ON movimentacoes_estoque (tipo);
+
+-- Índices em Máquinas
+CREATE INDEX IF NOT EXISTS idx_maquinas_nome ON maquinas (nome);
+CREATE INDEX IF NOT EXISTS idx_maquinas_rip ON maquinas (rip_tipo);
+

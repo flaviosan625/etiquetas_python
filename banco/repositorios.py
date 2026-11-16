@@ -836,3 +836,171 @@ class RepositorioEstoque(RepositorioBase):
                 origem_pedido=orig.get("origem_pedido"),
                 estorno_de=movimentacao_id,
             )
+
+
+class RepositorioMaquinas(RepositorioBase):
+    """Gerencia catálogo de impressoras e máquinas configuradas no banco relacional."""
+
+    def garantir_tabela(self) -> None:
+        sql = """
+        CREATE TABLE IF NOT EXISTS maquinas (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nome TEXT UNIQUE NOT NULL,
+            tipo TEXT NOT NULL DEFAULT 'rolo',
+            largura_util_m REAL,
+            mesa_largura_m REAL,
+            mesa_altura_m REAL,
+            hot_folder TEXT,
+            pasta_entrada TEXT,
+            rip_tipo TEXT NOT NULL DEFAULT 'generico',
+            posto TEXT NOT NULL DEFAULT 'local',
+            setup_sai TEXT,
+            montagem INTEGER NOT NULL DEFAULT 1,
+            largura_montagem_m REAL,
+            margem_montagem_m REAL DEFAULT 0.0,
+            girar INTEGER NOT NULL DEFAULT 1,
+            entrega_byhx INTEGER NOT NULL DEFAULT 0,
+            ativo INTEGER NOT NULL DEFAULT 1,
+            metadados TEXT,
+            data_atualizacao TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_maquinas_nome ON maquinas (nome);
+        CREATE INDEX IF NOT EXISTS idx_maquinas_rip ON maquinas (rip_tipo);
+        """
+        with self._obter_conexao() as conn:
+            conn.executescript(sql)
+
+    def salvar_maquina(self, dados: Union[Dict[str, Any], Any]) -> int:
+        """Cadastra ou atualiza uma máquina na tabela relacional."""
+        self.garantir_tabela()
+
+        # Suporta MaquinaInfo ou dicionário
+        if hasattr(dados, "to_dict") and hasattr(dados, "nome"):
+            nome = dados.nome
+            d = dados.to_dict()
+            mesa_x, mesa_y = (dados.mesa_util_m if dados.mesa_util_m else (None, None))
+            largura_util = dados.largura_util_m
+            hot_folder = dados.hot_folder
+            pasta_entrada = dados.pasta_entrada
+            rip_tipo = dados.rip_tipo
+            posto = dados.posto
+            setup_sai = dados.setup_sai
+            montagem = int(dados.montagem)
+            largura_mont = dados.largura_montagem_m
+            margem_mont = dados.margem_montagem_m
+            girar = int(dados.girar)
+            entrega_byhx = int(dados.entrega_byhx)
+            ativo = int(dados.ativo)
+            tipo = dados.tipo
+            meta = json.dumps(dados.metadados) if dados.metadados else None
+        else:
+            d = dict(dados)
+            nome = str(d.get("nome", "")).strip()
+            if not nome:
+                raise ValueError("Nome da máquina é obrigatório.")
+            tipo = d.get("tipo", "rolo")
+            mesa = d.get("mesa_util_m")
+            mesa_x, mesa_y = (mesa[0], mesa[1]) if (mesa and len(mesa) >= 2) else (None, None)
+            largura_util = d.get("largura_util_m")
+            hot_folder = d.get("hot_folder")
+            pasta_entrada = d.get("pasta_entrada")
+            rip_tipo = d.get("rip_tipo", "generico")
+            posto = d.get("posto", "local")
+            setup_sai = d.get("setup_sai")
+            montagem = int(bool(d.get("montagem", True)))
+            largura_mont = d.get("largura_montagem_m")
+            margem_mont = float(d.get("margem_montagem_m", 0.0))
+            girar = int(bool(d.get("girar", True)))
+            entrega_byhx = int(bool(d.get("entrega_byhx", False)))
+            ativo = int(bool(d.get("ativo", True)))
+            meta_val = d.get("metadados")
+            meta = json.dumps(meta_val) if isinstance(meta_val, dict) else None
+
+        agora = datetime.now().isoformat()
+
+        sql = """
+        INSERT INTO maquinas (
+            nome, tipo, largura_util_m, mesa_largura_m, mesa_altura_m,
+            hot_folder, pasta_entrada, rip_tipo, posto, setup_sai,
+            montagem, largura_montagem_m, margem_montagem_m, girar,
+            entrega_byhx, ativo, metadados, data_atualizacao
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(nome) DO UPDATE SET
+            tipo = excluded.tipo,
+            largura_util_m = excluded.largura_util_m,
+            mesa_largura_m = excluded.mesa_largura_m,
+            mesa_altura_m = excluded.mesa_altura_m,
+            hot_folder = excluded.hot_folder,
+            pasta_entrada = excluded.pasta_entrada,
+            rip_tipo = excluded.rip_tipo,
+            posto = excluded.posto,
+            setup_sai = excluded.setup_sai,
+            montagem = excluded.montagem,
+            largura_montagem_m = excluded.largura_montagem_m,
+            margem_montagem_m = excluded.margem_montagem_m,
+            girar = excluded.girar,
+            entrega_byhx = excluded.entrega_byhx,
+            ativo = excluded.ativo,
+            metadados = excluded.metadados,
+            data_atualizacao = excluded.data_atualizacao
+        """
+        with self._obter_conexao() as conn:
+            cur = conn.execute(
+                sql,
+                (
+                    nome, tipo, largura_util, mesa_x, mesa_y,
+                    hot_folder, pasta_entrada, rip_tipo, posto, setup_sai,
+                    montagem, largura_mont, margem_mont, girar,
+                    entrega_byhx, ativo, meta, agora,
+                ),
+            )
+            return cur.lastrowid or 1
+
+    def obter_maquina(self, nome: str) -> Optional[Dict[str, Any]]:
+        self.garantir_tabela()
+        with self._obter_conexao() as conn:
+            row = conn.execute("SELECT * FROM maquinas WHERE nome = ?", (nome,)).fetchone()
+            if not row:
+                return None
+            res = _linha_para_dict(row)
+            if res and res.get("mesa_largura_m") and res.get("mesa_altura_m"):
+                res["mesa_util_m"] = (res["mesa_largura_m"], res["mesa_altura_m"])
+            return res
+
+    def listar_maquinas(self, apenas_ativas: bool = False) -> List[Dict[str, Any]]:
+        self.garantir_tabela()
+        query = "SELECT * FROM maquinas"
+        params = []
+        if apenas_ativas:
+            query += " WHERE ativo = 1"
+        query += " ORDER BY nome ASC"
+
+        with self._obter_conexao() as conn:
+            rows = conn.execute(query, params).fetchall()
+            saida = []
+            for r in rows:
+                d = _linha_para_dict(r)
+                if d and d.get("mesa_largura_m") and d.get("mesa_altura_m"):
+                    d["mesa_util_m"] = (d["mesa_largura_m"], d["mesa_altura_m"])
+                saida.append(d)
+            return saida
+
+    def remover_maquina(self, nome: str) -> bool:
+        self.garantir_tabela()
+        with self._obter_conexao() as conn:
+            cur = conn.execute("DELETE FROM maquinas WHERE nome = ?", (nome,))
+            return cur.rowcount > 0
+
+    def salvar_lote(self, maquinas: Dict[str, Any]) -> int:
+        """Salva um dicionário de máquinas {nome: config} no banco."""
+        salvos = 0
+        for nome, cfg in maquinas.items():
+            if isinstance(cfg, dict):
+                d = dict(cfg)
+                d["nome"] = nome
+            else:
+                d = {"nome": nome, "hot_folder": str(cfg)}
+            self.salvar_maquina(d)
+            salvos += 1
+        return salvos
+

@@ -22,7 +22,13 @@ from banco.repositorios import (
     RepositorioMontagens,
     RepositorioHistorico,
     RepositorioEstoque,
+    RepositorioMaquinas,
 )
+
+
+def obter_repositorio_maquinas(caminho=None) -> RepositorioMaquinas:
+    """Retorna uma instância do repositório de máquinas."""
+    return RepositorioMaquinas(caminho=caminho)
 
 
 def obter_repositorio_pedidos(caminho=None) -> RepositorioPedidos:
@@ -95,10 +101,12 @@ __all__ = [
     "RepositorioMontagens",
     "RepositorioHistorico",
     "RepositorioEstoque",
+    "RepositorioMaquinas",
     "obter_repositorio_pedidos",
     "obter_repositorio_montagens",
     "obter_repositorio_historico",
     "obter_repositorio_estoque",
+    "obter_repositorio_maquinas",
     "criar_pedido",
     "obter_pedido",
     "listar_pedidos",
