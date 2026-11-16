@@ -32,16 +32,43 @@ def _pasta_do_programa():
 
 PASTA_PROGRAMA = _pasta_do_programa()
 
-# O OneDrive da empresa — o mesmo em qualquer PC que tenha a conta
-# sincronizada, por isso a partir da pasta do usuário e não de um nome fixo.
-ONEDRIVE_UNY = pathlib.Path.home() / "OneDrive" / "UNYCOMUNICACAO"
 
-# Cada subpasta é um cliente (ver clientes.py). Renomeada de
-# "Flavio Recebimento de Artes" em 2026-09-13, a pedido do usuário: o
-# recebimento é da empresa, e roda vários clientes em paralelo.
-RECEBIMENTO_DE_ARTES = ONEDRIVE_UNY / "Recebimento de Artes"
+def _obter_pasta_base():
+    """
+    Pasta base onde moram os dados de produção, montagem e recebimento.
+    100% local, funcionando no computador do cliente sem depender de OneDrive.
+    Pode ser customizada em config.json ('pasta_base' ou 'pasta_dados').
+    Padrão: ~/AutomacaoGrafica (ex: C:\\Users\\<usuario>\\AutomacaoGrafica).
+    """
+    try:
+        from config import carregar_config
+        cfg = carregar_config()
+        if isinstance(cfg, dict):
+            p = cfg.get("pasta_base") or cfg.get("pasta_dados")
+            if p:
+                caminho = pathlib.Path(p)
+                if caminho.is_absolute():
+                    return caminho
+    except Exception:
+        pass
+    return pathlib.Path.home() / "AutomacaoGrafica"
 
-EVENTOS = ONEDRIVE_UNY / "EVENTOS"
+
+PASTA_BASE = _obter_pasta_base()
+PASTA_DADOS = PASTA_BASE
+
+# Pastas locais de trabalho (desacopladas de nuvem / OneDrive)
+RECEBIMENTO_DE_ARTES = PASTA_BASE / "Recebimento de Artes"
+EVENTOS = PASTA_BASE / "EVENTOS"
+
+# Fluxo unificado de montagem: artes soltas para montar e saída centralizada
+ARTES_PARA_MONTAR = PASTA_BASE / "ARTES PARA MONTAR"
+ARTES_MONTADAS = PASTA_BASE / "ARTES MONTADAS"
+
+# Aliases de compatibilidade para código que referencia os caminhos anteriores
+MONTAGEM_ARTES = PASTA_BASE / "MONTAGEM ARTES MAQUINAS"
+FILA_IMPRESSAO = PASTA_BASE / "FILA PARA IMPRESSAO MAQUINAS"
+ONEDRIVE_UNY = PASTA_BASE
 
 # Onde saem OS, checklist e etiquetas. Ao lado do programa, sempre — nunca
 # relativo à pasta onde alguém abriu o atalho.
@@ -53,12 +80,15 @@ ETIQUETAS_GERADAS = PASTA_PROGRAMA / "etiquetas_geradas"
 # evapora (ver o registro de 17 a 22/09 no CLAUDE.md).
 ESTOQUE = PASTA_PROGRAMA / "estoque.json"
 
+# Banco relacional SQLite com modo WAL para pedidos, montagens, histórico e estoque.
+BANCO_DADOS = PASTA_BASE / "dados.db"
+
 # Onde a tela de receber artes deixa o que baixou ANTES de ele confirmar
 # (2026-09-21). Local e fora do OneDrive de propósito: arte que ele ainda
 # pode recusar não deve ficar sincronizando, e cliente novo só nasce na
 # hora de arquivar. É espera, não guarda — lote velho é apagado sozinho.
 PASTA_RECEBENDO = (pathlib.Path(os.environ.get("LOCALAPPDATA") or tempfile.gettempdir())
-                   / "UnyCV" / "recebendo")
+                   / "AutomacaoGrafica" / "recebendo")
 
 
 def relativo_ao_onedrive(caminho):
@@ -81,6 +111,10 @@ def resolver_do_onedrive(texto):
         return None
     caminho = pathlib.Path(texto)
     return caminho if caminho.is_absolute() else ONEDRIVE_UNY / caminho
+
+
+relativo_a_base = relativo_ao_onedrive
+resolver_da_base = resolver_do_onedrive
 
 
 def comando_python(*argumentos, com_console=True):
