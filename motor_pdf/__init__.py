@@ -5,11 +5,13 @@ Projetado para automação gráfica industrial e comunicação visual.
 100% autônomo, sem dependências de PyMuPDF, Poppler ou qualquer biblioteca AGPL/GPL.
 """
 
+from . import miniaturas
 from .escritor import PdfWriter
 from .geometria import BoundingBox, Matriz2D
 from .interpretador_stream import calcular_caixa_da_arte, interpretar_stream
 from .leitor import Caixa, ImagemInfo, Pagina, PdfReader
 from .montador import MontadorBobina, PecaMontagem
+from .relatorios_pdf import RelatorioA4Builder
 from .sintaxe import PdfArray, PdfDict, PdfName, PdfRef, PdfStream, PdfString
 
 
@@ -20,10 +22,12 @@ def abrir_pdf(caminho_ou_bytes) -> PdfReader:
 
 __all__ = [
     "abrir_pdf",
+    "miniaturas",
     "PdfReader",
     "PdfWriter",
     "MontadorBobina",
     "PecaMontagem",
+    "RelatorioA4Builder",
     "Pagina",
     "Caixa",
     "ImagemInfo",
