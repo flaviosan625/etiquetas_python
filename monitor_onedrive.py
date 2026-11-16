@@ -28,13 +28,14 @@ from datetime import datetime, timedelta
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
+import caminhos
 from config import carregar_config
 from producao import (
     varrer_e_organizar_todas, gerar_relatorio_pendencias, abrir_relatorio_pendencias,
     garantir_estrutura_producao, organizar_pasta_producao, NOME_PASTA_PRODUCAO,
 )
 
-PASTA_PADRAO = pathlib.Path.home() / "OneDrive" / "UNYCOMUNICACAO" / "EVENTOS"
+PASTA_PADRAO = caminhos.EVENTOS
 
 # Identidade que a notificação usa junto do Windows. Sem um atalho no
 # Menu Iniciar registrado com esse mesmo ID (ver _garantir_atalho_
@@ -42,8 +43,8 @@ PASTA_PADRAO = pathlib.Path.home() / "OneDrive" / "UNYCOMUNICACAO" / "EVENTOS"
 # mostra a notificação — descoberto testando ao vivo (2026-08-30):
 # nem um ID inventado nem SetCurrentProcessExplicitAppUserModelID
 # sozinho bastam, só funcionou com o atalho de verdade no Menu Iniciar.
-_AUMID = "Uny.CV.MonitorDePastas"
-_NOME_ATALHO = "Uny CV - Monitor de Pastas.lnk"
+_AUMID = "AutomacaoGrafica.MonitorDePastas"
+_NOME_ATALHO = "Monitor de Pastas.lnk"
 
 
 def _caminho_pythonw():
@@ -85,7 +86,7 @@ def _garantir_atalho_registrado():
         )
         link.SetPath(str(python_exe))
         link.SetArguments(f'"{script}"')
-        link.SetDescription("Monitor da pasta de eventos da Uny CV")
+        link.SetDescription("Monitor de pastas para produção gráfica")
 
         store = link.QueryInterface(propsys.IID_IPropertyStore)
         store.SetValue(pscon.PKEY_AppUserModel_ID, propsys.PROPVARIANTType(_AUMID))
@@ -120,7 +121,7 @@ def ativar_inicializacao_automatica():
     atalho.TargetPath = str(python_exe)
     atalho.Arguments = f'"{script}"'
     atalho.WorkingDirectory = str(script.parent)
-    atalho.Description = "Monitor da pasta de eventos da Uny CV"
+    atalho.Description = "Monitor de pastas para produção gráfica"
     atalho.Save()
     return caminho_lnk
 
@@ -453,7 +454,7 @@ def abrir_relatorio_atividade(pasta=None, dias=1, data_inicio=None, data_fim=Non
     return caminho
 
 
-_NOME_MUTEX = "Uny.CV.MonitorDePastas.InstanciaUnica"
+_NOME_MUTEX = "AutomacaoGrafica.MonitorDePastas.InstanciaUnica"
 _mutex_instancia = None  # precisa ficar viva até o processo terminar — ver _ja_esta_rodando
 
 
@@ -561,7 +562,7 @@ def rodar_com_bandeja(pasta=None, notificar=notificar_windows):
     pra Pausar/Retomar o monitoramento ou Sair, sem precisar de
     terminal nenhum.
     """
-    import pystray
+    import bandeja_win32 as bandeja
 
     pasta = pathlib.Path(pasta or PASTA_PADRAO)
     if not pasta.exists():
@@ -622,16 +623,16 @@ def rodar_com_bandeja(pasta=None, notificar=notificar_windows):
         vigia.parar()
         icon.stop()
 
-    menu = pystray.Menu(
-        pystray.MenuItem("Monitorando", _alternar, checked=lambda item: vigia.ativo),
-        pystray.MenuItem("Abrir pasta", _abrir_pasta),
-        pystray.MenuItem("Relatório de hoje", _relatorio_hoje),
-        pystray.MenuItem("Relatório dos últimos 7 dias", _relatorio_semana),
-        pystray.MenuItem("Pendências por cliente", _pendencias_por_cliente),
-        pystray.MenuItem("Sair", _sair),
+    menu = bandeja.Menu(
+        bandeja.MenuItem("Monitorando", _alternar, checked=lambda item: vigia.ativo),
+        bandeja.MenuItem("Abrir pasta", _abrir_pasta),
+        bandeja.MenuItem("Relatório de hoje", _relatorio_hoje),
+        bandeja.MenuItem("Relatório dos últimos 7 dias", _relatorio_semana),
+        bandeja.MenuItem("Pendências por cliente", _pendencias_por_cliente),
+        bandeja.MenuItem("Sair", _sair),
     )
-    icon = pystray.Icon(
-        "uny_cv_monitor", _icone_bandeja(alerta=_tem_pendencia(pasta)), "Monitor de Pastas - Uny CV", menu,
+    icon = bandeja.Icon(
+        "uny_cv_monitor", _icone_bandeja(alerta=_tem_pendencia(pasta)), "Monitor de Pastas", menu,
     )
 
     thread_pendencias = threading.Thread(

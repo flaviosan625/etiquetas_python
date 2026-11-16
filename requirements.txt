@@ -1,7 +1,7 @@
 PyMuPDF>=1.24.0
+# pywin32: Licença PSF (permissiva) - usado para API Win32, automação e bandeja do sistema
 pywin32>=306; sys_platform == "win32"
 watchdog>=4.0; sys_platform == "win32"
-pystray>=0.19; sys_platform == "win32"
 Pillow>=10.0; sys_platform == "win32"
 google-api-python-client>=2.100
 google-auth-oauthlib>=1.2
