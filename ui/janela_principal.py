@@ -122,8 +122,15 @@ def detectar_dimensoes(caminho_arquivo: Path) -> tuple:
         from dimensoes import extrair_dimensoes, extrair_quantidade
         dim = extrair_dimensoes(nome)
         qtd = extrair_quantidade(nome) or 1
-        if dim and dim[0] > 0 and dim[1] > 0:
-            return round(dim[0] * 1000.0, 1), round(dim[1] * 1000.0, 1), qtd
+        if dim:
+            if isinstance(dim, dict):
+                w_m, h_m = dim.get("largura_m", 0.0), dim.get("altura_m", 0.0)
+            elif isinstance(dim, (list, tuple)):
+                w_m, h_m = dim[0], dim[1]
+            else:
+                w_m, h_m = 0.0, 0.0
+            if w_m > 0 and h_m > 0:
+                return round(w_m * 1000.0, 1), round(h_m * 1000.0, 1), qtd
     except Exception:
         pass
 
@@ -792,7 +799,7 @@ class JanelaPrincipal(QMainWindow):
         dialogo.exec()
 
     def _ao_receber_artes_triadas(self, lista_aprovados: list) -> None:
-        """Recebe as artes aprovadas na triagem e alimenta a fila de montagem."""
+        """Recebe as artes aprovadas na triagem e alimenta a fila de montagem e o canvas."""
         if not lista_aprovados:
             return
 
@@ -812,6 +819,22 @@ class JanelaPrincipal(QMainWindow):
                 material=mat,
                 quantidade=art.get("quantidade", 1),
             )
+            # Adiciona diretamente também ao canvas da bobina
+            self.canvas.adicionar_peca(
+                nome=art["nome"],
+                largura_mm=art["largura_mm"],
+                altura_mm=art["altura_mm"],
+                miniatura=art.get("miniatura"),
+                caminho_arquivo=art.get("caminho"),
+                material=mat,
+                quantidade=art.get("quantidade", 1),
+            )
+
+        if lista_aprovados and lista_aprovados[0].get("caminho"):
+            try:
+                self.pasta_entrada_atual = Path(lista_aprovados[0]["caminho"]).parent
+            except Exception:
+                pass
 
         if len(materiais_encontrados) == 1:
             mat_unico = list(materiais_encontrados)[0]
@@ -819,11 +842,13 @@ class JanelaPrincipal(QMainWindow):
             if idx >= 0:
                 self.combo_filtro_material.setCurrentIndex(idx)
 
+        self.canvas.fit_in_view()
+
         if hasattr(self, "guia_passo"):
             self.guia_passo.ir_para_etapa(2)
 
         self.statusBar().showMessage(
-            f"Triagem concluída: {len(lista_aprovados)} artes aprovadas! Próximo passo: selecione a máquina e clique em Auto Nesting.",
+            f"Triagem concluída: {len(lista_aprovados)} artes aprovadas inseridas na bobina! Próximo passo: selecione o material e a máquina.",
             6000,
         )
 

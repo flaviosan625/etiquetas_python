@@ -396,6 +396,17 @@ class WorkflowStepper(QFrame):
         """Dispara a ação rápida associada à etapa corrente."""
         self.acao_etapa_disparada.emit(self.etapa_atual)
 
+    def ir_para_etapa(self, etapa_id: int) -> None:
+        """Navega para a etapa informada (suporta 1-indexed de 1 a 5 ou 0-indexed de 0 a 4)."""
+        if 1 <= etapa_id <= len(self.etapas_dados):
+            self.definir_etapa_atual(etapa_id - 1)
+        elif 0 <= etapa_id < len(self.etapas_dados):
+            self.definir_etapa_atual(etapa_id)
+
+    def retroceder_etapa(self) -> None:
+        """Retorna para a etapa anterior (alias para voltar_etapa)."""
+        self.voltar_etapa()
+
     def obter_etapa_atual(self) -> int:
         """Retorna o índice da etapa corrente (0 a 4)."""
         return self.etapa_atual

@@ -2,12 +2,15 @@
 Canvas WYSIWYG Interativo com PySide6 / QGraphicsView para Montagem de Bobina/Chapa.
 
 Recursos:
-- Zoom centrado na posição do cursor do mouse (fator 1.15).
-- Pan fluido via clique e arraste com botão do meio ou barra de espaço.
-- Réguas de medição dinâmica métrica em cm/m ajustadas ao zoom.
-- Representação gráfica da mídia física e margens de corte de segurança.
+- Renderização visual aperfeiçoada de rolo de mídia industrial contínuo com sombra suave.
+- Zonas de presilha e linhas tracejadas de margem de segurança lateral e topo da máquina.
+- Réguas de medição dinâmica métrica em cm/m ajustadas ao zoom com marcações legíveis a cada 10cm, 50cm, 1m.
+- Guia reticular do cursor do mouse em tempo real sobre as réguas métricas.
 - PecaGraficaItem com movimentação livre, rotação 90 graus (tecla R / menu) e
-  detecção de colisão em tempo real (destaque vermelho/verde).
+  detecção de colisão em tempo real (destaque azul elétrico para seleção e vermelho vivo para colisão).
+- Substrato das peças com efeito realista de elevação e chanfro 3D.
+- Miniatura de arte renderizada perfeitamente nítida (Anti-aliasing + SmoothPixmapTransform).
+- Tarja de informações inferior ultra-legível com nome, material, dimensões e rotação.
 - Cálculo contínuo de métricas de aproveitamento e comprimento linear.
 """
 
@@ -38,6 +41,8 @@ from PySide6.QtGui import (
     QPixmap,
     QAction,
     QPolygonF,
+    QPainterPath,
+    QLinearGradient,
 )
 
 from ui.tema import CoresTema
@@ -75,7 +80,7 @@ class PecaGraficaItem(QGraphicsObject):
         self.material = str(material).upper()
         self.quantidade = int(quantidade)
         self.metadados = metadados or {}
-        
+
         self.rotacao = 0.0  # 0, 90, 180, 270 graus
         self.tem_colisao = False
         self.fora_dos_limites = False
@@ -201,7 +206,7 @@ class PecaGraficaItem(QGraphicsObject):
         menu = QMenu()
         acao_girar = menu.addAction("Girar 90° (Tecla R)")
         acao_girar.triggered.connect(self.girar_90_graus)
-        
+
         acao_remover = menu.addAction("Remover da Bobina")
         view = self._obter_view()
         if view:
@@ -210,92 +215,230 @@ class PecaGraficaItem(QGraphicsObject):
         menu.exec(event.screenPos())
 
     def paint(self, painter: QPainter, option, widget=None) -> None:
-        """Desenha a peça com indicação de colisão ou encaixe válido."""
+        """
+        Desenha a peça gráfica com substrato elevado, miniatura nítida,
+        tarja de informações ultra-legível e realce interativo de colisão/seleção.
+        """
         painter.setRenderHint(QPainter.Antialiasing, True)
         painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
+        painter.setRenderHint(QPainter.TextAntialiasing, True)
 
         rect = self.boundingRect()
         tem_problema = self.tem_colisao or self.fora_dos_limites
 
-        # 1. Base física do substrato (mídia vinil/lona branca)
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(QBrush(QColor("#ffffff")))
-        painter.drawRoundedRect(rect, 4.0, 4.0)
+        # ---------------------------------------------------------------------
+        # 1. Substrato Físico com Efeito Sutil de Sombra e Elevação 3D
+        # ---------------------------------------------------------------------
+        path_peca = QPainterPath()
+        path_peca.addRoundedRect(rect, 4.0, 4.0)
 
-        # 2. Desenhar miniatura da arte
+        # Gradiente suave de substrato vinil acetinado
+        grad_substrato = QLinearGradient(rect.topLeft(), rect.bottomRight())
+        grad_substrato.setColorAt(0.0, QColor("#ffffff"))
+        grad_substrato.setColorAt(1.0, QColor("#f8fafc"))
+
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QBrush(grad_substrato))
+        painter.drawPath(path_peca)
+
+        # Chanfro / Chanfradura sutil de elevação física do vinil (espessura do material)
+        # Borda superior e esquerda com reflexo de luz
+        painter.setPen(QPen(QColor(255, 255, 255, 220), 1.0))
+        painter.drawLine(QPointF(rect.left() + 4.0, rect.top() + 1.0), QPointF(rect.right() - 4.0, rect.top() + 1.0))
+        painter.drawLine(QPointF(rect.left() + 1.0, rect.top() + 4.0), QPointF(rect.left() + 1.0, rect.bottom() - 4.0))
+
+        # Borda inferior e direita com sombra sutil de relevo
+        painter.setPen(QPen(QColor(148, 163, 184, 150), 1.2))
+        painter.drawLine(QPointF(rect.left() + 4.0, rect.bottom() - 1.0), QPointF(rect.right() - 4.0, rect.bottom() - 1.0))
+        painter.drawLine(QPointF(rect.right() - 1.0, rect.top() + 4.0), QPointF(rect.right() - 1.0, rect.bottom() - 4.0))
+
+        # ---------------------------------------------------------------------
+        # 2. Miniatura de Arte Renderizada Perfeitamente Nítida
+        # ---------------------------------------------------------------------
         if (self.miniatura is None or self.miniatura.isNull()) and self.caminho_arquivo:
             self._carregar_miniatura_arquivo()
 
-        altura_tarja = min(22.0, max(14.0, rect.height() * 0.22))
-        rect_arte = rect.adjusted(3.0, 3.0, -3.0, -altura_tarja - 3.0)
-
-        if self.miniatura and not self.miniatura.isNull():
-            if rect_arte.width() > 5 and rect_arte.height() > 5:
-                pix_escalada = self.miniatura.scaled(
-                    int(rect_arte.width()),
-                    int(rect_arte.height()),
-                    Qt.KeepAspectRatio,
-                    Qt.SmoothTransformation,
-                )
-                px = rect_arte.x() + (rect_arte.width() - pix_escalada.width()) / 2.0
-                py = rect_arte.y() + (rect_arte.height() - pix_escalada.height()) / 2.0
-                painter.drawPixmap(int(px), int(py), pix_escalada)
-        elif rect_arte.width() > 25 and rect_arte.height() > 20:
-            painter.setPen(QColor("#64748b"))
-            painter.setBrush(QBrush(QColor("#f8fafc")))
-            painter.drawRect(rect_arte)
-            painter.setFont(QFont("Segoe UI", 8))
-            painter.drawText(rect_arte, Qt.AlignCenter, f"{self.material}\n{self.largura_mm:.0f}×{self.altura_mm:.0f} mm")
-
-        # 3. Cores e estilos de borda / seleção / colisão
-        if tem_problema:
-            cor_borda = QColor(CoresTema.PERIGO)
-            cor_overlay = QColor(CoresTema.PERIGO)
-            cor_overlay.setAlpha(60)
-            painter.setPen(QPen(cor_borda, 2.5))
-            painter.setBrush(QBrush(cor_overlay))
-            painter.drawRoundedRect(rect, 4.0, 4.0)
-        elif self.isSelected():
-            cor_borda = QColor(CoresTema.ACENTO_PRIMARIO)
-            cor_overlay = QColor(CoresTema.ACENTO_PRIMARIO)
-            cor_overlay.setAlpha(45)
-            painter.setPen(QPen(cor_borda, 2.0))
-            painter.setBrush(QBrush(cor_overlay))
-            painter.drawRoundedRect(rect, 4.0, 4.0)
-        else:
-            cor_borda = QColor("#0284c7")  # Linha azul sutil indicando contorno de corte
-            painter.setPen(QPen(cor_borda, 1.2, Qt.DashLine))
-            painter.setBrush(Qt.NoBrush)
-            painter.drawRoundedRect(rect, 4.0, 4.0)
-
-        # 4. Tarja inferior de identificação
-        rect_tarja = QRectF(rect.x(), rect.bottom() - altura_tarja, rect.width(), altura_tarja)
-        cor_tarja = QColor("#0f172a")
-        cor_tarja.setAlpha(220)
-        painter.fillRect(rect_tarja, cor_tarja)
-
-        painter.setPen(QColor("#f8fafc" if not tem_problema else CoresTema.PERIGO))
-        fonte_nome = QFont("Segoe UI", max(6, int(altura_tarja * 0.45)), QFont.Bold)
-        painter.setFont(fonte_nome)
-
-        texto_dim = f"{self.largura_mm:.0f}×{self.altura_mm:.0f}mm"
-        if self.rotacao > 0:
-            texto_dim += f" ({self.rotacao:.0f}°)"
-
-        texto_exibicao = f"{self.nome} | {self.material} | {texto_dim}"
-        painter.drawText(
-            rect_tarja.adjusted(4, 0, -4, 0),
-            Qt.AlignVCenter | Qt.AlignLeft,
-            painter.fontMetrics().elidedText(texto_exibicao, Qt.ElideRight, int(rect_tarja.width() - 8)),
+        altura_tarja = min(24.0, max(14.0, rect.height() * 0.20))
+        margem_interna = 2.5
+        rect_arte = QRectF(
+            rect.x() + margem_interna,
+            rect.y() + margem_interna,
+            rect.width() - (2.0 * margem_interna),
+            rect.height() - altura_tarja - margem_interna - 1.5,
         )
 
-        # 5. Indicador de colisão em texto se houver
+        if self.miniatura and not self.miniatura.isNull():
+            if rect_arte.width() > 4 and rect_arte.height() > 4:
+                pix_w = self.miniatura.width()
+                pix_h = self.miniatura.height()
+                if pix_w > 0 and pix_h > 0:
+                    escala = min(rect_arte.width() / pix_w, rect_arte.height() / pix_h)
+                    w_alvo = pix_w * escala
+                    h_alvo = pix_h * escala
+                    x_alvo = rect_arte.x() + (rect_arte.width() - w_alvo) / 2.0
+                    y_alvo = rect_arte.y() + (rect_arte.height() - h_alvo) / 2.0
+                    target_rect = QRectF(x_alvo, y_alvo, w_alvo, h_alvo)
+
+                    # Fundo branco e projeção nítida em resolução total da tela
+                    painter.fillRect(target_rect, QColor("#ffffff"))
+                    painter.drawPixmap(target_rect, self.miniatura, QRectF(self.miniatura.rect()))
+
+                    # Filete sutil de acabamento ao redor da arte
+                    painter.setPen(QPen(QColor("#cbd5e1"), 0.6))
+                    painter.setBrush(Qt.NoBrush)
+                    painter.drawRect(target_rect)
+        elif rect_arte.width() > 20 and rect_arte.height() > 15:
+            # Placeholder CAD vetorial limpo
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QBrush(QColor("#f1f5f9")))
+            painter.drawRoundedRect(rect_arte, 2.0, 2.0)
+
+            # Grid sutil de blueprint
+            painter.setPen(QPen(QColor("#e2e8f0"), 0.8, Qt.DotLine))
+            centro_x = rect_arte.center().x()
+            centro_y = rect_arte.center().y()
+            painter.drawLine(QPointF(rect_arte.left(), centro_y), QPointF(rect_arte.right(), centro_y))
+            painter.drawLine(QPointF(centro_x, rect_arte.top()), QPointF(centro_x, rect_arte.bottom()))
+
+            # Informação textual central
+            painter.setPen(QColor("#64748b"))
+            tam_fonte_ph = max(6, int(min(rect_arte.width(), rect_arte.height()) * 0.12))
+            painter.setFont(QFont("Segoe UI", min(tam_fonte_ph, 11), QFont.Bold))
+            painter.drawText(
+                rect_arte,
+                Qt.AlignCenter,
+                f"{self.material}\n{self.largura_mm:.0f} × {self.altura_mm:.0f} mm",
+            )
+
+        # ---------------------------------------------------------------------
+        # 3. Tarja Inferior Ultra-Legível com Nome, Material e Dimensões
+        # ---------------------------------------------------------------------
+        rect_tarja = QRectF(rect.x(), rect.bottom() - altura_tarja, rect.width(), altura_tarja)
+        path_tarja_rect = QPainterPath()
+        path_tarja_rect.addRect(rect_tarja)
+        # Interseção garante que a tarja herde com perfeição os cantos arredondados inferiores
+        path_tarja = path_peca.intersected(path_tarja_rect)
+
         if tem_problema:
-            aviso = "COLISÃO!" if self.tem_colisao else "FORA DA ÁREA ÚTIL!"
-            painter.setPen(QColor(CoresTema.PERIGO))
-            fonte_aviso = QFont("Segoe UI", 10, QFont.Black)
-            painter.setFont(fonte_aviso)
-            painter.drawText(rect_arte, Qt.AlignCenter, aviso)
+            grad_tarja = QLinearGradient(rect_tarja.topLeft(), rect_tarja.bottomLeft())
+            grad_tarja.setColorAt(0.0, QColor("#991b1b"))
+            grad_tarja.setColorAt(1.0, QColor("#7f1d1d"))
+            cor_borda_tarja = QColor("#ef4444")
+            cor_texto_tarja = QColor("#ffffff")
+        elif self.isSelected():
+            grad_tarja = QLinearGradient(rect_tarja.topLeft(), rect_tarja.bottomLeft())
+            grad_tarja.setColorAt(0.0, QColor("#0c2340"))
+            grad_tarja.setColorAt(1.0, QColor("#0f172a"))
+            cor_borda_tarja = QColor("#0ea5e9")
+            cor_texto_tarja = QColor("#38bdf8")
+        else:
+            grad_tarja = QLinearGradient(rect_tarja.topLeft(), rect_tarja.bottomLeft())
+            grad_tarja.setColorAt(0.0, QColor("#1e293b"))
+            grad_tarja.setColorAt(1.0, QColor("#0f172a"))
+            cor_borda_tarja = QColor("#334155")
+            cor_texto_tarja = QColor("#f8fafc")
+
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QBrush(grad_tarja))
+        painter.drawPath(path_tarja)
+
+        # Linha divisória superior da tarja
+        painter.setPen(QPen(cor_borda_tarja, 1.0))
+        painter.drawLine(rect_tarja.topLeft(), rect_tarja.topRight())
+
+        # Formatação de texto da tarja
+        texto_dim = f"{self.largura_mm:.0f}×{self.altura_mm:.0f}mm"
+        if self.rotacao > 0:
+            texto_dim += f" (↻{self.rotacao:.0f}°)"
+
+        texto_exibicao = f"{self.nome} | {self.material} | {texto_dim}"
+
+        tam_fonte_tarja = max(6, int(altura_tarja * 0.44))
+        fonte_tarja = QFont("Segoe UI", min(tam_fonte_tarja, 10), QFont.Bold)
+        painter.setFont(fonte_tarja)
+        painter.setPen(cor_texto_tarja)
+        margem_texto = 4.0
+        rect_texto = rect_tarja.adjusted(margem_texto, 0, -margem_texto, 0)
+        texto_formatado = painter.fontMetrics().elidedText(texto_exibicao, Qt.ElideRight, int(rect_texto.width()))
+        painter.drawText(rect_texto, Qt.AlignVCenter | Qt.AlignLeft, texto_formatado)
+
+        # ---------------------------------------------------------------------
+        # 4. Borda de Destaque Interativa / Seleção / Alerta de Colisão
+        # ---------------------------------------------------------------------
+        if tem_problema:
+            # Vermelho Vivo de Perigo / Alerta de Colisão
+            cor_borda = QColor(CoresTema.PERIGO)
+            painter.setPen(QPen(cor_borda, 2.8, Qt.SolidLine))
+            cor_overlay = QColor(239, 68, 68, 45)
+            painter.setBrush(QBrush(cor_overlay))
+            painter.drawPath(path_peca)
+
+            # Alerta visual em banner central de alta visibilidade
+            if rect_arte.width() > 60 and rect_arte.height() > 22:
+                aviso = "COLISÃO DETECTADA!" if self.tem_colisao else "FORA DA ÁREA ÚTIL!"
+                w_banner = min(rect_arte.width() - 8.0, 220.0)
+                h_banner = min(rect_arte.height() - 8.0, 26.0)
+                rect_banner = QRectF(
+                    rect_arte.center().x() - (w_banner / 2.0),
+                    rect_arte.center().y() - (h_banner / 2.0),
+                    w_banner,
+                    h_banner,
+                )
+                painter.setPen(QPen(QColor("#fca5a5"), 1.2))
+                painter.setBrush(QBrush(QColor("#7f1d1d")))
+                painter.drawRoundedRect(rect_banner, 4.0, 4.0)
+
+                painter.setPen(QColor("#ffffff"))
+                tam_aviso = max(7, int(h_banner * 0.44))
+                fonte_aviso = QFont("Segoe UI", min(tam_aviso, 11), QFont.Black)
+                painter.setFont(fonte_aviso)
+                painter.drawText(rect_banner, Qt.AlignCenter, f"⚠ {aviso}")
+
+        elif self.isSelected():
+            # Azul Brilhante Elétrico de Seleção Interativa
+            cor_borda = QColor(CoresTema.ACENTO_PRIMARIO)
+            painter.setPen(QPen(cor_borda, 2.5, Qt.SolidLine))
+            cor_overlay = QColor(14, 165, 233, 35)
+            painter.setBrush(QBrush(cor_overlay))
+            painter.drawPath(path_peca)
+
+            # Alças de Seleção CAD/CAM nos 4 cantos
+            tam_alca = min(6.0, min(rect.width(), rect.height()) * 0.12)
+            meia_alca = tam_alca / 2.0
+            pontos_alcas = [
+                QPointF(rect.left(), rect.top()),
+                QPointF(rect.right(), rect.top()),
+                QPointF(rect.left(), rect.bottom()),
+                QPointF(rect.right(), rect.bottom()),
+            ]
+            painter.setPen(QPen(QColor("#0ea5e9"), 1.5))
+            painter.setBrush(QBrush(QColor("#ffffff")))
+            for pt in pontos_alcas:
+                painter.drawRect(QRectF(pt.x() - meia_alca, pt.y() - meia_alca, tam_alca, tam_alca))
+
+        else:
+            # Estado Normal: Contorno de Faca/Corte CNC em Azul Técnico
+            cor_borda = QColor("#0284c7")
+            painter.setPen(QPen(cor_borda, 1.2, Qt.DashLine))
+            painter.setBrush(Qt.NoBrush)
+            painter.drawPath(path_peca)
+
+            # Marcas de Corte L nos 4 cantos (Estilo Gráfica / Plotter CNC)
+            tam_corte = min(6.0, min(rect.width(), rect.height()) * 0.10)
+            if tam_corte >= 3.0:
+                painter.setPen(QPen(QColor("#0284c7"), 1.2, Qt.SolidLine))
+                # Canto Superior Esquerdo
+                painter.drawLine(QPointF(rect.left(), rect.top()), QPointF(rect.left() + tam_corte, rect.top()))
+                painter.drawLine(QPointF(rect.left(), rect.top()), QPointF(rect.left(), rect.top() + tam_corte))
+                # Canto Superior Direito
+                painter.drawLine(QPointF(rect.right(), rect.top()), QPointF(rect.right() - tam_corte, rect.top()))
+                painter.drawLine(QPointF(rect.right(), rect.top()), QPointF(rect.right(), rect.top() + tam_corte))
+                # Canto Inferior Esquerdo
+                painter.drawLine(QPointF(rect.left(), rect.bottom()), QPointF(rect.left() + tam_corte, rect.bottom()))
+                painter.drawLine(QPointF(rect.left(), rect.bottom()), QPointF(rect.left(), rect.bottom() - tam_corte))
+                # Canto Inferior Direito
+                painter.drawLine(QPointF(rect.right(), rect.bottom()), QPointF(rect.right() - tam_corte, rect.bottom()))
+                painter.drawLine(QPointF(rect.right(), rect.bottom()), QPointF(rect.right(), rect.bottom() - tam_corte))
 
 
 class CanvasMontagem(QGraphicsView):
@@ -329,6 +472,7 @@ class CanvasMontagem(QGraphicsView):
         self._espaco_pressionado = False
         self._arrastando_pan = False
         self._pos_mouse_anterior = QPointF()
+        self._pos_mouse_view: Optional[QPointF] = None
         self._atualizando_colisoes = False
 
         self._configurar_view()
@@ -501,7 +645,7 @@ class CanvasMontagem(QGraphicsView):
     def calcular_estatisticas(self) -> Dict[str, Any]:
         """Calcula métricas de aproveitamento de material e metragem linear."""
         largura_m = self.largura_mm / 1000.0
-        
+
         # Comprimento ocupado real pelas peças
         if not self._pecas:
             comprimento_usado_mm = 0.0
@@ -604,15 +748,17 @@ class CanvasMontagem(QGraphicsView):
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
-        """Arrasta a câmera durante o pan fluido."""
+        """Arrasta a câmera durante o pan fluido e atualiza guias reticulares das réguas."""
         if self._arrastando_pan:
             delta = event.position() - self._pos_mouse_anterior
             self._pos_mouse_anterior = event.position()
-            # Mover barras de rolagem ou transladar
             self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() - int(delta.x()))
             self.verticalScrollBar().setValue(self.verticalScrollBar().value() - int(delta.y()))
             event.accept()
             return
+
+        self._pos_mouse_view = event.position()
+        self.viewport().update()
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
@@ -624,89 +770,198 @@ class CanvasMontagem(QGraphicsView):
             return
         super().mouseReleaseEvent(event)
 
+    def leaveEvent(self, event: QEvent) -> None:
+        """Limpa guias reticulares do cursor ao sair da viewport."""
+        self._pos_mouse_view = None
+        self.viewport().update()
+        super().leaveEvent(event)
+
     # -------------------------------------------------------------------------
     # Renderização da Bobina, Margens e Réguas Métricas Dinâmicas
     # -------------------------------------------------------------------------
 
     def drawBackground(self, painter: QPainter, rect: QRectF) -> None:
-        """Desenha a representação da mídia física e margens de corte."""
+        """Desenha a representação da mídia física e margens de corte com acabamento industrial."""
         super().drawBackground(painter, rect)
         painter.save()
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        painter.setRenderHint(QPainter.TextAntialiasing, True)
 
-        # Grade suave de fundo da cena
-        pen_grade = QPen(QColor(CoresTema.GRADE_LINHA), 1, Qt.DotLine)
-        painter.setPen(pen_grade)
-        
-        # Desenhar Mídia Física (Área Branca/Contrastada)
+        # 1. Grade Técnica de Fundo da Máquina (Chão de Fábrica / Base CNC)
+        pen_grade_menor = QPen(QColor("#181b25"), 0.8, Qt.DotLine)
+        pen_grade_maior = QPen(QColor("#252b3b"), 1.2, Qt.SolidLine)
+
+        x_inicio = math.floor(rect.left() / 100.0) * 100.0
+        x_fim = math.ceil(rect.right() / 100.0) * 100.0
+        curr_x = x_inicio
+        while curr_x <= x_fim:
+            is_metro = abs(curr_x % 1000.0) < 0.01
+            painter.setPen(pen_grade_maior if is_metro else pen_grade_menor)
+            painter.drawLine(QPointF(curr_x, rect.top()), QPointF(curr_x, rect.bottom()))
+            curr_x += 100.0
+
+        y_inicio = math.floor(rect.top() / 100.0) * 100.0
+        y_fim = math.ceil(rect.bottom() / 100.0) * 100.0
+        curr_y = y_inicio
+        while curr_y <= y_fim:
+            is_metro = abs(curr_y % 1000.0) < 0.01
+            painter.setPen(pen_grade_maior if is_metro else pen_grade_menor)
+            painter.drawLine(QPointF(rect.left(), curr_y), QPointF(rect.right(), curr_y))
+            curr_y += 100.0
+
+        # 2. Sombra Suave de Elevação do Rolo de Mídia sobre o Chão
         rect_midia = QRectF(0.0, 0.0, self.largura_mm, self.comprimento_mm)
-        brush_midia = QBrush(QColor(CoresTema.MIDIA_PAPEL))
-        pen_borda_midia = QPen(QColor(CoresTema.MIDIA_BORDA), 1.5)
-        painter.setBrush(brush_midia)
-        painter.setPen(pen_borda_midia)
+        for d_off, alpha in [(10.0, 15), (7.0, 25), (4.0, 45), (2.0, 75)]:
+            s_rect = QRectF(rect_midia.x() + d_off, rect_midia.y() + d_off, rect_midia.width(), rect_midia.height())
+            painter.fillRect(s_rect, QColor(0, 0, 0, alpha))
+
+        # 3. Bobina Branca Contínua (Substrato Vinil / Lona)
+        grad_midia = QLinearGradient(rect_midia.topLeft(), rect_midia.bottomLeft())
+        grad_midia.setColorAt(0.0, QColor("#ffffff"))
+        grad_midia.setColorAt(1.0, QColor("#f8fafc"))
+        painter.setBrush(QBrush(grad_midia))
+        painter.setPen(QPen(QColor(CoresTema.MIDIA_BORDA), 1.5))
         painter.drawRect(rect_midia)
 
-        # Margens de Segurança de Corte (Linhas tracejadas vermelhas/âmbar)
+        # 4. Cabeçote / Eixo de Alimentação no Topo (Origem Y = 0)
+        rect_alimentacao = QRectF(0.0, -18.0, self.largura_mm, 18.0)
+        grad_eixo = QLinearGradient(rect_alimentacao.topLeft(), rect_alimentacao.bottomLeft())
+        grad_eixo.setColorAt(0.0, QColor("#1e2433"))
+        grad_eixo.setColorAt(1.0, QColor("#0f131c"))
+        painter.fillRect(rect_alimentacao, QBrush(grad_eixo))
+        painter.setPen(QPen(QColor("#334155"), 1.0))
+        painter.drawRect(rect_alimentacao)
+
+        painter.setPen(QColor("#94a3b8"))
+        painter.setFont(QFont("Segoe UI", 7, QFont.Bold))
+        painter.drawText(
+            rect_alimentacao,
+            Qt.AlignCenter,
+            "▲ ENTRADA / ALIMENTAÇÃO DA BOBINA (EIXO 0,0) ▲",
+        )
+
+        # 5. Zonas de Presilha / Margem de Segurança Lateral e Topo
         rect_util = self.obter_limites_uteis()
-        pen_margem = QPen(QColor(CoresTema.MARGEM_CORTE), 1.5, Qt.DashLine)
+        cor_presilha = QColor(239, 68, 68, 18)
+
+        # Faixa Esquerda
+        rect_presilha_esq = QRectF(0.0, 0.0, self.margem_lateral_mm, self.comprimento_mm)
+        painter.fillRect(rect_presilha_esq, cor_presilha)
+
+        # Faixa Direita
+        rect_presilha_dir = QRectF(self.largura_mm - self.margem_lateral_mm, 0.0, self.margem_lateral_mm, self.comprimento_mm)
+        painter.fillRect(rect_presilha_dir, cor_presilha)
+
+        # Faixa Topo
+        rect_presilha_topo = QRectF(self.margem_lateral_mm, 0.0, rect_util.width(), self.margem_topo_mm)
+        painter.fillRect(rect_presilha_topo, cor_presilha)
+
+        # 6. Linhas Tracejadas de Margem de Segurança da Máquina
+        pen_margem = QPen(QColor(CoresTema.MARGEM_CORTE), 1.8, Qt.DashLine)
         painter.setPen(pen_margem)
         painter.setBrush(Qt.NoBrush)
         painter.drawRect(rect_util)
 
-        # Rótulo de identificação da mídia no topo
-        painter.setPen(QColor(CoresTema.TEXTO_MUTED))
-        fonte_info = QFont("Segoe UI", 9)
+        # Rótulos técnicos nas presilhas se houver espaço
+        painter.setPen(QColor("#ef4444"))
+        fonte_margem = QFont("Segoe UI", 7, QFont.DemiBold)
+        painter.setFont(fonte_margem)
+        if self.margem_lateral_mm >= 10.0 and self.comprimento_mm >= 80.0:
+            painter.save()
+            painter.translate(self.margem_lateral_mm / 2.0, 50.0)
+            painter.rotate(-90)
+            painter.drawText(QRectF(-150, -6, 300, 12), Qt.AlignCenter, f"PRESILHA {self.margem_lateral_mm:.0f}mm")
+            painter.restore()
+
+            painter.save()
+            painter.translate(self.largura_mm - (self.margem_lateral_mm / 2.0), 50.0)
+            painter.rotate(-90)
+            painter.drawText(QRectF(-150, -6, 300, 12), Qt.AlignCenter, f"PRESILHA {self.margem_lateral_mm:.0f}mm")
+            painter.restore()
+
+        # 7. Rótulo Informativo Superior da Mídia e Área Útil
+        rect_badge = QRectF(0.0, -52.0, min(self.largura_mm, 600.0), 28.0)
+        painter.setPen(QPen(QColor(CoresTema.ACENTO_PRIMARIO), 1.2))
+        painter.setBrush(QBrush(QColor("#161a24")))
+        painter.drawRoundedRect(rect_badge, 4.0, 4.0)
+
+        painter.setPen(QColor(CoresTema.TEXTO_PRINCIPAL))
+        fonte_info = QFont("Segoe UI", 8, QFont.Bold)
         painter.setFont(fonte_info)
-        texto_midia = f"MÍDIA: {self.largura_mm:.0f} mm × {self.comprimento_mm:.0f} mm (Área útil: {rect_util.width():.0f} mm)"
-        painter.drawText(QRectF(0, -30, self.largura_mm, 25), Qt.AlignLeft | Qt.AlignVCenter, texto_midia)
+        texto_midia = (
+            f"  LARGURA: {self.largura_mm:.0f} mm ({self.largura_mm/1000.0:.2f}m)  |  "
+            f"ÁREA ÚTIL: {rect_util.width():.0f} mm  |  "
+            f"MARGENS: {self.margem_lateral_mm:.0f} mm"
+        )
+        painter.drawText(rect_badge, Qt.AlignVCenter | Qt.AlignLeft, texto_midia)
+
+        # 8. Fim da Bobina / Extensão Contínua
+        pen_corte = QPen(QColor("#64748b"), 1.2, Qt.DashDotLine)
+        painter.setPen(pen_corte)
+        y_fim_bobina = self.comprimento_mm
+        painter.drawLine(QPointF(0.0, y_fim_bobina), QPointF(self.largura_mm, y_fim_bobina))
+
+        painter.setPen(QColor("#64748b"))
+        painter.setFont(QFont("Segoe UI", 7))
+        painter.drawText(
+            QRectF(0.0, y_fim_bobina + 2.0, self.largura_mm, 18.0),
+            Qt.AlignLeft | Qt.AlignVCenter,
+            f"--- FIM DO COMPRIMENTO ÚTIL ATUAL ({y_fim_bobina:.0f} mm / {y_fim_bobina/1000.0:.2f} m) ---",
+        )
 
         painter.restore()
 
     def drawForeground(self, painter: QPainter, rect: QRectF) -> None:
-        """Desenha as réguas dinâmicas horizontal e vertical sobre a viewport."""
+        """Desenha as réguas dinâmicas horizontal e vertical com marcações métricas (10cm, 50cm, 1m)."""
         super().drawForeground(painter, rect)
         painter.save()
-        painter.resetTransform()  # Desenhar em coordenadas de tela fixas na viewport
+        painter.resetTransform()  # Desenhar em coordenadas fixas de tela na viewport
 
         largura_view = self.viewport().width()
         altura_view = self.viewport().height()
-        espessura_regua = 24
+        espessura_regua = 28
 
-        cor_bg_regua = QColor(CoresTema.SUPERFICIE)
-        cor_traco = QColor(CoresTema.BORDA_FOCO)
-        cor_texto = QColor(CoresTema.TEXTO_SECUNDARIO)
-        pen_traco = QPen(cor_traco, 1)
-        fonte_regua = QFont("Segoe UI", 7)
-        painter.setFont(fonte_regua)
+        cor_bg_regua = QColor("#12141c")
+        cor_borda_regua = QColor(CoresTema.BORDA)
+        fonte_regua_peq = QFont("Segoe UI", 7)
+        fonte_regua_med = QFont("Segoe UI", 7, QFont.DemiBold)
+        fonte_regua_destaque = QFont("Segoe UI", 8, QFont.Bold)
 
         # 1. Régua Horizontal (Topo)
         rect_regua_h = QRectF(espessura_regua, 0, largura_view - espessura_regua, espessura_regua)
         painter.fillRect(rect_regua_h, cor_bg_regua)
-        painter.setPen(QPen(QColor(CoresTema.BORDA), 1))
+        painter.setPen(QPen(cor_borda_regua, 1.2))
         painter.drawLine(espessura_regua, espessura_regua, largura_view, espessura_regua)
 
-        # 2. Régua Vertical (Esquerda)
+        # 2. Régua Vertical (Lateral Esquerda)
         rect_regua_v = QRectF(0, espessura_regua, espessura_regua, altura_view - espessura_regua)
         painter.fillRect(rect_regua_v, cor_bg_regua)
-        painter.setPen(QPen(QColor(CoresTema.BORDA), 1))
+        painter.setPen(QPen(cor_borda_regua, 1.2))
         painter.drawLine(espessura_regua, espessura_regua, espessura_regua, altura_view)
 
-        # Canto superior esquerdo
-        painter.fillRect(QRectF(0, 0, espessura_regua, espessura_regua), QColor(CoresTema.CARTAO))
+        # 3. Canto Superior Esquerdo (Indicador de Unidade)
+        rect_canto = QRectF(0, 0, espessura_regua, espessura_regua)
+        painter.fillRect(rect_canto, QColor("#1a1e2b"))
+        painter.setPen(QPen(cor_borda_regua, 1.2))
+        painter.drawRect(rect_canto)
+        painter.setPen(QColor(CoresTema.ACENTO_PRIMARIO))
+        painter.setFont(QFont("Segoe UI", 8, QFont.Bold))
+        painter.drawText(rect_canto, Qt.AlignCenter, "mm")
 
-        # Calcular intervalo de marcações dinâmicas conforme zoom
+        # 4. Cálculo de Escala (pixels por milímetro)
         pt1 = self.mapToScene(espessura_regua, 0)
         pt2 = self.mapToScene(espessura_regua + 100, 0)
         pixels_por_mm = 100.0 / max(0.0001, abs(pt2.x() - pt1.x()))
 
-        # Escolhe passo em mm: 10, 50, 100, 500, 1000
-        passos = [10.0, 50.0, 100.0, 200.0, 500.0, 1000.0]
+        # Determinar passo base dinâmico (métrica: 10mm, 50mm, 100mm, 200mm, 500mm, 1000mm)
+        passos = [10.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0]
         passo_mm = 100.0
         for p in passos:
-            if p * pixels_por_mm >= 50:
+            if p * pixels_por_mm >= 36:
                 passo_mm = p
                 break
 
-        # Graduações da régua horizontal
+        # Graduações da Régua Horizontal
         x_min_cena = self.mapToScene(espessura_regua, 0).x()
         x_max_cena = self.mapToScene(largura_view, 0).x()
         primeiro_passo = math.floor(x_min_cena / passo_mm) * passo_mm
@@ -716,18 +971,46 @@ class CanvasMontagem(QGraphicsView):
             view_pt = self.mapFromScene(curr_x, 0)
             vx = view_pt.x()
             if vx >= espessura_regua:
-                painter.setPen(pen_traco)
-                painter.drawLine(vx, espessura_regua - 8, vx, espessura_regua)
-                # Texto da medida (em cm ou m)
-                if curr_x >= 1000.0:
+                is_metro = abs(curr_x % 1000.0) < 0.01
+                is_50cm = (abs(curr_x % 500.0) < 0.01) and not is_metro
+                is_10cm = (abs(curr_x % 100.0) < 0.01) and not (is_metro or is_50cm)
+
+                if is_metro:
+                    altura_traco = 18.0
+                    painter.setPen(QPen(QColor(CoresTema.ACENTO_PRIMARIO), 1.6))
                     txt = f"{curr_x/1000.0:.1f}m"
-                else:
+                    painter.setFont(fonte_regua_destaque)
+                    cor_txt = QColor("#ffffff")
+                elif is_50cm:
+                    altura_traco = 12.0
+                    painter.setPen(QPen(QColor("#94a3b8"), 1.2))
                     txt = f"{curr_x/10.0:.0f}cm"
-                painter.setPen(cor_texto)
-                painter.drawText(QRectF(vx + 2, 2, 60, espessura_regua - 4), Qt.AlignLeft | Qt.AlignVCenter, txt)
+                    painter.setFont(fonte_regua_med)
+                    cor_txt = QColor("#cbd5e1")
+                elif is_10cm:
+                    altura_traco = 8.0
+                    painter.setPen(QPen(QColor("#64748b"), 1.0))
+                    txt = f"{curr_x/10.0:.0f}cm"
+                    painter.setFont(fonte_regua_peq)
+                    cor_txt = QColor("#94a3b8")
+                else:
+                    altura_traco = 5.0
+                    painter.setPen(QPen(QColor("#475569"), 0.8))
+                    txt = ""
+                    cor_txt = None
+
+                painter.drawLine(vx, espessura_regua - altura_traco, vx, espessura_regua)
+
+                if txt and (vx + 45 <= largura_view):
+                    painter.setPen(cor_txt)
+                    painter.drawText(
+                        QRectF(vx + 3, 2, 50, espessura_regua - 5),
+                        Qt.AlignLeft | Qt.AlignVCenter,
+                        txt,
+                    )
             curr_x += passo_mm
 
-        # Graduações da régua vertical
+        # Graduações da Régua Vertical
         y_min_cena = self.mapToScene(0, espessura_regua).y()
         y_max_cena = self.mapToScene(0, altura_view).y()
         primeiro_passo_y = math.floor(y_min_cena / passo_mm) * passo_mm
@@ -737,17 +1020,75 @@ class CanvasMontagem(QGraphicsView):
             view_pt = self.mapFromScene(0, curr_y)
             vy = view_pt.y()
             if vy >= espessura_regua:
-                painter.setPen(pen_traco)
-                painter.drawLine(espessura_regua - 8, vy, espessura_regua, vy)
-                if curr_y >= 1000.0:
+                is_metro = abs(curr_y % 1000.0) < 0.01
+                is_50cm = (abs(curr_y % 500.0) < 0.01) and not is_metro
+                is_10cm = (abs(curr_y % 100.0) < 0.01) and not (is_metro or is_50cm)
+
+                if is_metro:
+                    comp_traco = 18.0
+                    painter.setPen(QPen(QColor(CoresTema.ACENTO_PRIMARIO), 1.6))
                     txt_y = f"{curr_y/1000.0:.1f}m"
-                else:
+                    painter.setFont(fonte_regua_destaque)
+                    cor_txt = QColor("#ffffff")
+                elif is_50cm:
+                    comp_traco = 12.0
+                    painter.setPen(QPen(QColor("#94a3b8"), 1.2))
                     txt_y = f"{curr_y/10.0:.0f}cm"
-                painter.setPen(cor_texto)
-                painter.save()
-                painter.translate(2, vy - 2)
-                painter.drawText(0, 0, txt_y)
-                painter.restore()
+                    painter.setFont(fonte_regua_med)
+                    cor_txt = QColor("#cbd5e1")
+                elif is_10cm:
+                    comp_traco = 8.0
+                    painter.setPen(QPen(QColor("#64748b"), 1.0))
+                    txt_y = f"{curr_y/10.0:.0f}cm"
+                    painter.setFont(fonte_regua_peq)
+                    cor_txt = QColor("#94a3b8")
+                else:
+                    comp_traco = 5.0
+                    painter.setPen(QPen(QColor("#475569"), 0.8))
+                    txt_y = ""
+                    cor_txt = None
+
+                painter.drawLine(espessura_regua - comp_traco, vy, espessura_regua, vy)
+
+                if txt_y and (vy + 12 <= altura_view):
+                    painter.setPen(cor_txt)
+                    painter.save()
+                    painter.translate(3, vy - 3)
+                    painter.drawText(0, 0, txt_y)
+                    painter.restore()
+
             curr_y += passo_mm
+
+        # 5. Marcadores de Margens de Segurança nas Réguas
+        # Margem Esquerda na Régua Superior
+        vx_margem_esq = self.mapFromScene(self.margem_lateral_mm, 0).x()
+        if vx_margem_esq >= espessura_regua:
+            painter.setPen(QPen(QColor(CoresTema.MARGEM_CORTE), 1.5, Qt.DashLine))
+            painter.drawLine(vx_margem_esq, 0, vx_margem_esq, espessura_regua)
+
+        # Margem Direita na Régua Superior
+        vx_margem_dir = self.mapFromScene(self.largura_mm - self.margem_lateral_mm, 0).x()
+        if vx_margem_dir >= espessura_regua and vx_margem_dir <= largura_view:
+            painter.setPen(QPen(QColor(CoresTema.MARGEM_CORTE), 1.5, Qt.DashLine))
+            painter.drawLine(vx_margem_dir, 0, vx_margem_dir, espessura_regua)
+
+        # Margem Topo na Régua Vertical
+        vy_margem_topo = self.mapFromScene(0, self.margem_topo_mm).y()
+        if vy_margem_topo >= espessura_regua and vy_margem_topo <= altura_view:
+            painter.setPen(QPen(QColor(CoresTema.MARGEM_CORTE), 1.5, Qt.DashLine))
+            painter.drawLine(0, vy_margem_topo, espessura_regua, vy_margem_topo)
+
+        # 6. Guia Reticular de Posição do Mouse nas Réguas
+        pos_mouse = getattr(self, "_pos_mouse_view", None)
+        if pos_mouse and not self._arrastando_pan:
+            mx = pos_mouse.x()
+            my = pos_mouse.y()
+            if mx >= espessura_regua and my >= espessura_regua:
+                pen_guia = QPen(QColor(CoresTema.ACENTO_PRIMARIO), 1.0)
+                painter.setPen(pen_guia)
+                # Marcador na régua superior
+                painter.drawLine(mx, 0, mx, espessura_regua)
+                # Marcador na régua esquerda
+                painter.drawLine(0, my, espessura_regua, my)
 
         painter.restore()
