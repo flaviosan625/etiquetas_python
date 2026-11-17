@@ -277,95 +277,44 @@ class PecaGraficaItem(QGraphicsObject):
         tem_problema = self.tem_colisao or self.fora_dos_limites
 
         # ---------------------------------------------------------------------
-        # 1. Substrato Físico com Efeito Sutil de Sombra e Elevação 3D
+        # 1. Substrato Físico Branco Limpo (Sem Tarja para Não Gastar Tinta)
         # ---------------------------------------------------------------------
         path_peca = QPainterPath()
-        path_peca.addRoundedRect(rect, 4.0, 4.0)
+        path_peca.addRoundedRect(rect, 2.0, 2.0)
 
-        # Gradiente suave de substrato vinil acetinado
-        grad_substrato = QLinearGradient(rect.topLeft(), rect.bottomRight())
-        grad_substrato.setColorAt(0.0, QColor("#ffffff"))
-        grad_substrato.setColorAt(1.0, QColor("#f8fafc"))
-
+        # Fundo do substrato em branco puro / papel fotográfico / vinil
         painter.setPen(Qt.NoPen)
-        painter.setBrush(QBrush(grad_substrato))
+        painter.setBrush(QBrush(QColor("#ffffff")))
         painter.drawPath(path_peca)
 
-        # Chanfro sutil de elevação física do vinil (espessura do material)
-        painter.setPen(QPen(QColor(255, 255, 255, 220), 1.0))
-        painter.drawLine(QPointF(rect.left() + 4.0, rect.top() + 1.0), QPointF(rect.right() - 4.0, rect.top() + 1.0))
-        painter.drawLine(QPointF(rect.left() + 1.0, rect.top() + 4.0), QPointF(rect.left() + 1.0, rect.bottom() - 4.0))
-
-        painter.setPen(QPen(QColor(148, 163, 184, 150), 1.2))
-        painter.drawLine(QPointF(rect.left() + 4.0, rect.bottom() - 1.0), QPointF(rect.right() - 4.0, rect.bottom() - 1.0))
-        painter.drawLine(QPointF(rect.right() - 1.0, rect.top() + 4.0), QPointF(rect.right() - 1.0, rect.bottom() - 4.0))
-
         # ---------------------------------------------------------------------
-        # 2. Rótulo de Identificação Técnica Oficial Encostado na Arte (montagem.py)
+        # 2. Rótulo Oficial da Peça em PRETO e SEM TARJA (Regra de montagem.py)
+        # "Nome precisa ser em preto sem tarja assim gasta mais tinta"
         # ---------------------------------------------------------------------
-        altura_rotulo = min(22.0, max(14.0, rect.height() * 0.18))
-        altura_tarja = min(20.0, max(13.0, rect.height() * 0.16))
+        altura_rotulo = min(20.0, max(12.0, rect.height() * 0.12))
 
-        rect_rotulo = QRectF(rect.x() + 2.5, rect.y() + 2.5, rect.width() - 5.0, altura_rotulo)
+        texto_rotulo_oficial = self.texto_do_rotulo()
 
-        # Fundo técnico do rótulo
-        if tem_problema:
-            cor_bg_rotulo = QColor("#7f1d1d")
-            cor_borda_rotulo = QColor("#ef4444")
-            cor_txt_rotulo = QColor("#ffffff")
-            cor_badge_num = QColor("#991b1b")
-        elif self.isSelected():
-            cor_bg_rotulo = QColor("#0c2340")
-            cor_borda_rotulo = QColor("#0ea5e9")
-            cor_txt_rotulo = QColor("#e0f2fe")
-            cor_badge_num = QColor("#0284c7")
-        else:
-            cor_bg_rotulo = QColor("#0f172a")
-            cor_borda_rotulo = QColor("#334155")
-            cor_txt_rotulo = QColor("#f8fafc")
-            cor_badge_num = QColor("#0284c7")
+        x_texto = rect.x() + 3.0
+        w_disp_texto = rect.width() - 6.0
+        rect_area_nome = QRectF(x_texto, rect.y() + 1.0, max(0.0, w_disp_texto), altura_rotulo)
 
-        painter.setPen(QPen(cor_borda_rotulo, 1.0))
-        painter.setBrush(QBrush(cor_bg_rotulo))
-        painter.drawRoundedRect(rect_rotulo, 3.0, 3.0)
-
-        # Badge com Número Oficial da Peça (01, 02...)
-        w_badge = max(24.0, altura_rotulo * 1.45)
-        rect_badge = QRectF(rect_rotulo.x(), rect_rotulo.y(), w_badge, altura_rotulo)
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(QBrush(cor_badge_num))
-        painter.drawRoundedRect(rect_badge, 3.0, 3.0)
-
-        painter.setPen(QColor("#ffffff"))
-        fonte_num = QFont("Segoe UI", max(6, int(altura_rotulo * 0.50)), QFont.Bold)
-        painter.setFont(fonte_num)
-        painter.drawText(rect_badge, Qt.AlignCenter, f"{self.numero:02d}")
-
-        # Nome Exato do Arquivo (Encolher vem antes de cortar, regra de montagem.py)
-        nome_arquivo = self.nome_arquivo_puro()
-        copia = self.copia or self.metadados.get("copia", 1)
-        if self.quantidade > 1:
-            nome_arquivo_completo = f"{nome_arquivo} ({copia}/{self.quantidade})"
-        else:
-            nome_arquivo_completo = nome_arquivo
-
-        x_texto = rect_rotulo.x() + w_badge + 5.0
-        w_disp_texto = rect_rotulo.width() - w_badge - 8.0
-        rect_area_nome = QRectF(x_texto, rect_rotulo.y(), max(0.0, w_disp_texto), altura_rotulo)
+        # Cor da letra: PRETO PURO (#000000), SEM TARJA de fundo!
+        cor_texto_rotulo = QColor("#b91c1c") if tem_problema else QColor("#000000")
 
         if w_disp_texto > 10.0:
-            # Algoritmo de encolhimento para preservar o nome exato
-            tam_max_pt = max(6, int(altura_rotulo * 0.46))
+            # Algoritmo de encolhimento para preservar o nome exato (regra de montagem.py)
+            tam_max_pt = max(6, int(altura_rotulo * 0.52))
             fonte_escolhida = QFont("Segoe UI", tam_max_pt, QFont.Bold)
             for tam_pt in range(tam_max_pt, 4, -1):
                 f_teste = QFont("Segoe UI", tam_pt, QFont.Bold)
                 painter.setFont(f_teste)
-                if painter.fontMetrics().horizontalAdvance(nome_arquivo_completo) <= w_disp_texto:
+                if painter.fontMetrics().horizontalAdvance(texto_rotulo_oficial) <= w_disp_texto:
                     fonte_escolhida = f_teste
                     break
             painter.setFont(fonte_escolhida)
-            painter.setPen(cor_txt_rotulo)
-            txt_formatado = painter.fontMetrics().elidedText(nome_arquivo_completo, Qt.ElideRight, int(w_disp_texto))
+            painter.setPen(cor_texto_rotulo)
+            txt_formatado = painter.fontMetrics().elidedText(texto_rotulo_oficial, Qt.ElideRight, int(w_disp_texto))
             painter.drawText(rect_area_nome, Qt.AlignVCenter | Qt.AlignLeft, txt_formatado)
 
         # ---------------------------------------------------------------------
@@ -374,9 +323,13 @@ class PecaGraficaItem(QGraphicsObject):
         if (self.miniatura is None or self.miniatura.isNull()) and self.caminho_arquivo:
             self._carregar_miniatura_arquivo()
 
-        y_arte = rect_rotulo.bottom() + 2.0
-        h_arte = rect.bottom() - altura_tarja - y_arte - 2.0
-        rect_arte = QRectF(rect.x() + 2.5, y_arte, rect.width() - 5.0, max(0.0, h_arte))
+        # Espaço para rodapé técnico apenas se a peça tiver altura suficiente
+        tem_espaco_rodape = rect.height() >= 55.0
+        h_rodape = 14.0 if tem_espaco_rodape else 0.0
+
+        y_arte = rect.top() + altura_rotulo + 2.0
+        h_arte = rect.bottom() - y_arte - h_rodape - 2.0
+        rect_arte = QRectF(rect.x() + 2.0, y_arte, rect.width() - 4.0, max(0.0, h_arte))
 
         if rect_arte.height() > 8.0 and rect_arte.width() > 8.0:
             if self.miniatura and not self.miniatura.isNull():
@@ -399,7 +352,7 @@ class PecaGraficaItem(QGraphicsObject):
             elif rect_arte.width() > 20 and rect_arte.height() > 15:
                 # Placeholder CAD vetorial limpo
                 painter.setPen(Qt.NoPen)
-                painter.setBrush(QBrush(QColor("#f1f5f9")))
+                painter.setBrush(QBrush(QColor("#f8fafc")))
                 painter.drawRoundedRect(rect_arte, 2.0, 2.0)
 
                 painter.setPen(QPen(QColor("#e2e8f0"), 0.8, Qt.DotLine))
@@ -418,53 +371,18 @@ class PecaGraficaItem(QGraphicsObject):
                 )
 
         # ---------------------------------------------------------------------
-        # 4. Tarja Inferior com Dimensões Nominais e Material
+        # 4. Rodapé Técnico Limpo (Texto em Cinza, SEM TARJA Escura)
         # ---------------------------------------------------------------------
-        rect_tarja = QRectF(rect.x(), rect.bottom() - altura_tarja, rect.width(), altura_tarja)
-        path_tarja_rect = QPainterPath()
-        path_tarja_rect.addRect(rect_tarja)
-        path_tarja = path_peca.intersected(path_tarja_rect)
+        if tem_espaco_rodape and rect.width() > 60.0:
+            texto_dim = f"{self.largura_mm:.0f}×{self.altura_mm:.0f}mm  |  {self.material}"
+            if self.rotacao > 0:
+                texto_dim += f" (↻{self.rotacao:.0f}°)"
 
-        if tem_problema:
-            grad_tarja = QLinearGradient(rect_tarja.topLeft(), rect_tarja.bottomLeft())
-            grad_tarja.setColorAt(0.0, QColor("#991b1b"))
-            grad_tarja.setColorAt(1.0, QColor("#7f1d1d"))
-            cor_borda_tarja = QColor("#ef4444")
-            cor_texto_tarja = QColor("#ffffff")
-        elif self.isSelected():
-            grad_tarja = QLinearGradient(rect_tarja.topLeft(), rect_tarja.bottomLeft())
-            grad_tarja.setColorAt(0.0, QColor("#0c2340"))
-            grad_tarja.setColorAt(1.0, QColor("#0f172a"))
-            cor_borda_tarja = QColor("#0ea5e9")
-            cor_texto_tarja = QColor("#38bdf8")
-        else:
-            grad_tarja = QLinearGradient(rect_tarja.topLeft(), rect_tarja.bottomLeft())
-            grad_tarja.setColorAt(0.0, QColor("#1e293b"))
-            grad_tarja.setColorAt(1.0, QColor("#0f172a"))
-            cor_borda_tarja = QColor("#334155")
-            cor_texto_tarja = QColor("#f8fafc")
-
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(QBrush(grad_tarja))
-        painter.drawPath(path_tarja)
-
-        painter.setPen(QPen(cor_borda_tarja, 1.0))
-        painter.drawLine(rect_tarja.topLeft(), rect_tarja.topRight())
-
-        texto_dim = f"{self.largura_mm:.0f}×{self.altura_mm:.0f}mm"
-        if self.rotacao > 0:
-            texto_dim += f" (↻{self.rotacao:.0f}°)"
-
-        texto_tarja_info = f"{texto_dim}  |  {self.material}"
-
-        tam_fonte_tarja = max(6, int(altura_tarja * 0.44))
-        fonte_tarja = QFont("Segoe UI", min(tam_fonte_tarja, 10), QFont.Bold)
-        painter.setFont(fonte_tarja)
-        painter.setPen(cor_texto_tarja)
-        margem_texto = 5.0
-        rect_texto_tarja = rect_tarja.adjusted(margem_texto, 0, -margem_texto, 0)
-        texto_tarja_formatado = painter.fontMetrics().elidedText(texto_tarja_info, Qt.ElideRight, int(rect_texto_tarja.width()))
-        painter.drawText(rect_texto_tarja, Qt.AlignVCenter | Qt.AlignLeft, texto_tarja_formatado)
+            painter.setFont(QFont("Segoe UI", 7, QFont.Bold))
+            painter.setPen(QColor("#64748b"))
+            rect_texto_rodape = QRectF(rect.x() + 4.0, rect.bottom() - h_rodape, rect.width() - 8.0, h_rodape)
+            texto_formatado = painter.fontMetrics().elidedText(texto_dim, Qt.ElideRight, int(rect_texto_rodape.width()))
+            painter.drawText(rect_texto_rodape, Qt.AlignVCenter | Qt.AlignLeft, texto_formatado)
 
         # ---------------------------------------------------------------------
         # 5. Borda de Destaque Interativa / Seleção / Alerta de Colisão

@@ -611,3 +611,32 @@ def test_posicionamento_inteligente_lado_a_lado(qapp):
     assert p2.pos().x() >= p1.pos().x() + 1000.0
 
 
+def test_rotulo_em_preto_sem_tarja(qapp):
+    """
+    Verifica que o rótulo da peça é renderizado em preto sem tarja escura de fundo,
+    economizando tinta e seguindo fielmente a regra oficial de montagem.py.
+    """
+    peca = PecaGraficaItem(
+        nome="1UN VINIL BLOCKOUT IMPRESSO 1,29X2,95M.pdf",
+        largura_mm=500.0,
+        altura_mm=500.0,
+        material="VINIL",
+        numero=12,
+    )
+    assert peca.texto_do_rotulo() == "12  1UN VINIL BLOCKOUT IMPRESSO 1,29X2,95M"
+
+    # Renderizar a peça em um QImage para validar o paint
+    img = QImage(500, 500, QImage.Format_ARGB32)
+    img.fill(Qt.white)
+    painter = QPainter(img)
+    opt = QStyleOptionGraphicsItem()
+    peca.paint(painter, opt, None)
+    painter.end()
+
+    # O topo da peça (fora do texto) deve ser predominantemente branco/claro, sem tarja escura
+    # Pixel na área onde ficava a antiga tarja (ex: x=50, y=5)
+    cor_topo = img.pixelColor(50, 5)
+    assert cor_topo.red() > 200 and cor_topo.green() > 200 and cor_topo.blue() > 200
+
+
+
