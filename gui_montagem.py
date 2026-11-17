@@ -1,3 +1,4 @@
+import branding
 """
 Tela de montagem: seleção por arquivo, avisos e mapa do encaixe real.
 
@@ -94,7 +95,7 @@ def _cor_do_item(item):
 class JanelaMontagem(tk.Toplevel):
     def __init__(self, master):
         super().__init__(master)
-        self.title("Montar arte para impressão — UNY CV")
+        self.title(branding.titulo_janela("Montar Arte para Impressão"))
         self.configure(bg=cores.fundo)
         self.config_montagem = carregar_config()
         montagem.garantir_pastas()
@@ -253,6 +254,22 @@ class _AbaMaquina(tk.Frame):
         tk.Button(controles, text="Salvar preferências desta máquina",
                   command=self._salvar_folga, relief="flat", bg=cores.cartao,
                   fg=cores.acento, cursor="hand2").pack(side="left", padx=6)
+
+        # Controles de Acabamento de Chão de Fábrica (Ilhós e Linha de Corte)
+        self.var_aplicar_ilhos = tk.BooleanVar(value=False)
+        tk.Checkbutton(
+            controles, text="⭕ Ilhós (40cm)", variable=self.var_aplicar_ilhos,
+            bg=cores.fundo, fg=cores.texto, selectcolor=cores.cartao,
+            command=self._ao_alterar_acabamento,
+        ).pack(side="left", padx=(10, 4))
+
+        self.var_cutcontour = tk.BooleanVar(value=False)
+        tk.Checkbutton(
+            controles, text="✂️ CutContour", variable=self.var_cutcontour,
+            bg=cores.fundo, fg=cores.texto, selectcolor=cores.cartao,
+            command=self._ao_alterar_acabamento,
+        ).pack(side="left", padx=4)
+
         tk.Label(controles, text="Nome protegido na faixa",
                  bg=cores.fundo, fg=cores.texto2,
                  font=("Segoe UI", 8)).pack(side="left", padx=8)
@@ -523,6 +540,10 @@ class _AbaMaquina(tk.Frame):
         self.var_margem.set(f"Espaçamento de {folga * 100:g} cm e largura de {largura * 100:g} cm "
                            f"salvos para {self.nome_maquina}. "
                            + ("Recalcule a seleção antes de montar." if self._suja else ""))
+
+    def _ao_alterar_acabamento(self):
+        """Notifica alteração nas opções de acabamento de fábrica."""
+        pass
 
     def _atualizar_marcas(self):
         for nome, linha in self._linhas.items():
@@ -973,6 +994,10 @@ class _AbaMaquina(tk.Frame):
             if largura is not None and abs(
                     largura - montagem.largura_util(self.nome_maquina)) > 1e-9:
                 argumentos["largura_m"] = largura
+            if hasattr(self, "var_aplicar_ilhos") and self.var_aplicar_ilhos.get():
+                argumentos["aplicar_ilhos"] = True
+            if hasattr(self, "var_cutcontour") and self.var_cutcontour.get():
+                argumentos["aplicar_cutcontour"] = True
             resultado = montagem.montar_pasta(
                 self.pasta, self.nome_maquina, **argumentos)
             erro = None

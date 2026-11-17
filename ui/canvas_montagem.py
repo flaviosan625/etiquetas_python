@@ -83,10 +83,28 @@ class PecaGraficaItem(QGraphicsObject):
         self.miniatura = miniatura
         self.caminho_arquivo = str(caminho_arquivo) if caminho_arquivo else None
         self.material = str(material).upper()
-        self.quantidade = int(quantidade)
+        if isinstance(quantidade, (tuple, list)):
+            self.quantidade = int(quantidade[0]) if quantidade else 1
+        else:
+            try:
+                self.quantidade = max(1, int(quantidade))
+            except Exception:
+                self.quantidade = 1
         self.metadados = metadados or {}
-        self.numero = int(numero)
-        self.copia = int(copia or self.metadados.get("copia", 1))
+        if isinstance(numero, (tuple, list)):
+            self.numero = int(numero[0]) if numero else 1
+        else:
+            try:
+                self.numero = max(1, int(numero))
+            except Exception:
+                self.numero = 1
+        if isinstance(copia, (tuple, list)):
+            self.copia = int(copia[0]) if copia else 1
+        else:
+            try:
+                self.copia = max(1, int(copia or self.metadados.get("copia", 1)))
+            except Exception:
+                self.copia = 1
 
         self.rotacao = 0.0  # 0, 90, 180, 270 graus
         self.tem_colisao = False
@@ -762,18 +780,25 @@ class CanvasMontagem(QGraphicsView):
         return list(self._pecas)
 
     def _calcular_proxima_posicao_livre(self, largura: float, altura: float) -> tuple:
-        """Determina uma posição inicial para nova peça dentro da área útil."""
+        """Determina uma posição inicial inteligente para nova peça dentro da área útil."""
         limites = self.obter_limites_uteis()
         margem = getattr(self, "espacamento_mm", 10.0)
-        x = limites.left() + margem
-        y = limites.top() + margem
 
-        for p in self._pecas:
-            br = p.sceneBoundingRect()
-            if br.bottom() + margem > y:
-                y = br.bottom() + margem
+        if not self._pecas:
+            return limites.left() + margem, limites.top() + margem
 
-        return x, y
+        # Tenta posicionar à direita da última peça inserida
+        ultima_peca = self._pecas[-1]
+        br_ultima = ultima_peca.sceneBoundingRect()
+        x_candidato = br_ultima.right() + margem
+        y_candidato = br_ultima.top()
+
+        if x_candidato + largura <= limites.right() - margem:
+            return x_candidato, y_candidato
+
+        # Se não couber na linha atual da bobina, desce para a próxima linha
+        max_y = max(p.sceneBoundingRect().bottom() for p in self._pecas)
+        return limites.left() + margem, max_y + margem
 
     def ao_mover_peca(self, peca_movida: PecaGraficaItem) -> None:
         """Handler executado continuamente enquanto uma peça é arrastada."""

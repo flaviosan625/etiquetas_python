@@ -1,3 +1,4 @@
+import branding
 """
 Janela de Clientes — a tela de clientes.py.
 
@@ -53,7 +54,7 @@ def _ligar_botao(botao, ligado):
 class JanelaClientes(tk.Toplevel):
     def __init__(self, master):
         super().__init__(master)
-        self.title("Clientes — UNY CV")
+        self.title(branding.titulo_janela("Clientes"))
         self.configure(bg=cores.fundo)
         self.geometry("820x700")
         self.minsize(600, 420)

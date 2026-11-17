@@ -215,8 +215,8 @@ def test_a_h2525_tem_pasta_na_fila_de_verdade():
     import pytest
 
     fila = rl_hf.PASTA_FILA_ONEDRIVE
-    if not fila.is_dir():
-        pytest.skip("fila do OneDrive não está nesta máquina")
+    if not fila.is_dir() or not (fila / "DOCAN H2525").is_dir():
+        pytest.skip("pasta DOCAN H2525 da fila do OneDrive não está nesta máquina")
     assert (fila / "DOCAN H2525").is_dir()
 
 

@@ -1,3 +1,4 @@
+import branding
 """
 Janela "Receber artes" — de um link do Drive ou do WeTransfer, do caderno
 de arte no Canva, de uma pasta ou de um ZIP, até ARTES do cliente, em dois
@@ -96,7 +97,7 @@ class _Rolavel(tk.Frame):
 class JanelaReceber(tk.Toplevel):
     def __init__(self, master):
         super().__init__(master)
-        self.title("Receber artes — UNY CV")
+        self.title(branding.titulo_janela("Receber Artes"))
         self.configure(bg=cores.fundo)
         altura = min(900, self.winfo_screenheight() - 90)
         largura = min(1280, self.winfo_screenwidth() - 40)

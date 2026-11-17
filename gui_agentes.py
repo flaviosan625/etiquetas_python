@@ -1,3 +1,4 @@
+import branding
 """
 Painel dos agentes — a tela de agentes.py.
 
@@ -56,7 +57,7 @@ _POR_QUE_SEM_BOTAO = {
 class JanelaAgentes(tk.Toplevel):
     def __init__(self, master):
         super().__init__(master)
-        self.title("Agentes — o que roda sozinho — UNY CV")
+        self.title(branding.titulo_janela("Agentes — o que roda sozinho"))
         self.configure(bg=cores.fundo)
         self.geometry("860x760")
         self.minsize(640, 420)

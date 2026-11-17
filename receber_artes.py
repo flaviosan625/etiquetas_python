@@ -186,6 +186,7 @@ class Peca:
     escala_achada: int = 1
     arte_pdf_m: tuple = None
     sangria_pdf_m: tuple = None
+    preflight: dict = dataclasses.field(default_factory=dict)
 
     @property
     def leva_nome_do_padrao(self):
@@ -913,6 +914,15 @@ def propor(baixados, todos=None, cliente="", area="", config=None):
         aviso = _aviso_maior_que_a_chapa(peca, config)
         if aviso:
             peca.avisos.append(aviso)
+        if peca.local and peca.local.suffix.lower() == ".pdf" and peca.local.is_file():
+            try:
+                import preflight
+                rel_pf = preflight.inspecionar_pdf(peca.local, escala_fator=peca.escala)
+                peca.preflight = rel_pf
+                for av in rel_pf.get("avisos", []):
+                    peca.avisos.append(f"[Preflight] {av}")
+            except Exception:
+                pass
     return pecas
 
 

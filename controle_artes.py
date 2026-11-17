@@ -117,7 +117,7 @@ def ler_planilha_do_cliente(caminho):
 # Palavras que não provam parentesco nenhum entre dois nomes: ligação,
 # número solto, e nome de material (que aparece em quase toda peça).
 _VAZIAS = {"DE", "DO", "DA", "DOS", "DAS", "E", "COM", "EM", "A", "O", "NO", "NA",
-           "LONA", "ADESIVO", "VINIL", "PS", "PVC", "XPS", "MDF", "ACRILICO",
+           "LONA", "ADESIVO", "VINIL", "PS", "PVC", "XPS", "TECIDO", "MDF", "ACRILICO",
            "IMPRESSA", "IMPRESSO", "FOSCA", "FOSCO", "RECORTE", "UN"}
 
 

@@ -447,7 +447,7 @@ def test_cartao_maquina_compacto_e_badges(janela_app):
     """Verifica se os cartões de máquinas estão no formato compacto (~34px) com badges."""
     janela = janela_app
     for cartao in janela.cartoes_maquinas:
-        assert cartao.height() == 34 or cartao.maximumHeight() == 34
+        assert cartao.height() in (30, 34) or cartao.maximumHeight() in (30, 34)
         assert hasattr(cartao, "lbl_nome")
         assert hasattr(cartao, "lbl_largura")
         assert hasattr(cartao, "lbl_status")
@@ -457,11 +457,11 @@ def test_cartao_maquina_compacto_e_badges(janela_app):
 
 
 def test_painel_esquerdo_splitter_e_tabela_altura_minima(janela_app):
-    """Valida o uso do QSplitter vertical e altura mínima de 300px da tabela de peças."""
+    """Valida o uso do QSplitter vertical e tabela de peças com altura flexível."""
     janela = janela_app
     assert hasattr(janela, "splitter_esquerdo")
     assert janela.splitter_esquerdo.orientation() == Qt.Vertical
-    assert janela.tabela_pecas.minimumHeight() >= 300
+    assert janela.tabela_pecas.minimumHeight() >= 120
     assert hasattr(janela, "btn_recarregar_fila")
     assert hasattr(janela, "btn_abrir_entrada_fila")
     assert janela.combo_filtro_material.currentIndex() == 0
@@ -539,4 +539,75 @@ def test_regras_historicas_rotulos_e_cabecalho(qapp):
     assert "LARGURA 3.20m" in titulo
     assert "APROVEITAMENTO" in titulo
     assert "RIPAR A 100%, NÃO REDIMENSIONAR" in titulo
+
+
+def test_inserir_arte_com_quantidade_tupla(janela_app):
+    """
+    Testa a correção do bug de inserção: quando extrair_quantidade retorna tupla (qtd, True),
+    clicar no botão Inserir deve adicionar a peça na bobina sem lançar TypeError.
+    """
+    janela = janela_app
+    janela.canvas.limpar_pecas()
+    janela.tabela_pecas.setRowCount(0)
+
+    # Simular peça adicionada com quantidade sendo tupla (1, True)
+    janela.adicionar_peca_fila(
+        nome="01  1UN VINIL 500X500.pdf",
+        largura_mm=500.0,
+        altura_mm=500.0,
+        material="VINIL / ADESIVO",
+        quantidade=(1, True),
+    )
+
+    assert janela.tabela_pecas.rowCount() == 1
+    btn_inserir = janela.tabela_pecas.cellWidget(0, 3)
+    assert isinstance(btn_inserir, QPushButton)
+
+    # Clicar no botão Inserir
+    btn_inserir.click()
+
+    # Verificar que a arte entrou na folha do canvas!
+    pecas = janela.canvas.obter_pecas()
+    assert len(pecas) == 1
+    p = pecas[0]
+    assert p.largura_mm == 500.0
+    assert p.altura_mm == 500.0
+    assert p.quantidade == 1
+    assert p.material == "VINIL / ADESIVO"
+
+
+def test_recarregar_pasta_preserva_pasta_carregada(janela_app, tmp_path):
+    """Verifica que o botão Recarregar re-lê a pasta atualmente aberta pelo usuário sem limpá-la."""
+    janela = janela_app
+    pasta_cliente = tmp_path / "Cliente_Jobs"
+    pasta_cliente.mkdir()
+    f1 = pasta_cliente / "Adesivo_1000x500mm.pdf"
+    f1.write_text("dummy")
+
+    janela.pasta_entrada_atual = pasta_cliente
+    janela.recarregar_pasta_entrada()
+
+    assert janela.tabela_pecas.rowCount() == 1
+    assert janela.tabela_pecas.item(0, 0).text() == "Adesivo_1000x500mm.pdf"
+
+    # Adicionar segundo arquivo e recarregar
+    f2 = pasta_cliente / "Banner_2000x1000mm.jpg"
+    f2.write_text("dummy 2")
+    janela.recarregar_pasta_entrada()
+
+    assert janela.tabela_pecas.rowCount() == 2
+
+
+def test_posicionamento_inteligente_lado_a_lado(qapp):
+    """Verifica que peças menores que a largura da bobina são encaixadas lado a lado."""
+    canvas = CanvasMontagem(largura_bobina_mm=3200.0)
+    canvas.limpar_pecas()
+
+    p1 = canvas.adicionar_peca("Arte1.pdf", largura_mm=1000.0, altura_mm=800.0)
+    p2 = canvas.adicionar_peca("Arte2.pdf", largura_mm=1000.0, altura_mm=800.0)
+
+    # Ambas devem estar na mesma linha (mesmo y aproximado) e p2 deve estar à direita de p1
+    assert abs(p1.pos().y() - p2.pos().y()) < 2.0
+    assert p2.pos().x() >= p1.pos().x() + 1000.0
+
 

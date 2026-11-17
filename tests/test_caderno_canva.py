@@ -540,10 +540,10 @@ def _pecas_da_lojinha():
 
 
 def test_material_e_quantidade_vem_da_ficha():
-    """'Respeite sempre o que for material que o cliente pede' — e XPS é PVC."""
+    """'Respeite sempre o que for material que o cliente pede' — XPS agora é material próprio."""
     por_pagina, _ = _pecas_da_lojinha()
     logo = por_pagina[3]
-    assert (logo.material, logo.quantidade) == ("PVC", 2)
+    assert (logo.material, logo.quantidade) == ("XPS", 2)
     assert logo.de_onde["material"] == "caderno (página 3)"
 
 
@@ -684,10 +684,10 @@ def test_duas_fichas_na_mesma_pagina_cada_uma_com_o_seu_link():
 
 
 def test_material_que_nao_existe_no_cadastro_avisa_e_fica_a_definir():
-    ficha = {"pagina": 4, "nome": "BANDEIRA", "material": "TECIDO", "quantidade": "3"}
+    ficha = {"pagina": 4, "nome": "BANDEIRA", "material": "COURO", "quantidade": "3"}
     qtd, material, _, avisos = ra.especificacao_do_caderno(ficha, oa.Arquivo(id="x", nome="BANDEIRA.pdf"))
     assert (qtd, material) == (3, "A DEFINIR")
-    assert any("'TECIDO'" in a for a in avisos)
+    assert any("'COURO'" in a for a in avisos)
 
 
 def test_material_trocado_na_tela_nao_deixa_outro_material_no_nome():

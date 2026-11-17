@@ -245,18 +245,28 @@ def test_material_do_cliente_manda_sobre_o_nome_da_peca(tmp_path):
         "descricao vazia usa a etiqueta do link, que e mais descritiva"
 
 
-def test_xps_e_sempre_pvc_mesmo_com_adesivo_no_material(tmp_path):
+def test_xps_e_material_proprio_separado_de_pvc(tmp_path):
     """
-    "tudo que for XPS pode considerar PVC" (usuario, 2026-09-11). Sem
+    XPS e PVC sao materiais distintos para comercializacao. Sem
     isto o desempate por nome mais longo daria ADESIVO (7) em vez de
-    PVC (3), e a peca iria pra maquina errada.
+    XPS (3), e a peca iria pra maquina errada.
     """
     caminho = _caderno(tmp_path, [(
         _ficha(nome="LOGO MERCADO LIVRE", material="LOGO XPS RECORTE COM ADESIVO IMPRESSO",
                medidas="3,44 X 0,37", sangria="-"),
         [], None)])
 
-    assert ca.fichas_com_nome(caminho)[0]["nome_arquivo"].startswith("1UN PVC ")
+    assert ca.fichas_com_nome(caminho)[0]["nome_arquivo"].startswith("1UN XPS ")
+
+
+def test_tecido_e_reconhecido_como_material_proprio(tmp_path):
+    """Tecido impresso para wind banner e reconhecido como TECIDO."""
+    caminho = _caderno(tmp_path, [(
+        _ficha(nome="WIND BANNER", material="TECIDO IMPRESSO",
+               medidas="0,70 X 2,20", sangria="-"),
+        [], None)])
+
+    assert ca.fichas_com_nome(caminho)[0]["nome_arquivo"].startswith("1UN TECIDO ")
 
 
 def test_medida_incompleta_nao_vira_nome_nem_palpite(tmp_path):

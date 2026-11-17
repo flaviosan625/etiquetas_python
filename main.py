@@ -11,7 +11,6 @@ import argparse
 import sys
 
 from config import carregar_config
-from processamento import processar_etiquetas
 
 
 def parse_argumentos():
@@ -36,6 +35,7 @@ def parse_argumentos():
 
 
 def rodar_cli(args):
+    from processamento import processar_etiquetas
     if not (args.cliente and args.gerente and args.produtor):
         print("Modo linha de comando requer --cliente, --gerente e --produtor.")
         print("Exemplo: python main.py --cliente \"Fulano\" --gerente \"Ciclano\" --produtor \"Beltrano\"")

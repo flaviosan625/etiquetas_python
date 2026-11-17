@@ -85,7 +85,7 @@ class DialogoDetalhesPreflight(QDialog):
         )
 
         linhas = [
-            f"=== AUDITORIA TÉCNICA DE PRÉ-IMPRESSÃO ===",
+            "=== AUDITORIA TÉCNICA DE PRÉ-IMPRESSÃO ===",
             f"Arquivo: {dados_arte.get('caminho')}",
             f"Substrato Detectado: {dados_arte.get('material')}",
             f"Dimensões Finais: {dados_arte.get('largura_mm', 0):.1f} × {dados_arte.get('altura_mm', 0):.1f} mm "
@@ -143,7 +143,7 @@ class DialogoTriagemLote(QDialog):
         self.resize(1260, 760)
         self.setMinimumSize(980, 600)
 
-        self.pasta_atual: Optional[Path] = pasta_inicial
+        self.pasta_atual: Optional[Path] = Path(pasta_inicial) if pasta_inicial else None
         self.itens_triagem: List[Dict[str, Any]] = []
 
         self._construir_ui()
@@ -151,8 +151,8 @@ class DialogoTriagemLote(QDialog):
 
         if arquivos_iniciais:
             self.carregar_arquivos(arquivos_iniciais)
-        elif pasta_inicial and pasta_inicial.is_dir():
-            self.carregar_pasta(pasta_inicial)
+        elif self.pasta_atual and self.pasta_atual.is_dir():
+            self.carregar_pasta(self.pasta_atual)
 
     def _construir_ui(self) -> None:
         layout_principal = QVBoxLayout(self)
@@ -257,16 +257,15 @@ class DialogoTriagemLote(QDialog):
         layout_principal.addWidget(self.progresso)
 
         # ---------------------------------------------------------------------
-        # 4. Tabela de Triagem Principal
+        # 4. Tabela de Triagem Principal (8 Colunas Industriais)
         # ---------------------------------------------------------------------
-        self.tabela = QTableWidget(0, 9, self)
+        self.tabela = QTableWidget(0, 8, self)
         colunas = [
             "Aprovar",
-            "Status",
             "Prévia",
             "Nome do Arquivo",
             "Dimensões Finais",
-            "Escala",
+            "Proporção / Escala",
             "Resolução (DPI)",
             "Fontes / Curvas",
             "Substrato",
@@ -274,13 +273,12 @@ class DialogoTriagemLote(QDialog):
         self.tabela.setHorizontalHeaderLabels(colunas)
         self.tabela.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
         self.tabela.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
-        self.tabela.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
-        self.tabela.horizontalHeader().setSectionResizeMode(3, QHeaderView.Stretch)
+        self.tabela.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
+        self.tabela.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
         self.tabela.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeToContents)
         self.tabela.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeToContents)
         self.tabela.horizontalHeader().setSectionResizeMode(6, QHeaderView.ResizeToContents)
         self.tabela.horizontalHeader().setSectionResizeMode(7, QHeaderView.ResizeToContents)
-        self.tabela.horizontalHeader().setSectionResizeMode(8, QHeaderView.ResizeToContents)
 
         self.tabela.verticalHeader().setVisible(False)
         self.tabela.setSelectionBehavior(QAbstractItemView.SelectRows)
@@ -387,12 +385,15 @@ class DialogoTriagemLote(QDialog):
         self._atualizar_contadores()
 
     def carregar_pasta(self, pasta: Path) -> None:
-        self.pasta_atual = pasta
+        self.pasta_atual = Path(pasta)
         exts = (".pdf", ".eps", ".tif", ".tiff", ".jpg", ".jpeg", ".png", ".bmp")
-        arquivos = [
-            f for f in sorted(pasta.iterdir())
-            if f.is_file() and f.suffix.lower() in exts and not f.name.startswith("~")
-        ]
+        try:
+            arquivos = [
+                f for f in sorted(self.pasta_atual.iterdir())
+                if f.is_file() and f.suffix.lower() in exts and not f.name.startswith("~")
+            ]
+        except Exception:
+            arquivos = []
         self.carregar_arquivos(arquivos)
 
     def carregar_arquivos(self, arquivos: List[Path]) -> None:
@@ -438,18 +439,22 @@ class DialogoTriagemLote(QDialog):
             dim = extrair_dimensoes(nome)
             qtd = extrair_quantidade(nome) or 1
             quantidade = qtd
-            if dim:
-                if isinstance(dim, dict):
-                    w_m, h_m = dim.get("largura_m", 0.0), dim.get("altura_m", 0.0)
-                elif isinstance(dim, (list, tuple)):
-                    w_m, h_m = dim[0], dim[1]
-                else:
-                    w_m, h_m = 0.0, 0.0
-                if w_m > 0 and h_m > 0:
-                    larg_nome_mm = round(w_m * 1000.0, 1)
-                    alt_nome_mm = round(h_m * 1000.0, 1)
+            if isinstance(dim, dict):
+                lm = dim.get("largura_m", 0)
+                am = dim.get("altura_m", 0)
+                if lm > 0 and am > 0:
+                    larg_nome_mm = round(lm * 1000.0, 1)
+                    alt_nome_mm = round(am * 1000.0, 1)
+            elif isinstance(dim, (list, tuple)) and len(dim) >= 2:
+                if dim[0] > 0 and dim[1] > 0:
+                    larg_nome_mm = round(dim[0] * 1000.0, 1)
+                    alt_nome_mm = round(dim[1] * 1000.0, 1)
         except Exception:
             pass
+
+        if larg_nome_mm and alt_nome_mm:
+            largura_mm = larg_nome_mm
+            altura_mm = alt_nome_mm
 
         # 2. Inspecionar com motor Preflight (PDF)
         if ext == ".pdf":
@@ -491,9 +496,6 @@ class DialogoTriagemLote(QDialog):
                 elif larg_pdf_mm:
                     largura_mm = larg_pdf_mm
                     altura_mm = alt_pdf_mm
-                elif larg_nome_mm:
-                    largura_mm = larg_nome_mm
-                    altura_mm = alt_nome_mm
 
                 # Reinspecionar DPI com o fator de escala correto
                 if fator_escala > 1.0:
@@ -533,8 +535,6 @@ class DialogoTriagemLote(QDialog):
 
             except Exception as exc:
                 avisos.append(f"Erro ao analisar PDF: {exc}")
-                if larg_nome_mm:
-                    largura_mm, altura_mm = larg_nome_mm, alt_nome_mm
 
         # 3. Inspecionar Imagens Raster (Pillow)
         elif ext in (".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp"):
@@ -548,7 +548,6 @@ class DialogoTriagemLote(QDialog):
 
                     if larg_nome_mm:
                         largura_mm, altura_mm = larg_nome_mm, alt_nome_mm
-                        # Calcular DPI real caso estique
                         dpi_efetivo_real = (img.width / (largura_mm / 25.4))
                         dpi_efetivo = dpi_efetivo_real
                     else:
@@ -619,77 +618,74 @@ class DialogoTriagemLote(QDialog):
         row = self.tabela.rowCount()
         self.tabela.insertRow(row)
 
-        # 0. Checkbox de Aprovação
-        it_check = QTableWidgetItem()
+        # 0. Checkbox de Aprovação com Status
+        status = item_dados["status"]
+        if status == "OK":
+            rotulo_check = "✓ OK"
+        elif status == "ALERTA":
+            rotulo_check = "⚠️ Alerta"
+        else:
+            rotulo_check = "❌ Risco"
+
+        it_check = QTableWidgetItem(rotulo_check)
         it_check.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled | Qt.ItemIsSelectable)
         it_check.setCheckState(Qt.Checked if item_dados["aprovado"] else Qt.Unchecked)
         it_check.setTextAlignment(Qt.AlignCenter)
         it_check.setData(Qt.UserRole, item_dados)
+        if status == "OK":
+            it_check.setForeground(QColor(CoresTema.SUCESSO))
+        elif status == "ALERTA":
+            it_check.setForeground(QColor(CoresTema.ALERTA))
+        else:
+            it_check.setForeground(QColor(CoresTema.PERIGO))
         self.tabela.setItem(row, 0, it_check)
 
-        # 1. Status Visual Badge
-        status = item_dados["status"]
-        if status == "OK":
-            txt_status = "✅ OK"
-            cor_status = CoresTema.SUCESSO
-        elif status == "ALERTA":
-            txt_status = "⚠️ AVISO"
-            cor_status = CoresTema.ALERTA
-        else:
-            txt_status = "❌ RISCO"
-            cor_status = CoresTema.PERIGO
-
-        it_status = QTableWidgetItem(txt_status)
-        it_status.setTextAlignment(Qt.AlignCenter)
-        it_status.setForeground(QColor(cor_status))
-        self.tabela.setItem(row, 1, it_status)
-
-        # 2. Prévia / Miniatura
+        # 1. Prévia / Miniatura
         it_prev = QTableWidgetItem()
         if item_dados.get("miniatura") and not item_dados["miniatura"].isNull():
             it_prev.setIcon(QIcon(item_dados["miniatura"]))
         else:
             it_prev.setText("🖼️")
         it_prev.setTextAlignment(Qt.AlignCenter)
-        self.tabela.setItem(row, 2, it_prev)
+        self.tabela.setItem(row, 1, it_prev)
 
-        # 3. Nome do Arquivo
+        # 2. Nome do Arquivo
         it_nome = QTableWidgetItem(item_dados["nome"])
         it_nome.setToolTip(item_dados["caminho"])
-        self.tabela.setItem(row, 3, it_nome)
+        self.tabela.setItem(row, 2, it_nome)
 
-        # 4. Dimensões Finais
+        # 3. Dimensões Finais
         dim_str = (
             f"{item_dados['largura_mm']:.0f} × {item_dados['altura_mm']:.0f} mm "
             f"({item_dados['largura_mm']/1000.0:.2f} × {item_dados['altura_mm']/1000.0:.2f} m)"
         )
         it_dim = QTableWidgetItem(dim_str)
         it_dim.setTextAlignment(Qt.AlignCenter)
-        self.tabela.setItem(row, 4, it_dim)
+        self.tabela.setItem(row, 3, it_dim)
 
-        # 5. Escala
+        # 4. Proporção / Escala
         it_esc = QTableWidgetItem(item_dados["escala"])
         it_esc.setTextAlignment(Qt.AlignCenter)
-        self.tabela.setItem(row, 5, it_esc)
+        self.tabela.setItem(row, 4, it_esc)
 
-        # 6. Resolução (DPI)
+        # 5. Resolução (DPI)
         it_dpi = QTableWidgetItem(item_dados["dpi_str"])
         it_dpi.setTextAlignment(Qt.AlignCenter)
         if item_dados.get("tem_baixa_resolucao"):
             it_dpi.setForeground(QColor(CoresTema.ALERTA))
-        self.tabela.setItem(row, 6, it_dpi)
+        self.tabela.setItem(row, 5, it_dpi)
 
-        # 7. Fontes / Curvas
+        # 6. Fontes / Curvas
         it_fontes = QTableWidgetItem(item_dados["fontes_str"])
         it_fontes.setTextAlignment(Qt.AlignCenter)
         if item_dados.get("tem_fontes_vivas"):
             it_fontes.setForeground(QColor(CoresTema.PERIGO))
-        self.tabela.setItem(row, 7, it_fontes)
+        self.tabela.setItem(row, 6, it_fontes)
 
-        # 8. Substrato
+        # 7. Substrato
         it_mat = QTableWidgetItem(item_dados["material"])
         it_mat.setTextAlignment(Qt.AlignCenter)
-        self.tabela.setItem(row, 8, it_mat)
+        self.tabela.setItem(row, 7, it_mat)
 
         self.tabela.blockSignals(False)
 
@@ -730,7 +726,14 @@ class DialogoTriagemLote(QDialog):
                 it = self.tabela.item(row, 0)
                 if it:
                     it.setCheckState(Qt.Checked)
+                    dados = it.data(Qt.UserRole)
+                    if dados:
+                        dados["aprovado"] = True
         self._atualizar_contadores()
+
+    def _marcar_todos(self) -> None:
+        """Compatibilidade e alias para aprovar_todas."""
+        self.aprovar_todas()
 
     def rejeitar_todas(self) -> None:
         """Desmarca todas as linhas visíveis."""
@@ -739,7 +742,14 @@ class DialogoTriagemLote(QDialog):
                 it = self.tabela.item(row, 0)
                 if it:
                     it.setCheckState(Qt.Unchecked)
+                    dados = it.data(Qt.UserRole)
+                    if dados:
+                        dados["aprovado"] = False
         self._atualizar_contadores()
+
+    def _desmarcar_todos(self) -> None:
+        """Compatibilidade e alias para rejeitar_todas."""
+        self.rejeitar_todas()
 
     def _aplicar_filtros(self) -> None:
         termo_busca = self.txt_busca.text().strip().upper()
@@ -748,9 +758,8 @@ class DialogoTriagemLote(QDialog):
 
         for row in range(self.tabela.rowCount()):
             it_check = self.tabela.item(row, 0)
-            it_status = self.tabela.item(row, 1)
-            it_nome = self.tabela.item(row, 3)
-            it_mat = self.tabela.item(row, 8)
+            it_nome = self.tabela.item(row, 2)
+            it_mat = self.tabela.item(row, 7)
 
             dados = it_check.data(Qt.UserRole) if it_check else {}
             nome = it_nome.text().upper() if it_nome else ""
@@ -827,3 +836,7 @@ class DialogoTriagemLote(QDialog):
 
         self.artes_aprovadas.emit(aprovadas)
         self.accept()
+
+    def _despachar_para_montagem(self) -> None:
+        """Compatibilidade e alias para avancar_para_montagem."""
+        self.avancar_para_montagem()

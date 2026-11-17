@@ -271,8 +271,12 @@ def categoria_do_material(texto_material, config=None):
     """
     config = config or carregar_config()
     texto = _sem_acento(texto_material).upper()
-    if re.search(r"\bXPS\b", texto) or re.search(r"\bPVC\b", texto):
+    if re.search(r"\bXPS\b", texto):
+        return "XPS"
+    if re.search(r"\bPVC\b", texto):
         return "PVC"
+    if re.search(r"\bTECIDO\b", texto):
+        return "TECIDO"
     if _material_aguardando(texto_material):
         return MATERIAL_A_DEFINIR
     categoria, _ = identificar_categoria(

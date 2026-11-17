@@ -12,6 +12,16 @@
       "comprimento_cm": 5000.0,
       "minutos_por_m2": 4.0
     },
+    "TECIDO": {
+      "tipo": "rolo",
+      "largura_cm": 160.0,
+      "comprimento_cm": 5000.0
+    },
+    "XPS": {
+      "tipo": "chapa",
+      "largura_cm": 120.0,
+      "comprimento_cm": 240.0
+    },
     "PS": {
       "tipo": "chapa",
       "largura_cm": 200.0,
@@ -849,7 +859,6 @@
   },
   "sinonimos_categoria": {
     "VINIL": "ADESIVO",
-    "XPS": "PVC",
     "ACRÍLICO": "ACRILICO"
   },
   "typos_unidade": {
@@ -875,7 +884,7 @@
     "ADESIVADO": "ADESIVO"
   },
   "ultima_impressora": "HP Color LaserJet Pro 4203",
-  "ultima_pasta_envio": "C:\\Users\\flavi\\OneDrive\\UNYCOMUNICACAO\\EVENTOS\\ESTANDE CLARO\\PRODUCAO",
+  "ultima_pasta_envio": "C:\\Users\\flavi\\OneDrive\\UNYCOMUNICACAO\\EVENTOS\\SALAS_PIMACO\\PRODUÇÃO\\PRONTOS",
   "tema": "escuro",
   "montagem_automatica": false,
   "montagem": {
@@ -961,5 +970,93 @@
         }
       }
     }
-  }
+  },
+  "empresa": {
+    "nome": "Comunicação Visual",
+    "slogan": "Automação e Pré-Impressão",
+    "logo": "",
+    "logo_gui": "",
+    "icone": "",
+    "rodape_retirada": "Conferir os materiais e preencher na retirada"
+  },
+  "maquinas": {
+    "UJV 100 UNY CV": {
+      "tipo": "rolo",
+      "rip_tipo": "rasterlink",
+      "posto": "rip",
+      "montagem": true,
+      "girar": true,
+      "entrega_byhx": false,
+      "ativo": true,
+      "hot_folder": "C:\\MijCtrl\\Hot\\UJV 100 UNY CV",
+      "largura_util_m": 1.27,
+      "largura_montagem_m": 1.52
+    },
+    "SWJ320A": {
+      "tipo": "rolo",
+      "rip_tipo": "rasterlink",
+      "posto": "rip",
+      "montagem": true,
+      "girar": true,
+      "entrega_byhx": false,
+      "ativo": true,
+      "hot_folder": "C:\\MijCtrl\\Hot\\SWJ320A",
+      "largura_util_m": 3.24,
+      "largura_montagem_m": 3.2
+    },
+    "DOCAN R5200": {
+      "tipo": "rolo",
+      "rip_tipo": "sai",
+      "posto": "sai",
+      "montagem": true,
+      "girar": false,
+      "entrega_byhx": true,
+      "ativo": true,
+      "hot_folder": "C:\\Program Files\\SAi\\SAi Production Suite 22\\Jobs and Settings\\Jobs\\Docan\\Docan",
+      "largura_util_m": 5.04,
+      "setup_sai": "Docan",
+      "largura_montagem_m": 5.0
+    },
+    "DOCAN H2525": {
+      "tipo": "mesa",
+      "rip_tipo": "sai",
+      "posto": "sai",
+      "montagem": true,
+      "girar": false,
+      "entrega_byhx": false,
+      "ativo": true,
+      "hot_folder": "C:\\Program Files\\SAi\\SAi Production Suite 22\\Jobs and Settings\\Jobs\\Docan\\Docan_1",
+      "mesa_util_m": [
+        2.5,
+        2.5
+      ],
+      "setup_sai": "Docan_H2525",
+      "margem_montagem_m": 0.02
+    }
+  },
+  "perfis_nomenclatura": [
+    {
+      "nome": "comunicacao_visual_classico",
+      "descricao": "Padrão clássico: Quantidade, Material, Medidas e Descrição",
+      "prioridade": 10,
+      "tipo": "template",
+      "template": "{QTD}UN_{MATERIAL}_{LARG}x{ALT}{UNIDADE}_{DESCRICAO}",
+      "ativo": true
+    },
+    {
+      "nome": "erp_os",
+      "descricao": "Padrão ERP: OS, Cliente, Material e Medida (ex: OS1234_CLIENTE_MATERIAL_2x1M)",
+      "prioridade": 20,
+      "tipo": "template",
+      "template": "OS{OS}_{CLIENTE}_{MATERIAL}_{LARG}x{ALT}{UNIDADE}",
+      "ativo": true
+    },
+    {
+      "nome": "padrao_flexivel",
+      "descricao": "Padrão flexível: busca dimensões e material em qualquer posição",
+      "prioridade": 30,
+      "tipo": "flexivel",
+      "ativo": true
+    }
+  ]
 }

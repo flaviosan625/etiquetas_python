@@ -1,3 +1,4 @@
+import branding
 """Material em produção e consumo/custo reais, no tema do sistema.
 
 I/O, miniaturas e PDF fora da thread do Tk. A seleção nunca move arquivos:
@@ -49,7 +50,7 @@ def ler_cliente(vinculos, cliente):
 class JanelaMaterialProducao(tk.Toplevel):
     def __init__(self, pai):
         super().__init__(pai)
-        self.title('Material em produção — Uny CV')
+        self.title(branding.titulo_janela("Material em Produção"))
         self.geometry(f'{min(1450, self.winfo_screenwidth()-70)}x{min(920, self.winfo_screenheight()-90)}')
         self.minsize(1000, 620)
         self.configure(bg=cores.fundo)

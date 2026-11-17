@@ -122,7 +122,14 @@ def detectar_dimensoes(caminho_arquivo: Path) -> tuple:
     try:
         from dimensoes import extrair_dimensoes, extrair_quantidade
         dim = extrair_dimensoes(nome)
-        qtd = extrair_quantidade(nome) or 1
+        res_qtd = extrair_quantidade(nome)
+        if isinstance(res_qtd, (tuple, list)):
+            qtd = int(res_qtd[0]) if res_qtd and res_qtd[0] else 1
+        elif isinstance(res_qtd, (int, float)):
+            qtd = int(res_qtd)
+        else:
+            qtd = 1
+
         if dim:
             if isinstance(dim, dict):
                 w_m, h_m = dim.get("largura_m", 0.0), dim.get("altura_m", 0.0)
@@ -170,7 +177,7 @@ def detectar_dimensoes(caminho_arquivo: Path) -> tuple:
 
 
 class CartaoMaquina(QFrame):
-    """Cartão compacto de exibição e seleção rápida de máquina de impressão/corte (~34px)."""
+    """Cartão compacto de exibição e seleção rápida de máquina de impressão/corte (~30px)."""
 
     def __init__(self, dados_maquina: Dict[str, Any], ao_clicar, parent=None):
         super().__init__(parent)
@@ -180,7 +187,7 @@ class CartaoMaquina(QFrame):
 
         self.setProperty("classe", "cartao_maquina")
         self.setCursor(Qt.PointingHandCursor)
-        self.setFixedHeight(34)
+        self.setFixedHeight(30)
 
         largura_m = dados_maquina["largura_mm"] / 1000.0
         margem = dados_maquina.get("margem_lateral_mm", 15.0)
@@ -192,12 +199,12 @@ class CartaoMaquina(QFrame):
         )
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(8, 2, 8, 2)
-        layout.setSpacing(6)
+        layout.setContentsMargins(6, 1, 6, 1)
+        layout.setSpacing(4)
 
         # Nome da Máquina em negrito
         self.lbl_nome = QLabel(dados_maquina["nome"], self)
-        self.lbl_nome.setStyleSheet("font-weight: 700; font-size: 12px; color: #f0f2f8;")
+        self.lbl_nome.setStyleSheet("font-weight: 700; font-size: 11px; color: #f0f2f8;")
         layout.addWidget(self.lbl_nome)
 
         layout.addStretch()
@@ -205,18 +212,18 @@ class CartaoMaquina(QFrame):
         # Badge de Largura Útil (Ciano)
         self.lbl_largura = QLabel(f"{largura_m:.2f} m", self)
         self.lbl_largura.setStyleSheet(
-            "color: #38bdf8; font-size: 11px; font-weight: 600; "
+            "color: #38bdf8; font-size: 10px; font-weight: 600; "
             "background-color: #0c2d48; border: 1px solid #0284c7; "
-            "border-radius: 4px; padding: 1px 6px;"
+            "border-radius: 3px; padding: 0px 5px;"
         )
         layout.addWidget(self.lbl_largura)
 
         # Badge de Status (Verde)
         self.lbl_status = QLabel(dados_maquina["status"], self)
         self.lbl_status.setStyleSheet(
-            f"color: {CoresTema.SUCESSO}; font-size: 11px; font-weight: 600; "
+            f"color: {CoresTema.SUCESSO}; font-size: 10px; font-weight: 600; "
             f"background-color: {CoresTema.SUCESSO_FUNDO}; border: 1px solid #059669; "
-            "border-radius: 4px; padding: 1px 6px;"
+            "border-radius: 3px; padding: 0px 5px;"
         )
         layout.addWidget(self.lbl_status)
 
@@ -335,18 +342,19 @@ class JanelaPrincipal(QMainWindow):
         self.splitter_esquerdo = QSplitter(Qt.Vertical, painel_esquerdo)
         self.splitter_esquerdo.setHandleWidth(4)
 
-        # 1. Seção Superior do Splitter: MÁQUINAS COMPACTAS (~180px)
+        # 1. Seção Superior do Splitter: MÁQUINAS COMPACTAS (~175px)
         widget_maquinas = QWidget(self.splitter_esquerdo)
+        widget_maquinas.setMaximumHeight(185)
         layout_maq = QVBoxLayout(widget_maquinas)
         layout_maq.setContentsMargins(4, 4, 4, 4)
-        layout_maq.setSpacing(4)
+        layout_maq.setSpacing(3)
 
         lbl_sec_maq = QLabel("MÁQUINAS & DISPOSITIVOS", widget_maquinas)
         lbl_sec_maq.setStyleSheet("font-weight: 700; color: #8a91a8; font-size: 11px; letter-spacing: 1px;")
         layout_maq.addWidget(lbl_sec_maq)
 
         self.container_maquinas = QVBoxLayout()
-        self.container_maquinas.setSpacing(3)
+        self.container_maquinas.setSpacing(2)
         for maq in self.maquinas:
             cartao = CartaoMaquina(maq, self.selecionar_maquina, parent=widget_maquinas)
             self.cartoes_maquinas.append(cartao)
@@ -418,7 +426,7 @@ class JanelaPrincipal(QMainWindow):
         linha_selecao.addWidget(btn_desmarcar_todos)
         layout_fila.addLayout(linha_selecao)
 
-        # Tabela de Peças com Altura Mínima Garantida e Rolagem Fluida
+        # Tabela de Peças com Altura Flexível e Rolagem Fluida
         self.tabela_pecas = QTableWidget(0, 4, widget_fila)
         self.tabela_pecas.setHorizontalHeaderLabels(["Arquivo", "Material", "Dimensões", "Ação"])
         self.tabela_pecas.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
@@ -427,8 +435,9 @@ class JanelaPrincipal(QMainWindow):
         self.tabela_pecas.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
         self.tabela_pecas.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.tabela_pecas.verticalHeader().setVisible(False)
-        self.tabela_pecas.setIconSize(QSize(36, 36))
-        self.tabela_pecas.setMinimumHeight(300)
+        self.tabela_pecas.verticalHeader().setDefaultSectionSize(26)
+        self.tabela_pecas.setIconSize(QSize(28, 28))
+        self.tabela_pecas.setMinimumHeight(120)
         self.tabela_pecas.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.tabela_pecas.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.tabela_pecas.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
@@ -448,9 +457,11 @@ class JanelaPrincipal(QMainWindow):
         layout_fila.addLayout(botoes_fila)
 
         self.splitter_esquerdo.addWidget(widget_fila)
+        self.splitter_esquerdo.setCollapsible(0, True)
+        self.splitter_esquerdo.setCollapsible(1, False)
         self.splitter_esquerdo.setStretchFactor(0, 0)
         self.splitter_esquerdo.setStretchFactor(1, 1)
-        self.splitter_esquerdo.setSizes([190, 520])
+        self.splitter_esquerdo.setSizes([160, 520])
 
         layout_esq.addWidget(self.splitter_esquerdo)
         splitter.addWidget(painel_esquerdo)
@@ -593,8 +604,12 @@ class JanelaPrincipal(QMainWindow):
         if hasattr(self, "guia_passo") and self.guia_passo.etapa_atual == 3:
             self.guia_passo.ir_para_etapa(4)
 
-        # Auto-carregamento da pasta de entrada da máquina selecionada
-        self.auto_carregar_pasta_maquina(dados_maquina)
+        # Auto-carregamento da pasta de entrada da máquina selecionada apenas se a fila estiver vazia
+        if self.tabela_pecas.rowCount() == 0:
+            self.auto_carregar_pasta_maquina(dados_maquina)
+        else:
+            self.canvas.verificar_todas_colisoes()
+            self.canvas.emitir_estatisticas()
 
     def auto_carregar_pasta_maquina(self, dados_maquina: Dict[str, Any]) -> None:
         """Verifica a pasta de entrada da máquina e auto-carrega artes existentes na fila."""
@@ -627,7 +642,21 @@ class JanelaPrincipal(QMainWindow):
             pass
 
     def recarregar_pasta_entrada(self) -> None:
-        """Recarrega os arquivos da pasta de entrada da máquina atualmente ativa."""
+        """Recarrega os arquivos da pasta de entrada atualmente ativa ou vigiada."""
+        pasta = getattr(self, "pasta_entrada_atual", None)
+        if pasta and Path(pasta).is_dir():
+            exts = (".pdf", ".eps", ".tif", ".tiff", ".jpg", ".jpeg", ".png", ".bmp")
+            arquivos = [
+                f for f in sorted(Path(pasta).iterdir())
+                if f.is_file() and f.suffix.lower() in exts and not f.name.startswith("~")
+            ]
+            self.carregar_arquivos_na_fila(arquivos)
+            self.statusBar().showMessage(
+                f"🔄 Pasta recarregada: {len(arquivos)} arquivo(s) em {Path(pasta).name}.",
+                4000,
+            )
+            return
+
         self.auto_carregar_pasta_maquina(self.maquina_atual)
 
     def _ao_alterar_espacamento(self, valor: int) -> None:
@@ -678,6 +707,15 @@ class JanelaPrincipal(QMainWindow):
         row = self.tabela_pecas.rowCount()
         self.tabela_pecas.insertRow(row)
 
+        # Garantir quantidade inteira válida
+        if isinstance(quantidade, (tuple, list)):
+            qtd_int = int(quantidade[0]) if quantidade else 1
+        else:
+            try:
+                qtd_int = max(1, int(quantidade))
+            except Exception:
+                qtd_int = 1
+
         item_nome = QTableWidgetItem(nome)
         item_nome.setFlags(item_nome.flags() | Qt.ItemIsUserCheckable)
         item_nome.setCheckState(Qt.Checked)
@@ -689,7 +727,7 @@ class JanelaPrincipal(QMainWindow):
             "largura_mm": largura_mm,
             "altura_mm": altura_mm,
             "material": material,
-            "quantidade": quantidade,
+            "quantidade": qtd_int,
             "miniatura": miniatura,
         })
 
@@ -701,8 +739,8 @@ class JanelaPrincipal(QMainWindow):
 
         btn_inserir = QPushButton("Inserir", self.tabela_pecas)
         btn_inserir.setFixedHeight(24)
-        btn_inserir.clicked.connect(
-            lambda checked=False, n=nome, l=largura_mm, a=altura_mm, m=material, q=quantidade, p=caminho_arquivo, pix=miniatura:
+
+        def ao_inserir(checked=False, n=nome, l=largura_mm, a=altura_mm, m=material, q=qtd_int, p=caminho_arquivo, pix=miniatura):
             self.canvas.adicionar_peca(
                 nome=n,
                 largura_mm=l,
@@ -712,7 +750,10 @@ class JanelaPrincipal(QMainWindow):
                 material=m,
                 quantidade=q,
             )
-        )
+            self.canvas.fit_in_view()
+            self.statusBar().showMessage(f"Arte '{n}' inserida na folha de montagem!", 3000)
+
+        btn_inserir.clicked.connect(ao_inserir)
 
         self.tabela_pecas.setItem(row, 0, item_nome)
         self.tabela_pecas.setItem(row, 1, item_mat)
@@ -899,27 +940,49 @@ class JanelaPrincipal(QMainWindow):
         """Abre a pasta de entrada atual no Windows Explorer."""
         pasta = getattr(self, "pasta_entrada_atual", None)
         if not pasta or not Path(pasta).is_dir():
-            import montagem
-            nome_maq = self.maquina_atual.get("nome_sistema", self.maquina_atual["nome"])
-            pasta = montagem.pasta_da_maquina(nome_maq)
-            pasta.mkdir(parents=True, exist_ok=True)
-        try:
-            os.startfile(str(pasta))
-        except Exception:
-            subprocess.Popen(["explorer", str(pasta)])
-        self.statusBar().showMessage(f"Pasta de entrada aberta: {pasta}", 3000)
+            try:
+                import montagem
+                nome_maq = self.maquina_atual.get("nome_sistema", self.maquina_atual["nome"])
+                pasta = montagem.pasta_da_maquina(nome_maq)
+                pasta.mkdir(parents=True, exist_ok=True)
+            except Exception:
+                pasta = Path.home() / "Desktop" / "MONTAGEM ARTES MAQUINAS" / self.maquina_atual["nome"]
+                try:
+                    pasta.mkdir(parents=True, exist_ok=True)
+                except Exception:
+                    pasta = Path.home() / "Desktop"
+
+        if pasta and Path(pasta).is_dir():
+            try:
+                os.startfile(str(pasta))
+            except Exception:
+                subprocess.Popen(f'explorer "{Path(pasta).resolve()}"', shell=True)
+            self.statusBar().showMessage(f"📂 Pasta de entrada aberta no Explorer: {pasta}", 4000)
+        else:
+            QMessageBox.warning(self, "Aviso", f"Não foi possível acessar a pasta:\n{pasta}")
 
     def on_abrir_pasta_saida(self) -> None:
         """Abre a pasta de saída / Hot Folder da máquina no Windows Explorer."""
-        import montagem
-        nome_maq = self.maquina_atual.get("nome_sistema", self.maquina_atual["nome"])
-        pasta_saida = montagem.pasta_de_saida(nome_maq)
-        pasta_saida.mkdir(parents=True, exist_ok=True)
         try:
-            os.startfile(str(pasta_saida))
+            import montagem
+            nome_maq = self.maquina_atual.get("nome_sistema", self.maquina_atual["nome"])
+            pasta_saida = montagem.pasta_de_saida(nome_maq)
+            pasta_saida.mkdir(parents=True, exist_ok=True)
         except Exception:
-            subprocess.Popen(["explorer", str(pasta_saida)])
-        self.statusBar().showMessage(f"Pasta de saída aberta: {pasta_saida}", 3000)
+            pasta_saida = Path.home() / "Desktop" / "ARTES MONTADAS RIP" / self.maquina_atual["nome"]
+            try:
+                pasta_saida.mkdir(parents=True, exist_ok=True)
+            except Exception:
+                pasta_saida = Path.home() / "Desktop"
+
+        if pasta_saida and Path(pasta_saida).is_dir():
+            try:
+                os.startfile(str(pasta_saida))
+            except Exception:
+                subprocess.Popen(f'explorer "{Path(pasta_saida).resolve()}"', shell=True)
+            self.statusBar().showMessage(f"📤 Pasta de saída / RIP aberta: {pasta_saida}", 4000)
+        else:
+            QMessageBox.warning(self, "Aviso", f"Não foi possível acessar a pasta de saída:\n{pasta_saida}")
 
     def on_importar_planilha(self) -> None:
         caminho, _ = QFileDialog.getOpenFileName(
@@ -1033,18 +1096,26 @@ class JanelaPrincipal(QMainWindow):
 
         import montagem
         nome_maq = self.maquina_atual.get("nome_sistema", self.maquina_atual["nome"])
-        pasta_saida = montagem.pasta_de_saida(nome_maq)
-        pasta_saida.mkdir(parents=True, exist_ok=True)
+        try:
+            pasta_saida = montagem.pasta_de_saida(nome_maq)
+            pasta_saida.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            pasta_saida = Path.home() / "Desktop" / "ARTES MONTADAS RIP" / nome_maq
+            pasta_saida.mkdir(parents=True, exist_ok=True)
 
         folga_m = float(self.spin_espacamento.value()) / 1000.0
         largura_m = float(self.maquina_atual["largura_mm"]) / 1000.0
 
         caminhos_pecas = [p.caminho_arquivo for p in pecas if p.caminho_arquivo]
-        pasta_origem = getattr(self, "pasta_entrada_atual", None) or montagem.pasta_da_maquina(nome_maq)
+        if caminhos_pecas:
+            pasta_origem = Path(caminhos_pecas[0]).parent
+            nomes_arquivos = [Path(p).name for p in caminhos_pecas]
+        else:
+            pasta_origem = getattr(self, "pasta_entrada_atual", None) or montagem.pasta_da_maquina(nome_maq)
+            nomes_arquivos = [p.nome for p in pecas]
 
         try:
-            nomes_arquivos = [Path(p).name for p in caminhos_pecas if Path(p).parent == pasta_origem]
-            if nomes_arquivos:
+            if nomes_arquivos and Path(pasta_origem).is_dir():
                 montagem.montar_pasta(
                     pasta=pasta_origem,
                     nome_maquina=nome_maq,

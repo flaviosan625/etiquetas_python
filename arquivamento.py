@@ -38,7 +38,7 @@ import shutil
 from utils import (chave_comparacao_cliente, cliente_do_pedido, data_hora_da_pasta,
                    nome_cliente_da_pasta, pastas_de_lote)
 
-PASTA_DESTINO_PADRAO = pathlib.Path.home() / "OneDrive" / "UNYCOMUNICACAO" / "Ordem de Serviço"
+PASTA_DESTINO_PADRAO = pathlib.Path.home() / "AutomacaoGrafica" / "Ordem de Servico"
 
 
 def _arquivos_os(pasta_pedido):

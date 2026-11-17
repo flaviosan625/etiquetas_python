@@ -58,7 +58,7 @@ _DIARIO_PARADO_S = 26 * 3600
 PASTA_INICIALIZACAO = (pathlib.Path(os.environ.get("APPDATA", pathlib.Path.home()))
                        / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup")
 PASTA_CONGELADO = RAIZ / "_congelado"
-ATALHO_MONITOR = "Uny CV - Monitor de Pastas.lnk"
+ATALHO_MONITOR = "Monitor de Pastas.lnk"
 
 
 @dataclasses.dataclass(frozen=True)
