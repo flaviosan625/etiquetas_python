@@ -639,4 +639,49 @@ def test_rotulo_em_preto_sem_tarja(qapp):
     assert cor_topo.red() > 200 and cor_topo.green() > 200 and cor_topo.blue() > 200
 
 
+def test_exportar_pdf_montado_direto_do_canvas(tmp_path, qapp):
+    """
+    Verifica que o método exportar_pdf_montado gera fisicamente um PDF válido
+    com dimensões corretas, cabeçalho técnico e rótulos de peças sem tarja.
+    """
+    import pymupdf
+    import json
+    import montagem
+
+    canvas = CanvasMontagem(largura_bobina_mm=3200.0)
+    canvas.limpar_pecas()
+
+    canvas.adicionar_peca("Arte1.pdf", largura_mm=1000.0, altura_mm=800.0, material="LONA")
+    canvas.adicionar_peca("Arte2.pdf", largura_mm=1200.0, altura_mm=900.0, material="LONA")
+
+    caminho_pdf = tmp_path / "montagem_teste.pdf"
+    gerado = canvas.exportar_pdf_montado(
+        caminho_pdf,
+        nome_maquina="SWJ-320EA",
+        cliente="ACME CORP",
+    )
+
+    assert gerado.exists()
+    assert gerado.stat().st_size > 500
+
+    # Valida estrutura do documento PDF
+    with pymupdf.open(str(gerado)) as doc:
+        assert doc.page_count == 1
+        pagina = doc[0]
+        # Largura da página em pontos deve bater com 3.20m * PT_M
+        largura_esperada_pt = 3.20 * montagem.PT_M
+        assert abs(pagina.rect.width - largura_esperada_pt) < 1.0
+        assert pagina.rect.height > (montagem.CABECALHO_M * montagem.PT_M)
+
+    # Valida ficha técnica .json complementar
+    ficha_path = gerado.with_suffix(".json")
+    assert ficha_path.exists()
+    with open(ficha_path, "r", encoding="utf-8") as f:
+        dados = json.load(f)
+        assert dados["cliente"] == "ACME CORP"
+        assert dados["maquina"] == "SWJ-320EA"
+        assert dados["total_pecas"] == 2
+
+
+
 

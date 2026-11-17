@@ -441,6 +441,7 @@ class JanelaPrincipal(QMainWindow):
         self.tabela_pecas.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.tabela_pecas.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.tabela_pecas.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.tabela_pecas.cellDoubleClicked.connect(self._ao_duplo_clique_tabela_pecas)
         layout_fila.addWidget(self.tabela_pecas)
 
         # Botões de Ação Rápida na lateral
@@ -617,6 +618,7 @@ class JanelaPrincipal(QMainWindow):
             import montagem
             nome_sistema = dados_maquina.get("nome_sistema", dados_maquina["nome"])
             pasta_entrada = montagem.pasta_da_maquina(nome_sistema)
+            pasta_entrada.mkdir(parents=True, exist_ok=True)
             self.pasta_entrada_atual = pasta_entrada
 
             if pasta_entrada and pasta_entrada.is_dir():
@@ -632,29 +634,43 @@ class JanelaPrincipal(QMainWindow):
                         4000,
                     )
                 else:
-                    self.tabela_pecas.setRowCount(0)
-                    self.canvas.limpar_pecas()
                     self.statusBar().showMessage(
-                        f"Pasta de entrada vigiada ({dados_maquina['nome']}): {pasta_entrada} (0 arquivos).",
+                        f"Pasta de entrada ({dados_maquina['nome']}): {pasta_entrada.name} (0 arquivos).",
                         3000,
                     )
-        except Exception as exc:
+        except Exception:
             pass
 
     def recarregar_pasta_entrada(self) -> None:
         """Recarrega os arquivos da pasta de entrada atualmente ativa ou vigiada."""
         pasta = getattr(self, "pasta_entrada_atual", None)
+        if not pasta or not Path(pasta).is_dir():
+            try:
+                import montagem
+                nome_sistema = self.maquina_atual.get("nome_sistema", self.maquina_atual["nome"])
+                pasta = montagem.pasta_da_maquina(nome_sistema)
+                pasta.mkdir(parents=True, exist_ok=True)
+                self.pasta_entrada_atual = pasta
+            except Exception:
+                pass
+
         if pasta and Path(pasta).is_dir():
             exts = (".pdf", ".eps", ".tif", ".tiff", ".jpg", ".jpeg", ".png", ".bmp")
             arquivos = [
                 f for f in sorted(Path(pasta).iterdir())
                 if f.is_file() and f.suffix.lower() in exts and not f.name.startswith("~")
             ]
-            self.carregar_arquivos_na_fila(arquivos)
-            self.statusBar().showMessage(
-                f"🔄 Pasta recarregada: {len(arquivos)} arquivo(s) em {Path(pasta).name}.",
-                4000,
-            )
+            if arquivos:
+                self.carregar_arquivos_na_fila(arquivos)
+                self.statusBar().showMessage(
+                    f"🔄 Pasta recarregada: {len(arquivos)} arquivo(s) em {Path(pasta).name}.",
+                    4000,
+                )
+            else:
+                self.statusBar().showMessage(
+                    f"🔄 Pasta recarregada ({Path(pasta).name}): 0 arquivos de arte encontrados.",
+                    4000,
+                )
             return
 
         self.auto_carregar_pasta_maquina(self.maquina_atual)
@@ -936,21 +952,44 @@ class JanelaPrincipal(QMainWindow):
         if hasattr(self, "guia_passo"):
             self.guia_passo.ir_para_etapa(2)
 
+    def _ao_duplo_clique_tabela_pecas(self, row: int, col: int) -> None:
+        """Ao dar duplo clique em qualquer célula da linha, insere a arte diretamente na folha."""
+        item_0 = self.tabela_pecas.item(row, 0)
+        if not item_0:
+            return
+        dados = item_0.data(Qt.UserRole) or {}
+        self.canvas.adicionar_peca(
+            nome=item_0.text(),
+            largura_mm=dados.get("largura_mm", 500.0),
+            altura_mm=dados.get("altura_mm", 500.0),
+            miniatura=dados.get("miniatura"),
+            caminho_arquivo=dados.get("caminho"),
+            material=dados.get("material", "VINIL"),
+            quantidade=dados.get("quantidade", 1),
+        )
+        self.canvas.fit_in_view()
+        self.statusBar().showMessage(f"Arte '{item_0.text()}' inserida na folha de montagem!", 3000)
+
     def on_abrir_pasta_entrada(self) -> None:
         """Abre a pasta de entrada atual no Windows Explorer."""
         pasta = getattr(self, "pasta_entrada_atual", None)
         if not pasta or not Path(pasta).is_dir():
             try:
                 import montagem
+                import caminhos
                 nome_maq = self.maquina_atual.get("nome_sistema", self.maquina_atual["nome"])
                 pasta = montagem.pasta_da_maquina(nome_maq)
                 pasta.mkdir(parents=True, exist_ok=True)
+                self.pasta_entrada_atual = pasta
             except Exception:
-                pasta = Path.home() / "Desktop" / "MONTAGEM ARTES MAQUINAS" / self.maquina_atual["nome"]
                 try:
+                    import caminhos
+                    pasta = getattr(caminhos, "ARTES_PARA_MONTAR", caminhos.PASTA_BASE / "ARTES PARA MONTAR")
                     pasta.mkdir(parents=True, exist_ok=True)
+                    self.pasta_entrada_atual = pasta
                 except Exception:
-                    pasta = Path.home() / "Desktop"
+                    pasta = Path.home() / "AutomacaoGrafica" / "ARTES PARA MONTAR"
+                    pasta.mkdir(parents=True, exist_ok=True)
 
         if pasta and Path(pasta).is_dir():
             try:
@@ -965,15 +1004,18 @@ class JanelaPrincipal(QMainWindow):
         """Abre a pasta de saída / Hot Folder da máquina no Windows Explorer."""
         try:
             import montagem
+            import caminhos
             nome_maq = self.maquina_atual.get("nome_sistema", self.maquina_atual["nome"])
             pasta_saida = montagem.pasta_de_saida(nome_maq)
             pasta_saida.mkdir(parents=True, exist_ok=True)
         except Exception:
-            pasta_saida = Path.home() / "Desktop" / "ARTES MONTADAS RIP" / self.maquina_atual["nome"]
             try:
+                import caminhos
+                pasta_saida = getattr(caminhos, "ARTES_MONTADAS", caminhos.PASTA_BASE / "ARTES MONTADAS")
                 pasta_saida.mkdir(parents=True, exist_ok=True)
             except Exception:
-                pasta_saida = Path.home() / "Desktop"
+                pasta_saida = Path.home() / "AutomacaoGrafica" / "ARTES MONTADAS"
+                pasta_saida.mkdir(parents=True, exist_ok=True)
 
         if pasta_saida and Path(pasta_saida).is_dir():
             try:
@@ -1070,17 +1112,23 @@ class JanelaPrincipal(QMainWindow):
         self.statusBar().showMessage("G-Code / DXF de corte CNC gerado com sucesso!", 4000)
 
     def on_exportar_pdf(self) -> None:
-        self.on_montar_e_enviar_rip()
+        """Exporta o PDF montado do Canvas diretamente para a pasta de saída oficial."""
+        self.executar_exportacao_montagem(enviar_rip=False)
 
     def on_enviar_rip(self) -> None:
-        self.on_montar_e_enviar_rip()
+        """Exporta o PDF montado do Canvas e despacha para a fila / Hot Folder do RIP."""
+        self.executar_exportacao_montagem(enviar_rip=True)
 
     def on_montar_e_enviar_rip(self) -> None:
-        """Executa a montagem e envia o PDF para a pasta de saída / Hot Folder da máquina."""
+        """Botão principal de produção: gera PDF montado e despacha para o RIP."""
+        self.executar_exportacao_montagem(enviar_rip=True)
+
+    def executar_exportacao_montagem(self, enviar_rip: bool = False) -> None:
+        """Gera o PDF vetorial em escala industrial na pasta oficial de saída e abre no Explorer."""
         pecas = self.canvas.obter_pecas()
         if not pecas:
             QMessageBox.warning(
-                self, "Aviso", "Nenhuma arte montada na bobina para enviar para impressão."
+                self, "Aviso", "Nenhuma arte montada na bobina para gerar o PDF."
             )
             return
 
@@ -1095,51 +1143,88 @@ class JanelaPrincipal(QMainWindow):
                 return
 
         import montagem
+        import caminhos
         nome_maq = self.maquina_atual.get("nome_sistema", self.maquina_atual["nome"])
+
+        # 1. Determina a pasta de saída oficial (caminhos.ARTES_MONTADAS)
         try:
             pasta_saida = montagem.pasta_de_saida(nome_maq)
-            pasta_saida.mkdir(parents=True, exist_ok=True)
         except Exception:
-            pasta_saida = Path.home() / "Desktop" / "ARTES MONTADAS RIP" / nome_maq
-            pasta_saida.mkdir(parents=True, exist_ok=True)
+            pasta_saida = getattr(caminhos, "ARTES_MONTADAS", caminhos.PASTA_BASE / "ARTES MONTADAS")
+        pasta_saida = Path(pasta_saida)
+        pasta_saida.mkdir(parents=True, exist_ok=True)
 
-        folga_m = float(self.spin_espacamento.value()) / 1000.0
-        largura_m = float(self.maquina_atual["largura_mm"]) / 1000.0
+        cliente = self.canvas.extrair_cliente_das_pecas()
+        material = self.canvas.extrair_material_das_pecas()
+        largura_m = self.canvas.largura_mm / 1000.0
+        comprimento_m = stats["comprimento_m"] + 0.08 + 0.05
 
-        caminhos_pecas = [p.caminho_arquivo for p in pecas if p.caminho_arquivo]
-        if caminhos_pecas:
-            pasta_origem = Path(caminhos_pecas[0]).parent
-            nomes_arquivos = [Path(p).name for p in caminhos_pecas]
-        else:
-            pasta_origem = getattr(self, "pasta_entrada_atual", None) or montagem.pasta_da_maquina(nome_maq)
-            nomes_arquivos = [p.nome for p in pecas]
+        # 2. Formatar nome oficial do arquivo padronizado para a fábrica
+        nome_arquivo = montagem.nome_da_folha(
+            cliente=cliente,
+            categoria=material,
+            largura_m=largura_m,
+            comprimento_m=comprimento_m,
+            quantas=len(pecas),
+            maquina=nome_maq,
+        )
+        caminho_pdf = pasta_saida / nome_arquivo
 
         try:
-            if nomes_arquivos and Path(pasta_origem).is_dir():
-                montagem.montar_pasta(
-                    pasta=pasta_origem,
-                    nome_maquina=nome_maq,
-                    arquivos=nomes_arquivos,
-                    folga_m=folga_m,
-                    largura_m=largura_m,
-                )
-            
+            # 3. Exportar PDF com qualidade 100% vetorial e rótulos em preto puro sem tarja
+            caminho_gerado = self.canvas.exportar_pdf_montado(
+                caminho_pdf,
+                nome_maquina=nome_maq,
+                cliente=cliente,
+            )
+
+            # 4. Despacho opcional para Hot Folder da máquina (se solicitado e configurado)
+            detalhes_rip = ""
+            if enviar_rip:
+                hot_folder = self.maquina_atual.get("hot_folder")
+                if hot_folder and Path(hot_folder).is_dir():
+                    try:
+                        import shutil
+                        shutil.copy2(str(caminho_gerado), str(Path(hot_folder) / caminho_gerado.name))
+                        detalhes_rip = f"\n🚀 Despachado diretamente para Hot Folder:\n{hot_folder}"
+                    except Exception as err_copia:
+                        detalhes_rip = f"\n(Aviso Hot Folder: {err_copia})"
+                else:
+                    try:
+                        import rasterlink_hotfolder
+                        rasterlink_hotfolder.enviar_para_fila(str(caminho_gerado), nome_maq)
+                        detalhes_rip = "\n🚀 Enviado para a Fila de Impressão do RIP!"
+                    except Exception:
+                        pass
+
+            # 5. Abrir Windows Explorer destacando o arquivo gerado
+            try:
+                subprocess.Popen(f'explorer /select,"{caminho_gerado.resolve()}"')
+            except Exception:
+                try:
+                    os.startfile(str(pasta_saida))
+                except Exception:
+                    subprocess.Popen(f'explorer "{pasta_saida.resolve()}"', shell=True)
+
             self.statusBar().showMessage(
-                f"Montagem para {self.maquina_atual['nome']} concluída com sucesso! Enviado para RIP.",
-                6000,
+                f"✅ PDF gerado na pasta de saída: {caminho_gerado.name}",
+                7000,
             )
             QMessageBox.information(
                 self,
-                "Montagem Concluída",
-                f"Montagem de {len(pecas)} artes concluída para {self.maquina_atual['nome']}!\n\n"
-                f"Largura da bobina: {largura_m:.2f} m\n"
-                f"Espaço entre artes: {self.spin_espacamento.value()} mm\n"
-                f"Saída: {pasta_saida}",
+                "Montagem Exportada com Sucesso",
+                f"PDF de montagem gerado fisicamente!\n\n"
+                f"📄 Arquivo: {caminho_gerado.name}\n"
+                f"📂 Pasta de Saída: {pasta_saida}\n"
+                f"📏 Dimensões: {largura_m:.2f} m × {comprimento_m:.2f} m\n"
+                f"🧩 Peças: {len(pecas)} (Aproveitamento: {stats['aproveitamento_pct']:.1f}%)\n"
+                f"{detalhes_rip}\n\n"
+                f"O arquivo foi selecionado no Windows Explorer.",
             )
         except Exception as exc:
-            self.statusBar().showMessage(f"Aviso de montagem: {exc}", 5000)
-            QMessageBox.warning(
+            self.statusBar().showMessage(f"Erro ao gerar montagem: {exc}", 5000)
+            QMessageBox.critical(
                 self,
-                "Aviso de Montagem",
-                f"Arquivo preparado para o RIP ({self.maquina_atual['nome']}).\nDetalhes: {exc}",
+                "Erro na Geração do PDF",
+                f"Ocorreu um erro ao gerar o PDF de montagem:\n{exc}",
             )

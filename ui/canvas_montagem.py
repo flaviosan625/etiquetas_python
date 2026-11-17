@@ -776,6 +776,195 @@ class CanvasMontagem(QGraphicsView):
         stats = self.calcular_estatisticas()
         self.estatisticas_alteradas.emit(stats)
 
+    def exportar_pdf_montado(
+        self,
+        caminho_destino: Union[str, Path],
+        nome_maquina: Optional[str] = None,
+        cliente: Optional[str] = None,
+    ) -> Path:
+        """
+        Exporta o layout exato do Canvas WYSIWYG para um PDF vetorial de alta definição.
+        Em conformidade com as regras históricas de fábrica de montagem.py:
+        - Escala exata em pontos por metro (PT_M = 72 / 0.0254).
+        - Cabeçalho oficial no topo (CABECALHO_M = 80 mm).
+        - Posicionamento milimétrico exato de cada arte conforme visualizado na tela.
+        - Rótulo oficial em PRETO PURO (color=(0,0,0)) SEM NENHUMA TARJA de fundo.
+        - Embutimento 100% vetorial e de imagem sem perdas (deflate_images=False).
+        """
+        import pymupdf
+        import json
+        import datetime
+        import montagem
+
+        pecas = self.obter_pecas()
+        if not pecas:
+            raise ValueError("O canvas não possui peças montadas para exportar.")
+
+        destino = Path(caminho_destino)
+        destino.parent.mkdir(parents=True, exist_ok=True)
+
+        PT_M = montagem.PT_M  # 72.0 / 0.0254 = 2834.645669 pt/m
+        CABECALHO_M = montagem.CABECALHO_M  # 0.08 m (80 mm)
+
+        largura_m = self.largura_mm / 1000.0
+        largura_pt = largura_m * PT_M
+
+        max_y_mm = max((p.sceneBoundingRect().bottom() for p in pecas), default=self.comprimento_mm)
+        folga_m = getattr(self, "espacamento_mm", 10.0) / 1000.0
+        comprimento_total_m = CABECALHO_M + (max_y_mm / 1000.0) + folga_m
+        comprimento_pt = comprimento_total_m * PT_M
+
+        doc = pymupdf.open()
+        pagina = doc.new_page(width=largura_pt, height=comprimento_pt)
+        pagina.draw_rect(pagina.rect, color=None, fill=(1, 1, 1))
+
+        # 1. Faixa de Cabeçalho Oficial no Topo (CABECALHO_M = 80 mm)
+        titulo = self.obter_titulo_cabecalho()
+        if cliente:
+            titulo = titulo.replace("SEM CLIENTE NO NOME", cliente)
+        if nome_maquina:
+            titulo = f"[{nome_maquina}]  " + titulo
+
+        caixa_cab = pymupdf.Rect(0.02 * PT_M, 0.018 * PT_M, (largura_m - 0.02) * PT_M, CABECALHO_M * PT_M)
+        for tam_mm in (30, 25, 20, 15, 12, 10, 8, 6, 4, 3, 2):
+            if pagina.insert_textbox(
+                caixa_cab,
+                titulo,
+                fontsize=(tam_mm / 1000.0) * PT_M,
+                fontname="hebo",
+                color=(0.35, 0.35, 0.35),
+            ) >= 0:
+                break
+
+        # Linha divisória de 1 pt abaixo do cabeçalho
+        pagina.draw_line(
+            pymupdf.Point(0, CABECALHO_M * PT_M),
+            pymupdf.Point(largura_pt, CABECALHO_M * PT_M),
+            color=(0.7, 0.7, 0.7),
+            width=1,
+        )
+
+        # 2. Posicionamento e Embutimento de Cada Arte
+        for peca in pecas:
+            s_rect = peca.sceneBoundingRect()
+            x0_pt = (s_rect.left() / 1000.0) * PT_M
+            y0_pt = (CABECALHO_M + (s_rect.top() / 1000.0)) * PT_M
+            w_pt = (s_rect.width() / 1000.0) * PT_M
+            h_pt = (s_rect.height() / 1000.0) * PT_M
+            caixa_arte = pymupdf.Rect(x0_pt, y0_pt, x0_pt + w_pt, y0_pt + h_pt)
+            rot = int(peca.rotacao) % 360
+
+            caminho = peca.caminho_arquivo
+            if caminho and Path(caminho).is_file():
+                p_arq = Path(caminho)
+                if p_arq.suffix.lower() in (".png", ".jpg", ".jpeg", ".bmp", ".webp", ".tif", ".tiff"):
+                    with pymupdf.open(str(p_arq)) as img_doc:
+                        bytes_pdf = img_doc.convert_to_pdf()
+                    origem = pymupdf.open("pdf", bytes_pdf)
+                    num_pag = 0
+                else:
+                    origem = pymupdf.open(str(p_arq))
+                    num_pag = peca.metadados.get("pagina", 0)
+
+                try:
+                    recorte = montagem.caixa_da_arte(origem.load_page(num_pag), pymupdf)
+                    pagina.show_pdf_page(
+                        caixa_arte,
+                        origem,
+                        num_pag,
+                        clip=recorte,
+                        rotate=rot,
+                        keep_proportion=True,
+                    )
+                finally:
+                    origem.close()
+            else:
+                pagina.draw_rect(caixa_arte, color=(0.8, 0.8, 0.8), fill=(0.98, 0.98, 0.98))
+                texto_demo = f"{peca.material}\n{peca.largura_mm:.0f} × {peca.altura_mm:.0f} mm"
+                pagina.insert_textbox(
+                    caixa_arte,
+                    texto_demo,
+                    fontsize=12,
+                    fontname="hebo",
+                    color=(0.4, 0.4, 0.4),
+                )
+
+            # Acabamentos opcionais (Ilhós)
+            if peca.metadados.get("aplicar_ilhos"):
+                try:
+                    import acabamento
+                    acabamento.desenhar_ilhos_na_caixa(pagina, caixa_arte)
+                except Exception:
+                    pass
+
+            # 3. Rótulo Oficial da Arte em PRETO PURO e SEM TARJA
+            # Regra: "Nome precisa ser em preto sem tarja assim gasta mais tinta"
+            texto_rotulo = peca.texto_do_rotulo()
+            largura_rotulo_m = min(0.30, s_rect.width() / 1000.0)
+            base_pt = caixa_arte.y0 - (0.001 * PT_M)
+
+            largura_1pt = pymupdf.get_text_length(texto_rotulo, fontname="hebo", fontsize=1)
+            if largura_1pt > 0:
+                pedido_mm = (largura_rotulo_m / largura_1pt) * 1000.0
+                tamanho_mm = max(4.0, min(pedido_mm, 14.0))
+            else:
+                tamanho_mm = 10.0
+
+            font_pt = (tamanho_mm / 1000.0) * PT_M
+            caixa_rotulo = pymupdf.Rect(
+                caixa_arte.x0,
+                base_pt - (tamanho_mm * 1.8 / 1000.0) * PT_M,
+                caixa_arte.x0 + (largura_rotulo_m * PT_M),
+                base_pt,
+            )
+            # NENHUM FUNDO (SEM TARJA) - PURE BLACK:
+            pagina.insert_textbox(
+                caixa_rotulo,
+                texto_rotulo,
+                fontsize=font_pt,
+                fontname="hebo",
+                color=(0, 0, 0),
+            )
+
+        doc.save(str(destino), deflate_images=False)
+        doc.close()
+
+        # Ficha JSON complementar ao lado do PDF
+        try:
+            stats = self.calcular_estatisticas()
+            ficha = {
+                "quando": datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+                "cliente": cliente or self.extrair_cliente_das_pecas(),
+                "maquina": nome_maquina or "DOCAN 5200",
+                "material": self.extrair_material_das_pecas(),
+                "largura_folha_m": round(largura_m, 3),
+                "comprimento_folha_m": round(comprimento_total_m, 3),
+                "area_total_m2": round(largura_m * comprimento_total_m, 3),
+                "area_pecas_m2": round(stats["area_pecas_m2"], 3),
+                "aproveitamento_pct": round(stats["aproveitamento_pct"], 1),
+                "total_pecas": len(pecas),
+                "pecas": [
+                    {
+                        "numero": p.numero,
+                        "arquivo": p.nome,
+                        "caminho": p.caminho_arquivo,
+                        "material": p.material,
+                        "largura_mm": p.largura_mm,
+                        "altura_mm": p.altura_mm,
+                        "rotacao": p.rotacao,
+                        "pos_x_mm": round(p.sceneBoundingRect().left(), 1),
+                        "pos_y_mm": round(p.sceneBoundingRect().top(), 1),
+                    }
+                    for p in pecas
+                ],
+            }
+            with destino.with_suffix(".json").open("w", encoding="utf-8") as f:
+                json.dump(ficha, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+
+        return destino
+
     # -------------------------------------------------------------------------
     # Controle de Câmera, Zoom Centrado e Pan Fluido
     # -------------------------------------------------------------------------
