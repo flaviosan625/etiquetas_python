@@ -1,17 +1,19 @@
 """
 Canvas WYSIWYG Interativo com PySide6 / QGraphicsView para Montagem de Bobina/Chapa.
 
-Recursos:
-- Renderização visual aperfeiçoada de rolo de mídia industrial contínuo com sombra suave.
+Regras Históricas e de Fábrica (montagem.py - 04/10/2026):
+- Rótulo de Identificação Técnica de cada Arte com numeração sequencial (01, 02...) e NOME EXATO DO ARQUIVO:
+  montagem._texto_do_rotulo(peca, numero) -> f"{numero:02d}  {nome_do_arquivo}"
+  Com cópias (>1): f"{numero:02d}  {nome_do_arquivo} ({copia}/{quantidade})"
+  Encostado na arte com encolhimento de fonte antes de cortar.
+- Cabeçalho Oficial da Montagem no Topo da Bobina (CABECALHO_M = 80mm):
+  MONTAGEM  ·  {CLIENTE}  ·  {MATERIAL}  ·  {N} PEÇAS  ·  LARGURA {L}m  ·  APROVEITAMENTO {APROV}%  ·  RIPAR A 100%, NÃO REDIMENSIONAR
+- Renderização visual aperfeiçoada de rolo de mídia contínuo com sombra suave de elevação 3D.
 - Zonas de presilha e linhas tracejadas de margem de segurança lateral e topo da máquina.
 - Réguas de medição dinâmica métrica em cm/m ajustadas ao zoom com marcações legíveis a cada 10cm, 50cm, 1m.
 - Guia reticular do cursor do mouse em tempo real sobre as réguas métricas.
-- PecaGraficaItem com movimentação livre, rotação 90 graus (tecla R / menu) e
-  detecção de colisão em tempo real (destaque azul elétrico para seleção e vermelho vivo para colisão).
-- Substrato das peças com efeito realista de elevação e chanfro 3D.
-- Miniatura de arte renderizada perfeitamente nítida (Anti-aliasing + SmoothPixmapTransform).
-- Tarja de informações inferior ultra-legível com nome, material, dimensões e rotação.
-- Cálculo contínuo de métricas de aproveitamento e comprimento linear.
+- PecaGraficaItem com substrato chanfrado, miniatura nítida (Anti-aliasing + SmoothPixmapTransform),
+  destaque azul elétrico para seleção e alerta vermelho vivo para colisão.
 """
 
 from typing import Optional, List, Dict, Any, Union
@@ -50,7 +52,8 @@ from ui.tema import CoresTema
 
 class PecaGraficaItem(QGraphicsObject):
     """
-    Representação visual e interativa de uma peça a ser montada na bobina/chapa.
+    Representação visual e interativa de uma peça a ser montada na bobina/chapa,
+    seguindo as regras de identificação e rotulagem técnica de fábrica (montagem.py).
     """
 
     posicao_alterada = Signal(object, QPointF)
@@ -68,6 +71,8 @@ class PecaGraficaItem(QGraphicsObject):
         material: str = "VINIL",
         quantidade: int = 1,
         metadados: Optional[Dict[str, Any]] = None,
+        numero: int = 1,
+        copia: int = 1,
         parent: Optional[QGraphicsItem] = None,
     ):
         super().__init__(parent)
@@ -80,6 +85,8 @@ class PecaGraficaItem(QGraphicsObject):
         self.material = str(material).upper()
         self.quantidade = int(quantidade)
         self.metadados = metadados or {}
+        self.numero = int(numero)
+        self.copia = int(copia or self.metadados.get("copia", 1))
 
         self.rotacao = 0.0  # 0, 90, 180, 270 graus
         self.tem_colisao = False
@@ -98,7 +105,32 @@ class PecaGraficaItem(QGraphicsObject):
         )
         self.setAcceptHoverEvents(True)
         self.setTransformOriginPoint(self.largura_mm / 2.0, self.altura_mm / 2.0)
-        self.setToolTip(f"{self.nome}\n{self.material} • {self.largura_mm:.1f} × {self.altura_mm:.1f} mm")
+        self.setToolTip(f"{self.texto_do_rotulo()}\n{self.material} • {self.largura_mm:.1f} × {self.altura_mm:.1f} mm")
+
+    def texto_do_rotulo(self) -> str:
+        """
+        Retorna o texto oficial do rótulo conforme a regra consagrada de montagem.py (04/10/2026):
+        f"{numero:02d}  {nome_do_arquivo}"
+        E se houver cópias (>1): f"{numero:02d}  {nome_do_arquivo} ({copia}/{quantidade})"
+        """
+        if self.caminho_arquivo:
+            nome_arquivo = Path(self.caminho_arquivo).stem
+        else:
+            nome_arquivo = Path(self.nome).stem if "." in self.nome else self.nome
+
+        if not nome_arquivo:
+            nome_arquivo = self.nome
+
+        copia = self.copia or self.metadados.get("copia", 1)
+        if self.quantidade > 1:
+            return f"{self.numero:02d}  {nome_arquivo} ({copia}/{self.quantidade})"
+        return f"{self.numero:02d}  {nome_arquivo}"
+
+    def nome_arquivo_puro(self) -> str:
+        """Retorna o nome do arquivo sem extensão e sem o número da peça."""
+        if self.caminho_arquivo:
+            return Path(self.caminho_arquivo).stem
+        return Path(self.nome).stem if "." in self.nome else self.nome
 
     def _carregar_miniatura_arquivo(self) -> None:
         """Gera ou carrega miniatura real do arquivo (PDF ou imagem) sem travar."""
@@ -216,8 +248,8 @@ class PecaGraficaItem(QGraphicsObject):
 
     def paint(self, painter: QPainter, option, widget=None) -> None:
         """
-        Desenha a peça gráfica com substrato elevado, miniatura nítida,
-        tarja de informações ultra-legível e realce interativo de colisão/seleção.
+        Desenha a peça gráfica com substrato elevado, rótulo técnico oficial encostado
+        na arte com número e nome exato do arquivo, miniatura nítida e tarja de dimensões.
         """
         painter.setRenderHint(QPainter.Antialiasing, True)
         painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
@@ -241,34 +273,95 @@ class PecaGraficaItem(QGraphicsObject):
         painter.setBrush(QBrush(grad_substrato))
         painter.drawPath(path_peca)
 
-        # Chanfro / Chanfradura sutil de elevação física do vinil (espessura do material)
-        # Borda superior e esquerda com reflexo de luz
+        # Chanfro sutil de elevação física do vinil (espessura do material)
         painter.setPen(QPen(QColor(255, 255, 255, 220), 1.0))
         painter.drawLine(QPointF(rect.left() + 4.0, rect.top() + 1.0), QPointF(rect.right() - 4.0, rect.top() + 1.0))
         painter.drawLine(QPointF(rect.left() + 1.0, rect.top() + 4.0), QPointF(rect.left() + 1.0, rect.bottom() - 4.0))
 
-        # Borda inferior e direita com sombra sutil de relevo
         painter.setPen(QPen(QColor(148, 163, 184, 150), 1.2))
         painter.drawLine(QPointF(rect.left() + 4.0, rect.bottom() - 1.0), QPointF(rect.right() - 4.0, rect.bottom() - 1.0))
         painter.drawLine(QPointF(rect.right() - 1.0, rect.top() + 4.0), QPointF(rect.right() - 1.0, rect.bottom() - 4.0))
 
         # ---------------------------------------------------------------------
-        # 2. Miniatura de Arte Renderizada Perfeitamente Nítida
+        # 2. Rótulo de Identificação Técnica Oficial Encostado na Arte (montagem.py)
+        # ---------------------------------------------------------------------
+        altura_rotulo = min(22.0, max(14.0, rect.height() * 0.18))
+        altura_tarja = min(20.0, max(13.0, rect.height() * 0.16))
+
+        rect_rotulo = QRectF(rect.x() + 2.5, rect.y() + 2.5, rect.width() - 5.0, altura_rotulo)
+
+        # Fundo técnico do rótulo
+        if tem_problema:
+            cor_bg_rotulo = QColor("#7f1d1d")
+            cor_borda_rotulo = QColor("#ef4444")
+            cor_txt_rotulo = QColor("#ffffff")
+            cor_badge_num = QColor("#991b1b")
+        elif self.isSelected():
+            cor_bg_rotulo = QColor("#0c2340")
+            cor_borda_rotulo = QColor("#0ea5e9")
+            cor_txt_rotulo = QColor("#e0f2fe")
+            cor_badge_num = QColor("#0284c7")
+        else:
+            cor_bg_rotulo = QColor("#0f172a")
+            cor_borda_rotulo = QColor("#334155")
+            cor_txt_rotulo = QColor("#f8fafc")
+            cor_badge_num = QColor("#0284c7")
+
+        painter.setPen(QPen(cor_borda_rotulo, 1.0))
+        painter.setBrush(QBrush(cor_bg_rotulo))
+        painter.drawRoundedRect(rect_rotulo, 3.0, 3.0)
+
+        # Badge com Número Oficial da Peça (01, 02...)
+        w_badge = max(24.0, altura_rotulo * 1.45)
+        rect_badge = QRectF(rect_rotulo.x(), rect_rotulo.y(), w_badge, altura_rotulo)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QBrush(cor_badge_num))
+        painter.drawRoundedRect(rect_badge, 3.0, 3.0)
+
+        painter.setPen(QColor("#ffffff"))
+        fonte_num = QFont("Segoe UI", max(6, int(altura_rotulo * 0.50)), QFont.Bold)
+        painter.setFont(fonte_num)
+        painter.drawText(rect_badge, Qt.AlignCenter, f"{self.numero:02d}")
+
+        # Nome Exato do Arquivo (Encolher vem antes de cortar, regra de montagem.py)
+        nome_arquivo = self.nome_arquivo_puro()
+        copia = self.copia or self.metadados.get("copia", 1)
+        if self.quantidade > 1:
+            nome_arquivo_completo = f"{nome_arquivo} ({copia}/{self.quantidade})"
+        else:
+            nome_arquivo_completo = nome_arquivo
+
+        x_texto = rect_rotulo.x() + w_badge + 5.0
+        w_disp_texto = rect_rotulo.width() - w_badge - 8.0
+        rect_area_nome = QRectF(x_texto, rect_rotulo.y(), max(0.0, w_disp_texto), altura_rotulo)
+
+        if w_disp_texto > 10.0:
+            # Algoritmo de encolhimento para preservar o nome exato
+            tam_max_pt = max(6, int(altura_rotulo * 0.46))
+            fonte_escolhida = QFont("Segoe UI", tam_max_pt, QFont.Bold)
+            for tam_pt in range(tam_max_pt, 4, -1):
+                f_teste = QFont("Segoe UI", tam_pt, QFont.Bold)
+                painter.setFont(f_teste)
+                if painter.fontMetrics().horizontalAdvance(nome_arquivo_completo) <= w_disp_texto:
+                    fonte_escolhida = f_teste
+                    break
+            painter.setFont(fonte_escolhida)
+            painter.setPen(cor_txt_rotulo)
+            txt_formatado = painter.fontMetrics().elidedText(nome_arquivo_completo, Qt.ElideRight, int(w_disp_texto))
+            painter.drawText(rect_area_nome, Qt.AlignVCenter | Qt.AlignLeft, txt_formatado)
+
+        # ---------------------------------------------------------------------
+        # 3. Miniatura de Arte Renderizada Perfeitamente Nítida
         # ---------------------------------------------------------------------
         if (self.miniatura is None or self.miniatura.isNull()) and self.caminho_arquivo:
             self._carregar_miniatura_arquivo()
 
-        altura_tarja = min(24.0, max(14.0, rect.height() * 0.20))
-        margem_interna = 2.5
-        rect_arte = QRectF(
-            rect.x() + margem_interna,
-            rect.y() + margem_interna,
-            rect.width() - (2.0 * margem_interna),
-            rect.height() - altura_tarja - margem_interna - 1.5,
-        )
+        y_arte = rect_rotulo.bottom() + 2.0
+        h_arte = rect.bottom() - altura_tarja - y_arte - 2.0
+        rect_arte = QRectF(rect.x() + 2.5, y_arte, rect.width() - 5.0, max(0.0, h_arte))
 
-        if self.miniatura and not self.miniatura.isNull():
-            if rect_arte.width() > 4 and rect_arte.height() > 4:
+        if rect_arte.height() > 8.0 and rect_arte.width() > 8.0:
+            if self.miniatura and not self.miniatura.isNull():
                 pix_w = self.miniatura.width()
                 pix_h = self.miniatura.height()
                 if pix_w > 0 and pix_h > 0:
@@ -279,44 +372,39 @@ class PecaGraficaItem(QGraphicsObject):
                     y_alvo = rect_arte.y() + (rect_arte.height() - h_alvo) / 2.0
                     target_rect = QRectF(x_alvo, y_alvo, w_alvo, h_alvo)
 
-                    # Fundo branco e projeção nítida em resolução total da tela
                     painter.fillRect(target_rect, QColor("#ffffff"))
                     painter.drawPixmap(target_rect, self.miniatura, QRectF(self.miniatura.rect()))
 
-                    # Filete sutil de acabamento ao redor da arte
                     painter.setPen(QPen(QColor("#cbd5e1"), 0.6))
                     painter.setBrush(Qt.NoBrush)
                     painter.drawRect(target_rect)
-        elif rect_arte.width() > 20 and rect_arte.height() > 15:
-            # Placeholder CAD vetorial limpo
-            painter.setPen(Qt.NoPen)
-            painter.setBrush(QBrush(QColor("#f1f5f9")))
-            painter.drawRoundedRect(rect_arte, 2.0, 2.0)
+            elif rect_arte.width() > 20 and rect_arte.height() > 15:
+                # Placeholder CAD vetorial limpo
+                painter.setPen(Qt.NoPen)
+                painter.setBrush(QBrush(QColor("#f1f5f9")))
+                painter.drawRoundedRect(rect_arte, 2.0, 2.0)
 
-            # Grid sutil de blueprint
-            painter.setPen(QPen(QColor("#e2e8f0"), 0.8, Qt.DotLine))
-            centro_x = rect_arte.center().x()
-            centro_y = rect_arte.center().y()
-            painter.drawLine(QPointF(rect_arte.left(), centro_y), QPointF(rect_arte.right(), centro_y))
-            painter.drawLine(QPointF(centro_x, rect_arte.top()), QPointF(centro_x, rect_arte.bottom()))
+                painter.setPen(QPen(QColor("#e2e8f0"), 0.8, Qt.DotLine))
+                centro_x = rect_arte.center().x()
+                centro_y = rect_arte.center().y()
+                painter.drawLine(QPointF(rect_arte.left(), centro_y), QPointF(rect_arte.right(), centro_y))
+                painter.drawLine(QPointF(centro_x, rect_arte.top()), QPointF(centro_x, rect_arte.bottom()))
 
-            # Informação textual central
-            painter.setPen(QColor("#64748b"))
-            tam_fonte_ph = max(6, int(min(rect_arte.width(), rect_arte.height()) * 0.12))
-            painter.setFont(QFont("Segoe UI", min(tam_fonte_ph, 11), QFont.Bold))
-            painter.drawText(
-                rect_arte,
-                Qt.AlignCenter,
-                f"{self.material}\n{self.largura_mm:.0f} × {self.altura_mm:.0f} mm",
-            )
+                painter.setPen(QColor("#64748b"))
+                tam_fonte_ph = max(6, int(min(rect_arte.width(), rect_arte.height()) * 0.12))
+                painter.setFont(QFont("Segoe UI", min(tam_fonte_ph, 11), QFont.Bold))
+                painter.drawText(
+                    rect_arte,
+                    Qt.AlignCenter,
+                    f"{self.material}\n{self.largura_mm:.0f} × {self.altura_mm:.0f} mm",
+                )
 
         # ---------------------------------------------------------------------
-        # 3. Tarja Inferior Ultra-Legível com Nome, Material e Dimensões
+        # 4. Tarja Inferior com Dimensões Nominais e Material
         # ---------------------------------------------------------------------
         rect_tarja = QRectF(rect.x(), rect.bottom() - altura_tarja, rect.width(), altura_tarja)
         path_tarja_rect = QPainterPath()
         path_tarja_rect.addRect(rect_tarja)
-        # Interseção garante que a tarja herde com perfeição os cantos arredondados inferiores
         path_tarja = path_peca.intersected(path_tarja_rect)
 
         if tem_problema:
@@ -342,38 +430,34 @@ class PecaGraficaItem(QGraphicsObject):
         painter.setBrush(QBrush(grad_tarja))
         painter.drawPath(path_tarja)
 
-        # Linha divisória superior da tarja
         painter.setPen(QPen(cor_borda_tarja, 1.0))
         painter.drawLine(rect_tarja.topLeft(), rect_tarja.topRight())
 
-        # Formatação de texto da tarja
         texto_dim = f"{self.largura_mm:.0f}×{self.altura_mm:.0f}mm"
         if self.rotacao > 0:
             texto_dim += f" (↻{self.rotacao:.0f}°)"
 
-        texto_exibicao = f"{self.nome} | {self.material} | {texto_dim}"
+        texto_tarja_info = f"{texto_dim}  |  {self.material}"
 
         tam_fonte_tarja = max(6, int(altura_tarja * 0.44))
         fonte_tarja = QFont("Segoe UI", min(tam_fonte_tarja, 10), QFont.Bold)
         painter.setFont(fonte_tarja)
         painter.setPen(cor_texto_tarja)
-        margem_texto = 4.0
-        rect_texto = rect_tarja.adjusted(margem_texto, 0, -margem_texto, 0)
-        texto_formatado = painter.fontMetrics().elidedText(texto_exibicao, Qt.ElideRight, int(rect_texto.width()))
-        painter.drawText(rect_texto, Qt.AlignVCenter | Qt.AlignLeft, texto_formatado)
+        margem_texto = 5.0
+        rect_texto_tarja = rect_tarja.adjusted(margem_texto, 0, -margem_texto, 0)
+        texto_tarja_formatado = painter.fontMetrics().elidedText(texto_tarja_info, Qt.ElideRight, int(rect_texto_tarja.width()))
+        painter.drawText(rect_texto_tarja, Qt.AlignVCenter | Qt.AlignLeft, texto_tarja_formatado)
 
         # ---------------------------------------------------------------------
-        # 4. Borda de Destaque Interativa / Seleção / Alerta de Colisão
+        # 5. Borda de Destaque Interativa / Seleção / Alerta de Colisão
         # ---------------------------------------------------------------------
         if tem_problema:
-            # Vermelho Vivo de Perigo / Alerta de Colisão
             cor_borda = QColor(CoresTema.PERIGO)
             painter.setPen(QPen(cor_borda, 2.8, Qt.SolidLine))
             cor_overlay = QColor(239, 68, 68, 45)
             painter.setBrush(QBrush(cor_overlay))
             painter.drawPath(path_peca)
 
-            # Alerta visual em banner central de alta visibilidade
             if rect_arte.width() > 60 and rect_arte.height() > 22:
                 aviso = "COLISÃO DETECTADA!" if self.tem_colisao else "FORA DA ÁREA ÚTIL!"
                 w_banner = min(rect_arte.width() - 8.0, 220.0)
@@ -395,14 +479,12 @@ class PecaGraficaItem(QGraphicsObject):
                 painter.drawText(rect_banner, Qt.AlignCenter, f"⚠ {aviso}")
 
         elif self.isSelected():
-            # Azul Brilhante Elétrico de Seleção Interativa
             cor_borda = QColor(CoresTema.ACENTO_PRIMARIO)
             painter.setPen(QPen(cor_borda, 2.5, Qt.SolidLine))
             cor_overlay = QColor(14, 165, 233, 35)
             painter.setBrush(QBrush(cor_overlay))
             painter.drawPath(path_peca)
 
-            # Alças de Seleção CAD/CAM nos 4 cantos
             tam_alca = min(6.0, min(rect.width(), rect.height()) * 0.12)
             meia_alca = tam_alca / 2.0
             pontos_alcas = [
@@ -417,13 +499,11 @@ class PecaGraficaItem(QGraphicsObject):
                 painter.drawRect(QRectF(pt.x() - meia_alca, pt.y() - meia_alca, tam_alca, tam_alca))
 
         else:
-            # Estado Normal: Contorno de Faca/Corte CNC em Azul Técnico
             cor_borda = QColor("#0284c7")
             painter.setPen(QPen(cor_borda, 1.2, Qt.DashLine))
             painter.setBrush(Qt.NoBrush)
             painter.drawPath(path_peca)
 
-            # Marcas de Corte L nos 4 cantos (Estilo Gráfica / Plotter CNC)
             tam_corte = min(6.0, min(rect.width(), rect.height()) * 0.10)
             if tam_corte >= 3.0:
                 painter.setPen(QPen(QColor("#0284c7"), 1.2, Qt.SolidLine))
@@ -444,6 +524,7 @@ class PecaGraficaItem(QGraphicsObject):
 class CanvasMontagem(QGraphicsView):
     """
     Viewport WYSIWYG de alta precisão para montagem de peças sobre bobinas/chapas.
+    Incorpora o cabeçalho técnico oficial de 80mm de montagem.py e réguas dinâmicas.
     """
 
     estatisticas_alteradas = Signal(dict)
@@ -456,6 +537,7 @@ class CanvasMontagem(QGraphicsView):
         comprimento_inicial_mm: float = 2000.0,
         margem_lateral_mm: float = 15.0,
         margem_topo_mm: float = 15.0,
+        cliente: Optional[str] = None,
         parent: Optional[QWidget] = None,
     ):
         super().__init__(parent)
@@ -467,6 +549,7 @@ class CanvasMontagem(QGraphicsView):
         self.margem_lateral_mm = float(margem_lateral_mm)
         self.margem_topo_mm = float(margem_topo_mm)
         self.espacamento_mm = 10.0  # Padrão: 10 mm (1.0 cm) entre peças
+        self.cliente = cliente or "CLIENTE PADRÃO"
 
         self._pecas: List[PecaGraficaItem] = []
         self._espaco_pressionado = False
@@ -495,6 +578,57 @@ class CanvasMontagem(QGraphicsView):
     def definir_espacamento(self, espacamento_mm: float) -> None:
         """Configura a distância/espaçamento em milímetros entre as artes na montagem."""
         self.espacamento_mm = max(0.0, float(espacamento_mm))
+
+    def definir_cliente(self, cliente: str) -> None:
+        """Configura o nome do cliente para o cabeçalho técnico oficial."""
+        self.cliente = str(cliente).strip() if cliente else "CLIENTE PADRÃO"
+        self.scene().update()
+
+    def extrair_cliente_das_pecas(self) -> str:
+        """Determina o cliente da montagem a partir dos metadados ou regras históricas."""
+        if hasattr(self, "cliente") and self.cliente and self.cliente != "CLIENTE PADRÃO":
+            return self.cliente.upper()
+        for p in self._pecas:
+            if p.metadados and p.metadados.get("cliente"):
+                return str(p.metadados["cliente"]).upper()
+        try:
+            from montagem import cliente_das_pecas
+            pecas_lista = [{"nome": p.nome, "arquivo": p.caminho_arquivo or p.nome} for p in self._pecas]
+            cli = cliente_das_pecas(pecas_lista)
+            if cli:
+                return str(cli).upper()
+        except Exception:
+            pass
+        return getattr(self, "cliente", "CLIENTE PADRÃO").upper()
+
+    def extrair_material_das_pecas(self) -> str:
+        """Determina a categoria/material predominante da montagem."""
+        materiais = [p.material for p in self._pecas if p.material]
+        if not materiais:
+            return "VINIL / ADESIVO"
+        unicos = sorted(set(materiais))
+        if len(unicos) == 1:
+            return unicos[0]
+        return f"MISTO ({', '.join(unicos[:2])})"
+
+    def obter_titulo_cabecalho(self) -> str:
+        """
+        Gera o texto oficial do cabeçalho de 80mm de acordo com a regra consagrada de montagem.py:
+        MONTAGEM  ·  {CLIENTE}  ·  {MATERIAL}  ·  {N} PEÇAS  ·  LARGURA {L}m  ·  APROVEITAMENTO {APROV}%  ·  RIPAR A 100%, NÃO REDIMENSIONAR
+        """
+        cliente = self.extrair_cliente_das_pecas()
+        material = self.extrair_material_das_pecas()
+        n_pecas = len(self._pecas)
+        largura_m = self.largura_mm / 1000.0
+        stats = self.calcular_estatisticas()
+        aprov_pct = stats["aproveitamento_pct"]
+
+        return (
+            f"MONTAGEM  ·  {cliente}  ·  {material}  ·  "
+            f"{n_pecas} PEÇAS  ·  LARGURA {largura_m:.2f}m  ·  "
+            f"APROVEITAMENTO {aprov_pct:.0f}%  ·  "
+            f"RIPAR A 100%, NÃO REDIMENSIONAR"
+        )
 
     def definir_bobina(
         self,
@@ -528,8 +662,7 @@ class CanvasMontagem(QGraphicsView):
         )
 
     def _atualizar_geometria_bobina(self) -> None:
-        """Recalcula a área total da cena considerando a bobina e folga ao redor."""
-        # Recalcular comprimento dinâmico para acomodar peças existentes
+        """Recalcula a área total da cena considerando a bobina, cabeçalho de 80mm e folga ao redor."""
         max_y = self.comprimento_mm
         for peca in self._pecas:
             br = peca.sceneBoundingRect()
@@ -547,6 +680,12 @@ class CanvasMontagem(QGraphicsView):
         self.scene().setSceneRect(rect_total)
         self.scene().update()
 
+    def _atualizar_numeracao_pecas(self) -> None:
+        """Atualiza a numeração sequencial oficial (01, 02...) de todas as peças."""
+        for idx, p in enumerate(self._pecas, start=1):
+            p.numero = idx
+            p.update()
+
     def adicionar_peca(
         self,
         nome: str,
@@ -560,8 +699,13 @@ class CanvasMontagem(QGraphicsView):
         pos_x: Optional[float] = None,
         pos_y: Optional[float] = None,
         metadados: Optional[Dict[str, Any]] = None,
+        numero: Optional[int] = None,
+        copia: Optional[int] = None,
     ) -> PecaGraficaItem:
-        """Adiciona uma nova peça gráfica ao canvas."""
+        """Adiciona uma nova peça gráfica ao canvas com numeração e rótulo oficiais."""
+        num_peca = numero if numero is not None else (len(self._pecas) + 1)
+        num_copia = copia if copia is not None else (metadados.get("copia", 1) if metadados else 1)
+
         peca = PecaGraficaItem(
             nome=nome,
             largura_mm=largura_mm,
@@ -572,6 +716,8 @@ class CanvasMontagem(QGraphicsView):
             material=material,
             quantidade=quantidade,
             metadados=metadados,
+            numero=num_peca,
+            copia=num_copia,
         )
 
         # Posicionamento inteligente padrão caso não fornecido
@@ -581,6 +727,7 @@ class CanvasMontagem(QGraphicsView):
         peca.setPos(pos_x, pos_y)
         self.scene().addItem(peca)
         self._pecas.append(peca)
+        self._atualizar_numeracao_pecas()
 
         self._atualizar_geometria_bobina()
         self.verificar_todas_colisoes()
@@ -589,11 +736,12 @@ class CanvasMontagem(QGraphicsView):
         return peca
 
     def remover_peca(self, peca: PecaGraficaItem) -> None:
-        """Remove uma peça do canvas."""
+        """Remove uma peça do canvas e renumera as restantes."""
         if peca in self._pecas:
             self._pecas.remove(peca)
             if peca.scene():
                 peca.scene().removeItem(peca)
+            self._atualizar_numeracao_pecas()
             self._atualizar_geometria_bobina()
             self.verificar_todas_colisoes()
             self.emitir_estatisticas()
@@ -646,7 +794,6 @@ class CanvasMontagem(QGraphicsView):
         """Calcula métricas de aproveitamento de material e metragem linear."""
         largura_m = self.largura_mm / 1000.0
 
-        # Comprimento ocupado real pelas peças
         if not self._pecas:
             comprimento_usado_mm = 0.0
         else:
@@ -715,8 +862,8 @@ class CanvasMontagem(QGraphicsView):
         self.resetTransform()
 
     def fit_in_view(self) -> None:
-        """Ajusta a visão para enquadrar perfeitamente a bobina."""
-        rect_bobina = QRectF(0, 0, self.largura_mm, self.comprimento_mm)
+        """Ajusta a visão para enquadrar perfeitamente a bobina e o cabeçalho."""
+        rect_bobina = QRectF(0, -80.0, self.largura_mm, self.comprimento_mm + 80.0)
         self.fitInView(rect_bobina, Qt.KeepAspectRatio)
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
@@ -781,7 +928,7 @@ class CanvasMontagem(QGraphicsView):
     # -------------------------------------------------------------------------
 
     def drawBackground(self, painter: QPainter, rect: QRectF) -> None:
-        """Desenha a representação da mídia física e margens de corte com acabamento industrial."""
+        """Desenha a representação da mídia física, cabeçalho de 80mm e margens de corte."""
         super().drawBackground(painter, rect)
         painter.save()
         painter.setRenderHint(QPainter.Antialiasing, True)
@@ -823,21 +970,54 @@ class CanvasMontagem(QGraphicsView):
         painter.setPen(QPen(QColor(CoresTema.MIDIA_BORDA), 1.5))
         painter.drawRect(rect_midia)
 
-        # 4. Cabeçote / Eixo de Alimentação no Topo (Origem Y = 0)
-        rect_alimentacao = QRectF(0.0, -18.0, self.largura_mm, 18.0)
-        grad_eixo = QLinearGradient(rect_alimentacao.topLeft(), rect_alimentacao.bottomLeft())
-        grad_eixo.setColorAt(0.0, QColor("#1e2433"))
-        grad_eixo.setColorAt(1.0, QColor("#0f131c"))
-        painter.fillRect(rect_alimentacao, QBrush(grad_eixo))
-        painter.setPen(QPen(QColor("#334155"), 1.0))
-        painter.drawRect(rect_alimentacao)
+        # 4. Faixa Técnica Oficial da Montagem no Topo da Bobina (CABECALHO_M = 80mm)
+        cabecalho_h_mm = 80.0
+        rect_cabecalho = QRectF(0.0, -cabecalho_h_mm, self.largura_mm, cabecalho_h_mm)
 
-        painter.setPen(QColor("#94a3b8"))
+        grad_cabecalho = QLinearGradient(rect_cabecalho.topLeft(), rect_cabecalho.bottomLeft())
+        grad_cabecalho.setColorAt(0.0, QColor("#181d2a"))
+        grad_cabecalho.setColorAt(1.0, QColor("#0f131c"))
+        painter.fillRect(rect_cabecalho, QBrush(grad_cabecalho))
+
+        painter.setPen(QPen(QColor(CoresTema.ACENTO_PRIMARIO), 1.5))
+        painter.drawRect(rect_cabecalho)
+
+        painter.setPen(QPen(QColor("#38bdf8"), 2.0))
+        painter.drawLine(rect_cabecalho.topLeft(), rect_cabecalho.topRight())
+
+        painter.setPen(QColor("#38bdf8"))
         painter.setFont(QFont("Segoe UI", 7, QFont.Bold))
         painter.drawText(
-            rect_alimentacao,
+            QRectF(15.0, -cabecalho_h_mm + 4.0, 360.0, 14.0),
+            Qt.AlignLeft | Qt.AlignVCenter,
+            "CABEÇALHO OFICIAL DE MONTAGEM (CABECALHO_M = 80 mm)",
+        )
+
+        # Texto Oficial: MONTAGEM · {CLIENTE} · {MATERIAL} · {N} PEÇAS · LARGURA {L}m · APROVEITAMENTO {APROV}% · RIPAR A 100%, NÃO REDIMENSIONAR
+        texto_cabecalho = self.obter_titulo_cabecalho()
+        margem_h_texto = 15.0
+        largura_disp_texto = max(100.0, self.largura_mm - (2.0 * margem_h_texto))
+        rect_area_texto = QRectF(margem_h_texto, -cabecalho_h_mm + 18.0, largura_disp_texto, 38.0)
+
+        fonte_cab = QFont("Segoe UI", 12, QFont.Bold)
+        for tam_pt in (14, 13, 12, 11, 10, 9, 8, 7, 6):
+            fonte_teste = QFont("Segoe UI", tam_pt, QFont.Bold)
+            painter.setFont(fonte_teste)
+            if painter.fontMetrics().horizontalAdvance(texto_cabecalho) <= largura_disp_texto:
+                fonte_cab = fonte_teste
+                break
+
+        painter.setFont(fonte_cab)
+        painter.setPen(QColor("#ffffff"))
+        texto_elidido = painter.fontMetrics().elidedText(texto_cabecalho, Qt.ElideRight, int(largura_disp_texto))
+        painter.drawText(rect_area_texto, Qt.AlignCenter, texto_elidido)
+
+        painter.setPen(QColor("#64748b"))
+        painter.setFont(QFont("Segoe UI", 7, QFont.DemiBold))
+        painter.drawText(
+            QRectF(15.0, -18.0, self.largura_mm - 30.0, 14.0),
             Qt.AlignCenter,
-            "▲ ENTRADA / ALIMENTAÇÃO DA BOBINA (EIXO 0,0) ▲",
+            "▲ EIXO Y = 0 mm  ·  INÍCIO DA ÁREA DE IMPRESSÃO / CORTE  ▲",
         )
 
         # 5. Zonas de Presilha / Margem de Segurança Lateral e Topo
@@ -879,23 +1059,7 @@ class CanvasMontagem(QGraphicsView):
             painter.drawText(QRectF(-150, -6, 300, 12), Qt.AlignCenter, f"PRESILHA {self.margem_lateral_mm:.0f}mm")
             painter.restore()
 
-        # 7. Rótulo Informativo Superior da Mídia e Área Útil
-        rect_badge = QRectF(0.0, -52.0, min(self.largura_mm, 600.0), 28.0)
-        painter.setPen(QPen(QColor(CoresTema.ACENTO_PRIMARIO), 1.2))
-        painter.setBrush(QBrush(QColor("#161a24")))
-        painter.drawRoundedRect(rect_badge, 4.0, 4.0)
-
-        painter.setPen(QColor(CoresTema.TEXTO_PRINCIPAL))
-        fonte_info = QFont("Segoe UI", 8, QFont.Bold)
-        painter.setFont(fonte_info)
-        texto_midia = (
-            f"  LARGURA: {self.largura_mm:.0f} mm ({self.largura_mm/1000.0:.2f}m)  |  "
-            f"ÁREA ÚTIL: {rect_util.width():.0f} mm  |  "
-            f"MARGENS: {self.margem_lateral_mm:.0f} mm"
-        )
-        painter.drawText(rect_badge, Qt.AlignVCenter | Qt.AlignLeft, texto_midia)
-
-        # 8. Fim da Bobina / Extensão Contínua
+        # 7. Fim da Bobina / Extensão Contínua
         pen_corte = QPen(QColor("#64748b"), 1.2, Qt.DashDotLine)
         painter.setPen(pen_corte)
         y_fim_bobina = self.comprimento_mm
@@ -1060,19 +1224,16 @@ class CanvasMontagem(QGraphicsView):
             curr_y += passo_mm
 
         # 5. Marcadores de Margens de Segurança nas Réguas
-        # Margem Esquerda na Régua Superior
         vx_margem_esq = self.mapFromScene(self.margem_lateral_mm, 0).x()
         if vx_margem_esq >= espessura_regua:
             painter.setPen(QPen(QColor(CoresTema.MARGEM_CORTE), 1.5, Qt.DashLine))
             painter.drawLine(vx_margem_esq, 0, vx_margem_esq, espessura_regua)
 
-        # Margem Direita na Régua Superior
         vx_margem_dir = self.mapFromScene(self.largura_mm - self.margem_lateral_mm, 0).x()
         if vx_margem_dir >= espessura_regua and vx_margem_dir <= largura_view:
             painter.setPen(QPen(QColor(CoresTema.MARGEM_CORTE), 1.5, Qt.DashLine))
             painter.drawLine(vx_margem_dir, 0, vx_margem_dir, espessura_regua)
 
-        # Margem Topo na Régua Vertical
         vy_margem_topo = self.mapFromScene(0, self.margem_topo_mm).y()
         if vy_margem_topo >= espessura_regua and vy_margem_topo <= altura_view:
             painter.setPen(QPen(QColor(CoresTema.MARGEM_CORTE), 1.5, Qt.DashLine))
@@ -1086,9 +1247,7 @@ class CanvasMontagem(QGraphicsView):
             if mx >= espessura_regua and my >= espessura_regua:
                 pen_guia = QPen(QColor(CoresTema.ACENTO_PRIMARIO), 1.0)
                 painter.setPen(pen_guia)
-                # Marcador na régua superior
                 painter.drawLine(mx, 0, mx, espessura_regua)
-                # Marcador na régua esquerda
                 painter.drawLine(0, my, espessura_regua, my)
 
         painter.restore()

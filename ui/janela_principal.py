@@ -34,6 +34,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QScrollArea,
     QAbstractItemView,
+    QSizePolicy,
 )
 from PySide6.QtGui import QAction, QIcon, QFont, QColor, QPixmap
 
@@ -169,7 +170,7 @@ def detectar_dimensoes(caminho_arquivo: Path) -> tuple:
 
 
 class CartaoMaquina(QFrame):
-    """Cartão de exibição e seleção rápida de máquina de impressão/corte."""
+    """Cartão compacto de exibição e seleção rápida de máquina de impressão/corte (~34px)."""
 
     def __init__(self, dados_maquina: Dict[str, Any], ao_clicar, parent=None):
         super().__init__(parent)
@@ -177,32 +178,49 @@ class CartaoMaquina(QFrame):
         self.ao_clicar = ao_clicar
         self.selecionada = False
 
-        self.setProperty("classe", "cartao")
+        self.setProperty("classe", "cartao_maquina")
         self.setCursor(Qt.PointingHandCursor)
-        self.setFrameShape(QFrame.StyledPanel)
+        self.setFixedHeight(34)
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 8, 10, 8)
-        layout.setSpacing(3)
+        largura_m = dados_maquina["largura_mm"] / 1000.0
+        margem = dados_maquina.get("margem_lateral_mm", 15.0)
+        self.setToolTip(
+            f"{dados_maquina['nome']} ({dados_maquina['tipo']})\n"
+            f"Largura Útil: {largura_m:.2f} m ({dados_maquina['largura_mm']:.0f} mm)\n"
+            f"Margem de Segurança: {margem:.0f} mm\n"
+            f"Status: {dados_maquina['status']}"
+        )
 
-        header_layout = QHBoxLayout()
-        self.lbl_nome = QLabel(dados_maquina["nome"])
-        self.lbl_nome.setStyleSheet("font-weight: 700; font-size: 13px; color: #ffffff;")
-        
-        self.lbl_status = QLabel(dados_maquina["status"])
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(8, 2, 8, 2)
+        layout.setSpacing(6)
+
+        # Nome da Máquina em negrito
+        self.lbl_nome = QLabel(dados_maquina["nome"], self)
+        self.lbl_nome.setStyleSheet("font-weight: 700; font-size: 12px; color: #f0f2f8;")
+        layout.addWidget(self.lbl_nome)
+
+        layout.addStretch()
+
+        # Badge de Largura Útil (Ciano)
+        self.lbl_largura = QLabel(f"{largura_m:.2f} m", self)
+        self.lbl_largura.setStyleSheet(
+            "color: #38bdf8; font-size: 11px; font-weight: 600; "
+            "background-color: #0c2d48; border: 1px solid #0284c7; "
+            "border-radius: 4px; padding: 1px 6px;"
+        )
+        layout.addWidget(self.lbl_largura)
+
+        # Badge de Status (Verde)
+        self.lbl_status = QLabel(dados_maquina["status"], self)
         self.lbl_status.setStyleSheet(
             f"color: {CoresTema.SUCESSO}; font-size: 11px; font-weight: 600; "
-            f"background-color: {CoresTema.SUCESSO_FUNDO}; border-radius: 4px; padding: 1px 6px;"
+            f"background-color: {CoresTema.SUCESSO_FUNDO}; border: 1px solid #059669; "
+            "border-radius: 4px; padding: 1px 6px;"
         )
-        header_layout.addWidget(self.lbl_nome)
-        header_layout.addStretch()
-        header_layout.addWidget(self.lbl_status)
-        layout.addLayout(header_layout)
+        layout.addWidget(self.lbl_status)
 
-        detalhes = f"{dados_maquina['tipo']} • Largura Útil: {dados_maquina['largura_mm'] / 1000.0:.2f} m"
-        self.lbl_detalhes = QLabel(detalhes)
-        self.lbl_detalhes.setStyleSheet(f"color: {CoresTema.TEXTO_SECUNDARIO}; font-size: 11px;")
-        layout.addWidget(self.lbl_detalhes)
+        self._atualizar_estilo()
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
@@ -211,12 +229,31 @@ class CartaoMaquina(QFrame):
 
     def set_selecionada(self, valor: bool):
         self.selecionada = valor
-        if valor:
+        self._atualizar_estilo()
+
+    def _atualizar_estilo(self):
+        if self.selecionada:
             self.setStyleSheet(
-                f"CartaoMaquina {{ border: 2px solid {CoresTema.ACENTO_PRIMARIO}; background-color: #1e2538; }}"
+                f"CartaoMaquina {{ "
+                f"  background-color: #1e293b; "
+                f"  border: 1px solid {CoresTema.ACENTO_PRIMARIO}; "
+                f"  border-radius: 6px; "
+                f"}}"
             )
+            self.lbl_nome.setStyleSheet("font-weight: 700; font-size: 12px; color: #38bdf8;")
         else:
-            self.setStyleSheet("")
+            self.setStyleSheet(
+                f"CartaoMaquina {{ "
+                f"  background-color: {CoresTema.CARTAO}; "
+                f"  border: 1px solid {CoresTema.BORDA}; "
+                f"  border-radius: 6px; "
+                f"}} "
+                f"CartaoMaquina:hover {{ "
+                f"  background-color: {CoresTema.CARTAO_HOVER}; "
+                f"  border-color: #38bdf8; "
+                f"}}"
+            )
+            self.lbl_nome.setStyleSheet("font-weight: 600; font-size: 12px; color: #f0f2f8;")
 
 
 class JanelaPrincipal(QMainWindow):
@@ -286,36 +323,73 @@ class JanelaPrincipal(QMainWindow):
         splitter.setHandleWidth(5)
 
         # ---------------------------------------------------------------------
-        # Painel Lateral Esquerdo (Máquinas, Filtro e Lista de Peças)
+        # Painel Lateral Esquerdo (Máquinas, Filtro e Lista de Peças com Splitter)
         # ---------------------------------------------------------------------
         painel_esquerdo = QWidget(splitter)
         painel_esquerdo.setMinimumWidth(340)
-        painel_esquerdo.setMaximumWidth(480)
+        painel_esquerdo.setMaximumWidth(490)
         layout_esq = QVBoxLayout(painel_esquerdo)
-        layout_esq.setContentsMargins(8, 8, 8, 8)
-        layout_esq.setSpacing(10)
+        layout_esq.setContentsMargins(4, 4, 4, 4)
+        layout_esq.setSpacing(0)
 
-        # 1. Seção de Máquinas
-        lbl_sec_maq = QLabel("MÁQUINAS & DISPOSITIVOS", painel_esquerdo)
+        self.splitter_esquerdo = QSplitter(Qt.Vertical, painel_esquerdo)
+        self.splitter_esquerdo.setHandleWidth(4)
+
+        # 1. Seção Superior do Splitter: MÁQUINAS COMPACTAS (~180px)
+        widget_maquinas = QWidget(self.splitter_esquerdo)
+        layout_maq = QVBoxLayout(widget_maquinas)
+        layout_maq.setContentsMargins(4, 4, 4, 4)
+        layout_maq.setSpacing(4)
+
+        lbl_sec_maq = QLabel("MÁQUINAS & DISPOSITIVOS", widget_maquinas)
         lbl_sec_maq.setStyleSheet("font-weight: 700; color: #8a91a8; font-size: 11px; letter-spacing: 1px;")
-        layout_esq.addWidget(lbl_sec_maq)
+        layout_maq.addWidget(lbl_sec_maq)
 
         self.container_maquinas = QVBoxLayout()
-        self.container_maquinas.setSpacing(5)
+        self.container_maquinas.setSpacing(3)
         for maq in self.maquinas:
-            cartao = CartaoMaquina(maq, self.selecionar_maquina, parent=painel_esquerdo)
+            cartao = CartaoMaquina(maq, self.selecionar_maquina, parent=widget_maquinas)
             self.cartoes_maquinas.append(cartao)
             self.container_maquinas.addWidget(cartao)
-        layout_esq.addLayout(self.container_maquinas)
+        layout_maq.addLayout(self.container_maquinas)
+        self.splitter_esquerdo.addWidget(widget_maquinas)
 
-        # 2. Seção de Peças a Montar com Filtro de Material
-        header_fila = QHBoxLayout()
-        lbl_sec_pecas = QLabel("FILA DE PEÇAS", painel_esquerdo)
+        # 2. Seção Inferior do Splitter: FILA DE PEÇAS & CONTROLES
+        widget_fila = QWidget(self.splitter_esquerdo)
+        layout_fila = QVBoxLayout(widget_fila)
+        layout_fila.setContentsMargins(4, 4, 4, 4)
+        layout_fila.setSpacing(6)
+
+        # Cabeçalho da Fila com Botões de Ação Rápida [Recarregar] e [Abrir Entrada]
+        header_fila = QVBoxLayout()
+        header_fila.setSpacing(4)
+
+        linha_titulo_botoes = QHBoxLayout()
+        lbl_sec_pecas = QLabel("FILA DE PEÇAS", widget_fila)
         lbl_sec_pecas.setStyleSheet("font-weight: 700; color: #8a91a8; font-size: 11px; letter-spacing: 1px;")
-        header_fila.addWidget(lbl_sec_pecas)
-        header_fila.addStretch()
+        linha_titulo_botoes.addWidget(lbl_sec_pecas)
+        linha_titulo_botoes.addStretch()
 
-        self.combo_filtro_material = QComboBox(painel_esquerdo)
+        self.btn_recarregar_fila = QPushButton("🔄 Recarregar", widget_fila)
+        self.btn_recarregar_fila.setFixedHeight(24)
+        self.btn_recarregar_fila.setToolTip("Recarregar arquivos da pasta de entrada da máquina atual")
+        self.btn_recarregar_fila.clicked.connect(self.recarregar_pasta_entrada)
+        linha_titulo_botoes.addWidget(self.btn_recarregar_fila)
+
+        self.btn_abrir_entrada_fila = QPushButton("📂 Abrir Entrada", widget_fila)
+        self.btn_abrir_entrada_fila.setFixedHeight(24)
+        self.btn_abrir_entrada_fila.setToolTip("Abrir a pasta de entrada da máquina no Windows Explorer")
+        self.btn_abrir_entrada_fila.clicked.connect(self.on_abrir_pasta_entrada)
+        linha_titulo_botoes.addWidget(self.btn_abrir_entrada_fila)
+        header_fila.addLayout(linha_titulo_botoes)
+
+        # Linha do Filtro de Material (iniciando em 'Todos os Materiais')
+        linha_filtro = QHBoxLayout()
+        lbl_filtro = QLabel("Material:", widget_fila)
+        lbl_filtro.setStyleSheet("color: #8a91a8; font-size: 11px; font-weight: 600;")
+        linha_filtro.addWidget(lbl_filtro)
+
+        self.combo_filtro_material = QComboBox(widget_fila)
         self.combo_filtro_material.addItems([
             "Todos os Materiais",
             "VINIL / ADESIVO",
@@ -325,25 +399,27 @@ class JanelaPrincipal(QMainWindow):
             "MDF / XPS",
             "OUTROS",
         ])
+        self.combo_filtro_material.setCurrentIndex(0)
         self.combo_filtro_material.setToolTip("Filtrar visualização e montagem por tipo de material")
         self.combo_filtro_material.currentTextChanged.connect(self._ao_filtrar_material)
-        header_fila.addWidget(self.combo_filtro_material)
-        layout_esq.addLayout(header_fila)
+        linha_filtro.addWidget(self.combo_filtro_material, stretch=1)
+        header_fila.addLayout(linha_filtro)
+        layout_fila.addLayout(header_fila)
 
         # Barra de seleção rápida (Marcar / Desmarcar Todos)
         linha_selecao = QHBoxLayout()
-        btn_marcar_todos = QPushButton("☑ Marcar Todos", painel_esquerdo)
-        btn_marcar_todos.setFixedHeight(26)
+        btn_marcar_todos = QPushButton("☑ Marcar Todos", widget_fila)
+        btn_marcar_todos.setFixedHeight(24)
         btn_marcar_todos.clicked.connect(self._marcar_todos)
-        btn_desmarcar_todos = QPushButton("☐ Desmarcar", painel_esquerdo)
-        btn_desmarcar_todos.setFixedHeight(26)
+        btn_desmarcar_todos = QPushButton("☐ Desmarcar", widget_fila)
+        btn_desmarcar_todos.setFixedHeight(24)
         btn_desmarcar_todos.clicked.connect(self._desmarcar_todos)
         linha_selecao.addWidget(btn_marcar_todos)
         linha_selecao.addWidget(btn_desmarcar_todos)
-        layout_esq.addLayout(linha_selecao)
+        layout_fila.addLayout(linha_selecao)
 
-        # Tabela com Checkbox, Prévia, Nome, Material, Dimensão, Ação
-        self.tabela_pecas = QTableWidget(0, 4, painel_esquerdo)
+        # Tabela de Peças com Altura Mínima Garantida e Rolagem Fluida
+        self.tabela_pecas = QTableWidget(0, 4, widget_fila)
         self.tabela_pecas.setHorizontalHeaderLabels(["Arquivo", "Material", "Dimensões", "Ação"])
         self.tabela_pecas.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
         self.tabela_pecas.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
@@ -352,21 +428,31 @@ class JanelaPrincipal(QMainWindow):
         self.tabela_pecas.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.tabela_pecas.verticalHeader().setVisible(False)
         self.tabela_pecas.setIconSize(QSize(36, 36))
-        layout_esq.addWidget(self.tabela_pecas)
+        self.tabela_pecas.setMinimumHeight(300)
+        self.tabela_pecas.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.tabela_pecas.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.tabela_pecas.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        layout_fila.addWidget(self.tabela_pecas)
 
         # Botões de Ação Rápida na lateral
         botoes_fila = QHBoxLayout()
-        btn_adicionar_demo = QPushButton("+ Peça Teste", painel_esquerdo)
+        btn_adicionar_demo = QPushButton("+ Peça Teste", widget_fila)
         btn_adicionar_demo.clicked.connect(self._adicionar_peca_exemplo)
         botoes_fila.addWidget(btn_adicionar_demo)
 
-        btn_auto_nesting = QPushButton("⚡ Auto Nesting", painel_esquerdo)
+        btn_auto_nesting = QPushButton("⚡ Auto Nesting", widget_fila)
         btn_auto_nesting.setProperty("tipo", "primario")
         btn_auto_nesting.setToolTip("Encaixa automaticamente as peças na bobina com espaçamento configurado")
         btn_auto_nesting.clicked.connect(self._executar_auto_nesting)
         botoes_fila.addWidget(btn_auto_nesting)
-        layout_esq.addLayout(botoes_fila)
+        layout_fila.addLayout(botoes_fila)
 
+        self.splitter_esquerdo.addWidget(widget_fila)
+        self.splitter_esquerdo.setStretchFactor(0, 0)
+        self.splitter_esquerdo.setStretchFactor(1, 1)
+        self.splitter_esquerdo.setSizes([190, 520])
+
+        layout_esq.addWidget(self.splitter_esquerdo)
         splitter.addWidget(painel_esquerdo)
 
         # ---------------------------------------------------------------------
@@ -506,6 +592,43 @@ class JanelaPrincipal(QMainWindow):
         self.canvas.fit_in_view()
         if hasattr(self, "guia_passo") and self.guia_passo.etapa_atual == 3:
             self.guia_passo.ir_para_etapa(4)
+
+        # Auto-carregamento da pasta de entrada da máquina selecionada
+        self.auto_carregar_pasta_maquina(dados_maquina)
+
+    def auto_carregar_pasta_maquina(self, dados_maquina: Dict[str, Any]) -> None:
+        """Verifica a pasta de entrada da máquina e auto-carrega artes existentes na fila."""
+        try:
+            import montagem
+            nome_sistema = dados_maquina.get("nome_sistema", dados_maquina["nome"])
+            pasta_entrada = montagem.pasta_da_maquina(nome_sistema)
+            self.pasta_entrada_atual = pasta_entrada
+
+            if pasta_entrada and pasta_entrada.is_dir():
+                exts = (".pdf", ".eps", ".tif", ".tiff", ".jpg", ".jpeg", ".png", ".bmp")
+                arquivos = [
+                    f for f in sorted(pasta_entrada.iterdir())
+                    if f.is_file() and f.suffix.lower() in exts and not f.name.startswith("~")
+                ]
+                if arquivos:
+                    self.carregar_arquivos_na_fila(arquivos)
+                    self.statusBar().showMessage(
+                        f"{len(arquivos)} arquivo(s) carregados da entrada de {dados_maquina['nome']}.",
+                        4000,
+                    )
+                else:
+                    self.tabela_pecas.setRowCount(0)
+                    self.canvas.limpar_pecas()
+                    self.statusBar().showMessage(
+                        f"Pasta de entrada vigiada ({dados_maquina['nome']}): {pasta_entrada} (0 arquivos).",
+                        3000,
+                    )
+        except Exception as exc:
+            pass
+
+    def recarregar_pasta_entrada(self) -> None:
+        """Recarrega os arquivos da pasta de entrada da máquina atualmente ativa."""
+        self.auto_carregar_pasta_maquina(self.maquina_atual)
 
     def _ao_alterar_espacamento(self, valor: int) -> None:
         """Atualiza a folga configurada no canvas."""
@@ -703,29 +826,16 @@ class JanelaPrincipal(QMainWindow):
     # Handlers das Ações de Produção
     # -------------------------------------------------------------------------
 
-    def on_carregar_pasta(self) -> None:
-        """Carrega uma pasta de artes, extrai dimensões e miniaturas reais."""
-        pasta = QFileDialog.getExistingDirectory(self, "Selecionar Pasta de Arquivos")
-        if not pasta:
-            return
-
-        self.pasta_entrada_atual = Path(pasta)
+    def carregar_arquivos_na_fila(self, arquivos: List[Path]) -> None:
+        """Preenche a tabela lateral e gera miniaturas com filtro resetado para Todos os Materiais."""
         self.tabela_pecas.setRowCount(0)
         self.canvas.limpar_pecas()
 
-        exts = (".pdf", ".eps", ".tif", ".tiff", ".jpg", ".jpeg", ".png", ".bmp")
-        arquivos = [
-            f for f in sorted(self.pasta_entrada_atual.iterdir())
-            if f.is_file() and f.suffix.lower() in exts and not f.name.startswith("~")
-        ]
-
-        if not arquivos:
-            QMessageBox.information(
-                self, "Aviso", f"Nenhum arquivo de arte encontrado na pasta:\n{pasta}"
-            )
-            return
-
-        self.statusBar().showMessage(f"Lendo e gerando miniaturas de {len(arquivos)} arquivos...", 3000)
+        # O filtro de material DEVE iniciar em 'Todos os Materiais' (índice 0)
+        if hasattr(self, "combo_filtro_material"):
+            self.combo_filtro_material.blockSignals(True)
+            self.combo_filtro_material.setCurrentIndex(0)
+            self.combo_filtro_material.blockSignals(False)
 
         for arq in arquivos:
             largura_mm, altura_mm, qtd = detectar_dimensoes(arq)
@@ -751,6 +861,32 @@ class JanelaPrincipal(QMainWindow):
                 material=mat,
                 quantidade=qtd,
             )
+
+        # Garantir que todas as linhas fiquem visíveis imediatamente
+        for row in range(self.tabela_pecas.rowCount()):
+            self.tabela_pecas.setRowHidden(row, False)
+
+    def on_carregar_pasta(self) -> None:
+        """Carrega uma pasta de artes, extrai dimensões e miniaturas reais."""
+        pasta = QFileDialog.getExistingDirectory(self, "Selecionar Pasta de Arquivos")
+        if not pasta:
+            return
+
+        self.pasta_entrada_atual = Path(pasta)
+        exts = (".pdf", ".eps", ".tif", ".tiff", ".jpg", ".jpeg", ".png", ".bmp")
+        arquivos = [
+            f for f in sorted(self.pasta_entrada_atual.iterdir())
+            if f.is_file() and f.suffix.lower() in exts and not f.name.startswith("~")
+        ]
+
+        if not arquivos:
+            QMessageBox.information(
+                self, "Aviso", f"Nenhum arquivo de arte encontrado na pasta:\n{pasta}"
+            )
+            return
+
+        self.statusBar().showMessage(f"Lendo e gerando miniaturas de {len(arquivos)} arquivos...", 3000)
+        self.carregar_arquivos_na_fila(arquivos)
 
         self.statusBar().showMessage(
             f"{len(arquivos)} arquivos carregados! Escolha o material e clique em Auto Nesting.",

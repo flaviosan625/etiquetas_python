@@ -16,9 +16,9 @@ import pytest
 # Garantir execução headless antes de carregar módulos do Qt
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
 
-from PySide6.QtCore import Qt, QPointF
-from PySide6.QtWidgets import QApplication, QWidget, QPushButton
-from PySide6.QtGui import QColor
+from PySide6.QtCore import Qt, QPointF, QRectF
+from PySide6.QtWidgets import QApplication, QWidget, QPushButton, QStyleOptionGraphicsItem
+from PySide6.QtGui import QColor, QPainter, QImage, QPixmap
 
 from ui.tema import CoresTema, obter_qss, aplicar_tema
 from ui.canvas_montagem import CanvasMontagem, PecaGraficaItem
@@ -337,3 +337,206 @@ def test_app_iniciar_aplicativo(qapp):
     j.close()
     j.deleteLater()
     qapp.processEvents()
+
+
+# -----------------------------------------------------------------------------
+# 5. Testes Específicos de Renderização Gráfica e Visual do Canvas (QGraphicsView)
+# -----------------------------------------------------------------------------
+
+def test_render_peca_grafica_item_paint(qapp):
+    """
+    Testa a renderização gráfica completa de PecaGraficaItem via QPainter:
+    - Estado normal com chanfro e elevação
+    - Com miniatura real renderizada
+    - Estado selecionado (borda azul elétrico e alças)
+    - Estado de colisão (borda vermelho vivo e banner de alerta)
+    - Rotação 90 graus
+    """
+    canvas = CanvasMontagem(largura_bobina_mm=1600.0)
+    
+    # Criar uma miniatura de teste 100x100
+    pix = QPixmap(100, 100)
+    pix.fill(QColor("#0284c7"))
+
+    peca = canvas.adicionar_peca(
+        nome="Adesivo_Render_Test",
+        largura_mm=300.0,
+        altura_mm=200.0,
+        miniatura=pix,
+        material="VINIL BRILHO",
+        pos_x=50.0,
+        pos_y=50.0,
+    )
+
+    # Imagem offscreen para validar pintura real
+    img = QImage(400, 300, QImage.Format_ARGB32)
+    img.fill(Qt.transparent)
+    painter = QPainter(img)
+    opt = QStyleOptionGraphicsItem()
+
+    try:
+        # 1. Pintura em estado normal com miniatura
+        peca.paint(painter, opt, None)
+
+        # 2. Pintura em estado selecionado
+        peca.setSelected(True)
+        assert peca.isSelected()
+        peca.paint(painter, opt, None)
+
+        # 3. Pintura com rotação
+        peca.girar_90_graus()
+        assert peca.rotacao == 90.0
+        peca.paint(painter, opt, None)
+
+        # 4. Pintura em estado de colisão
+        peca.set_estado_colisao(tem_colisao=True, fora_dos_limites=False)
+        assert peca.tem_colisao
+        peca.paint(painter, opt, None)
+
+        # 5. Pintura fora dos limites
+        peca.set_estado_colisao(tem_colisao=False, fora_dos_limites=True)
+        assert peca.fora_dos_limites
+        peca.paint(painter, opt, None)
+    finally:
+        painter.end()
+
+
+def test_render_canvas_background_e_foreground(qapp):
+    """
+    Valida a renderização do fundo da bobina (drawBackground) e das
+    réguas dinâmicas métricas de 10cm, 50cm e 1m (drawForeground).
+    """
+    canvas = CanvasMontagem(largura_bobina_mm=1600.0, comprimento_inicial_mm=2500.0, margem_lateral_mm=20.0, margem_topo_mm=25.0)
+    canvas.resize(800, 600)
+
+    img = QImage(800, 600, QImage.Format_ARGB32)
+    img.fill(QColor("#0d0e12"))
+    painter = QPainter(img)
+
+    try:
+        rect_cena = QRectF(-100, -100, 1800, 2700)
+        # Executar drawBackground da bobina industrial
+        canvas.drawBackground(painter, rect_cena)
+
+        # Executar drawForeground das réguas métricas
+        rect_view = QRectF(0, 0, 800, 600)
+        canvas.drawForeground(painter, rect_view)
+    finally:
+        painter.end()
+
+    # Validar área útil e dimensões
+    limites = canvas.obter_limites_uteis()
+    assert limites.left() == 20.0
+    assert limites.width() == 1600.0 - 40.0
+
+
+def test_canvas_guia_reticular_mouse(qapp):
+    """Testa a posição da guia reticular do mouse nas réguas métricas."""
+    canvas = CanvasMontagem(largura_bobina_mm=1600.0)
+    canvas.resize(800, 600)
+    assert canvas._pos_mouse_view is None
+
+    # Simular leaveEvent limpando posição
+    from PySide6.QtCore import QEvent
+    ev_leave = QEvent(QEvent.Leave)
+    canvas.leaveEvent(ev_leave)
+    assert canvas._pos_mouse_view is None
+
+
+def test_cartao_maquina_compacto_e_badges(janela_app):
+    """Verifica se os cartões de máquinas estão no formato compacto (~34px) com badges."""
+    janela = janela_app
+    for cartao in janela.cartoes_maquinas:
+        assert cartao.height() == 34 or cartao.maximumHeight() == 34
+        assert hasattr(cartao, "lbl_nome")
+        assert hasattr(cartao, "lbl_largura")
+        assert hasattr(cartao, "lbl_status")
+        # Verificar se as badges contêm as medidas e status
+        assert "m" in cartao.lbl_largura.text()
+        assert cartao.lbl_status.text() in ("Online", "Pronta", "Operacional")
+
+
+def test_painel_esquerdo_splitter_e_tabela_altura_minima(janela_app):
+    """Valida o uso do QSplitter vertical e altura mínima de 300px da tabela de peças."""
+    janela = janela_app
+    assert hasattr(janela, "splitter_esquerdo")
+    assert janela.splitter_esquerdo.orientation() == Qt.Vertical
+    assert janela.tabela_pecas.minimumHeight() >= 300
+    assert hasattr(janela, "btn_recarregar_fila")
+    assert hasattr(janela, "btn_abrir_entrada_fila")
+    assert janela.combo_filtro_material.currentIndex() == 0
+    assert janela.combo_filtro_material.currentText() == "Todos os Materiais"
+
+
+def test_auto_carregamento_pasta_maquina(janela_app, tmp_path, monkeypatch):
+    """Testa o auto-carregamento de artes da pasta de entrada da máquina."""
+    import montagem
+    janela = janela_app
+
+    # Criar pasta de entrada simulada com arquivos de arte
+    pasta_fake = tmp_path / "UJV 100"
+    pasta_fake.mkdir(parents=True)
+    arq1 = pasta_fake / "Lona_Promo_2000x1000mm.pdf"
+    arq1.write_text("fake pdf")
+    arq2 = pasta_fake / "Adesivo_Vinil_500x500mm.jpg"
+    arq2.write_text("fake image")
+
+    # Fazer mock de montagem.pasta_da_maquina
+    monkeypatch.setattr(montagem, "pasta_da_maquina", lambda nome: pasta_fake)
+
+    # Selecionar máquina e disparar auto-carregamento
+    maq_ujv = [m for m in MAQUINAS_DISPONIVEIS if "UJV100" in m["nome"]][0]
+    janela.selecionar_maquina(maq_ujv)
+
+    # Deve ter carregado automaticamente os 2 arquivos
+    assert janela.tabela_pecas.rowCount() == 2
+    nomes = [janela.tabela_pecas.item(r, 0).text() for r in range(janela.tabela_pecas.rowCount())]
+    assert "Lona_Promo_2000x1000mm.pdf" in nomes
+    assert "Adesivo_Vinil_500x500mm.jpg" in nomes
+    assert janela.combo_filtro_material.currentIndex() == 0
+
+    # Testar botão [🔄 Recarregar]
+    janela.recarregar_pasta_entrada()
+    assert janela.tabela_pecas.rowCount() == 2
+
+
+def test_regras_historicas_rotulos_e_cabecalho(qapp):
+    """
+    Valida as regras consagradas de fábrica (montagem.py de 04/10/2026):
+    1. Rótulo de cada peça: f"{numero:02d}  {nome_do_arquivo}" e com cópia f"({copia}/{quantidade})"
+    2. Numeração sequencial automática nas peças (01, 02...)
+    3. Cabeçalho de 80mm (CABECALHO_M):
+       MONTAGEM  ·  {CLIENTE}  ·  {MATERIAL}  ·  {N} PEÇAS  ·  LARGURA {L}m  ·  APROVEITAMENTO {APROV}%  ·  RIPAR A 100%, NÃO REDIMENSIONAR
+    """
+    canvas = CanvasMontagem(largura_bobina_mm=3200.0, cliente="LOJINHA")
+
+    # Adicionar 3 peças com nomes e quantidades diferentes
+    p1 = canvas.adicionar_peca(nome="Lona_Promocao_Frente.pdf", largura_mm=1000.0, altura_mm=1000.0, material="LONA")
+    p2 = canvas.adicionar_peca(nome="Adesivo_Vitrine_01.pdf", largura_mm=500.0, altura_mm=500.0, material="VINIL", quantidade=3, copia=1)
+    p3 = canvas.adicionar_peca(nome="Banner_Evento_Entrada.jpg", largura_mm=800.0, altura_mm=600.0, material="LONA")
+
+    # Verificar numeração sequencial automática (01, 02, 03)
+    assert p1.numero == 1
+    assert p2.numero == 2
+    assert p3.numero == 3
+
+    # Verificar rótulos oficiais de montagem.py
+    assert p1.texto_do_rotulo() == "01  Lona_Promocao_Frente"
+    assert p2.texto_do_rotulo() == "02  Adesivo_Vitrine_01 (1/3)"
+    assert p3.texto_do_rotulo() == "03  Banner_Evento_Entrada"
+
+    # Remover peça do meio e validar renumeração automática
+    canvas.remover_peca(p2)
+    assert len(canvas.obter_pecas()) == 2
+    assert p1.numero == 1
+    assert p3.numero == 2
+    assert p3.texto_do_rotulo() == "02  Banner_Evento_Entrada"
+
+    # Verificar formatação oficial do cabeçalho de 80mm
+    titulo = canvas.obter_titulo_cabecalho()
+    assert "MONTAGEM  ·  LOJINHA  ·  " in titulo
+    assert "2 PEÇAS" in titulo
+    assert "LARGURA 3.20m" in titulo
+    assert "APROVEITAMENTO" in titulo
+    assert "RIPAR A 100%, NÃO REDIMENSIONAR" in titulo
+
